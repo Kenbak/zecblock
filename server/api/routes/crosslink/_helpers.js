@@ -101,8 +101,9 @@ const MAX_REPORT_SAMPLES = 12;
 const MAX_TIP_HEIGHT = 100_000_000;
 const MAX_PEER_COUNT = 10_000;
 const NODE_NAME_RE = /^[a-zA-Z0-9_. -]{1,32}$/;
-const CTAZ_FETCH_TIMEOUT_MS = 2500;
+const CTAZ_FETCH_TIMEOUT_MS = 7500;
 const CTAZ_FORK_MAP_URLS = [
+  'https://ctaz.cash/api/fork-map',
   'https://ctaz.zat-explorer.cash/api/fork-map',
   'https://frontiercompute.io/ctaz/api/fork-map',
 ];
@@ -206,8 +207,12 @@ async function fetchCtazForkMap() {
       const timer = setTimeout(() => ctrl.abort(), CTAZ_FETCH_TIMEOUT_MS);
       const resp = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
-      if (!resp.ok) continue;
+      if (!resp.ok && resp.status !== 503) continue;
       const data = await resp.json();
+      // The current public observer returns an explicit degraded JSON payload
+      // with 503. Keep its diagnostics while usableForkReference denies it
+      // authority; never accept an arbitrary upstream error as a reference.
+      if (!resp.ok && data?.degraded !== true) continue;
       if (deps.redisClient && deps.redisClient.isOpen) {
         try {
           await deps.redisClient.set(CTAZ_CACHE_KEY, JSON.stringify(data), { EX: CTAZ_CACHE_DURATION });

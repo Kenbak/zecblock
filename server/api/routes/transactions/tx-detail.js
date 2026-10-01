@@ -4,7 +4,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { isTestnet } = require('../../lib/network-features');
+const { isNonMainnet } = require('../../lib/network-features');
 const { validate } = require('../../validation');
 const { decodeCoinbaseText } = require('../../coinbase-data');
 const { deps, checkStakingColumns } = require('./_helpers');
@@ -177,7 +177,7 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
         [txid]
       ),
       deps.pool.query('SELECT MAX(height) as max_height FROM blocks'),
-      isTestnet() ? Promise.resolve({ rows: [] }) : deps.pool.query(
+      isNonMainnet() ? Promise.resolve({ rows: [] }) : deps.pool.query(
         `SELECT id, direction, source_chain, source_token, source_amount, source_amount_usd,
                 source_tx_hashes, dest_chain, dest_token, dest_amount, dest_amount_usd,
                 dest_tx_hashes, swap_created_at, matched, zec_address

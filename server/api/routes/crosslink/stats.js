@@ -75,8 +75,8 @@ router.get('/api/crosslink', async (req, res) => {
         const precommitYes = votes[1]?.[1] || 0;
         f.voted = prevoteYes > 0 || precommitYes > 0;
         f.highest_round = status.highest_round_vote || 0;
-        f.last_connected_utc = status.last_connected_utc ?? null;
-        f.connected = f.last_connected_utc != null && (nowUtc - f.last_connected_utc) < 300;
+        f.last_connected_utc = status.last_direct_connection_utc ?? status.last_connected_utc ?? null;
+        f.connected = f.last_connected_utc == null ? null : (nowUtc - f.last_connected_utc) < 300;
       } else {
         f.voted = null;
         f.highest_round = null;

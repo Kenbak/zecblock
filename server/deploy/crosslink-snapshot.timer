@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily private Crosslink recovery snapshot
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=10min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

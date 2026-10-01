@@ -117,6 +117,17 @@ const ANCHOR_HEIGHTS = [
   { height: 54777, label: 'OG fork point' },
   { height: 57298, label: 'Roman drift' },
   { height: 57352, label: 'May 7 last match' },
+  // Preserve the legacy explorer's historical comparison points. These are
+  // ancestry samples, not an assertion of present network authority.
+  { height: 131171, label: 'Jun split sample' },
+  { height: 147413, label: 'historic checkpoint sample' },
+  { height: 163975, label: 'h163k split' },
+  { height: 174587, label: 'h174k divergence' },
+  { height: 177217, label: 'h177k fork' },
+  { height: 178541, label: 'h178k split' },
+  { height: 187572, label: 'historic Round 2 checkpoint' },
+  { height: 655350, label: 'Monday17 burn height' },
+  { height: 655357, label: 'reported Monday17 branch split' },
 ];
 
 // Verified reference hashes for heights cTAZ's API doesn't cover.
@@ -125,12 +136,40 @@ const KNOWN_REFERENCE_HASHES = {
   54777: '00ca9de28f9833038781a91c27a6a61870a46fd54632f4d4b49e454c6c956113',
   57298: '0002b61601c22263ee80c3c8c15c8aea2cfb9e585d6729359d885bdd1caa0ba5',
   57352: '00fca2639b6bda9466e425e05fdde428038133e5aee06381900c45771af6fc5c',
+  131171: '0475347574dd744be5ee328e639c010beca408352b669096660bda9f9235db2b',
+  147413: '0283519f81ace36fb622c634b43eed63ff784f0966cd7d5c45fbd97051710c26',
+  163975: '01d78ab4f298fd733d4a22db015d90752aab58d380506fd35aa0ce491cfacfe3',
+  174587: '008a5f976f7e1fa18488ab0132fb7221949909e7a32fbb1234f5143ad4e6f20c',
+  177217: '012bb8ff4be1122d44794754a855f3ddb16dc3590761add516dd530e53e21dce',
+  178541: '00a9f626fd3f85d6d1c965a94965cba560bba11b4ada90ca7e11bd0b1d9e8682',
+  187572: '02fc9aa7652b2a9a9f6196a446265fed6012227373ed34e0b17c7a3298db005e',
 };
 
 function normalizeHash(hash) {
   return typeof hash === 'string' && /^[a-f0-9]{64}$/i.test(hash)
     ? hash.toLowerCase()
     : null;
+}
+
+function usableForkReference(data) {
+  const ref = data?.reference;
+  return !!ref && data.degraded !== true && ref.degraded !== true
+    && ref.authority !== false && Number.isSafeInteger(ref.tip) && ref.tip > 0
+    && normalizeHash(ref.tip_hash) !== null;
+}
+
+// Unknown samples supply no evidence. Array.every() over unmatched samples
+// used to label arbitrary registrations as belonging to our/reference branch.
+function matchKnownSamples(samples, hashAtHeight) {
+  let compared = 0;
+  for (const sample of samples) {
+    const expected = normalizeHash(hashAtHeight(sample.height));
+    const observed = normalizeHash(sample.hash);
+    if (!expected || !observed) continue;
+    compared++;
+    if (expected !== observed) return false;
+  }
+  return compared > 0 ? true : null;
 }
 
 /** Prune expired rows by TTL, then return all remaining nodes. */
@@ -189,6 +228,8 @@ module.exports = {
   reverseHex,
   resolveFinalizerPubkey,
   normalizeHash,
+  usableForkReference,
+  matchKnownSamples,
   pruneAndFetchNodes,
   fetchCtazForkMap,
   FORK_MONITOR_CACHE_KEY,

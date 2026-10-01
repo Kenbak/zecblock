@@ -31,6 +31,8 @@ function reserveRegistration(ip) {
 const {
   deps,
   normalizeHash,
+  usableForkReference,
+  matchKnownSamples,
   pruneAndFetchNodes,
   fetchCtazForkMap,
   FORK_MONITOR_CACHE_KEY,
@@ -104,8 +106,8 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
         tip: ctaz.reference.tip,
         tip_hash: normalizeHash(ctaz.reference.tip_hash),
         peers: ctaz.reference.peers,
-        finalized: ctaz.reference.finalized ?? 0,
-        finality_gap: ctaz.reference.finality_gap ?? 0,
+        finalized: ctaz.reference.finalized ?? null,
+        finality_gap: ctaz.reference.finality_gap ?? null,
       };
       if (Array.isArray(ctaz.anchors)) {
         for (const a of ctaz.anchors) {
@@ -130,7 +132,8 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
     const mismatches = anchors.filter((a) => a.match === false);
     let status = 'aligned';
     let firstDivergence = null;
-    if (!ctaz) {
+    const referenceUsable = usableForkReference(ctaz);
+    if (!referenceUsable || !anchors.some((a) => a.match !== null)) {
       status = 'ctaz_unavailable';
     } else if (mismatches.length > 0) {
       status = 'diverged';
@@ -142,31 +145,28 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
     const nodes = dbNodes.map((node) => {
       let branch = 'unknown';
       if (node.sample_hashes && node.sample_hashes.length > 0) {
-        const csMatch = node.sample_hashes.every((s) => {
-          const anchor = anchors.find((a) => a.height === s.height);
-          return !anchor || !anchor.cipherscan_hash || anchor.cipherscan_hash === s.hash;
-        });
-        const ctazMatch =
-          ctazRef &&
-          node.sample_hashes.every((s) => {
-            return !ctazAnchors[s.height] || ctazAnchors[s.height] === s.hash;
-          });
+        const csMatch = matchKnownSamples(node.sample_hashes, (height) => {
+          return anchors.find((a) => a.height === height)?.cipherscan_hash;
+        }) === true;
+        const ctazMatch = referenceUsable
+          && matchKnownSamples(node.sample_hashes, (height) => ctazAnchors[height]) === true;
         if (csMatch && ctazMatch) branch = 'reference';
         else if (csMatch) branch = 'cipherscan';
         else if (ctazMatch) branch = 'ctaz';
-        else branch = 'other';
+        else branch = matchKnownSamples(node.sample_hashes, (height) =>
+          anchors.find((a) => a.height === height)?.cipherscan_hash) === false ? 'other' : 'unknown';
       } else if (
         node.tip_hash &&
         node.tip === tipHeight &&
         tipHash &&
         node.tip_hash === tipHash
       ) {
-        branch = ctazRef && ctazRef.tip === tipHeight && ctazRef.tip_hash === tipHash
+        branch = referenceUsable && ctazRef.tip === tipHeight && ctazRef.tip_hash === tipHash
           ? 'reference'
           : 'cipherscan';
       } else if (
         node.tip_hash &&
-        ctazRef &&
+        referenceUsable &&
         node.tip === ctazRef.tip &&
         node.tip_hash === ctazRef.tip_hash
       ) {
@@ -193,7 +193,7 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
         'If h39573 matches and h39574 differs, your node is on an earlier observed split.',
         'If h40665 matches but h41898 differs, the node split later near the current tip.',
         'If a node is mining every block, treat it as partition risk until peers and tip hash match.',
-        'Peer count alone does not determine correctness. Longest chain with valid PoW wins above finalized height.',
+        'Peer count alone does not establish branch identity. Compare hardfork schedules and finalized ancestry before PoW chainwork.',
       ],
     };
 

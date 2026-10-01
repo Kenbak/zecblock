@@ -5,7 +5,9 @@ const { readSnapshot, publicSnapshot } = require('../../lib/attestation-store');
 
 function createAttestationRouter({ read = readSnapshot, network = process.env.ZCASH_NETWORK || process.env.NETWORK || 'mainnet', now = Date.now, readCanary = readCanarySnapshot, artifact = fetchArtifact } = {}) {
   const router = express.Router();
-  const configuredNetwork = network.toLowerCase();
+  // The deployed feature-net service uses NETWORK=crosslink. Attestation
+  // documents use the explicit crosslink-testnet identity for that network.
+  const configuredNetwork = network.toLowerCase() === 'crosslink' ? 'crosslink-testnet' : network.toLowerCase();
   if (!['mainnet', 'testnet', 'crosslink-testnet'].includes(configuredNetwork)) throw new Error('Invalid attestation network');
   // Canary's CLI requires an origin, so its protocol artifacts live at fixed
   // root paths. Preserve exact canonical bytes (especially keys.json).

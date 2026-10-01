@@ -241,37 +241,30 @@ router.get('/api/crosslink/bft-chain', async (req, res) => {
   try {
     const limit = Math.min(Math.max(parseInt(req.query.limit) || 30, 1), 200);
 
-    // Each unique bft_referenced_hash is one BFT decision. Use a window
-    // function to pick the newest row per decision (that row has the most
-    // authoritative signer set) and aggregate first/last-seen heights.
-    // NOTE: ARRAY_AGG on variable-size text[] columns fails with
-    // "cannot accumulate arrays of different dimensionality", hence the
-    // window-function approach instead of GROUP BY.
+    // Aggregate scalar history first, then fetch the latest row's signer set.
+    // Carrying signer arrays through full-history window sorts spills to disk
+    // and can exceed the public API deadline on a recovered database.
     const result = await deps.pool.query(
-      `WITH ranked AS (
-         SELECT
-           height,
-           bft_referenced_hash,
-           bft_signature_count,
-           bft_signer_keys,
-           ROW_NUMBER() OVER (PARTITION BY bft_referenced_hash ORDER BY height DESC) AS rn,
-           COUNT(*) OVER (PARTITION BY bft_referenced_hash)                          AS pow_blocks_in_decision,
-           MIN(height) OVER (PARTITION BY bft_referenced_hash)                        AS first_seen,
-           MAX(height) OVER (PARTITION BY bft_referenced_hash)                        AS last_seen
+      `WITH decisions AS (
+         SELECT bft_referenced_hash,
+                COUNT(*)::int AS pow_blocks_in_decision,
+                MIN(height) AS first_seen,
+                MAX(height) AS last_seen
          FROM blocks
          WHERE bft_referenced_hash IS NOT NULL
+         GROUP BY bft_referenced_hash
+         ORDER BY MAX(height) DESC
+         LIMIT $1
        )
-       SELECT
-         bft_referenced_hash AS referenced_hash,
-         bft_signature_count AS signature_count,
-         bft_signer_keys     AS signer_keys,
-         pow_blocks_in_decision::int,
-         first_seen::bigint  AS first_seen_at_pow_height,
-         last_seen::bigint   AS last_seen_at_pow_height
-       FROM ranked
-       WHERE rn = 1
-       ORDER BY last_seen DESC
-       LIMIT $1`,
+       SELECT d.bft_referenced_hash AS referenced_hash,
+              b.bft_signature_count AS signature_count,
+              b.bft_signer_keys AS signer_keys,
+              d.pow_blocks_in_decision,
+              d.first_seen::bigint AS first_seen_at_pow_height,
+              d.last_seen::bigint AS last_seen_at_pow_height
+       FROM decisions d
+       JOIN blocks b ON b.height = d.last_seen
+       ORDER BY d.last_seen DESC`,
       [limit]
     );
 

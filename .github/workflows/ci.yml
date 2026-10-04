@@ -69,6 +69,7 @@ jobs:
       TEST_ACTIVITY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       MINING_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_NODE_CENSUS_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_ACCOUNTING_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_UTXO_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_FORK_MONITOR_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
     services:

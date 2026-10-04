@@ -6,7 +6,8 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
-import { isCrosslink } from '@/lib/config';
+import { isCrosslink, NETWORK, CURRENCY } from '@/lib/config';
+import { readUpgradeSnapshot } from '@/lib/network-upgrades';
 import type { HashrateSnapshot } from '@/lib/hashrate';
 import { blockAgeLabel, observationStatus } from '@/lib/network-overview';
 import type { HalvingInfo } from '@/components/network/HalvingPanel';
@@ -131,6 +132,8 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
     }
   }, [technicalOpen]);
   const height = stats?.blockchain.height ?? stats?.network.height;
+  const upgrade = readUpgradeSnapshot(stats, NETWORK === 'crosslink' ? 'crosslink-testnet' : NETWORK);
+  const nu7Active = upgrade?.schedule.nu7Height != null && upgrade.height >= upgrade.schedule.nu7Height;
   const txCount = stats?.blockchain.tx24hExclCoinbase ?? stats?.blockchain.tx24h;
   const nodeStatus = observationStatus(healthQuery.error ? null : healthQuery.data?.zebra);
 
@@ -138,14 +141,14 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
     <div className="network-page max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       <PageHeader eyebrow="NETWORK_STATUS" title="Zcash Network"
         subtitle="Protocol, issuance, block production and the nodes we observe." />
-      <NetworkSectionNav onTechnicalNavigate={() => setTechnicalOpen(true)} />
+      <NetworkSectionNav nu7Active={nu7Active} onTechnicalNavigate={() => setTechnicalOpen(true)} />
       <section className="network-section mb-10" aria-label="Network overview">
         <Card className="network-summary-panel card-static">
           <dl id="network-protocol" className="network-section network-summary-grid network-protocol-facts border-b border-cipher-border" aria-label="Protocol parameters">
             {[
               ['Active upgrade', stats?.supply?.activeUpgrade ?? '—'],
-              ['Block subsidy', stats?.mining.blockReward != null ? `${stats.mining.blockReward} ZEC` : '—'],
-              ['Maximum supply', '21,000,000 ZEC'],
+              ['Block subsidy', stats?.mining.blockReward != null ? `${stats.mining.blockReward} ${CURRENCY}` : '—'],
+              ['Maximum supply', `21,000,000 ${CURRENCY}`],
             ].map(([label, value]) => <div key={label}>
               <dt className="type-label text-muted uppercase">{label}</dt>
               <dd className="font-mono text-sm text-secondary tabular-nums">{value}</dd>

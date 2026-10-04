@@ -6,11 +6,12 @@
     "category": "network",
     "query": [
       "before",
-      "limit"
+      "limit",
+      "period"
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "All Zat amounts are exact decimal strings or null. Bounded to 120 blocks by default, at most 1000; before is an exclusive height cursor. Fee removal is floor(aggregate block fees * 3 / 5) per active block, never rounded after aggregation. Reserves, supply, pools and subsidy use retained hash-matched node observations; missed/pre-collection tips remain null. NSM net change requires consecutive observations and is neither gross removals nor reissuance. Orphan observations are retained but excluded by a canonical height/hash join. Reissuance remains unavailable. Requires database migration 027 and the accounting observer.",
+    "note": "All Zat amounts are exact decimal strings or null. Bounded to 120 blocks by default, at most 1000; before is an exclusive height cursor. Fee removal is floor(aggregate block fees * 3 / 5) per active block, never rounded after aggregation. Reserves, supply, pools and subsidy use retained hash-matched node observations; missed/pre-collection tips remain null. NSM net change requires consecutive observations and is neither gross removals nor reissuance. Orphan observations are retained but excluded by a canonical height/hash join. Reissuance remains unavailable. Requires database migration 027 and the accounting observer. Optional period=1d|7d|30d|all selects NU7-only UTC block-header aggregation instead of block pagination; all means since activation. Returns at most approximately 241 time buckets, exact selected-period and since-activation fee totals (per-block rounding first), cumulative minimum removal, and net reserve growth from the preactivation hash-matched sample. Cannot combine period with limit/before. Missing fee/indexed ranges make affected totals and cumulative values null; missing bucket-end reserve samples stay null. Reserve growth is not cumulative fees. Responses are cached internally for at most 60 seconds and canonical anchors revalidated on every read.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -37,6 +38,21 @@
           "default": 120
         },
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "1d",
+            "7d",
+            "30d",
+            "all"
+          ]
+        },
+        "description": "NU7-only UTC block-header periods; all means since activation. Cannot combine with limit/before. Returns aggregated buckets and exact period/since-activation totals; missing data is null."
       }
     ],
     "requestBody": null

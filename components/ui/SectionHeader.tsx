@@ -99,7 +99,7 @@ export function SectionHeader({
     <div className={`flex items-start sm:items-center justify-between gap-2 mb-4 flex-wrap ${className}`}>
       <div className="flex items-center gap-2">
         <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50">{'>'}</span>
-        <h2 className={`${LABEL_SIZE[size]} font-medium font-mono text-primary lowercase tracking-tight`}>
+        <h2 className={`${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
           {label}
         </h2>
         {live && (

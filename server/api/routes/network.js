@@ -45,7 +45,10 @@ router.use((req, res, next) => {
 // CACHE CONFIGURATION
 // ============================================================================
 
-const NETWORK_STATS_CACHE_KEY = 'zcash:network_stats:nu7-v1';
+const AVG_BLOCK_TIME_WINDOW = isTestnet() ? 500 : 1000;
+const NETWORK_STATS_CACHE_KEY = isTestnet()
+  ? 'zcash:network_stats:nu7-v1:testnet-500'
+  : 'zcash:network_stats:nu7-v1';
 const NETWORK_STATS_CACHE_DURATION = 120; // 2 minutes — network stats don't change fast
 const NETWORK_HEALTH_CACHE_KEY = 'zcash:network_health';
 const NETWORK_HEALTH_CACHE_DURATION = 60;
@@ -132,7 +135,7 @@ async function fetchNetworkStatsOptimized() {
       ),
       rolling_block_time AS (
         SELECT (MAX(timestamp) - MIN(timestamp))::float / NULLIF(COUNT(*) - 1, 0) AS avg_secs
-        FROM (SELECT timestamp FROM blocks ORDER BY height DESC LIMIT 1000) sub
+        FROM (SELECT timestamp FROM blocks ORDER BY height DESC LIMIT ${AVG_BLOCK_TIME_WINDOW}) sub
       )
       SELECT
         latest.height,

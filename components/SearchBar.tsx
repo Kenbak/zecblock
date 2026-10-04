@@ -355,7 +355,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
             aria-label="Search"
             className="absolute right-2 top-1/2 -translate-y-1/2
               inline-flex items-center justify-center
-              w-9 h-9 sm:w-10 sm:h-10 rounded-md
+              w-9 h-9 sm:w-10 sm:h-10 rounded-lg
               text-primary border border-cipher-border
               hover:border-cipher-gold/50 hover:bg-cipher-hover
               transition duration-150"
@@ -370,7 +370,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
       </div>
 
       {/* Example Buttons */}
-      <div className="mt-2 sm:mt-2.5 flex flex-wrap gap-1.5 sm:gap-2 items-center">
+      <div className="search-examples mt-2 sm:mt-2.5 flex flex-wrap gap-1.5 sm:gap-2 items-center">
         <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
         <button
           type="button"

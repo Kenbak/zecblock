@@ -17,3 +17,12 @@ Activation is 4,398,756 / branch 77190ad9 on this staging fork only.
 Expected versions, lock/expiry heights, sizes, action counts and transparent
 output zatoshis come from node RPC. This is not official testnet/mainnet activation
 certification. Historical v4 fixtures remain in the original corpus.
+
+## Official testnet NU7 accounting
+
+`nu7-accounting.v1.json` is the public `/v1/network/accounting` envelope
+captured from `https://api.testnet.zecblock.com` on 2026-10-05 JST
+(2026-10-04 21:18:29 UTC), after official activation at 4,465,026.
+It retains the real v1 shape: no legacy `success` property inside `data`,
+and exact zatoshi amounts encoded as decimal strings. The visibility test
+passes it through the shared envelope parser before rendering accounting.

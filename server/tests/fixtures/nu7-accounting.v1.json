@@ -1,0 +1,69 @@
+{
+  "data": {
+    "observedAt": "2026-10-04T21:18:29.586Z",
+    "schedule": {
+      "network": "test",
+      "source": "node-upgrade-schedule",
+      "nu7Height": 4465026,
+      "eras": [
+        {
+          "height": 0,
+          "seconds": 150
+        },
+        {
+          "height": 584000,
+          "seconds": 75
+        },
+        {
+          "height": 4465026,
+          "seconds": 25
+        }
+      ]
+    },
+    "nodeHeight": 4465420,
+    "nodeHash": "000027b650535c18d72b18b1ddf7d12b8b8672db539b2cb431f43642725f633a",
+    "circulatingSupplyZat": "1835750107380574",
+    "nsmBalanceZat": "55778035961",
+    "nsmSource": "getblockchaininfo.nsmValueBalanceZat",
+    "nsmMeaning": "Separate signed reserve counter; excluded from circulating supply.",
+    "block": {
+      "height": 4465420,
+      "hash": "000027b650535c18d72b18b1ddf7d12b8b8672db539b2cb431f43642725f633a",
+      "feesPaidZat": "20000",
+      "feesToNsmZat": "12000",
+      "minerFeeAllocationZat": "8000",
+      "minerSubsidyZat": "41666668",
+      "minerReceiptsZat": "41674668",
+      "feeRule": "floor(aggregate-block-fees * 3 / 5)",
+      "feeRemovalMeaning": "consensus-minimum-not-total-observed-removal",
+      "reissuanceZat": null,
+      "reissuanceUnavailableReason": "No separate authoritative reissuance field in this RPC release.",
+      "unavailableReason": null
+    },
+    "blockUnavailableReason": null
+  },
+  "meta": {
+    "requestId": "9c48d956-0b60-4cb8-924d-039ff2895db4",
+    "network": "testnet",
+    "generatedAt": "2026-10-04T21:18:29.587Z",
+    "indexedHeight": 4465420,
+    "source": {
+      "indexedHeight": null,
+      "observedAt": null
+    },
+    "cache": {
+      "status": "unknown",
+      "ageSeconds": null
+    },
+    "freshness": {
+      "status": "unknown",
+      "ageSeconds": null
+    },
+    "units": {
+      "authoritativeMonetary": "zatoshi",
+      "authoritativeEncoding": "decimal-string",
+      "zatoshiPerZec": "100000000",
+      "legacyFormattedFields": "field-defined"
+    }
+  }
+}

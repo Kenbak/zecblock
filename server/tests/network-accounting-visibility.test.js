@@ -29,17 +29,33 @@ function render(data, { network = 'mainnet', error = null } = {}) {
   } });
   return { tree: exports.NetworkAccounting(), historyEnabled: calls.find(c => c.url.endsWith('/history')).options.enabled };
 }
-const snapshot = (height, activation = 4000000, chain = 'main') => ({ success: true, nodeHeight: height,
+const snapshot = (height, activation = 4000000, chain = 'main') => ({ nodeHeight: height,
   schedule: { network: chain, nu7Height: activation }, block: null });
 
 test('accounting is hidden and history is not requested before or without confirmed activation', () => {
-  for (const data of [undefined, snapshot(3999999), snapshot(5000000, null), { ...snapshot(5000000), schedule: null },
+  for (const data of [undefined, null, {}, snapshot(3999999), snapshot(5000000, null), { ...snapshot(5000000), schedule: null },
     snapshot(5000000, -1), snapshot(5000000, 1.5), snapshot(5000000, 500000000), snapshot(NaN),
-    { ...snapshot(5000000), success: false }]) {
+    snapshot(500000000)]) {
     const result = render(data);
     assert.equal(result.tree, null);
     assert.equal(result.historyEnabled, false);
   }
+});
+
+test('the real activated testnet v1 envelope enables accounting and its history', async () => {
+  const apiModule = { exports: {} };
+  vm.runInNewContext(ts.transpileModule(fs.readFileSync('lib/api-client.ts', 'utf8'), {
+    compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
+  }).outputText, { module: apiModule, exports: apiModule.exports });
+  const envelope = JSON.parse(fs.readFileSync('server/tests/fixtures/nu7-accounting.v1.json', 'utf8'));
+  const data = await apiModule.exports.readApiData(new Response(JSON.stringify(envelope)));
+  assert.equal(Object.hasOwn(data, 'success'), false, 'v1 data has no legacy success flag');
+  const result = render(data, { network: 'testnet' });
+  assert.equal(result.tree.type, 'Card');
+  assert.equal(result.historyEnabled, true);
+  assert.equal(data.block.feesPaidZat, '20000');
+  assert.equal(data.block.feesToNsmZat, '12000');
+  assert.equal(data.nsmBalanceZat, '55778035961');
 });
 test('each network becomes visible at its own node-announced activation boundary', () => {
   for (const [network, chain, activation] of [['mainnet', 'main', 4000000], ['testnet', 'test', 4400000]]) {

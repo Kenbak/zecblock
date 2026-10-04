@@ -10,7 +10,7 @@ import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 
-type Accounting = { success: boolean; schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
+type Accounting = { schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
   block: { height: number; feesPaidZat: number | string | null; feesToNsmZat: number | string | null; minerFeeAllocationZat: number | string | null;
     minerSubsidyZat: number | string | null; minerReceiptsZat: number | string | null; reissuanceZat: number | string | null } | null };
 
@@ -35,7 +35,7 @@ export function NetworkAccounting() {
   const { data, loading, error } = useApiQuery<Accounting>('/v1/network/accounting', undefined, { refreshInterval: 30_000 });
   const activationHeight = data?.schedule?.nu7Height;
   const expectedChain = NETWORK === 'mainnet' ? 'main' : NETWORK === 'testnet' ? 'test' : null;
-  const nu7Active = !error && data?.success === true && expectedChain !== null &&
+  const nu7Active = !error && data != null && expectedChain !== null &&
     data.schedule?.network === expectedChain && activationHeight != null &&
     Number.isSafeInteger(activationHeight) && activationHeight > 0 && activationHeight <= 499_999_999 &&
     Number.isSafeInteger(data.nodeHeight) && data.nodeHeight >= activationHeight && data.nodeHeight <= 499_999_999;

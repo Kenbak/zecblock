@@ -369,6 +369,21 @@
               "default": 120
             },
             "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "1d",
+                "7d",
+                "30d",
+                "all"
+              ]
+            },
+            "description": "NU7-only UTC block-header periods; all means since activation. Cannot combine with limit/before. Returns aggregated buckets and exact period/since-activation totals; missing data is null."
           }
         ],
         "x-cipherscan-legacy-path": "/api/network/accounting/history",

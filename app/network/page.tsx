@@ -47,7 +47,9 @@ export default async function NetworkPage() {
     retainLastGoodOrBuildFallback(null, new Error('Network statistics unavailable'), 'network snapshot');
   }
   const pageUrl = `${getBaseUrl()}/network`;
-  const nu7Height = readUpgradeSnapshot(stats, network)?.schedule.nu7Height;
+  const upgrade = readUpgradeSnapshot(stats, network);
+  const nu7Height = upgrade?.schedule.nu7Height;
+  const nu7Active = nu7Height != null && upgrade != null && upgrade.height >= nu7Height;
   const pageSchema = {
     '@context': 'https://schema.org', '@type': 'WebPage', '@id': `${pageUrl}#webpage`,
     url: pageUrl, name: 'Zcash Network',
@@ -68,7 +70,7 @@ export default async function NetworkPage() {
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
       <div className="border-t border-cipher-border pt-6 max-w-3xl text-sm text-muted space-y-2">
         <h2 className="font-mono font-medium text-secondary">About these observations</h2>
-        {nu7Height != null && <p>The serving node announces NU7 at <Link href={`/block/${nu7Height}`} className="text-brand-gold hover:underline">block #{nu7Height.toLocaleString('en-US')}</Link> on Zcash {network}. View its canonical block or the estimated activation countdown.</p>}
+        {nu7Height != null && <p>The serving node announces NU7 at <Link href={`/block/${nu7Height}`} className="text-brand-gold hover:underline">block #{nu7Height.toLocaleString('en-US')}</Link> on Zcash {network}. {nu7Active ? <>The upgrade is active; explore <Link href="#nu7-accounting" className="text-brand-gold hover:underline">fee allocation and NSM accounting</Link> below.</> : <>View its canonical block or the estimated activation countdown.</>}</p>}
         <p>Chain statistics, recent blocks and node discovery are separate observations and can update at different times. Block cadence uses timestamps recorded in blocks; these are not measurements of when this explorer received them.</p>
         <p>The map shows observed reachable nodes, not a census of every Zcash node. Peer connections and disk usage in Technical details describe this explorer’s node. Observed transaction fees describe past transactions and are not fee recommendations.</p>
       </div>

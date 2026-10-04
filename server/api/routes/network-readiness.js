@@ -4,7 +4,9 @@ const { signedZat, blockAccounting } = require('../lib/network-accounting');
 const { supplyZat } = require('../lib/network-issuance');
 const { logSafeError } = require('../lib/safe-log');
 const { HISTORY_SQL, historyPoints } = require('../lib/accounting-history');
+const { PERIOD_SQL, periodPayload } = require('../lib/accounting-period');
 const cadenceCache = new WeakMap();
+const accountingPeriodCache = new WeakMap();
 
 function registerNetworkReadinessRoutes(router) {
   router.get('/api/network/block-time', async (req, res) => {
@@ -44,6 +46,50 @@ function registerNetworkReadinessRoutes(router) {
   });
 
   router.get('/api/network/accounting/history', async (req, res) => {
+    if (req.query.period !== undefined) {
+      const period = req.query.period;
+      if (!['1d', '7d', '30d', 'all'].includes(period) || req.query.limit !== undefined || req.query.before !== undefined) {
+        return res.status(400).json({ success: false, error: 'period must be 1d, 7d, 30d or all; do not combine with limit or before' });
+      }
+      res.set('Cache-Control', 'no-store');
+      try {
+        const { pool, callZebraRPC } = req.app.locals;
+        const info = await callZebraRPC('getblockchaininfo');
+        const schedule = networkSchedule(info);
+        if (schedule?.nu7Height == null || info.blocks < schedule.nu7Height) {
+          return res.status(503).json({ success: false, error: 'NU7 period accounting is not active on the serving network' });
+        }
+        let cache = accountingPeriodCache.get(pool);
+        if (!cache) { cache = new Map(); accountingPeriodCache.set(pool, cache); }
+        const key = `${info.chain}:${schedule.nu7Height}:${info.blocks}:${info.bestblockhash}:${period}`;
+        let cached = cache.get(key);
+        if (!cached || cached.expires <= Date.now()) {
+          // Keep one current generation per period, and coalesce concurrent
+          // requests rather than multiplying historical transaction scans.
+          for (const [oldKey, entry] of cache) if (entry.expires <= Date.now() || oldKey.endsWith(`:${period}`)) cache.delete(oldKey);
+          const observedAt = new Date().toISOString();
+          const seconds = { '1d': 86400, '7d': 604800, '30d': 2592000 }[period];
+          const since = seconds ? Math.floor(Date.now()/1000)-seconds : null;
+          cached = { expires: Date.now()+60000, promise: pool.query(PERIOD_SQL, [info.blocks, schedule.nu7Height, info.chain, since])
+            .then(({ rows }) => ({ row: rows[0], observedAt })) };
+          cache.set(key, cached);
+          cached.promise.catch(() => cache.delete(key));
+        }
+        const { row, observedAt } = await cached.promise;
+        // Validate even cache hits: equal-height reorganizations must never
+        // reuse totals for the old canonical chain.
+        for (const anchor of [row?.tip, row?.baseline]) {
+          if (anchor && await callZebraRPC('getblockhash', [Number(anchor.height)]) !== anchor.hash) {
+            cache.delete(key);
+            return res.status(503).json({ success: false, error: 'Indexed history is reconciling with the node' });
+          }
+        }
+        return res.json(periodPayload(row, period, schedule, info, observedAt));
+      } catch (error) {
+        logSafeError('[ACCOUNTING-PERIOD]', error);
+        return res.status(503).json({ success: false, error: 'Accounting period observations unavailable' });
+      }
+    }
     const limit = req.query.limit === undefined ? 120 : Number(req.query.limit);
     const before = req.query.before === undefined ? null : Number(req.query.before);
     if (!/^[0-9]+$/.test(String(req.query.limit ?? 120)) || !Number.isSafeInteger(limit) || limit < 1 || limit > 1000 ||

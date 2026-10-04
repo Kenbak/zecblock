@@ -1,7 +1,8 @@
 {
   "GET /v1/network/accounting/history": [
     "before",
-    "limit"
+    "limit",
+    "period"
   ],
   "GET /v1/network/attestations": [],
   "GET /v1/network/attestations/:id": [],

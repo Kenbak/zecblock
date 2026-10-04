@@ -59,6 +59,7 @@ function getQueryConstraint(route, name) {
   if (route.startsWith('/v1/valuation/') && name === 'period') return { required:false, schema:{type:'string',enum:['30d','90d','180d','1y','2y','all'],default:'1y'}, description:'All returns the complete available daily history.' };
 
   if (route === '/v1/network/accounting/history') {
+    if (name === 'period') return { required: false, schema: { type: 'string', enum: ['1d', '7d', '30d', 'all'] }, description: 'NU7-only UTC block-header periods; all means since activation. Cannot combine with limit/before. Returns aggregated buckets and exact period/since-activation totals; missing data is null.' };
     if (name === 'limit') return { required: false, schema: { type: 'integer', minimum: 1, maximum: 1000, default: 120 } };
     if (name === 'before') return { required: false, schema: { type: 'integer', minimum: 0, maximum: 499999999, description: 'Exclusive canonical block-height cursor.' } };
   }

@@ -13,7 +13,12 @@ test('redesign network timing and accounting retain source semantics through v1'
   const timestamp = Math.floor(Date.now() / 1000);
   const rows = Array.from({ length: 125 }, (_, i) => ({ height: height - i, timestamp: timestamp - i * 25 }));
   let unavailable = false;
-  source.locals.pool = { query: async sql => ({ rows: sql.includes('WITH tip') ? [{
+  source.locals.pool = { query: async sql => ({ rows: sql.includes('WITH canonical AS MATERIALIZED') ? [{
+    totals:{blocks:2,feeBlocks:2,feesPaidZat:'6',feesToNsmZat:'2',minerFeeAllocationZat:'4'},
+    selected:{blocks:2,feeBlocks:2,feesPaidZat:'6',feesToNsmZat:'2',minerFeeAllocationZat:'4'},
+    bucket_seconds:'300',points:[{timestamp,feesPaidZat:'6',feesToNsmZat:'2',minerFeeAllocationZat:'4',cumulativeRemovalZat:'2'}],
+    baseline:{height:3600000-1,hash:'canonical',balance:'9007199254740993'},tip:{height,hash:'canonical',balance:'9007199254740995'},
+  }] : sql.includes('WITH tip') ? [{
     height, hash: 'canonical', transaction_count: 3, tx_count: 3, coinbases: 1,
     invalid_fees: 0, fees: '3', coinbase_value: '100000004',
   }] : rows }) };
@@ -58,6 +63,16 @@ test('redesign network timing and accounting retain source semantics through v1'
   assert.equal(data.block.minerFeeAllocationZat, '2');
   assert.equal(data.block.minerReceiptsZat, '80000004');
   assert.equal(data.block.reissuanceZat, null);
+  for(const period of ['1d','7d','30d','all']) {
+    const history = await fetch(`${base}/accounting/history?period=${period}`);
+    assert.equal(history.status,200);
+    const payload = await history.json();
+    assert.equal(payload.data.period,period);
+    assert.equal(payload.data.totals.feesToNsmZat,'2');
+    assert.equal(payload.data.reserve.growthSinceNu7Zat,'2');
+    assert.equal(payload.data.points[0].cumulativeRemovalZat,'2');
+  }
+  assert.equal((await fetch(`${base}/accounting/history?period=all&limit=120`)).status,400);
   unavailable = true;
   const failed = await fetch(`${base}/accounting`);
   assert.equal(failed.status, 503);

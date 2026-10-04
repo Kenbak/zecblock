@@ -83,6 +83,6 @@ test('active accounting preserves exact signed reserve amounts without repeating
   assert.match(html, /1\.25144836 ZEC/);
   assert.doesNotMatch(html, /Miner subsidy allocation|Current block subsidy|Next block subsidy|Separate reissuance amount|<dt[^>]*>Reissuance/);
   assert.match(html, /<details/);
-  assert.match(html, /canonical block above/);
+  assert.match(html, /current node reserve can be newer than the history/);
   assert.match(renderAccounting(true, null), /NSM reserve<\/dt><dd[^>]*>Unavailable/);
 });

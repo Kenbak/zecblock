@@ -1,5 +1,5 @@
 "use client";
-import { useId, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SlidersIcon } from "@/components/icons/common";
@@ -16,16 +16,35 @@ export type BlockFilterValues = Partial<
 >;
 const field =
   "h-10 min-w-0 rounded-md border border-cipher-border bg-cipher-surface px-3 py-0 text-xs text-primary [color-scheme:light] dark:[color-scheme:dark]";
+const toolbarField =
+  "h-8 min-w-0 rounded-full border border-cipher-border bg-transparent px-3 py-0 text-xs text-secondary transition-colors hover:bg-cipher-hover hover:text-primary [color-scheme:light] dark:[color-scheme:dark]";
 const softwareOptions = ["all", "zebra", "zakura", "unknown"] as const;
 
 export function BlockFilters({ values }: { values: BlockFilterValues }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
   const software = values.software || "all";
-  const advancedKeys = BLOCK_FILTER_KEYS.filter((key) => !['software', 'pool', 'order'].includes(key));
-  const activeCount = advancedKeys.filter((key) => Boolean(values[key])).length;
-  const [expanded, setExpanded] = useState(activeCount > 0);
+  const activeCount = BLOCK_FILTER_KEYS.filter((key) => key !== "order" && values[key] && values[key] !== "all").length;
+  const [expanded, setExpanded] = useState(false);
   const panelId = useId();
+  const formRef = useRef<HTMLFormElement>(null);
+  const toggleRef = useRef<HTMLButtonElement>(null);
+  useEffect(() => {
+    if (!expanded) return;
+    const close = (event: PointerEvent | KeyboardEvent) => {
+      if (event instanceof KeyboardEvent) {
+        if (event.key !== "Escape") return;
+        toggleRef.current?.focus();
+      } else if (formRef.current?.contains(event.target as Node)) return;
+      setExpanded(false);
+    };
+    document.addEventListener("pointerdown", close);
+    document.addEventListener("keydown", close);
+    return () => {
+      document.removeEventListener("pointerdown", close);
+      document.removeEventListener("keydown", close);
+    };
+  }, [expanded]);
   const hasFilters = BLOCK_FILTER_KEYS.some((key) => {
     const value = values[key];
     return value && value !== "all" && !(key === "order" && value === "newest");
@@ -42,8 +61,9 @@ export function BlockFilters({ values }: { values: BlockFilterValues }) {
   }
   return (
     <form
+      ref={formRef}
       action="/blocks"
-      className="mb-4"
+      className="relative"
       aria-label="Block filters"
       aria-busy={pending}
       onInput={(event) => {
@@ -71,43 +91,45 @@ export function BlockFilters({ values }: { values: BlockFilterValues }) {
           input.reportValidity();
           return;
         }
+        setExpanded(false);
         navigate(next);
       }}
     >
       <fieldset disabled={pending} className="min-w-0 disabled:opacity-60">
         <legend className="sr-only">Filter blocks</legend>
         <input type="hidden" name="order" value={values.order || "newest"} />
-        <div className="flex flex-wrap items-center gap-3">
-          <label className="flex items-center gap-2 text-xs text-muted">
-            Software
-            <select name="software" value={software} className={`${field} max-w-52`} onChange={(event) => navigate({ ...values, software: event.target.value })}>
-              {softwareOptions.map((key) => (
-                <option key={key} value={key}>{key === "all" ? "All software" : [getMiningSoftwareEmoji(key), SOFTWARE_LABELS[key]].filter(Boolean).join(" ")}</option>
-              ))}
-              {(["other", "conflicting", "missing"] as MiningSoftware[])
-                .filter((key) => key === software)
-                .map((key) => <option key={key} value={key}>{SOFTWARE_LABELS[key]}</option>)}
-            </select>
-          </label>
-          <label className="flex items-center gap-2 text-xs text-muted">
-            Pool
-            <select name="pool" defaultValue={values.pool || "all"} className={`${field} max-w-52`} onChange={(event) => navigate({ ...values, pool: event.target.value })}>
-              <option value="all">All pools</option>
-              {pools.map((name) => <option key={name}>{name}</option>)}
-              <option value="unattributed">Unattributed</option>
-            </select>
-          </label>
-          <button type="button" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(!expanded)} className={`${field} inline-flex items-center gap-2 hover:text-primary ${activeCount ? 'border-brand-gold/50' : ''}`}>
-            <span aria-hidden="true"><SlidersIcon /></span> More filters
+        <div className="flex items-center sm:justify-end">
+          <button ref={toggleRef} type="button" aria-expanded={expanded} aria-controls={panelId} onClick={() => setExpanded(!expanded)} className={`${toolbarField} inline-flex items-center gap-1.5 hover:text-primary ${activeCount ? 'border-brand-gold/50' : ''}`}>
+            <span aria-hidden="true"><SlidersIcon /></span> Filters
             {activeCount > 0 && <span className="rounded bg-brand-gold/15 px-1.5 text-primary">{activeCount}</span>}
           </button>
-          {hasFilters && <Link href="/blocks" scroll={false} className="py-2 text-xs text-muted underline underline-offset-4 hover:text-primary">Reset</Link>}
-          {pending && <span role="status" className="text-xs text-muted">Updating blocks…</span>}
+          {pending && <span role="status" className="sr-only">Updating blocks…</span>}
         </div>
-        <div id={panelId} hidden={!expanded} className="mt-3 rounded-lg border border-cipher-border bg-cipher-surface p-4">
+        <div id={panelId} hidden={!expanded} className="absolute left-0 top-full z-30 mt-2 w-[min(44rem,calc(100vw-2rem))] max-h-[70dvh] overflow-y-auto rounded-xl border border-cipher-border bg-cipher-surface p-4 text-left shadow-xl sm:left-auto sm:right-0">
           <div className="mb-4 flex items-center justify-between">
             <span className="text-sm font-medium text-primary">Filter blocks</span>
-            <button type="button" aria-label="Close more filters" onClick={() => setExpanded(false)} className="rounded p-1 text-muted hover:text-primary"><span aria-hidden="true">×</span></button>
+            <button type="button" aria-label="Close filters" onClick={() => setExpanded(false)} className="rounded p-1 text-muted hover:text-primary"><span aria-hidden="true">×</span></button>
+          </div>
+          <div className="mb-4 grid gap-3 sm:grid-cols-2">
+            <label className="flex flex-col gap-1.5 text-xs text-muted">
+              Software
+              <select name="software" defaultValue={software} className={`${field} w-full`}>
+                {softwareOptions.map((key) => (
+                  <option key={key} value={key}>{key === "all" ? "All software" : [getMiningSoftwareEmoji(key), SOFTWARE_LABELS[key]].filter(Boolean).join(" ")}</option>
+                ))}
+                {(["other", "conflicting", "missing"] as MiningSoftware[])
+                  .filter((key) => key === software)
+                  .map((key) => <option key={key} value={key}>{SOFTWARE_LABELS[key]}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5 text-xs text-muted">
+              Pool
+              <select name="pool" defaultValue={values.pool || "all"} className={`${field} w-full`}>
+                <option value="all">All pools</option>
+                {pools.map((name) => <option key={name}>{name}</option>)}
+                <option value="unattributed">Unattributed</option>
+              </select>
+            </label>
           </div>
           <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2 lg:grid-cols-3">
             <fieldset className="min-w-0">
@@ -141,7 +163,10 @@ export function BlockFilters({ values }: { values: BlockFilterValues }) {
           </div>
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 border-t border-cipher-border pt-3">
             <p className="text-xs text-muted">Inclusive ranges · Interval uses block timestamps.</p>
-            <button type="submit" className="rounded-md bg-brand-gold px-4 py-2 text-xs font-medium text-black">Apply filters</button>
+            <div className="flex items-center gap-3">
+              {hasFilters && <Link href="/blocks" scroll={false} className="py-2 text-xs text-muted underline underline-offset-4 hover:text-primary">Reset</Link>}
+              <button type="submit" className="rounded-md bg-brand-gold px-4 py-2 text-xs font-medium text-black">Apply filters</button>
+            </div>
           </div>
         </div>
       </fieldset>

@@ -14,7 +14,7 @@ import { BlockFilters, type BlockFilterValues } from './BlockFilters';
 import { SOFTWARE_LABELS, classifyMiningSoftware, type MiningSoftware } from '@/lib/mining-software';
 import { getMiningSoftwareEmoji } from '@/lib/coinbase-client';
 import { Tooltip } from '@/components/Tooltip';
-import { CURRENCY } from '@/lib/config';
+import { CURRENCY, isTestnet } from '@/lib/config';
 import { scheduledSeconds, type BlockSchedule } from '@/lib/block-timing';
 
 interface Block {
@@ -45,6 +45,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
     {
       id: 'height',
       header: 'Height',
+      className: 'whitespace-nowrap',
       skeletonWidth: 'w-24',
       cell: (block) => (
         <div className="flex items-center gap-2">
@@ -60,7 +61,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
     {
       id: 'hash',
       header: 'Hash',
-      className: 'hidden sm:table-cell',
+      className: 'hidden sm:table-cell whitespace-nowrap',
       skeletonWidth: 'w-40',
       cell: (block) => (
         // Same lead/tail convention as every other hash display (e.g. the
@@ -77,7 +78,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
     {
       id: 'miner',
       header: 'Miner',
-      className: 'hidden lg:table-cell',
+      className: 'hidden lg:table-cell whitespace-nowrap',
       skeletonWidth: 'w-16',
       cell: (block) => {
         return (
@@ -107,14 +108,15 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
       id: 'txs',
       header: 'Txs',
       align: 'right',
+      className: 'min-w-16 whitespace-nowrap',
       skeletonWidth: 'w-8',
-      cell: (block) => <span className="font-mono text-sm text-primary">{block.transaction_count}</span>,
+      cell: (block) => <span className="font-mono text-sm text-primary tabular-nums">{block.transaction_count}</span>,
     },
     {
       id: 'size',
       header: 'Size / 2 MB',
       align: 'right',
-      className: 'hidden md:table-cell',
+      className: 'hidden md:table-cell min-w-[10rem]',
       skeletonWidth: 'w-16',
       cell: (block) => {
         if (!Number.isFinite(block.size) || block.size < 0) {
@@ -123,14 +125,14 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
         const sizePct = (block.size / MAX_BLOCK_BYTES) * 100;
         const capacity = `${sizePct > 0 && sizePct < 0.01 ? '<0.01' : sizePct.toFixed(2)}% of the 2 MB limit (${block.size.toLocaleString('en-US')} / 2,000,000 bytes)`;
         return (
-          <div className="flex items-center justify-end gap-2" title={capacity}>
-            <div aria-hidden="true" className="w-16 lg:w-24 h-1 rounded-full bg-cipher-border-alpha/40 overflow-hidden">
+          <div className="grid grid-cols-[3rem_4.5rem] items-center justify-end gap-3" title={capacity}>
+            <div aria-hidden="true" className="w-12 h-1 rounded-full bg-cipher-border-alpha/40 overflow-hidden">
               <div
                 className="h-full rounded-full bg-brand-gold/60 group-hover:bg-brand-gold transition-colors"
                 style={{ width: `${Math.min(100, sizePct)}%` }}
               />
             </div>
-            <span className="font-mono text-xs text-muted tabular-nums w-16 text-right">
+            <span className="font-mono text-xs text-muted tabular-nums whitespace-nowrap text-right">
               {(block.size / 1000).toFixed(1)} kB
             </span>
           </div>
@@ -157,7 +159,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
       id: 'interval',
       header: 'Block interval',
       align: 'right',
-      className: 'hidden lg:table-cell',
+      className: 'hidden lg:table-cell min-w-[10rem]',
       skeletonWidth: 'w-12',
       cell: (block, idx) => {
         const nextBlock = blocks[idx + 1] ?? (idx === blocks.length - 1 ? trailingBlock : null);
@@ -169,7 +171,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
         const target = scheduledSeconds(schedule, Number(block.height), Number(block.height) + 1);
         const description = `${target !== null ? `The tick marks the ${target}s target. ` : ''}${gap > INTERVAL_SCALE_SECONDS ? 'The arrow means more than 5 min.' : 'The bar shows up to 5 min.'}${gap < 0 ? ' Left arrow: timestamp earlier than the previous block’s.' : ''}`;
         return (
-          <div className="flex items-center justify-end gap-2">
+          <div className="grid grid-cols-[3rem_4.5rem] items-center justify-end gap-3">
             <Tooltip content={description} label={`Block interval ${interval.label}: scale and target`}>
               <span className="inline-flex h-6 w-12 items-center" aria-hidden="true">
                 <span className="relative block w-12 h-1 shrink-0 rounded-full bg-cipher-border-alpha/40">
@@ -185,7 +187,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
                 </span>
               </span>
             </Tooltip>
-            <span className="font-mono text-xs text-secondary tabular-nums whitespace-nowrap min-w-16 text-right">{interval.label}</span>
+            <span className="font-mono text-xs text-secondary tabular-nums whitespace-nowrap text-right">{interval.label}</span>
           </div>
         );
       },
@@ -321,15 +323,7 @@ export default function BlocksClient({
         eyebrow="ALL_BLOCKS"
         title={page > 1 ? `Zcash Blocks - Page ${page}` : Object.keys(filters).length ? 'Zcash Blocks' : 'Latest Zcash Blocks'}
         subtitle="Browse canonical blocks by software, pool, date, size, fees and more."
-        actions={
-          <span className="text-xs font-mono text-muted">
-            {!dataAvailable && blocks.length === 0
-              ? 'Block data temporarily unavailable'
-              : blocks.length > 0 && (!filters.order || ['newest', 'oldest'].includes(filters.order))
-              ? `Block #${blocks[0].height.toLocaleString()} to #${blocks[blocks.length - 1].height.toLocaleString()} · ${pagination.total.toLocaleString()} blocks`
-              : `${pagination.total.toLocaleString()} blocks`}
-          </span>
-        }
+        actions={<BlockFilters values={filters} />}
       />
 
       {initialCursor === null && page === 1 && <LiveRefreshStatus lastCheckedAt={lastCheckedAt} failed={refreshFailed} />}
@@ -348,7 +342,7 @@ export default function BlocksClient({
         <MetricCard size="compact"
           label="Avg Block Time"
           value={summary.avgBlockTime != null ? `${summary.avgBlockTime}s` : '—'}
-          hint="Last 1,000 blocks · observed timestamps"
+          hint={`Last ${isTestnet ? '500' : '1,000'} blocks · observed timestamps`}
         />
         <MetricCard size="compact"
           label="Avg Block Fee (24h)"
@@ -363,7 +357,6 @@ export default function BlocksClient({
         />
       </div>
 
-      <BlockFilters values={filters} />
       {!dataAvailable && <p role="status" className="mb-4 text-sm text-muted">Block data is unavailable for this selection. Software filters require the completed history index; please try again later.</p>}
       <DataTable
         columns={blockColumns(blocks, trailingBlock ?? null, schedule).map((column) => {
@@ -378,7 +371,7 @@ export default function BlocksClient({
           return {
             ...column,
             sortDirection: active ? (ascending ? 'ascending' as const : 'descending' as const) : undefined,
-            header: <Link href={`/blocks?${params}`} scroll={false} className={`inline-flex min-h-6 items-center gap-1.5 whitespace-nowrap hover:text-primary ${active ? 'text-primary' : ''}`} aria-label={`Sort ${column.id === 'txs' ? 'transactions' : column.id}: ${label}`}>
+            header: <Link href={`/blocks?${params}`} scroll={false} className={`inline-flex min-h-6 items-center gap-1.5 whitespace-nowrap ${column.align === 'right' ? 'flex-row-reverse' : ''} hover:text-primary ${active ? 'text-primary' : ''}`} aria-label={`Sort ${column.id === 'txs' ? 'transactions' : column.id}: ${label}`}>
               {column.header}<span aria-hidden="true" className={active ? 'text-primary' : 'text-muted'}>{active ? (ascending ? '↑' : '↓') : '↕'}</span>
             </Link>,
           };

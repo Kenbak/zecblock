@@ -3,7 +3,6 @@ import { useId, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { SlidersIcon } from "@/components/icons/common";
-import { FilterGroup, FilterButton } from "@/components/ui/FilterGroup";
 import { getMiningSoftwareEmoji } from "@/lib/coinbase-client";
 import { SOFTWARE_LABELS, type MiningSoftware } from "@/lib/mining-software";
 import pools from "@/lib/generated/mining-pools.json";
@@ -77,21 +76,19 @@ export function BlockFilters({ values }: { values: BlockFilterValues }) {
     >
       <fieldset disabled={pending} className="min-w-0 disabled:opacity-60">
         <legend className="sr-only">Filter blocks</legend>
-        <input type="hidden" name="software" value={software} />
         <input type="hidden" name="order" value={values.order || "newest"} />
         <div className="flex flex-wrap items-center gap-3">
-          <div role="group" aria-label="Software marker" className="max-w-full overflow-x-auto">
-            <FilterGroup inline className="h-10 p-0">
+          <label className="flex items-center gap-2 text-xs text-muted">
+            Software
+            <select name="software" value={software} className={`${field} max-w-52`} onChange={(event) => navigate({ ...values, software: event.target.value })}>
               {softwareOptions.map((key) => (
-                <FilterButton key={key} className="h-10 rounded-md [outline-offset:-1px]" active={software === key} onClick={() => navigate({ ...values, software: key })}>
-                  {key === "all" ? "All markers" : <>{getMiningSoftwareEmoji(key)} {SOFTWARE_LABELS[key]}</>}
-                </FilterButton>
+                <option key={key} value={key}>{key === "all" ? "All software" : [getMiningSoftwareEmoji(key), SOFTWARE_LABELS[key]].filter(Boolean).join(" ")}</option>
               ))}
               {(["other", "conflicting", "missing"] as MiningSoftware[])
                 .filter((key) => key === software)
-                .map((key) => <FilterButton key={key} className="h-10 rounded-md [outline-offset:-1px]" active>{SOFTWARE_LABELS[key]}</FilterButton>)}
-            </FilterGroup>
-          </div>
+                .map((key) => <option key={key} value={key}>{SOFTWARE_LABELS[key]}</option>)}
+            </select>
+          </label>
           <label className="flex items-center gap-2 text-xs text-muted">
             Pool
             <select name="pool" defaultValue={values.pool || "all"} className={`${field} max-w-52`} onChange={(event) => navigate({ ...values, pool: event.target.value })}>

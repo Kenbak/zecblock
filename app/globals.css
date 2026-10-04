@@ -142,13 +142,13 @@
   --tracking-wide: 0.02em;
   --tracking-wider: 0.05em;
 
-  /* Border radius hierarchy (bare `rounded` = 8px) */
-  --radius: 4px;
-  --radius-sm: 3px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
-  --radius-xl: 8px;
-  --radius-2xl: 12px;
+  /* Border radius hierarchy: soft, not pill-shaped (bare `rounded` = 6px) */
+  --radius: 6px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
 
   /* Shadow elevation levels (v3 overrides preserved) */
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04), 0 2px 4px rgba(0, 0, 0, 0.04);
@@ -287,11 +287,11 @@
   --space-24: 96px;
 
   /* Border Radius */
-  --radius-sm: 3px;
-  --radius-md: 4px;
-  --radius-lg: 8px;
-  --radius-xl: 8px;
-  --radius-2xl: 12px;
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 10px;
+  --radius-xl: 12px;
+  --radius-2xl: 16px;
 
   /* Transitions */
   --ease-out-expo: cubic-bezier(0.16, 1, 0.3, 1);
@@ -1901,7 +1901,7 @@
   .brand-logo[data-tone="light"] { --brand-on-dark: 0; --brand-on-light: 1; }
   /* Hero band — spans the document so its substrate reads as a zone rather
      than a decoration sitting inside the content column. */
-  .home-hero-band { position: relative; padding: 40px 0 36px; }
+  .home-hero-band { position: relative; padding: 64px 0 24px; }
 
   /* Brand blocks stay beside the content, never behind text or search. */
   .hero-block-grid {
@@ -1976,38 +1976,27 @@
     0%, 100% { opacity: 0.72; }
     40%, 60% { opacity: 1; }
   }
-  @media (min-width: 1024px) {
-    .hero-block-grid { display: block; }
-    .home-command { max-width: calc(100% - 334px); }
-    .home-introduction { max-width: calc(100% - 334px); }
-  }
-  @media (min-width: 1280px) {
-    .hero-block-grid { --hero-cell-size: 36px; --hero-cell-gap: 12px; }
-    .home-command { max-width: calc(100% - 412px); }
-    .home-introduction { max-width: calc(100% - 412px); }
-  }
   @media (prefers-reduced-motion: reduce) {
     .hero-block-cell[data-pulse]::after { animation: none; }
   }
 
-  /* Left-aligned on the container edge, matching the feeds below. */
-  .home-hero { text-align: left; }
-  /* A step above type-section's 16px/500 so it carries as the page
-     heading, while staying far below a display title. */
-  .home-hero h1 { font-size: 20px; font-weight: 600; letter-spacing: -0.02em; }
-  .home-introduction, .home-command { min-width: 0; }
-  .home-hero-intro { max-width: 62ch; margin: 8px 0 0; font-size: 14px; line-height: 1.6; }
-  .home-command { width: min(100%, 720px); margin-top: 18px; text-align: left; }
+  /* Search is the page's job, so the hero is one centred column around it. */
+  .home-hero { text-align: center; }
+  .home-hero h1 { font-size: 30px; font-weight: 600; letter-spacing: -0.025em; line-height: 1.2; text-wrap: balance; }
+  .home-introduction, .home-command { min-width: 0; margin-inline: auto; }
+  .home-hero-intro { max-width: 56ch; margin: 12px auto 0; font-size: 15px; line-height: 1.6; text-wrap: pretty; }
+  .home-command { width: min(100%, 720px); margin-top: 28px; text-align: left; }
   .home-hero form { width: 100%; max-width: none; margin: 0; padding: 0; }
-  /* 50px, not 60px: the command field should be the clearly dominant
-     control in the band without becoming the largest object on the page. */
   /* Keep search an opaque, clearly defined control. */
-  .home-hero .search-input-hero { min-height: 50px; background: var(--color-surface); font-size: 14px; }
+  .home-hero .search-input-hero { min-height: 54px; background: var(--color-surface); font-size: 14px; border-radius: var(--radius-xl); }
+  .home-hero .search-examples { justify-content: center; margin-top: 12px; }
   /* The hero band owns the space above; the body wrapper adds the rest. */
-  .home-body { padding-top: 32px; }
+  .home-body { padding-top: 40px; }
   .home-feeds { margin-top: 0; }
   .home-feeds > div { min-width: 0; }
-  .home-page .home-table-section h2 { text-transform: lowercase; letter-spacing: -0.02em; font-size: 0.875rem; font-weight: 500; color: var(--color-text-primary); }
+  .home-page .home-table-section h2 { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.875rem; font-weight: 600; color: var(--color-text-primary); }
+  /* A row height, not cell padding, so feeds with icons keep the same rhythm. */
+  .home-page .home-table-section tbody tr { height: 54px; }
   .home-page table th { font-family: var(--font-geist-mono); font-weight: 500; font-size: 0.75rem; letter-spacing: 0.04em; }
   .home-page table td { border-color: var(--color-border-subtle); }
   .home-page table tbody tr:last-child td { border-bottom: 0; }
@@ -2019,11 +2008,12 @@
   .recharts-default-tooltip { box-shadow: none; font-family: var(--font-geist-mono); }
   .chart-signature { text-align: right; font: 0.75rem/1.5 var(--font-geist-mono); color: var(--color-text-muted); padding-top: 8px; }
   @media (max-width: 640px) {
-    .home-hero-band { padding: 26px 0 24px; }
-    .home-hero h1 { font-size: 18px; }
-    .home-hero-intro { font-size: 13px; }
-    .home-command { margin-top: 18px; }
-    .home-body { padding-top: 24px; }
+    .home-hero-band { padding: 36px 0 28px; }
+    .home-hero h1 { font-size: 22px; }
+    .home-hero-intro { font-size: 14px; }
+    .home-command { margin-top: 20px; }
+    .home-body { padding-top: 28px; }
+    .home-page .home-table-section tbody tr { height: 46px; }
     .home-hero .search-input-hero { font-size: 12px; }
     .home-hero .search-input-hero { min-height: 46px; }
   }

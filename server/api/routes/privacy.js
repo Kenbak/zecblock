@@ -7,7 +7,7 @@
 
 const express = require('express');
 const router = express.Router();
-const { isTestnet, mainnetOnly } = require('../lib/network-features');
+const { isNonMainnet, mainnetOnly } = require('../lib/network-features');
 // These precomputed analytics have no producer on testnet. Preserve the
 // on-chain common-amount, fee-lane and wallet-fingerprint endpoints there.
 router.use([
@@ -17,7 +17,7 @@ router.use([
 ], mainnetOnly('Precomputed privacy analytics'));
 router.use('/api/privacy/recommended-swap-amounts', mainnetOnly('NEAR Intents'));
 router.use('/api/privacy/common-amounts', (req, res, next) => {
-  if (isTestnet() && req.query.chain) return mainnetOnly('NEAR Intents')(req, res, next);
+  if (isNonMainnet() && req.query.chain) return mainnetOnly('NEAR Intents')(req, res, next);
   next();
 });
 const { validate } = require('../validation');

@@ -8,6 +8,7 @@
  */
 
 const express = require('express');
+const { networkName } = require('../lib/network-features');
 const { AddressPaginationError, withAddressSnapshot, prepareAddressPage, addressPageSql, addressPagination } = require('../lib/address-pagination');
 const { getFirstFunding } = require('../lib/address-first-funding');
 const router = express.Router();
@@ -179,7 +180,15 @@ router.get('/api/rich-list', async (req, res) => {
             ),
             pool.query(`SELECT COUNT(*) FROM addresses WHERE balance > 0`),
             pool.query(
-              `WITH direct_outputs AS (
+              `${networkName() === 'crosslink-testnet' ? `WITH direct_addressless AS (
+                 SELECT COALESCE(SUM(o.value), 0) AS balance
+                 FROM transaction_outputs o
+                 WHERE o.address IS NULL AND o.value > 0
+                   AND NOT EXISTS (
+                     SELECT 1 FROM transaction_inputs i
+                     WHERE i.prev_txid = o.txid AND i.prev_vout = o.vout_index
+                   )
+               ),` : `WITH direct_outputs AS (
                  SELECT txid, vout_index
                  FROM transparent_key_exposures
                  WHERE script_type IN ('pubkey', 'multisig')
@@ -197,6 +206,7 @@ router.get('/api/rich-list', async (req, res) => {
                      WHERE i.prev_txid = d.txid AND i.prev_vout = d.vout_index
                    )
                ),
+               `}
                address_concentration AS (
                  SELECT
                    (SELECT COALESCE(SUM(balance), 0) FROM (SELECT balance FROM addresses WHERE balance > 0 ORDER BY balance DESC LIMIT 10) t) AS top10,

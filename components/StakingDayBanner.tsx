@@ -2,7 +2,7 @@
 
 import { readApiData } from '@/lib/api-client';
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { STAKING_DAY_PERIOD, STAKING_DAY_WINDOW } from '@/lib/config';
+import { STAKING_DAY_PERIOD, STAKING_DAY_WINDOW, STAKING_ACTIVATION_HEIGHT } from '@/lib/config';
 import { getApiUrl } from '@/lib/api-config';
 import { Tooltip } from '@/components/Tooltip';
 
@@ -18,14 +18,14 @@ interface StakingDayInfo {
 function computeStakingDay(tipHeight: number): StakingDayInfo {
   const periodNumber = Math.floor(tipHeight / STAKING_DAY_PERIOD);
   const positionInPeriod = tipHeight % STAKING_DAY_PERIOD;
-  const isStakingOpen = positionInPeriod < STAKING_DAY_WINDOW;
+  const isStakingOpen = tipHeight >= STAKING_ACTIVATION_HEIGHT && positionInPeriod < STAKING_DAY_WINDOW;
 
   return {
     tipHeight,
     positionInPeriod,
     isStakingOpen,
     blocksRemaining: isStakingOpen ? STAKING_DAY_WINDOW - positionInPeriod : 0,
-    blocksUntilNextWindow: isStakingOpen ? 0 : STAKING_DAY_PERIOD - positionInPeriod,
+    blocksUntilNextWindow: isStakingOpen ? 0 : tipHeight < STAKING_ACTIVATION_HEIGHT ? STAKING_ACTIVATION_HEIGHT - tipHeight : STAKING_DAY_PERIOD - positionInPeriod,
     periodNumber,
   };
 }
@@ -156,7 +156,7 @@ export function StakingDayBanner() {
             {staking.isStakingOpen ? (
               <span className="text-cipher-green">Staking Window Open</span>
             ) : (
-              <span className="text-muted">Staking Window Closed</span>
+              <span className="text-muted"> {staking.tipHeight < STAKING_ACTIVATION_HEIGHT ? `Staking opens at #${STAKING_ACTIVATION_HEIGHT.toLocaleString()}` : 'Staking Window Closed'}</span>
             )}
             <Tooltip content={`Staking actions (stake, unstake, withdraw) are only allowed during "Staking Day" windows. Every ${STAKING_DAY_PERIOD} blocks, a ${STAKING_DAY_WINDOW}-block window opens for staking operations.`} />
           </span>
@@ -179,7 +179,7 @@ export function StakingDayBanner() {
           className={`absolute top-0 left-0 h-full rounded-full transition-[width] duration-500 ${
             staking.isStakingOpen ? 'bg-cipher-green' : 'bg-muted'
           }`}
-          style={{ width: `${Math.min(progressPercent, 100)}%` }}
+          style={{ width: `${Math.max(0, Math.min(progressPercent, 100))}%` }}
         />
       </div>
 

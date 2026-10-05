@@ -76,8 +76,8 @@ export function CrosslinkLearn() {
                 as the foundation of consensus.
               </p>
               <p className="text-secondary leading-relaxed mb-6">
-                This is the <strong className="text-primary">Season 1 Feature Net</strong> — an incentivized
-                testnet where participants earn cTAZ that converts to real ZEC rewards.
+                This is the <strong className="text-primary">v14 Round 3 Feature Net</strong> — a reset testnet
+                with staking opening at block 20,736 and Crosslink activation at block 36,288.
               </p>
 
               <div className="flex flex-wrap gap-3">
@@ -89,7 +89,7 @@ export function CrosslinkLearn() {
                   <span>View Finalizers</span>
                 </Link>
                 <a
-                  href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/season-1-workshop-1"
+                  href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/v14"
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-cipher-border hover:border-cipher-gold text-secondary hover:text-primary rounded-lg transition-colors"
@@ -251,47 +251,15 @@ export function CrosslinkLearn() {
         </div>
       </div>
 
-      {/* SEASON 1 REWARDS */}
       <div className="border-t border-cipher-border">
         <div className="max-w-6xl mx-auto px-4 py-14">
-          <div className="flex items-center gap-3 mb-2">
-            <Icons.Zap className="w-5 h-5 text-cipher-gold" />
-            <h2 className="text-xs font-mono text-muted lowercase tracking-tight">{'>'} SEASON_1_REWARDS</h2>
-          </div>
-          <p className="text-secondary mb-8 max-w-2xl">
-            Season 1 is allocated <strong className="text-primary">25 real ZEC</strong>, distributed pro rata
-            based on cTAZ earned through mining and staking.
+          <h2 className="text-xs font-mono text-muted lowercase tracking-tight mb-3">{'>'} V14_NETWORK_SCHEDULE</h2>
+          <p className="text-secondary leading-relaxed">
+            Round 3 starts from a new genesis. Staking opens at block 20,736,
+            the first roster forms at block 34,560, and Crosslink activates at block 36,288.
+            Staking periods span 10,368 blocks, with a 3,456-block staking window.
+            Before activation, the network runs on Proof-of-Work.
           </p>
-
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
-            <Card variant="compact" className="text-center">
-              <CardBody>
-                <span className="text-2xl font-mono font-semibold text-cipher-gold">5 cTAZ</span>
-                <p className="text-xs text-muted mt-1">per block to miner</p>
-              </CardBody>
-            </Card>
-            <Card variant="compact" className="text-center">
-              <CardBody>
-                <span className="text-2xl font-mono font-semibold text-cipher-gold">5 cTAZ</span>
-                <p className="text-xs text-muted mt-1">per block to stakers (weighted)</p>
-              </CardBody>
-            </Card>
-            <Card variant="compact" className="text-center">
-              <CardBody>
-                <span className="text-2xl font-mono font-semibold text-muted">1.25 cTAZ</span>
-                <p className="text-xs text-muted mt-1">per block to Dev Fund</p>
-              </CardBody>
-            </Card>
-          </div>
-
-          <div className="alert alert-info">
-            <Icons.Info className="w-5 h-5 flex-shrink-0 mt-0.5" />
-            <p className="text-sm text-secondary leading-relaxed">
-              Only cTAZ earned from block rewards is eligible for ZEC payouts. cTAZ received from faucets, transfers,
-              or other participants does not count. Rewards are based on what you <strong className="text-primary">earn by participating</strong>,
-              not what you hold.
-            </p>
-          </div>
         </div>
       </div>
 
@@ -321,7 +289,7 @@ export function CrosslinkLearn() {
               <CardBody>
                 <GlossaryItem term="Delegation Bond" definition="cTAZ locked in a staking contract, delegated to a specific finalizer. Earns rewards proportional to total stake." />
                 <GlossaryItem term="Staking Day" definition={`A recurring ${STAKING_DAY_WINDOW}-block window (every ${STAKING_DAY_PERIOD} blocks) during which staking actions are allowed.`} />
-                <GlossaryItem term="cTAZ" definition="Crosslink TAZ — the native currency of the Crosslink feature net. Earned through mining and staking, converts to ZEC rewards." />
+                <GlossaryItem term="cTAZ" definition="Crosslink TAZ — the native currency of the Crosslink feature net. The test currency used for mining and staking; it is not mainnet ZEC." />
                 <GlossaryItem term="Retarget" definition="Moving an existing delegation bond to a different finalizer. Unlike other staking actions, this can be done at any time." />
                 <GlossaryItem term="Voting Power" definition="A finalizer's influence when voting on blocks, proportional to the total cTAZ staked to it." />
               </CardBody>
@@ -343,7 +311,7 @@ export function CrosslinkLearn() {
 
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
             <a
-              href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/season-1-workshop-1"
+              href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/v14"
               target="_blank"
               rel="noopener noreferrer"
               className="card card-compact card-interactive flex items-center gap-3 !p-4"

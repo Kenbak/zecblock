@@ -1,0 +1,12 @@
+{
+  "epoch": "v14-round3",
+  "sourceCommit": "eca0207c19469df3abd9da8290bf0aea94da8642",
+  "genesisHash": "05a60a92d99d85997cce3b87616c089f6124d7342af37106edc76126334a2c38",
+  "stakingPeriod": 10368,
+  "stakingWindow": 3456,
+  "stakingActionDelay": 3457,
+  "stakingActivationHeight": 20736,
+  "rosterHeight": 34560,
+  "crosslinkActivationHeight": 36288,
+  "activeRosterLimit": 12
+}

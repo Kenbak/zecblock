@@ -18,6 +18,7 @@ function load(file, overrides = {}) {
     if (name === 'next/link') return { __esModule: true, default: ({ children, ...props }) => React.createElement('a', props, children) };
     if (name.startsWith('@/') || name.startsWith('.')) {
       const base = name.startsWith('@/') ? path.resolve(name.slice(2)) : path.resolve(path.dirname(filename), name);
+      if (base.endsWith('.json')) return JSON.parse(fs.readFileSync(base, 'utf8'));
       return load(fs.existsSync(`${base}.ts`) ? `${base}.ts` : `${base}.tsx`, overrides);
     }
     return require(name);

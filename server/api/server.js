@@ -279,6 +279,7 @@ const allowedOrigins = [
   'https://zecblock.com',
   'https://www.zecblock.com',
   'https://crosslink.cipherscan.app',
+  'https://crosslink.zecblock.com',
   'http://localhost:3000',
   'http://localhost:3001',
   ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : []),
@@ -344,6 +345,7 @@ const OWN_ORIGINS = [
   'https://testnet.cipherscan.app',
   'https://testnet.zecblock.com',
   'https://crosslink.cipherscan.app',
+  'https://crosslink.zecblock.com',
   'http://localhost:3000',
   'http://localhost:3001',
 ];

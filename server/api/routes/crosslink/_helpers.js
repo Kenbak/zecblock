@@ -20,15 +20,16 @@ function attachLocals(req, res, next) {
 // ---------------------------------------------------------------------------
 // Staking day
 // ---------------------------------------------------------------------------
-const STAKING_DAY_PERIOD = 150;
-const STAKING_DAY_WINDOW = 70;
+const crosslinkNetwork = require('../../../../lib/crosslink-network.json');
+const STAKING_DAY_PERIOD = crosslinkNetwork.stakingPeriod;
+const STAKING_DAY_WINDOW = crosslinkNetwork.stakingWindow;
 
 function computeStakingDay(tipHeight) {
   const periodNumber = Math.floor(tipHeight / STAKING_DAY_PERIOD);
   const positionInPeriod = tipHeight % STAKING_DAY_PERIOD;
-  const isStakingOpen = positionInPeriod < STAKING_DAY_WINDOW;
+  const isStakingOpen = tipHeight >= crosslinkNetwork.stakingActivationHeight && positionInPeriod < STAKING_DAY_WINDOW;
 
-  const windowStart = periodNumber * STAKING_DAY_PERIOD;
+  const windowStart = Math.max(crosslinkNetwork.stakingActivationHeight, periodNumber * STAKING_DAY_PERIOD);
   const windowEnd = windowStart + STAKING_DAY_WINDOW - 1;
 
   const blocksRemaining = isStakingOpen
@@ -37,7 +38,7 @@ function computeStakingDay(tipHeight) {
 
   const blocksUntilNextWindow = isStakingOpen
     ? 0
-    : STAKING_DAY_PERIOD - positionInPeriod;
+    : tipHeight < crosslinkNetwork.stakingActivationHeight ? crosslinkNetwork.stakingActivationHeight - tipHeight : STAKING_DAY_PERIOD - positionInPeriod;
 
   return {
     tipHeight,
@@ -101,36 +102,40 @@ const MAX_REPORT_SAMPLES = 12;
 const MAX_TIP_HEIGHT = 100_000_000;
 const MAX_PEER_COUNT = 10_000;
 const NODE_NAME_RE = /^[a-zA-Z0-9_. -]{1,32}$/;
-const CTAZ_FETCH_TIMEOUT_MS = 2500;
-const CTAZ_FORK_MAP_URLS = [
-  'https://ctaz.zat-explorer.cash/api/fork-map',
-  'https://frontiercompute.io/ctaz/api/fork-map',
-];
+const CTAZ_FETCH_TIMEOUT_MS = 7500;
+// No verified v14 fork-map authority is currently available. Never reuse Round 2 feeds.
+const CTAZ_FORK_MAP_URLS = [];
 
 const reportTimestamps = new Map();
 
-const ANCHOR_HEIGHTS = [
-  { height: 19138, label: 'BFT finalized' },
-  { height: 37657, label: 'fixed branch check' },
-  { height: 39574, label: 'split marker' },
-  { height: 41898, label: 'May 2 split' },
-  { height: 54777, label: 'OG fork point' },
-  { height: 57298, label: 'Roman drift' },
-  { height: 57352, label: 'May 7 last match' },
-];
-
-// Verified reference hashes for heights cTAZ's API doesn't cover.
-// Source: community cross-checks (Zk_nd3r, OrchardGuardian) + CipherScan RPC.
-const KNOWN_REFERENCE_HASHES = {
-  54777: '00ca9de28f9833038781a91c27a6a61870a46fd54632f4d4b49e454c6c956113',
-  57298: '0002b61601c22263ee80c3c8c15c8aea2cfb9e585d6729359d885bdd1caa0ba5',
-  57352: '00fca2639b6bda9466e425e05fdde428038133e5aee06381900c45771af6fc5c',
-};
+const ANCHOR_HEIGHTS = [{ height: 0, label: 'v14 genesis' }];
+const KNOWN_REFERENCE_HASHES = { 0: crosslinkNetwork.genesisHash };
 
 function normalizeHash(hash) {
   return typeof hash === 'string' && /^[a-f0-9]{64}$/i.test(hash)
     ? hash.toLowerCase()
     : null;
+}
+
+function usableForkReference(data) {
+  const ref = data?.reference;
+  return !!ref && data.degraded !== true && ref.degraded !== true
+    && ref.authority !== false && Number.isSafeInteger(ref.tip) && ref.tip > 0
+    && normalizeHash(ref.tip_hash) !== null;
+}
+
+// Unknown samples supply no evidence. Array.every() over unmatched samples
+// used to label arbitrary registrations as belonging to our/reference branch.
+function matchKnownSamples(samples, hashAtHeight) {
+  let compared = 0;
+  for (const sample of samples) {
+    const expected = normalizeHash(hashAtHeight(sample.height));
+    const observed = normalizeHash(sample.hash);
+    if (!expected || !observed) continue;
+    compared++;
+    if (expected !== observed) return false;
+  }
+  return compared > 0 ? true : null;
 }
 
 /** Prune expired rows by TTL, then return all remaining nodes. */
@@ -155,6 +160,7 @@ async function pruneAndFetchNodes() {
 }
 
 async function fetchCtazForkMap() {
+  if (CTAZ_FORK_MAP_URLS.length === 0) return null;
   if (deps.redisClient && deps.redisClient.isOpen) {
     try {
       const cached = await deps.redisClient.get(CTAZ_CACHE_KEY);
@@ -167,8 +173,12 @@ async function fetchCtazForkMap() {
       const timer = setTimeout(() => ctrl.abort(), CTAZ_FETCH_TIMEOUT_MS);
       const resp = await fetch(url, { signal: ctrl.signal });
       clearTimeout(timer);
-      if (!resp.ok) continue;
+      if (!resp.ok && resp.status !== 503) continue;
       const data = await resp.json();
+      // The current public observer returns an explicit degraded JSON payload
+      // with 503. Keep its diagnostics while usableForkReference denies it
+      // authority; never accept an arbitrary upstream error as a reference.
+      if (!resp.ok && data?.degraded !== true) continue;
       if (deps.redisClient && deps.redisClient.isOpen) {
         try {
           await deps.redisClient.set(CTAZ_CACHE_KEY, JSON.stringify(data), { EX: CTAZ_CACHE_DURATION });
@@ -189,6 +199,8 @@ module.exports = {
   reverseHex,
   resolveFinalizerPubkey,
   normalizeHash,
+  usableForkReference,
+  matchKnownSamples,
   pruneAndFetchNodes,
   fetchCtazForkMap,
   FORK_MONITOR_CACHE_KEY,

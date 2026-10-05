@@ -1,0 +1,11 @@
+[Unit]
+Description=Consistent private Crosslink recovery snapshot
+After=zebrad-crosslink.service
+
+[Service]
+Type=oneshot
+User=root
+ExecStart=/usr/local/bin/zebra-snapshot.sh
+TimeoutStartSec=30min
+IOSchedulingClass=idle
+Nice=19

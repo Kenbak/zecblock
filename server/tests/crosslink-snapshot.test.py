@@ -90,6 +90,24 @@ esac''')
         self.assertEqual(self.run_script().returncode, 0)
         self.assertFalse((self.root / 'actions').exists())
 
+    def test_v14_pow_snapshot_checks_genesis_before_stopping_node(self):
+        self.env.update(CROSSLINK_ACTIVATION_HEIGHT='36288', CROSSLINK_GENESIS_HASH='expected')
+        self.fake('curl', 'case "$*" in *getblockcount*) echo \'{"result":100}\';; *) echo \'{"result":"wrong"}\';; esac')
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertFalse((self.root / 'actions').exists())
+
+    def test_v14_pow_snapshot_accepts_new_cache_without_certificates(self):
+        new_cache = self.root / 'crosslink_featurenet_20260929_staking3d'
+        self.cache.rename(new_cache)
+        self.cache = new_cache
+        (new_cache / 'pos.chain').unlink()
+        self.config.write_text(f'[state]\ncache_dir = "{self.root}"\n')
+        self.env.update(CROSSLINK_ACTIVATION_HEIGHT='36288', CROSSLINK_GENESIS_HASH='expected')
+        self.fake('curl', 'case "$*" in *getblockcount*) echo \'{"result":100}\';; *) echo \'{"result":"expected"}\';; esac')
+        self.fake('tar', 'exit 2')
+        self.assertNotEqual(self.run_script().returncode, 0)
+        self.assertEqual((self.root / 'actions').read_text(), 'stop\nstart\n')
+
     @unittest.skipUnless(sys.platform.startswith('linux'), 'production GNU find required')
     def test_success_preserves_paired_state_and_cleans_staging(self):
         r = self.run_script()

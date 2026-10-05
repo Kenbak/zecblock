@@ -161,12 +161,12 @@ export default async function Home() {
               Learn Crosslink →
             </Link>
             <a
-              href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/season-1-workshop-1"
+              href="https://github.com/ShieldedLabs/crosslink_monolith/releases/tag/v14"
               target="_blank"
               rel="noopener noreferrer"
               className="text-xs font-mono text-muted hover:text-primary px-3 py-2.5 rounded-lg border border-white/[0.06] hover:border-cipher-gold/30 transition text-center"
             >
-              Join Season 1 →
+              Join v14 Round 3 →
             </a>
           </div>
         </div>

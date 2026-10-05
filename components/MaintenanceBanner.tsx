@@ -3,6 +3,8 @@
 import { readApiData } from '@/lib/api-client';
 import { useState, useEffect, useCallback } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { isCrosslink } from '@/lib/config';
+import { isCurrentCrosslinkBlockList } from '@/lib/crosslink-freshness';
 
 const STALE_THRESHOLD_SECONDS = 30 * 60; // 30 minutes
 const POLL_INTERVAL = 60_000;
@@ -28,6 +30,19 @@ export function MaintenanceBanner() {
       }
       const ageSec = Math.floor(Date.now() / 1000) - latest.timestamp;
       setLatestAge(ageSec);
+      if (isCrosslink && ageSec > STALE_THRESHOLD_SECONDS) {
+        // Crosslink's persisted tip normally trails its live PoW tip by 100
+        // blocks. Suppress this warning only when fresh health evidence proves
+        // that the indexer and the displayed list match the durable state.
+        const healthResponse = await fetch(`${API_URL}/health/deep`);
+        if (healthResponse.ok) {
+          const health = await healthResponse.json();
+          if (isCurrentCrosslinkBlockList(health, latest.height)) {
+            setStatus('fresh');
+            return;
+          }
+        }
+      }
       setStatus(ageSec > STALE_THRESHOLD_SECONDS ? 'stale' : 'fresh');
     } catch {
       setStatus('unavailable');

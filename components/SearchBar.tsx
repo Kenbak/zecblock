@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { detectAddressType } from '@/lib/zcash';
 import { findAddressByLabel, searchAddressesByLabel, fetchOfficialLabels } from '@/lib/address-labels';
 import { isValidName } from '@/lib/zns';
-import { isMainnet } from '@/lib/config';
+import { isMainnet, isCrosslink } from '@/lib/config';
 
 interface SearchBarProps {
   compact?: boolean;
@@ -374,10 +374,10 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
         <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
         <button
           type="button"
-          onClick={() => setQuery('354939')}
+          onClick={() => setQuery(isCrosslink ? '6' : '354939')}
           className="example-tag example-tag-default"
         >
-          Block #354939
+          Block #{isCrosslink ? 6 : 354939}
         </button>
         <button
           type="button"

@@ -17,7 +17,7 @@ interface CrosslinkData {
 }
 
 const STAT_TOOLTIPS: Record<string, string> = {
-  'PoW Tip': 'Latest block mined by Proof-of-Work miners. This is the chain tip before finalization.',
+  'PoW Tip': 'Latest block on the live PoW chain. Block lists follow the node’s saved state and may trail this tip.',
   'Finalized': 'Highest block confirmed as final by the validator network. Finalized blocks can never be reversed.',
   'Finality Gap': 'Blocks between the PoW tip and the last finalized block. A smaller gap means faster finalization.',
   'Finalizers': 'Validator nodes that vote on blocks to confirm them as final. More finalizers means stronger security.',

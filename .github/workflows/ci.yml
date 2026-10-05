@@ -124,6 +124,7 @@ jobs:
           NODE_PATH: ${{ github.workspace }}/server/api/node_modules
         run: |
           node --test server/api/test/crosslink-v14.test.js server/api/test/crosslink-stats.test.js server/api/test/crosslink-reference.test.js
+          node --test server/tests/crosslink-freshness.test.js
           python3 server/tests/crosslink-snapshot.test.py
           npm run test:server-regressions
           npm run test:activity

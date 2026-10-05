@@ -8,7 +8,8 @@
 
 import { parseSafeZatoshi, sumZatoshis, zatToZec } from './format-numbers';
 import { API_CONFIG } from './api-config';
-import { STAKING_DAY_PERIOD, STAKING_DAY_WINDOW } from './config';
+import crosslinkNetwork from './crosslink-network.json';
+import { STAKING_DAY_PERIOD, STAKING_DAY_WINDOW, STAKING_ACTIVATION_HEIGHT } from './config';
 
 export type FinalityStatus = 'Finalized' | 'NotYetFinalized' | null;
 
@@ -19,7 +20,7 @@ export interface RosterMember {
 }
 
 export interface FinalityInfo {
-  finalizedHeight: number;
+  finalizedHeight: number | null;
   finalizedHash: string;
 }
 
@@ -36,8 +37,8 @@ export interface StakingDayInfo {
 
 export interface CrosslinkNetworkStats {
   tipHeight: number;
-  finalizedHeight: number;
-  finalityGap: number;
+  finalizedHeight: number | null;
+  finalityGap: number | null;
   finalizerCount: number;
   totalStakeZats: number;
   totalStakeZec: number;
@@ -124,7 +125,7 @@ export async function getFinalityInfo(): Promise<FinalityInfo | null> {
   if (!result) return null;
 
   return {
-    finalizedHeight: result.height ?? result[0] ?? 0,
+    finalizedHeight: result.height ?? result[0] ?? null,
     finalizedHash: result.hash ?? result[1] ?? '',
   };
 }
@@ -156,9 +157,9 @@ export async function getTipHeight(): Promise<number | null> {
 export function computeStakingDay(tipHeight: number): StakingDayInfo {
   const periodNumber = Math.floor(tipHeight / STAKING_DAY_PERIOD);
   const positionInPeriod = tipHeight % STAKING_DAY_PERIOD;
-  const isStakingOpen = positionInPeriod < STAKING_DAY_WINDOW;
+  const isStakingOpen = tipHeight >= STAKING_ACTIVATION_HEIGHT && positionInPeriod < STAKING_DAY_WINDOW;
 
-  const windowStart = periodNumber * STAKING_DAY_PERIOD;
+  const windowStart = Math.max(STAKING_ACTIVATION_HEIGHT, periodNumber * STAKING_DAY_PERIOD);
   const windowEnd = windowStart + STAKING_DAY_WINDOW - 1;
 
   const blocksRemaining = isStakingOpen
@@ -167,7 +168,7 @@ export function computeStakingDay(tipHeight: number): StakingDayInfo {
 
   const blocksUntilNextWindow = isStakingOpen
     ? 0
-    : STAKING_DAY_PERIOD - positionInPeriod;
+    : tipHeight < STAKING_ACTIVATION_HEIGHT ? STAKING_ACTIVATION_HEIGHT - tipHeight : STAKING_DAY_PERIOD - positionInPeriod;
 
   return {
     tipHeight,
@@ -197,12 +198,12 @@ export async function getCrosslinkStats(): Promise<CrosslinkNetworkStats | null>
   if (tipHeight === null) return null;
 
   const totalStakeZats = sumZatoshis(roster.map(member => member.stake_zats));
-  const finalizedHeight = finalityInfo?.finalizedHeight ?? 0;
+  const finalizedHeight = tipHeight >= crosslinkNetwork.crosslinkActivationHeight ? finalityInfo?.finalizedHeight ?? null : null;
 
   return {
     tipHeight,
     finalizedHeight,
-    finalityGap: tipHeight - finalizedHeight,
+    finalityGap: finalizedHeight == null ? null : tipHeight - finalizedHeight,
     finalizerCount: roster.length,
     totalStakeZats,
     totalStakeZec: zatToZec(totalStakeZats),

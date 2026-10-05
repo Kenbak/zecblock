@@ -1,4 +1,5 @@
 import { getConfiguredNetwork } from '@/lib/network';
+import crosslinkNetwork from './crosslink-network.json';
 
 // Auto-detect network based on domain or env variable
 function detectNetwork(): 'mainnet' | 'testnet' | 'crosslink' {
@@ -47,9 +48,9 @@ export const TESTNET_URL = 'https://testnet.zecblock.com';
 export const CROSSLINK_URL = 'https://crosslink.zecblock.com';
 
 // Crosslink staking constants (from zebra-consensus)
-export const STAKING_DAY_PERIOD = 150;
-export const STAKING_DAY_WINDOW = 70;
-export const STAKING_ACTION_DELAY_BLOCKS = 75;
+export const STAKING_DAY_PERIOD = crosslinkNetwork.stakingPeriod;
+export const STAKING_DAY_WINDOW = crosslinkNetwork.stakingWindow;
+export const STAKING_ACTION_DELAY_BLOCKS = crosslinkNetwork.stakingActionDelay;
 
 // Known network upgrade activation heights
 export interface NetworkUpgrade {
@@ -83,3 +84,5 @@ export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
     link: '/ironwood',
   },
 };
+
+export const STAKING_ACTIVATION_HEIGHT = crosslinkNetwork.stakingActivationHeight;

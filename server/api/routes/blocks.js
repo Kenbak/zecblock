@@ -5,6 +5,7 @@ const { parseBlockFilters, filteredBlocks, SoftwareQueryError } = require('../li
  */
 
 const express = require('express');
+const { networkName } = require('../lib/network-features');
 const router = express.Router();
 const { getPoolName, getPoolInfo } = require('../mining-pools');
 const { decodeCoinbaseText } = require('../coinbase-data');
@@ -194,7 +195,22 @@ router.get('/health/deep', async (req, res) => {
     }
     const nodeLag = Math.abs(nodeHeight - dbTip);
     checks.node = { status: 'up', height: nodeHeight, db_height: dbTip };
-    if (dbTip > 0 && nodeLag > 10) degraded = true;
+    if (networkName() === 'crosslink-testnet') {
+      // Crosslink indexes the persisted RocksDB tip, behind the in-memory RPC
+      // tip. Require a fresh durable-tip observation and a caught-up indexer.
+      const observation = await writePool.query(
+        "SELECT value::bigint AS height, EXTRACT(EPOCH FROM (NOW() - updated_at)) AS age FROM indexer_state WHERE key = 'last_seen_state_tip'"
+      );
+      const durable = observation.rows[0];
+      const durableHeight = durable ? Number(durable.height) : null;
+      const age = durable ? Number(durable.age) : null;
+      checks.node.durable_state_height = durableHeight;
+      checks.node.durable_observation_age_seconds = age;
+      checks.node.rpc_to_durable_gap = durableHeight === null ? null : nodeHeight - durableHeight;
+      if (durableHeight === null || age < 0 || age > 60 ||
+          Math.abs(dbTip - durableHeight) > 3 || nodeHeight < durableHeight ||
+          nodeHeight - durableHeight > 110) degraded = true;
+    } else if (dbTip > 0 && nodeLag > 10) degraded = true;
   } catch {
     checks.node = { status: 'down' };
     critical = true;

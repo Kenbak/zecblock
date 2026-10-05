@@ -17,8 +17,9 @@ interface BlockRow {
 
 interface CrosslinkStats {
   tipHeight: number;
-  finalizedHeight: number;
-  finalityGap: number;
+  finalizedHeight: number | null;
+  finalityGap: number | null;
+  crosslinkActive?: boolean;
   finalizerCount: number;
   totalStakeZec: number;
 }
@@ -125,6 +126,7 @@ export function CrosslinkChainView({
             tipHeight: data.tipHeight,
             finalizedHeight: data.finalizedHeight,
             finalityGap: data.finalityGap,
+          crosslinkActive: data.crosslinkActive,
             finalizerCount: data.finalizerCount,
             totalStakeZec: data.totalStakeZec,
           });
@@ -162,7 +164,7 @@ export function CrosslinkChainView({
 
   // Index into blocks[] of the first finalized block from the top (= finality frontier)
   const finalizedFrontierIndex = stats
-    ? blocks.findIndex((b) => b.height <= stats.finalizedHeight)
+    ? blocks.findIndex((b) => stats.finalizedHeight != null && b.height <= stats.finalizedHeight)
     : -1;
 
   // Index of the block BFT is currently voting on (if visible)
@@ -193,7 +195,7 @@ export function CrosslinkChainView({
 
       <div className="space-y-1.5">
         {blocks.map((b, i) => {
-          const isFinalized = stats ? b.height <= stats.finalizedHeight : false;
+          const isFinalized = stats ? stats.finalizedHeight != null && b.height <= stats.finalizedHeight : false;
           const isFrontier = i === finalizedFrontierIndex && stats !== null;
           const isVotingOn = i === votedIndex;
           const isTip = stats ? b.height === stats.tipHeight : i === 0;
@@ -228,7 +230,7 @@ export function CrosslinkChainView({
         <div className="mt-3 flex items-center justify-between text-caption font-mono">
           <span className="text-muted">
             {stats &&
-              `Finalized through #${stats.finalizedHeight.toLocaleString()} · gap ${stats.finalityGap}`}
+              (stats.finalizedHeight == null ? (stats.crosslinkActive === false ? 'PoW phase · Crosslink not active' : 'Finality unavailable') : `Finalized through #${stats.finalizedHeight.toLocaleString()} · gap ${stats.finalityGap}`)}
           </span>
           <Link href="/chain" className="text-cipher-gold hover:underline">
             Open Chain View →
@@ -437,14 +439,14 @@ function StatsGrid({
       />
       <TipStat
         label="Finalized"
-        value={`#${stats.finalizedHeight.toLocaleString()}`}
+        value={stats.finalizedHeight == null ? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable') : `#${stats.finalizedHeight.toLocaleString()}`}
         tooltip="Highest block irreversibly confirmed by PoS BFT consensus."
       />
       <TipStat
         label="Finality Gap"
-        value={`${stats.finalityGap}`}
+        value={stats.finalityGap == null ? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable') : `${stats.finalityGap}`}
         sub="blocks"
-        accent={openDivergence ? 'orange' : stats.finalityGap > 20 ? 'orange' : undefined}
+        accent={openDivergence ? 'orange' : (stats.finalityGap ?? 0) > 20 ? 'orange' : undefined}
         tooltip="Blocks between the PoW tip and the last finalized block. Healthy: 0–10."
       />
       <TipStat

@@ -8,8 +8,9 @@ import { getApiUrl } from '@/lib/api-config';
 
 interface CrosslinkData {
   tipHeight: number;
-  finalizedHeight: number;
-  finalityGap: number;
+  finalizedHeight: number | null;
+  finalityGap: number | null;
+  crosslinkActive?: boolean;
   finalizerCount: number;
   totalStakeZec: number;
   peerCount: number;
@@ -58,6 +59,7 @@ export function CrosslinkStats() {
           tipHeight: data.tipHeight,
           finalizedHeight: data.finalizedHeight,
           finalityGap: data.finalityGap,
+          crosslinkActive: data.crosslinkActive,
           finalizerCount: data.finalizerCount,
           totalStakeZec: data.totalStakeZec,
           peerCount: data.peerCount ?? 0,
@@ -97,12 +99,12 @@ export function CrosslinkStats() {
         />
         <StatCard
           label="Finalized"
-          value={stats.finalizedHeight.toLocaleString()}
+          value={stats.finalizedHeight?.toLocaleString() ?? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable')}
           tooltip={STAT_TOOLTIPS['Finalized']}
         />
         <StatCard
           label="Finality Gap"
-          value={stats.finalityGap.toLocaleString()}
+          value={stats.finalityGap?.toLocaleString() ?? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable')}
           sub="blocks behind"
           tooltip={STAT_TOOLTIPS['Finality Gap']}
         />

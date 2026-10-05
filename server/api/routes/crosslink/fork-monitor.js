@@ -3,6 +3,7 @@
  */
 
 const express = require('express');
+const crosslinkNetwork = require('../../../../lib/crosslink-network.json');
 const crypto = require('crypto');
 const { ipKeyGenerator } = require('express-rate-limit');
 const { logSafeError } = require('../../lib/safe-log');
@@ -77,7 +78,7 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
     const finalityInfo = await deps.callZebraRPC('get_tfl_final_block_height_and_hash').catch(() => null);
     const peerInfo = await deps.callZebraRPC('getpeerinfo').catch(() => []);
 
-    const finalizedHeight = finalityInfo?.height ?? finalityInfo?.[0] ?? 0;
+    const finalizedHeight = tipHeight >= crosslinkNetwork.crosslinkActivationHeight ? finalityInfo?.height ?? finalityInfo?.[0] ?? null : null;
     const peerCount = Array.isArray(peerInfo) ? peerInfo.length : 0;
 
     // Fetch anchor hashes sequentially to avoid "Too many connections".
@@ -99,7 +100,7 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
     );
 
     // Build cTAZ reference from their API, with verified fallbacks
-    let ctazRef = null;
+    let ctazRef = { tip: null, tip_hash: null, finalized: null, finality_gap: null };
     let ctazAnchors = { ...KNOWN_REFERENCE_HASHES };
     if (ctaz && ctaz.reference) {
       ctazRef = {
@@ -182,19 +183,14 @@ router.get('/api/crosslink/fork-monitor', async (req, res) => {
         tip_hash: tipHash,
         peers: peerCount,
         finalized: finalizedHeight,
-        finality_gap: tipHeight - finalizedHeight,
+        finality_gap: finalizedHeight == null ? null : tipHeight - finalizedHeight,
       },
       ctaz: ctazRef,
       status,
       first_divergence: firstDivergence,
       anchors,
       nodes,
-      split_hints: [
-        'If h39573 matches and h39574 differs, your node is on an earlier observed split.',
-        'If h40665 matches but h41898 differs, the node split later near the current tip.',
-        'If a node is mining every block, treat it as partition risk until peers and tip hash match.',
-        'Peer count alone does not establish branch identity. Compare hardfork schedules and finalized ancestry before PoW chainwork.',
-      ],
+      split_hints: ['Compare the v14 genesis and network epoch before comparing tips. Legacy Round 2 anchors do not apply.'],
     };
 
     if (deps.redisClient && deps.redisClient.isOpen) {

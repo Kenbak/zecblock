@@ -20,15 +20,16 @@ function attachLocals(req, res, next) {
 // ---------------------------------------------------------------------------
 // Staking day
 // ---------------------------------------------------------------------------
-const STAKING_DAY_PERIOD = 150;
-const STAKING_DAY_WINDOW = 70;
+const crosslinkNetwork = require('../../../../lib/crosslink-network.json');
+const STAKING_DAY_PERIOD = crosslinkNetwork.stakingPeriod;
+const STAKING_DAY_WINDOW = crosslinkNetwork.stakingWindow;
 
 function computeStakingDay(tipHeight) {
   const periodNumber = Math.floor(tipHeight / STAKING_DAY_PERIOD);
   const positionInPeriod = tipHeight % STAKING_DAY_PERIOD;
-  const isStakingOpen = positionInPeriod < STAKING_DAY_WINDOW;
+  const isStakingOpen = tipHeight >= crosslinkNetwork.stakingActivationHeight && positionInPeriod < STAKING_DAY_WINDOW;
 
-  const windowStart = periodNumber * STAKING_DAY_PERIOD;
+  const windowStart = Math.max(crosslinkNetwork.stakingActivationHeight, periodNumber * STAKING_DAY_PERIOD);
   const windowEnd = windowStart + STAKING_DAY_WINDOW - 1;
 
   const blocksRemaining = isStakingOpen
@@ -37,7 +38,7 @@ function computeStakingDay(tipHeight) {
 
   const blocksUntilNextWindow = isStakingOpen
     ? 0
-    : STAKING_DAY_PERIOD - positionInPeriod;
+    : tipHeight < crosslinkNetwork.stakingActivationHeight ? crosslinkNetwork.stakingActivationHeight - tipHeight : STAKING_DAY_PERIOD - positionInPeriod;
 
   return {
     tipHeight,
@@ -102,49 +103,13 @@ const MAX_TIP_HEIGHT = 100_000_000;
 const MAX_PEER_COUNT = 10_000;
 const NODE_NAME_RE = /^[a-zA-Z0-9_. -]{1,32}$/;
 const CTAZ_FETCH_TIMEOUT_MS = 7500;
-const CTAZ_FORK_MAP_URLS = [
-  'https://ctaz.cash/api/fork-map',
-  'https://ctaz.zat-explorer.cash/api/fork-map',
-  'https://frontiercompute.io/ctaz/api/fork-map',
-];
+// No verified v14 fork-map authority is currently available. Never reuse Round 2 feeds.
+const CTAZ_FORK_MAP_URLS = [];
 
 const reportTimestamps = new Map();
 
-const ANCHOR_HEIGHTS = [
-  { height: 19138, label: 'BFT finalized' },
-  { height: 37657, label: 'fixed branch check' },
-  { height: 39574, label: 'split marker' },
-  { height: 41898, label: 'May 2 split' },
-  { height: 54777, label: 'OG fork point' },
-  { height: 57298, label: 'Roman drift' },
-  { height: 57352, label: 'May 7 last match' },
-  // Preserve the legacy explorer's historical comparison points. These are
-  // ancestry samples, not an assertion of present network authority.
-  { height: 131171, label: 'Jun split sample' },
-  { height: 147413, label: 'historic checkpoint sample' },
-  { height: 163975, label: 'h163k split' },
-  { height: 174587, label: 'h174k divergence' },
-  { height: 177217, label: 'h177k fork' },
-  { height: 178541, label: 'h178k split' },
-  { height: 187572, label: 'historic Round 2 checkpoint' },
-  { height: 655350, label: 'Monday17 burn height' },
-  { height: 655357, label: 'reported Monday17 branch split' },
-];
-
-// Verified reference hashes for heights cTAZ's API doesn't cover.
-// Source: community cross-checks (Zk_nd3r, OrchardGuardian) + CipherScan RPC.
-const KNOWN_REFERENCE_HASHES = {
-  54777: '00ca9de28f9833038781a91c27a6a61870a46fd54632f4d4b49e454c6c956113',
-  57298: '0002b61601c22263ee80c3c8c15c8aea2cfb9e585d6729359d885bdd1caa0ba5',
-  57352: '00fca2639b6bda9466e425e05fdde428038133e5aee06381900c45771af6fc5c',
-  131171: '0475347574dd744be5ee328e639c010beca408352b669096660bda9f9235db2b',
-  147413: '0283519f81ace36fb622c634b43eed63ff784f0966cd7d5c45fbd97051710c26',
-  163975: '01d78ab4f298fd733d4a22db015d90752aab58d380506fd35aa0ce491cfacfe3',
-  174587: '008a5f976f7e1fa18488ab0132fb7221949909e7a32fbb1234f5143ad4e6f20c',
-  177217: '012bb8ff4be1122d44794754a855f3ddb16dc3590761add516dd530e53e21dce',
-  178541: '00a9f626fd3f85d6d1c965a94965cba560bba11b4ada90ca7e11bd0b1d9e8682',
-  187572: '02fc9aa7652b2a9a9f6196a446265fed6012227373ed34e0b17c7a3298db005e',
-};
+const ANCHOR_HEIGHTS = [{ height: 0, label: 'v14 genesis' }];
+const KNOWN_REFERENCE_HASHES = { 0: crosslinkNetwork.genesisHash };
 
 function normalizeHash(hash) {
   return typeof hash === 'string' && /^[a-f0-9]{64}$/i.test(hash)
@@ -195,6 +160,7 @@ async function pruneAndFetchNodes() {
 }
 
 async function fetchCtazForkMap() {
+  if (CTAZ_FORK_MAP_URLS.length === 0) return null;
   if (deps.redisClient && deps.redisClient.isOpen) {
     try {
       const cached = await deps.redisClient.get(CTAZ_CACHE_KEY);

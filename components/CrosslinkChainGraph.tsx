@@ -54,8 +54,9 @@ interface BftTip {
 
 interface CrosslinkStats {
   tipHeight: number;
-  finalizedHeight: number;
-  finalityGap: number;
+  finalizedHeight: number | null;
+  finalityGap: number | null;
+  crosslinkActive?: boolean;
   finalizerCount: number;
   totalStakeZec: number;
 }
@@ -402,6 +403,7 @@ export function CrosslinkChainGraph({
               tipHeight: d.tipHeight,
               finalizedHeight: d.finalizedHeight,
               finalityGap: d.finalityGap,
+              crosslinkActive: d.crosslinkActive,
               finalizerCount: d.finalizerCount,
               totalStakeZec: d.totalStakeZec,
             });
@@ -442,7 +444,7 @@ export function CrosslinkChainGraph({
   const { nodes, edges } = useMemo<{ nodes: Node[]; edges: Edge[] }>(() => {
     if (blocks.length === 0) return { nodes: [], edges: [] };
 
-    const finalizedHeight = stats?.finalizedHeight ?? 0;
+    const finalizedHeight = stats?.finalizedHeight ?? null;
     const finalizerCount = stats?.finalizerCount ?? 0;
     const votingHash = bftTip?.votedBlockHash || null;
 
@@ -458,7 +460,7 @@ export function CrosslinkChainGraph({
       const state: 'finalized' | 'voting' | 'pending' =
         b.hash === votingHash
           ? 'voting'
-          : b.height <= finalizedHeight
+          : finalizedHeight != null && b.height <= finalizedHeight
           ? 'finalized'
           : 'pending';
       return {
@@ -543,7 +545,7 @@ export function CrosslinkChainGraph({
         targetBlock = blocks.find((b) => b.height === stats.finalizedHeight);
       } else {
         // Finalized block isn't loaded — pick the lowest visible block that is finalized
-        const finalized = blocks.filter((b) => b.height <= stats.finalizedHeight);
+        const finalized = blocks.filter((b) => stats.finalizedHeight != null && b.height <= stats.finalizedHeight);
         if (finalized.length > 0) {
           targetBlock = finalized[finalized.length - 1];
           isBelowView = true;
@@ -552,8 +554,8 @@ export function CrosslinkChainGraph({
 
       if (targetBlock && sourceExists) {
         const label = isBelowView
-          ? `finalizes through #${stats.finalizedHeight.toLocaleString()} (below view)`
-          : `finalizes through #${stats.finalizedHeight.toLocaleString()}`;
+          ? `finalizes through #${stats.finalizedHeight?.toLocaleString() ?? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable')} (below view)`
+          : `finalizes through #${stats.finalizedHeight?.toLocaleString() ?? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable')}`;
         bftEdges.push({
           id: 'finality-frontier',
           source: sourceNodeId,
@@ -648,7 +650,7 @@ export function CrosslinkChainGraph({
     return [[minX, minY], [maxX, maxY]];
   }, [blocks.length]);
 
-  const openDivergence = stats && stats.finalityGap > 20;
+  const openDivergence = stats && (stats.finalityGap ?? 0) > 20;
 
   return (
     <div className="space-y-4">
@@ -663,13 +665,13 @@ export function CrosslinkChainGraph({
             />
             <HeaderStat
               label="Finalized"
-              value={`#${stats.finalizedHeight.toLocaleString()}`}
+              value={stats.finalizedHeight == null ? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable') : `#${stats.finalizedHeight.toLocaleString()}`}
               valueClass="text-cipher-green"
               tooltip="Highest block irreversibly confirmed by BFT consensus."
             />
             <HeaderStat
               label="Finality gap"
-              value={`${stats.finalityGap}`}
+              value={stats.finalityGap == null ? (stats.crosslinkActive === false ? 'Not active' : 'Unavailable') : `${stats.finalityGap}`}
               sub="blocks"
               valueClass={
                 openDivergence ? 'text-cipher-orange' : 'text-primary'

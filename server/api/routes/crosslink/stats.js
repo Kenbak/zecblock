@@ -3,6 +3,7 @@
  */
 
 const express = require('express');
+const crosslinkNetwork = require('../../../../lib/crosslink-network.json');
 const router = express.Router();
 const { deps, computeStakingDay } = require('./_helpers');
 const { logSafeError } = require('../../lib/safe-log');
@@ -95,7 +96,8 @@ router.get('/api/crosslink', async (req, res) => {
     }
 
     const totalStakeZats = parsedRoster.reduce((sum, m) => sum + m.stake_zats, 0);
-    const finalizedHeight = finalityInfo?.height ?? finalityInfo?.[0] ?? 0;
+    const crosslinkActive = tipHeight >= crosslinkNetwork.crosslinkActivationHeight;
+    const finalizedHeight = crosslinkActive ? (finalityInfo?.height ?? finalityInfo?.[0] ?? null) : null;
 
     const peerCount = Array.isArray(peerInfo) ? peerInfo.length : 0;
 
@@ -103,7 +105,11 @@ router.get('/api/crosslink', async (req, res) => {
       success: true,
       tipHeight,
       finalizedHeight,
-      finalityGap: tipHeight - finalizedHeight,
+      finalityGap: finalizedHeight == null ? null : tipHeight - finalizedHeight,
+      networkEpoch: crosslinkNetwork.epoch,
+      crosslinkActive,
+      crosslinkActivationHeight: crosslinkNetwork.crosslinkActivationHeight,
+      stakingActivationHeight: crosslinkNetwork.stakingActivationHeight,
       finalizerCount: parsedRoster.length,
       totalStakeZats,
       totalStakeZec: totalStakeZats / 1e8,
@@ -167,6 +173,12 @@ router.get('/api/crosslink/bft-tip', async (req, res) => {
         const cached = await deps.redisClient.get(CACHE_KEY);
         if (cached) return res.json(JSON.parse(cached));
       } catch {}
+    }
+
+    const tipHeight = await deps.callZebraRPC('getblockcount');
+    if (tipHeight < crosslinkNetwork.crosslinkActivationHeight) {
+      return res.json({ success: true, crosslinkActive: false,
+        votedBlockHash: null, signatureCount: 0, signers: [], timestamp: Date.now() });
     }
 
     const fatPtr = await deps.callZebraRPC('get_tfl_fat_pointer_to_bft_chain_tip').catch(() => null);

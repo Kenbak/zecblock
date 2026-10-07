@@ -69,7 +69,7 @@
   "overrides": {
     "axios": "1.14.0",
     "postcss": "8.5.28",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "braces": "$braces"
   },
   "dependencies": {

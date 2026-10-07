@@ -97,3 +97,20 @@ test('page data renders while enrichment is pending, page changes fetch once, an
   table = find(client.render(), 'TransactionTable');
   assert.equal(table.props.data.transactions[0].txid, 'new');
 });
+
+test('an unavailable price quote (testnet) leaves the hero card without a USD estimate', async t => {
+  const pending = [];
+  const originalFetch = global.fetch;
+  t.after(() => { global.fetch = originalFetch; });
+  global.fetch = (url, options) => new Promise(resolve => pending.push({ url, options, resolve }));
+  const client = harness();
+  client.render();
+  const priceRequest = pending.find(req => req.url.endsWith('/v1/network/price'));
+  priceRequest.resolve({ ok: true, json: async () => ({ price: null, change24h: null, available: false, network: 'testnet' }) });
+  const addressRequest = pending.find(req => req.url.includes('?page=1'));
+  addressRequest.resolve({ ok: true, json: async () => ({ address: 't-fixture', balance: 1.5, txCount: 1, pagination: { totalPages: 1 }, transactions: [] }) });
+  await flush();
+  const hero = find(client.render(), 'AddressHeroCard');
+  assert.ok(hero, 'the hero card renders');
+  assert.equal(hero.props.priceData, null);
+});

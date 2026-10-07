@@ -33,6 +33,7 @@
   "GET /v1/network/nodes/upgrade-readiness": "get-network-nodes-upgrade-readiness",
   "GET /v1/network/nodes/concentration": "get-network-nodes-concentration",
   "GET /v1/network/halving": "halving",
+  "GET /v1/mining/orphan-rates": "get-v1-mining-orphan-rates",
   "GET /v1/mining/metrics": "mining-metrics",
   "GET /v1/mining/hashrate-history": "network-hashrate-history",
   "GET /v1/shielded-pools/history": "pool-history",

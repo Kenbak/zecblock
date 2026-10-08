@@ -44,7 +44,7 @@
     "privacy:edges": "node server/jobs/build-privacy-linkage-edges.js",
     "privacy:clusters": "node server/jobs/build-privacy-batch-clusters.js",
     "privacy:backtest": "node server/scripts/backtest-privacy-linkage.js",
-    "test:brand": "node --test server/tests/zecblock-design.test.js server/tests/typography-contrast.test.js",
+    "test:brand": "node --test server/tests/zecblock-design.test.js server/tests/typography-contrast.test.js server/tests/opengraph-image.test.js",
     "test:v1-frontend": "node --test server/tests/v1-frontend-contract.test.js server/tests/docs-reference.test.js",
     "test:v1-postgres": "V1_TEST_POSTGRES=1 NODE_PATH=$PWD/server/api/node_modules node --test server/tests/v1-postgres-pagination.test.js",
     "attestations:collect": "node server/jobs/check-attestations.mjs",

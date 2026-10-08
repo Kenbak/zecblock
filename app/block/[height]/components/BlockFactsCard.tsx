@@ -1,22 +1,13 @@
 'use client';
 
-import { useState } from 'react';
 import { formatRelativeTime, formatDateUTC } from '@/lib/utils';
 import { CURRENCY } from '@/lib/config';
 import { Card, CardBody } from '@/components/ui/Card';
 import { FactBox, CopyableHash, BoldZec } from '@/components/ui/FactBox';
 import type { CoinbaseClientEmoji, CoinbaseClientInfo } from '@/lib/coinbase-client';
 import type { BlockData } from './types';
-
-/** Decode raw coinbase bytes ourselves rather than trusting the server's coinbase_text, which can mojibake non-printable bytes into stray unicode instead of a clean placeholder. */
-function decodeCoinbaseAscii(hex: string): string {
-  let result = '';
-  for (let i = 0; i < hex.length; i += 2) {
-    const byte = parseInt(hex.substring(i, i + 2), 16);
-    result += byte >= 0x20 && byte <= 0x7e ? String.fromCharCode(byte) : '.';
-  }
-  return result;
-}
+import { CoinbaseMessage } from '@/components/CoinbaseMessage';
+import { CopyButton } from '@/components/CopyButton';
 
 interface RewardRecipient {
   address: string | null;
@@ -121,37 +112,29 @@ function CoinbaseTagValue({
   clientEmoji,
   clientInfo,
 }: {
-  hex: string;
+  hex: string | null | undefined;
   clientEmoji: CoinbaseClientEmoji | null;
   clientInfo: CoinbaseClientInfo;
 }) {
-  const [showHex, setShowHex] = useState(false);
-  const decoded = decodeCoinbaseAscii(hex).replace(/^\.+/, '').trim();
-
   return (
     <div>
-      <div className="flex flex-wrap items-center gap-2">
-        {clientEmoji && (
+      {clientEmoji && (
+        <div className="flex flex-wrap items-center gap-2 mb-2">
           <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-sm bg-cipher-surface text-caption font-mono text-secondary border border-cipher-border">
-            <span role="img" aria-label={clientInfo.name ? `Mined with ${clientInfo.name}` : 'Block-template client marker'}>{clientEmoji}</span>
+            <span role="img" aria-label={clientInfo.name ? `Self-reported ${clientInfo.name} marker` : 'Block-template client marker'}>{clientEmoji}</span>
             {clientInfo.name && <span>{clientInfo.name}{clientInfo.version ? ` ${clientInfo.version}` : ''}</span>}
           </span>
-        )}
-        {decoded && <code className="text-xs text-secondary break-all">{decoded}</code>}
-        <button
-          onClick={() => setShowHex((v) => !v)}
-          className="inline-flex items-center gap-1 text-caption font-mono text-muted hover:text-secondary transition-colors"
-        >
-          <svg className={`w-2.5 h-2.5 transition-transform ${showHex ? 'rotate-90' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-          </svg>
-          Raw hex ({Math.floor(hex.length / 2)} bytes)
-        </button>
-      </div>
-      {showHex && (
-        <div className="mt-2 block-hash-bg p-2 rounded border border-cipher-border">
-          <code className="text-caption text-muted break-all">{hex}</code>
         </div>
+      )}
+      <CoinbaseMessage hex={hex} />
+      {hex && (
+        <details className="mt-3">
+          <summary className="cursor-pointer text-caption font-mono text-muted hover:text-secondary">Raw hex ({Math.floor(hex.length / 2)} bytes)</summary>
+          <div className="mt-2 flex items-start gap-2 block-hash-bg p-3 rounded border border-cipher-border">
+            <code className="min-w-0 text-caption text-muted break-all">{hex}</code>
+            <CopyButton text={hex} label="coinbase hex" size="xs" />
+          </div>
+        </details>
       )}
     </div>
   );
@@ -223,8 +206,11 @@ export function BlockFactsCard({
           )}
         </div>
 
-        {/* Bigger facts — reward breakdown and coinbase tag actually need the room. */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-start mt-3">
+        <FactBox className="mt-3" label="Coinbase Message" tooltip="Optional data embedded by the miner in the coinbase transaction. Text and software markers are self-reported; non-printable bytes appear as dots. Raw hex preserves the original bytes.">
+          <CoinbaseTagValue hex={data.coinbaseHex} clientEmoji={coinbaseClientEmoji} clientInfo={coinbaseClientInfo} />
+        </FactBox>
+
+        <div className="mt-3">
           {!data.isOrphaned && (
             <BlockRewardBreakdown
               data={data}
@@ -232,16 +218,6 @@ export function BlockFactsCard({
               minerPoolUrl={data.minerPoolUrl}
               minerPoolRegion={data.minerPoolRegion}
             />
-          )}
-
-          {data.coinbaseHex != null && (
-            <FactBox label="Coinbase Tag" tooltip="Arbitrary data embedded by the miner in the coinbase transaction — decoded client-side from the raw bytes">
-              {data.coinbaseHex === "" ? (
-                <p className="text-sm text-muted">No optional tag included by the miner.</p>
-              ) : (
-                <CoinbaseTagValue hex={data.coinbaseHex} clientEmoji={coinbaseClientEmoji} clientInfo={coinbaseClientInfo} />
-              )}
-            </FactBox>
           )}
         </div>
 

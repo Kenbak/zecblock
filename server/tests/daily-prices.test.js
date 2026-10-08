@@ -1,4 +1,5 @@
 'use strict';
+const databaseUrl = process.env.TEST_ANALYTICS_DATABASE_URL || process.env.TEST_UTXO_DATABASE_URL;
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { options, retryAfterMs, fetchHistory, dailyRows, collectPrices } = require('../lib/daily-prices');
@@ -92,8 +93,8 @@ test('database failures roll back and release the collector lock', async () => {
   assert.ok(db.calls.some(([sql]) => sql === 'ROLLBACK'));
   assert.ok(db.calls.at(-1)[0].includes('pg_advisory_unlock'));
 });
-test('PostgreSQL missing-day repair preserves history and is idempotent', { skip: !process.env.TEST_ANALYTICS_DATABASE_URL }, async () => {
-  const { Client } = require('pg'); const db = new Client({ connectionString: process.env.TEST_ANALYTICS_DATABASE_URL });
+test('PostgreSQL missing-day repair preserves history and is idempotent', { skip: !databaseUrl }, async () => {
+  const { Client } = require('pg'); const db = new Client({ connectionString: databaseUrl });
   await db.connect();
   try {
     await db.query(`CREATE TEMP TABLE zec_price_daily(date DATE PRIMARY KEY,price_usd NUMERIC(12,4) NOT NULL,market_cap_usd bigint,volume_usd bigint,source varchar(50),created_at timestamp DEFAULT now());

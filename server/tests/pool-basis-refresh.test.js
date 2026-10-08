@@ -1,4 +1,5 @@
 'use strict';
+const databaseUrl = process.env.TEST_ANALYTICS_DATABASE_URL || process.env.TEST_UTXO_DATABASE_URL;
 const test = require('node:test'); const assert = require('node:assert/strict');
 const { applyFlow } = require('../lib/pool-basis');
 const { range, refreshDay, rebuild } = require('../jobs/refresh-pool-realized-cap');
@@ -93,8 +94,8 @@ test('explicit historical entry point rejects accidental full scans', () => {
   const legacy = require('../signals/build-pool-realized-cap');
   assert.throws(() => legacy.run([]), /--today-only/);
 });
-test('PostgreSQL cursor rebuild and seven-day model path agree across Berlin UTC boundaries', { skip: !process.env.TEST_ANALYTICS_DATABASE_URL }, async () => {
-  const { Client } = require('pg'); const db = new Client({ connectionString: process.env.TEST_ANALYTICS_DATABASE_URL });
+test('PostgreSQL cursor rebuild and seven-day model path agree across Berlin UTC boundaries', { skip: !databaseUrl }, async () => {
+  const { Client } = require('pg'); const db = new Client({ connectionString: databaseUrl });
   await db.connect();
   try {
     await db.query(`SET TIME ZONE 'Europe/Berlin';

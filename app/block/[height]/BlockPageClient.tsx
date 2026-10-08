@@ -60,12 +60,15 @@ export default function BlockPageClient({
 
         setData(transformExpressBlockData(blockData));
       } catch (error) {
+        // Navigation and development Strict Mode cancel obsolete requests.
+        // Only a timeout or real request failure should change the page state.
+        if (controller.signal.aborted && controller.signal.reason?.name !== 'TimeoutError') return;
         console.error('Error fetching block:', error);
         setData(null);
         setLoadError('unavailable');
       } finally {
         clearTimeout(timeout);
-        setLoading(false);
+        if (!controller.signal.aborted || controller.signal.reason?.name === 'TimeoutError') setLoading(false);
       }
     };
 

@@ -16,6 +16,8 @@ import { getMiningSoftwareEmoji } from '@/lib/coinbase-client';
 import { Tooltip } from '@/components/Tooltip';
 import { CURRENCY, isTestnet } from '@/lib/config';
 import { scheduledSeconds, type BlockSchedule } from '@/lib/block-timing';
+import { Tabs } from '@/components/ui/Tabs';
+import { CoinbaseMessage } from '@/components/CoinbaseMessage';
 
 interface Block {
   software?: MiningSoftware;
@@ -37,6 +39,67 @@ const PAGE_SIZE = 25;
 // Consensus serialized block-size limit, in decimal bytes (2 MB).
 const MAX_BLOCK_BYTES = 2_000_000;
 const INTERVAL_SCALE_SECONDS = 300;
+type BlocksView = 'overview' | 'coinbase';
+const VIEW_STORAGE_KEY = 'zecblock:blocks-view:v1';
+const BLOCK_VIEWS: { id: BlocksView; label: string }[] = [
+  { id: 'overview', label: 'Overview' },
+  { id: 'coinbase', label: 'Coinbase messages' },
+];
+
+function MinerIdentity({ block }: { block: Block }) {
+  const software = block.software ?? classifyMiningSoftware(block.coinbase_hex);
+  return (
+    <div className="font-mono text-xs">
+      <p className={block.miner_pool ? 'text-primary' : 'text-muted'}>{block.miner_pool || 'Unattributed'}</p>
+      <p className="mt-1 text-muted" title="Self-reported coinbase marker; not authenticated software identity">
+        {getMiningSoftwareEmoji(software)} {SOFTWARE_LABELS[software]}
+      </p>
+    </div>
+  );
+}
+
+function coinbaseColumns(blocks: Block[], trailingBlock: Block | null, schedule: BlockSchedule | null): DataTableColumn<Block>[] {
+  const overview = blockColumns(blocks, trailingBlock, schedule);
+  const height = overview[0];
+  const age = overview[overview.length - 1];
+  const transactions = overview.find((column) => column.id === 'txs')!;
+  const size = overview.find((column) => column.id === 'size')!;
+  return [
+    {
+      ...height,
+      className: 'align-top py-3 sm:align-middle sm:py-0',
+      cell: (block, index) => (
+        <div>
+          {height.cell(block, index)}
+          <div className="sm:hidden mt-2 space-y-2">
+            <MinerIdentity block={block} />
+            <CoinbaseMessage hex={block.coinbase_hex} />
+            <p className="font-mono text-xs text-muted tabular-nums">
+              {block.transaction_count.toLocaleString()} txs · {Number.isFinite(block.size) && block.size >= 0 ? `${(block.size / 1000).toFixed(1)} kB` : 'Size unavailable'}
+            </p>
+          </div>
+        </div>
+      ),
+    },
+    {
+      id: 'miner',
+      header: 'Miner / software',
+      className: 'hidden sm:table-cell whitespace-nowrap',
+      skeletonWidth: 'w-28',
+      cell: (block) => <MinerIdentity block={block} />,
+    },
+    {
+      id: 'message',
+      header: 'Coinbase message',
+      className: 'hidden sm:table-cell w-full min-w-64 py-3',
+      skeletonWidth: 'w-64',
+      cell: (block) => <CoinbaseMessage hex={block.coinbase_hex} />,
+    },
+    { ...transactions, header: 'Transactions', className: 'hidden md:table-cell whitespace-nowrap' },
+    { ...size, className: 'hidden lg:table-cell min-w-[10rem]' },
+    { ...age, className: 'align-top py-3 sm:align-middle sm:py-0 whitespace-nowrap' },
+  ];
+}
 
 /** Column defs close over the block list because interval computation needs
  *  each row's successor (and the trailing block beyond the page boundary). */
@@ -234,6 +297,20 @@ export default function BlocksClient({
   initialPage = 1,
   initialUnavailable = false,
 }: BlocksClientProps) {
+  const [view, setView] = useState<BlocksView>('overview');
+  useEffect(() => {
+    try {
+      if (window.localStorage.getItem(VIEW_STORAGE_KEY) === 'coinbase') setView('coinbase');
+    } catch { /* Storage may be disabled; switching views still works. */ }
+  }, []);
+
+  const selectView = (next: BlocksView) => {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch { /* Keep the preference for this mounted page when storage is unavailable. */ }
+  };
+
   const {
     items: blocks,
     page,
@@ -358,8 +435,10 @@ export default function BlocksClient({
       </div>
 
       {!dataAvailable && <p role="status" className="mb-4 text-sm text-muted">Block data is unavailable for this selection. Software filters require the completed history index; please try again later.</p>}
+      <Tabs tabs={BLOCK_VIEWS} active={view} onChange={selectView} className="mb-4" />
+      <div role="tabpanel" aria-label={view === 'coinbase' ? 'Coinbase messages' : 'Blocks overview'}>
       <DataTable
-        columns={blockColumns(blocks, trailingBlock ?? null, schedule).map((column) => {
+        columns={(view === 'coinbase' ? coinbaseColumns : blockColumns)(blocks, trailingBlock ?? null, schedule).map((column) => {
           if (!['height', 'txs', 'size', 'fees', 'interval'].includes(column.id)) return column;
           const order = filters.order || 'newest';
           const active = column.id === 'height' ? ['newest', 'oldest'].includes(order) : order.startsWith(`${column.id}_`);
@@ -376,11 +455,14 @@ export default function BlocksClient({
             </Link>,
           };
         })}
-        footer={<p className="hidden lg:block px-4 py-3 text-xs text-muted">Interval bars: 0–5 min · tick = target at that height · ← timestamp earlier than previous block. Intervals use block timestamps, not arrival times.</p>}
+        footer={view === 'coinbase'
+          ? <p className="px-4 py-3 text-xs text-muted">Miner-provided messages and software markers · non-printable bytes shown as dots.</p>
+          : <p className="hidden lg:block px-4 py-3 text-xs text-muted">Interval bars: 0–5 min · tick = target at that height · ← timestamp earlier than previous block. Intervals use block timestamps, not arrival times.</p>}
         rows={blocks}
         rowKey={(block) => block.height}
         loading={loading}
       />
+      </div>
 
       <Pagination
         page={page}

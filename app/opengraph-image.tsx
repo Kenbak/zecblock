@@ -17,11 +17,6 @@ export const alt = `ZecBlock — ${copy.headline.join(' ')} ${copy.descriptor}.`
 export const size = { width: 1200, height: 630 };
 export const contentType = 'image/png';
 
-const geist = readFile(join(process.cwd(), 'assets/og/Geist-Medium.ttf'));
-const geistMono = readFile(join(process.cwd(), 'assets/og/GeistMono-Medium.ttf'));
-// Dark share card, so the white-lettering variant of the supplied logotype.
-const logo = readFile(join(process.cwd(), 'public/brand/zecblock-logotype.png'));
-
 // The homepage block-grid motif. Satori has no CSS grid or masks, so the
 // edge fade is computed per cell from its distance to the gold block.
 const CELL = 56;
@@ -38,7 +33,14 @@ function cellOpacity(col: number, row: number): number {
 }
 
 export default async function OpenGraphImage() {
-  const [geistData, monoData, logoData] = await Promise.all([geist, geistMono, logo]);
+  // Next also imports this module for page metadata. Only the image handler
+  // should read assets, which are not included in ordinary page-function bundles.
+  const [geistData, monoData, logoData] = await Promise.all([
+    readFile(join(process.cwd(), 'assets/og/Geist-Medium.ttf')),
+    readFile(join(process.cwd(), 'assets/og/GeistMono-Medium.ttf')),
+    // Dark share card, so use the white-lettering logotype.
+    readFile(join(process.cwd(), 'public/brand/zecblock-logotype.png')),
+  ]);
 
   return new ImageResponse(
     <div style={{ width: '100%', height: '100%', display: 'flex', position: 'relative', background: '#0B0C0E', fontFamily: 'Geist' }}>

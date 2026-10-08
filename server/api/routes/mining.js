@@ -11,6 +11,7 @@ const express = require('express');
 const router = express.Router();
 const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName } = require('../mining-pools');
 const { logSafeError } = require('../lib/safe-log');
+const { orphanRates } = require('../lib/orphan-rates');
 
 let pool;
 let redisClient;
@@ -73,6 +74,18 @@ router.get('/api/mining/software', async (req,res) => {
     if(error instanceof SoftwareQueryError) return res.status(error.status).json({success:false,error:error.status === 400 ? 'Invalid mining software query' : 'Mining data temporarily unavailable'});
     logSafeError('Mining software history failed:',error);
     res.status(500).json({success:false,error:'Mining software history unavailable'});
+  }
+});
+
+router.get('/api/mining/orphan-rates', async (req, res) => {
+  try {
+    // Use the request's read pool; no node RPC, writes or schema changes.
+    const data = await orphanRates(req.app.locals.pool);
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json(data);
+  } catch (error) {
+    logSafeError('Observed orphan rates failed:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observed orphan rates unavailable' });
   }
 });
 

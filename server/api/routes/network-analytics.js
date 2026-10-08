@@ -82,7 +82,7 @@ function rollingAverage(values, window) {
   for (let i = 0; i < values.length; i++) {
     const start = Math.max(0, i - window + 1);
     const slice = values.slice(start, i + 1);
-    const avg = slice.every(Number.isFinite) ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
+    const avg = slice.length === window && slice.every(Number.isFinite) ? slice.reduce((a, b) => a + b, 0) / slice.length : null;
     out.push(avg);
   }
   return out;
@@ -190,7 +190,8 @@ function registerNetworkAnalyticsRoutes(router) {
          FROM blocks
          ORDER BY height DESC
          LIMIT $1`,
-        [limit]
+        // Keep the averaging window and its predecessor outside the displayed range.
+        [limit + window]
       );
 
       const rows = result.rows.reverse();
@@ -220,7 +221,7 @@ function registerNetworkAnalyticsRoutes(router) {
         blockTime: rollBlockTime[i],
         txFees: rollFees[i],
         txCount: rollTx[i],
-      }));
+      })).slice(-limit);
 
       const latest = points[points.length - 1] || {};
 
@@ -228,11 +229,11 @@ function registerNetworkAnalyticsRoutes(router) {
         success: true,
         window,
         latest: {
-          solrate: latest.solrate ?? 0,
-          difficulty: latest.difficulty ?? 0,
+          solrate: latest.solrate ?? null,
+          difficulty: latest.difficulty ?? null,
           blockTime: latest.blockTime ?? null,
-          txFees: latest.txFees ?? 0,
-          txCount: latest.txCount ?? 0,
+          txFees: latest.txFees ?? null,
+          txCount: latest.txCount ?? null,
         },
         points,
       });

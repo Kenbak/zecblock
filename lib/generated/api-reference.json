@@ -1485,7 +1485,7 @@
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "Returns up to limit displayed points after loading window additional predecessor blocks for complete trailing averages. Window is clamped to 5–100 and limit to 20–500. Timing uses consecutive block-header timestamps; nonpositive intervals make solrate unavailable. Points and latest retain null for unavailable or incomplete-window metrics, including an empty chain. Solrate is the rolling average of per-block difficulty × 8192 / positive header interval, distinct from the target-work 24h network estimate. Fees are ZEC and transaction counts include coinbase.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -1508,6 +1508,20 @@
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
       }
     ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/mining/orphan-rates",
+    "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Observed indexer-archived reorg losses / (current canonical blocks + observed losses), using shared half-open UTC block-header timestamp windows and one database snapshot. External reports, explicitly invalid archives, and hashes currently canonical are excluded. Unique archive hashes are enforced by the existing database schema. Pool labels group public payout/tag attribution; Unknown remains included. Coverage is unverified, collectionStart is null, and uptimeVerified is false: this is not a complete network-wide or true per-pool orphan rate. Rates are fractions or null when canonical history is incomplete or there are no canonical blocks; observed zero stays zero. Includes asOf and indexed tip height/hash/header timestamp. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
     "requestBody": null
   },
   {

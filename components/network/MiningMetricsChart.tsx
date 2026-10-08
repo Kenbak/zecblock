@@ -22,8 +22,8 @@ const METRICS: { key: MetricKey; label: string; color: string; format: (v: numbe
 ];
 
 interface MiningMetricsData {
-  points?: { height: number; solrate: number; difficulty: number; blockTime: number; txFees: number; txCount: number }[];
-  latest?: Record<string, number>;
+  points?: ({ height: number } & Record<MetricKey, number | null>)[];
+  latest?: Partial<Record<MetricKey, number | null>>;
   window?: number;
 }
 
@@ -31,7 +31,7 @@ export function MiningMetricsChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [active, setActive] = useState<MetricKey>('solrate');
-  const [window, setWindow] = useState(20);
+  const window = 20;
 
   const { data } = useApiQuery<MiningMetricsData>(
     '/v1/mining/metrics',
@@ -46,23 +46,28 @@ export function MiningMetricsChart() {
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
-        {METRICS.map((m) => (
-          <button
-            key={m.key}
-            type="button"
-            onClick={() => setActive(m.key)}
-            className={`card p-3 text-left transition ${active === m.key ? 'ring-1 ring-cipher-gold/40' : 'opacity-80 hover:opacity-100'}`}
-          >
-            <p className="text-caption text-muted font-mono uppercase mb-1">{m.label}</p>
-            <p className="text-sm font-semibold font-mono text-primary whitespace-nowrap truncate">
-              {latest[m.key] != null ? m.format(latest[m.key]) : '—'}
-            </p>
-            <p className="text-caption text-muted font-mono mt-0.5">{window} blk avg</p>
-          </button>
-        ))}
+        {METRICS.map((m) => {
+          const value = latest[m.key];
+          return (
+            <button
+              key={m.key}
+              type="button"
+              aria-pressed={active === m.key}
+              onClick={() => setActive(m.key)}
+              className={`card p-3 text-left transition ${active === m.key ? 'ring-1 ring-cipher-gold/40' : 'opacity-80 hover:opacity-100'}`}
+            >
+              <p className="text-caption text-muted font-mono uppercase mb-1">{m.label}</p>
+              <p className="text-sm font-semibold font-mono text-primary whitespace-nowrap truncate">
+                {value != null ? m.format(value) : '—'}
+              </p>
+              <p className="text-caption text-muted font-mono mt-0.5">{window} blk avg</p>
+            </button>
+          );
+        })}
       </div>
 
       <ChartCard title={`${metric.label.toUpperCase().replace(/\s+/g, '_')}_TREND`} height={280} watermarkSize="lg">
+        <p className="text-caption text-muted mb-3">{window}-block trailing averages. Timing uses block-header timestamps; unavailable values remain gaps.</p>
         <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>
           <LineChart data={points}>
             <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
@@ -70,7 +75,8 @@ export function MiningMetricsChart() {
               dataKey="height"
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
-              tickFormatter={(h) => `${Math.round(h / 1000)}k`}
+              tickFormatter={(h) => Number(h).toLocaleString('en-US')}
+              minTickGap={32}
             />
             <YAxis
               stroke={colors.axis}
@@ -85,9 +91,9 @@ export function MiningMetricsChart() {
                 fontSize: 12,
               }}
               labelFormatter={(h) => `Block ${h}`}
-              formatter={(value) => [metric.format(Number(value)), metric.label]}
+              formatter={(value) => [value == null ? 'Unavailable' : metric.format(Number(value)), metric.label]}
             />
-            <Line type="monotone" dataKey={active} stroke={stroke} strokeWidth={2} dot={false} />
+            <Line type="monotone" dataKey={active} stroke={stroke} strokeWidth={2} dot={false} connectNulls={false} />
           </LineChart>
         </ResponsiveContainer>
       </ChartCard>

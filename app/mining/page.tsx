@@ -1,5 +1,6 @@
 'use client';
 import { MiningSoftwareSection } from '@/components/mining/MiningSoftwareSection';
+import { OrphanRateSection } from '@/components/mining/OrphanRateSection';
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
@@ -26,6 +27,7 @@ import { zatToZec } from '@/lib/format-numbers';
 
 const SECTIONS = [
   { id: 'metrics', label: 'Network' },
+  { id: 'orphans', label: 'Orphan rates' },
   { id: 'distribution', label: 'Distribution' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'software', label: 'Mining software' },
@@ -398,6 +400,7 @@ function HashrateShareSection() {
                 domain={[0, 100]}
               />
               <Tooltip
+                itemSorter={(item) => -Number(item.value)}
                 cursor={cursorStyle}
                 contentStyle={{
                   backgroundColor: colors.tooltipBg,
@@ -446,6 +449,7 @@ function HashrateShareSection() {
                 domain={[0, 'auto']}
               />
               <Tooltip
+                itemSorter={(item) => -Number(item.value)}
                 cursor={cursorStyle}
                 contentStyle={{
                   backgroundColor: colors.tooltipBg,
@@ -670,7 +674,7 @@ export default function MiningPage() {
       <PageHeader
         eyebrow="MINING"
         title="Zcash Mining"
-        subtitle="Hashrate, difficulty, block economics, pool distribution, software markers, and miner behavior."
+        subtitle="Hashrate, observed orphan rates, block economics, pool distribution, software markers, and miner behavior."
       />
 
       <PageSectionNav sections={SECTIONS} ariaLabel="Mining pool sections" />
@@ -679,6 +683,7 @@ export default function MiningPage() {
         <NetworkHashrateChart />
       </section>
 
+      <OrphanRateSection />
       <DistributionSection />
       <RankingSection />
       <MiningSoftwareSection />
@@ -706,7 +711,7 @@ export default function MiningPage() {
           </div>
         </div></details>
       </section>
-      <nav aria-label="Related mining analysis" className="grid sm:grid-cols-3 gap-3">{[{href:'/network#issuance',title:'Issuance & halving',text:'Block subsidy and the remaining schedule.'},{href:'/zodl',title:'Miner reward destinations',text:'Observe the first move of mined rewards.'},{href:'/network/nodes',title:'Node explorer',text:'Reachability, clients and geographic coverage.'}].map(l=><Link key={l.href} href={l.href} className="border border-cipher-border rounded-lg p-4 hover:bg-glass-3"><span className="text-sm font-mono">{l.title} →</span><span className="block mt-2 text-xs text-muted">{l.text}</span></Link>)}</nav>
+      <nav aria-label="Related mining analysis" className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[{href:'/network#issuance',title:'Issuance & halving',text:'Block subsidy and the remaining schedule.'},{href:'/zodl',title:'Miner reward destinations',text:'Observe the first move of mined rewards.'},{href:'/reorgs',title:'Forks & orphaned blocks',text:'Inspect observed reorgs and competing blocks.'},{href:'/network/nodes',title:'Node explorer',text:'Reachability, clients and geographic coverage.'}].map(l=><Link key={l.href} href={l.href} className="border border-cipher-border rounded-lg p-4 hover:bg-glass-3"><span className="text-sm font-mono">{l.title} →</span><span className="block mt-2 text-xs text-muted">{l.text}</span></Link>)}</nav>
     </div>
   );
 }

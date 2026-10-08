@@ -74,6 +74,7 @@
     "limit",
     "window"
   ],
+  "GET /v1/mining/orphan-rates": [],
   "GET /v1/mining/hashrate-history": [
     "period",
     "window"

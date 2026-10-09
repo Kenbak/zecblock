@@ -21,8 +21,9 @@ export function GovernanceBanner() {
   const displayed = pending ? {
     key: `nu7:${network}:${activationHeight}`,
     href: `/block/${activationHeight}`,
-    text: estimate ? `NU7 arrives in about ${formatUpgradeTime(estimate.seconds)}` : 'NU7 is on its way',
+    text: estimate ? `in about ${formatUpgradeTime(estimate.seconds)}` : 'on its way',
   } : announcement;
+  const blocksLeft = pending ? activationHeight - snapshot.height : 0;
   const displayedKey = displayed?.key;
   const visible = Boolean(displayed && dismissed !== displayedKey);
   useEffect(() => {
@@ -58,21 +59,30 @@ export function GovernanceBanner() {
     return () => { observer.disconnect(); document.documentElement.style.setProperty('--app-ironwood-height', '0px'); };
   }, [visible]);
   if (!visible || !displayed) return null;
-  return <div ref={ref} role="region" aria-label={pending ? 'NU7 activation countdown' : 'Governance announcement'} className="ironwood-banner sticky top-[calc(var(--app-nav-height,4rem)+var(--app-stats-height,2.75rem))] z-40 border-b border-cipher-border/50 backdrop-blur-xl">
-    <div className="relative mx-auto flex min-h-12 max-w-7xl items-center justify-center px-4 pr-12 py-2.5 sm:px-12">
-      <Link href={displayed.href} className={pending ? 'group flex items-center gap-3' : 'text-center font-mono text-xs text-brand-gold hover:underline'}>
-        {pending ? <>
-          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cipher-gold/20 bg-cipher-gold/10 text-cipher-gold">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-          </span>
-          <span className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-4">
-            <span className="text-sm font-medium text-primary group-hover:text-cipher-gold transition-colors">{displayed.text}</span>
-            <span className="text-xs text-secondary"><span className="tabular-nums">{(activationHeight - snapshot.height).toLocaleString('en-US')}</span> {activationHeight - snapshot.height === 1 ? 'block' : 'blocks'} to go</span>
-          </span>
-          <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-cipher-gold transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14m-6-6 6 6-6 6" /></svg>
-        </> : <>{displayed.text} →</>}
+  const dismiss = () => { dismissedKeys.current.add(displayed.key); try { sessionStorage.setItem(`governance:${displayed.key}`, '1'); } catch { /* In-memory fallback. */ } setDismissed(displayed.key); };
+  const dismissButton = (label: string, className: string) => <button type="button" aria-label={label} className={className} onClick={dismiss}>
+    <svg aria-hidden="true" className="h-3.5 w-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+  </button>;
+  if (pending) return <div ref={ref} role="region" aria-label="NU7 activation countdown" className="ironwood-banner sticky top-[calc(var(--app-nav-height,4rem)+var(--app-stats-height,2.75rem))] z-40 backdrop-blur-xl">
+    <div className="relative mx-auto flex h-9 max-w-7xl items-center px-4 pr-12 sm:h-10 sm:justify-center sm:px-14">
+      <Link href={displayed.href} title={`NU7 activates at block #${activationHeight.toLocaleString('en-US')}`} className="group flex min-w-0 flex-1 items-center gap-2 whitespace-nowrap font-mono text-xs text-muted transition-colors sm:flex-none sm:text-data">
+        <span aria-hidden="true" className="relative flex h-1.5 w-1.5 shrink-0">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-cipher-gold opacity-50 motion-safe:animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-cipher-gold" />
+        </span>
+        <span className="font-medium text-cipher-gold">NU7</span>
+        <span className="truncate text-secondary transition-colors group-hover:text-primary">{displayed.text}</span>
+        <span aria-hidden="true" className="mx-1 hidden h-3 border-l border-cipher-border sm:inline" />
+        <span className="hidden sm:inline"><span className="tabular-nums text-secondary">{blocksLeft.toLocaleString('en-US')}</span> {blocksLeft === 1 ? 'block' : 'blocks'} to go</span>
+        <span className="ml-auto shrink-0 text-caption transition-colors group-hover:text-cipher-gold sm:ml-2">Details<span aria-hidden="true" className="ml-1 inline-block transition-transform group-hover:translate-x-0.5">→</span></span>
       </Link>
-      <button aria-label={pending ? 'Dismiss NU7 activation countdown' : 'Dismiss governance announcement'} className="absolute right-3 flex h-8 w-8 items-center justify-center text-muted hover:text-primary" onClick={() => { dismissedKeys.current.add(displayed.key); try { sessionStorage.setItem(`governance:${displayed.key}`, '1'); } catch { /* In-memory fallback. */ } setDismissed(displayed.key); }}>×</button>
+      {dismissButton('Dismiss NU7 activation countdown', 'absolute right-3 top-1/2 flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded text-muted transition-colors hover:text-primary sm:right-6 lg:right-8')}
+    </div>
+  </div>;
+  return <div ref={ref} role="region" aria-label="Governance announcement" className="ironwood-banner sticky top-[calc(var(--app-nav-height,4rem)+var(--app-stats-height,2.75rem))] z-40 border-b border-cipher-border/50 backdrop-blur-xl">
+    <div className="relative mx-auto flex min-h-10 max-w-7xl items-center justify-center px-4 pr-12 py-2 sm:px-12">
+      <Link href={displayed.href} className="text-center font-mono text-xs text-brand-gold hover:underline">{displayed.text} →</Link>
+      {dismissButton('Dismiss governance announcement', 'absolute right-3 flex h-8 w-8 items-center justify-center text-muted hover:text-primary')}
     </div>
   </div>;
 }

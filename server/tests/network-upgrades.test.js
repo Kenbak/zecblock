@@ -105,7 +105,8 @@ test('site banner has remaining blocks/time, disappears at activation and return
   for (const height of [activation - 100, activation - 1, activation - 2]) {
     const html = renderComponent(file, 'GovernanceBanner', {}, stats(height));
     assert.match(html, /NU7 activation countdown/);
-    assert.match(html, /NU7 arrives in about .*blocks? to go/);
+    assert.match(html, />NU7<.*in about .*blocks? to go/);
+    assert.match(html, /Dismiss NU7 activation countdown/);
     assert.match(html, /href="\/block\/4465026"/);
   }
   for (const data of [stats(activation), stats(activation + 1), stats(3503108, 'main', null), null]) {

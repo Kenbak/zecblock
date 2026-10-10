@@ -121,7 +121,7 @@ router.get('/api/mining/pool-distribution', async (req, res) => {
     for (const row of result.rows) {
       const name = resolvePoolName(row.miner_address, row.pool_tag);
       if (!poolAgg[name]) {
-        poolAgg[name] = { address: row.miner_address, name, blocks: 0, totalFeesZat: BigInt(0) };
+        poolAgg[name] = { address: name === 'Unknown' ? null : row.miner_address, name, blocks: 0, totalFeesZat: BigInt(0) };
       }
       poolAgg[name].blocks += parseInt(row.block_count);
       poolAgg[name].totalFeesZat += BigInt(row.total_fees_zat || '0');
@@ -206,7 +206,7 @@ router.get('/api/mining/pool-ranking', async (req, res) => {
       const poolInfo = POOL_BY_ADDRESS[row.miner_address] || POOL_BY_TAG[row.pool_tag];
       if (!poolAgg[name]) {
         poolAgg[name] = {
-          address: row.miner_address,
+          address: name === 'Unknown' ? null : row.miner_address,
           name,
           url: poolInfo?.url || null,
           region: poolInfo?.region || null,

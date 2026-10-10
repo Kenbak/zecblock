@@ -40,6 +40,15 @@ test('PostgreSQL pool filters agree with attribution, counts and pagination', {
     [3479741, mine, sluicey],
     [3479742, null, tag.toUpperCase()],
     [3479743, null, sluicey + tag],
+    [3512788, 't1Y2tYgDJnH4m1uQPDXxvXQSh1Jbun3AP22', hex('mined by KuPool')],
+    [3512789, null, hex('mined by KuPool')],
+    [3511796, 't1MqmXugaf5VSQvAVBhshK28S2kW762kNNH', hex('/molepool.com/')],
+    [3511797, null, hex('/molepool.com/')],
+    [3512636, null, hex('zecminingpool.com')],
+    [3512289, 't1cQA9Rxn31tqHcgZzydrpDjgsQGmjpBgpB', '04f09f8cb8'],
+    [3512346, 't1Na7ykQ6vE4CbxBPuUDUQx5n6aEWXu1VQq', ''],
+    [3405273, 't1egMFNkP7EfkK25y8s4GeiMkEGnqcMnTb1', ''],
+    [4484946, 'tmTwLU5Y855hfBZ25ZaWuTvcrqjrCMFAZR9', hex('Foundry Zcash Pool #PrivacyMatters')],
   ];
   for (const [height, address, coinbase] of fixtures) {
     await db.query(`INSERT INTO blocks VALUES($1::bigint,$1::bigint::text,1789134641,1,100,1,$2,$3,0)`, [height,address,coinbase]);
@@ -47,7 +56,7 @@ test('PostgreSQL pool filters agree with attribution, counts and pagination', {
     const { rows } = await db.query(`SELECT ${getPoolTagSql('coinbase_hex')} AS tag FROM blocks WHERE height=$1`, [height]);
     assert.equal(rows[0].tag, getPoolTag(coinbase));
   }
-  for (const pool of ['MySoloPool', 'Sluicey Pool', 'ViaBTC', 'unattributed']) {
+  for (const pool of ['MySoloPool', 'Sluicey Pool', 'ViaBTC', 'KuPool', 'Molepool', 'Mining Dutch', 'ZEC Mining Pool', 'Binance Pool', 'Foundry USA', 'unattributed']) {
     const expected = fixtures.filter(([,address,coinbase]) =>
       (getPoolName(address, coinbase) || 'unattributed') === pool).map(([height]) => height);
     for (const order of ['oldest', 'newest']) {

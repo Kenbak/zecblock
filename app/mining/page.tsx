@@ -699,13 +699,16 @@ export default function MiningPage() {
           <div className="space-y-3 text-sm text-muted leading-relaxed">
             <p>
               Zcash is secured by Equihash proof-of-work mining with a block target set by the active network upgrade.
-              Pool attribution is derived from coinbase transaction payout addresses. A single
-              pool may use multiple addresses; unknown addresses are labeled by region when
-              identifiable through peer analysis.
+              Pool attribution uses corroborated coinbase payout addresses and recognized public
+              pool tags, cross-checked against ZecMiningPool’s network feed. A pool may use
+              multiple addresses or a shielded payout. Software markers do not establish pool
+              identity, and unidentified miners remain unattributed.
             </p>
             <p>
-              Miner behavior tracks whether coinbase outputs (block rewards) have been spent
-              or remain unspent. This is a moved-versus-unspent measure; destination analysis
+              Miner behavior tracks transparent coinbase outputs paid to the tracked miner address.
+              Shielded rewards and outputs to other payout addresses are outside this measure.
+              It records whether those tracked outputs have been spent or remain unspent.
+              This is a moved-versus-unspent measure; destination analysis
               is required before describing a movement as shielding, exchange transfer, or sale.
             </p>
           </div>

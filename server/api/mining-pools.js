@@ -4,8 +4,8 @@
  * Maps known coinbase payout addresses to mining pool identities.
  * Sources: Zcashinfo.com labels, coinbase tag analysis, Shawn Murphy's peer analysis,
  * AiCoin on-chain article (confirmed addresses), 2Miners documentation,
- * zecminingpool.com network dashboard cross-reference (Aug 2026).
- * Last updated: 2026-09-27
+ * zecminingpool.com network dashboard cross-reference (Oct 2026).
+ * Last audited: 2026-10-10 (live reference feed + canonical node coinbases).
  */
 
 const POOL_BY_ADDRESS = {
@@ -54,6 +54,12 @@ const POOL_BY_ADDRESS = {
     url: 'https://foundrydigital.com',
     region: 'US',
   },
+  // Official testnet: live reference + Foundry tag and payout in node block 4484946.
+  'tmTwLU5Y855hfBZ25ZaWuTvcrqjrCMFAZR9': {
+    name: 'Foundry USA',
+    url: 'https://foundrydigital.com',
+    region: null,
+  },
 
   // --- Luxor ---
   // Source: Shawn Murphy peer analysis (IP: 15.204.182.52, Reston VA)
@@ -61,6 +67,20 @@ const POOL_BY_ADDRESS = {
     name: 'Luxor',
     url: 'https://luxor.tech',
     region: 'US',
+  },
+
+  // Live network feed and coinbase "mined by KuPool" (block 3512788).
+  't1Y2tYgDJnH4m1uQPDXxvXQSh1Jbun3AP22': {
+    name: 'KuPool',
+    url: 'https://kupool.com',
+    region: null,
+  },
+
+  // Live network feed and /molepool.com/ coinbase (block 3511796).
+  't1MqmXugaf5VSQvAVBhshK28S2kW762kNNH': {
+    name: 'Molepool',
+    url: 'https://zec.molepool.com',
+    region: null,
   },
 
   // --- 2Miners ---
@@ -141,19 +161,28 @@ const POOL_BY_ADDRESS = {
   },
 
   // --- Mining Dutch ---
-  // Source: Shawn Murphy peer analysis (IP: 3.65.53.91, Frankfurt)
-  't1egMFNkP7EfkK25y8s4GeiMkEGnqcMnTb1': {
+  // Current payout: live reference mapping, node-confirmed block 3512289.
+  // The software-only coinbase marker does not independently name this pool.
+  't1cQA9Rxn31tqHcgZzydrpDjgsQGmjpBgpB': {
     name: 'Mining Dutch',
     url: 'https://www.mining-dutch.nl',
-    region: 'EU',
+    region: null,
   },
-
-  // --- Binance Pool ---
-  't1Na7ykQ6vE4CbxBPuUDUQx5n6aEWXu1VQq': {
+  // Historical Binance payout, not Mining Dutch. ZcashInfo's explicit
+  // /api/v1/mining/pools/binance known_addresses registry lists this address;
+  // node coinbases at 3372741 and 3405273 confirm the payout address.
+  // Identity authority is the external registry, not the unmarked coinbase.
+  't1egMFNkP7EfkK25y8s4GeiMkEGnqcMnTb1': {
     name: 'Binance Pool',
     url: 'https://pool.binance.com',
     region: null,
   },
+
+  // t1Na7ykQ6vE4CbxBPuUDUQx5n6aEWXu1VQq was labeled Binance Pool
+  // in commit 336808e (June 24), with only "Small consistent miner" as evidence.
+  // Both live reference and ZcashInfo's recent/earliest sampled blocks leave it
+  // unidentified. Keep unattributed until ownership is corroborated;
+  // an empty tag is not evidence of Binance.
 
   // --- MySoloPool ---
   // Corroborated by block 3479731 (address + Mysolopool.com tag) and
@@ -216,21 +245,32 @@ const POOL_BY_ADDRESS = {
 const POOL_BY_TAG = {
   mysolopool: { name: 'MySoloPool', url: 'https://zcash.mysolopool.com', region: null, attribution: 'coinbase-tag' },
   sluicey: { name: 'Sluicey Pool', url: 'https://sluicey.xyz/', region: null, attribution: 'coinbase-tag' },
+  kupool: { name: 'KuPool', url: 'https://kupool.com', region: null, attribution: 'coinbase-tag' },
+  molepool: { name: 'Molepool', url: 'https://zec.molepool.com', region: null, attribution: 'coinbase-tag' },
+  zecminingpool: { name: 'ZEC Mining Pool', url: 'https://zecminingpool.com', region: null, attribution: 'coinbase-tag' },
+  foundry: { name: 'Foundry USA', url: 'https://foundrydigital.com', region: null, attribution: 'coinbase-tag' },
 };
-const SLUICEY_TAG_HEX = Buffer.from('Get Sluicey Yall sluicey.xyz').toString('hex');
-const SLUICEY_TAG_PATTERN = `^(?:[0-9a-f]{2})*${SLUICEY_TAG_HEX}(?:[0-9a-f]{2})*$`;
-const MYSOLOPOOL_TAG_HEX = Buffer.from('Mysolopool.com').toString('hex');
-const MYSOLOPOOL_TAG_PATTERN = `^(?:[0-9a-f]{2})*${MYSOLOPOOL_TAG_HEX}(?:[0-9a-f]{2})*$`;
+// One ordered pattern registry keeps SQL filters and JS labels identical.
+// Match complete observed markers, not generic worker text or software emoji.
+const TAG_PATTERNS = Object.entries({
+  sluicey: 'Get Sluicey Yall sluicey.xyz',
+  mysolopool: 'Mysolopool.com',
+  kupool: 'mined by KuPool',
+  molepool: '/molepool.com/',
+  zecminingpool: 'zecminingpool.com',
+  foundry: 'Foundry Zcash Pool #PrivacyMatters',
+}).map(([tag, marker]) => [tag, `^(?:[0-9a-f]{2})*${Buffer.from(marker).toString('hex')}(?:[0-9a-f]{2})*$`]);
 function getPoolTag(coinbaseHex) {
   if (typeof coinbaseHex !== 'string') return null;
-  if (new RegExp(SLUICEY_TAG_PATTERN, 'i').test(coinbaseHex)) return 'sluicey';
-  if (new RegExp(MYSOLOPOOL_TAG_PATTERN, 'i').test(coinbaseHex)) return 'mysolopool';
+  for (const [tag, pattern] of TAG_PATTERNS) {
+    if (new RegExp(pattern, 'i').test(coinbaseHex)) return tag;
+  }
   return null;
 }
 // Identifiers are internal call-site constants, never request input.
 function getPoolTagSql(column = 'coinbase_hex') {
   if (!/^[a-z_]+(?:\.[a-z_]+)?$/.test(column)) throw new Error('Invalid coinbase SQL column');
-  return `CASE WHEN ${column} ~* '${SLUICEY_TAG_PATTERN}' THEN 'sluicey' WHEN ${column} ~* '${MYSOLOPOOL_TAG_PATTERN}' THEN 'mysolopool' ELSE NULL END`;
+  return `CASE ${TAG_PATTERNS.map(([tag, pattern]) => `WHEN ${column} ~* '${pattern}' THEN '${tag}'`).join(' ')} ELSE NULL END`;
 }
 function getPoolName(address, coinbaseHex) {
   const pool = address ? POOL_BY_ADDRESS[address] : null;

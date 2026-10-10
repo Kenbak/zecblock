@@ -34,34 +34,11 @@ const readPool = require.main === module ? getReadPool({ max: 1 }) : null;
 const LOCK_ID = 839276;
 const { selectDays } = require('../lib/utxo-age');
 
-// Mirrors server/api/mining-pools.js / snapshot-mining-behavior.js (synced 2026-08-16)
-const POOL_MAP = {
-  't1MKn34KBa8Xh4g8qU8psibBXvURafphVn7': 'ViaBTC',
-  't1at7nVNsv6taLRrNRvnQdtfLNRDfsGc3Ak': 'ViaBTC',
-  't1SEgZvXCu3ceE42qrq5pCeSq7HbLjX8NJv': 'ViaBTC-Solo',
-  't1PEp2GJLSdhDfCKqc2J211WKDUS1NfoQNy': 'F2Pool',
-  't1SqwRAAdSig6dE4EBPLonAait219VmkUjP': 'Foundry USA',
-  't1XQZdZMnzXBcL8yx2PR27dSNrqctgwLgux': 'Luxor',
-  't1VTjv7XF3hYqxQkxKmHHErvus3bDrbbkGg': '2Miners',
-  't1QxTHUputbmZRxd3EqP671sLqd6KNBQbXJ': '2Miners',
-  't1fu6KgYtHEXk2ZhTpM1XD7jbnSmW6wokDM': '2Miners',
-  't1bnxtY7aLCjWx9Ru1YcGwRWch3eEWUFK7u': '2Miners',
-  't1eBv4a3wBhVaFgWYjXrFYTU7pruCWaBpLW': 'NiceHash',
-  't1L2b66MXbgpVMXDfUa94GCBFAN4dCxGohM': 'AntPool',
-  't1ZVi2YGk98tEGYcNpXYnJFWCoLG2oYwv3J': 'AntPool',
-  't1e6hceYHkzCbwcwGZzKeMfXXW7x7gr19Cw': 'Kryptex',
-  't1Mofe2EigYNfgqSTPbK4k1iJTxyCEEQCEC': 'Kryptex',
-  't1Uo7EN1A3GN29UjQJbUFYvrhxQd6Gt7qdA': 'ZEC Mining Pool',
-  't1egMFNkP7EfkK25y8s4GeiMkEGnqcMnTb1': 'Mining Dutch',
-  't1Na7ykQ6vE4CbxBPuUDUQx5n6aEWXu1VQq': 'Binance Pool',
-  't1K79TgQbqu74d6rBmsMu2oFEXEwAmdYiT7': 'Unidentified #5',
-  't1fpcZ2Dbwn4oj35oWBTUhtmUciSq7HG7LU': 'Private Miner B',
-};
-
+// Share the API registry so snapshots cannot retain obsolete pool identities.
+const { getPoolName } = require('../api/mining-pools');
 function getPoolNameForAddress(address) {
-  return POOL_MAP[address] || 'Other';
+  return getPoolName(address) || 'Other';
 }
-
 
 /**
  * Classify a single day's spent coinbase rewards by destination.

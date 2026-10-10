@@ -64,7 +64,7 @@
     "test:crosschain": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/crosschain-v2.test.js server/tests/near-provider-budget.test.js",
     "test:crosschain-postgres": "CROSSCHAIN_TEST_POSTGRES=1 npm run test:crosschain",
     "test:address-pagination": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/address-pagination.test.js server/tests/address-pagination-client.test.js server/tests/address-cursor-postgres.test.js",
-    "test:bot": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/bot-editorial.test.js server/tests/bot-editorial-postgres.test.js server/tests/bot-cards.test.js"
+    "test:bot": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/bot-editorial.test.js server/tests/bot-editorial-postgres.test.js server/tests/bot-cards.test.js server/tests/bot-spot-price.test.js"
   },
   "overrides": {
     "axios": "1.14.0",

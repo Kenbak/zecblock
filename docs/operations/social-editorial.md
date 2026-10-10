@@ -24,12 +24,26 @@ something. `lib/editorial-format.js` holds the shared rounding: ZEC amounts and
 balances are truncated with integer zatoshi arithmetic, USD values are floored,
 percentile tails round up, so no figure overstates its source.
 
-Prices and balances are context, never qualification. Flow and migration copy
-adds USD from `zec_price_daily` for the event's UTC date (or the previous day
-while today's row is pending) and pool balances from the latest `privacy_stats`
-row only when it is under three hours old. When either is missing or stale the
-sentence is omitted. A failed lookup rolls back to a savepoint, keeps the scan
-running and records a `context-unavailable` decision.
+Prices and balances are context, never qualification. Qualifying flow and
+migration alerts fetch one CoinGecko `/simple/price` ZEC/USD quote per scan,
+after releasing the database snapshot. This is a spot quote near detection
+time, not a historical price at the block timestamp. `include_last_updated_at`
+supplies the provider timestamp; quotes older than five minutes or more than
+one minute in the future, nonfinite/nonpositive prices and missing/invalid
+timestamps are rejected. The request has an eight-second timeout and no retry.
+Failure (including HTTP 429) omits USD from both text and image and records a
+`price-unavailable` decision; there is no daily-price or cached-price fallback.
+Exact zatoshis divided by 1e8 times the unrounded quote produce USD; existing
+display flooring remains unchanged. Outbox evidence stores `price_usd` and
+`price_quote` (`source`, `currency`, `usd`, `basis=spot-at-detection`,
+`sourceUpdatedAt` and `fetchedAt` as UTC ISO timestamps), or nulls when unavailable.
+Deferred events are recomputed with a new quote on their next scan.
+
+Pool balances still come from the latest `privacy_stats` row only when it is
+under three hours old. A failed balance lookup rolls back to a savepoint and
+records `context-unavailable`, without discarding a valid spot quote. Daily
+close milestones retain their dated `zec_price_daily` valuation; provider-valued
+cross-chain swaps retain their source USD. No public API or schema change.
 
 ## ZecBlock image integration
 

@@ -45,7 +45,10 @@ test('editorial SQL: canonical flows, provider samples, UTC dates and atomic pub
     // Only database name is mapped; every transaction/aggregate executes on real PostgreSQL.
     const wrap=client=>({query:(sql,args)=>client.query(sql.replace('current_database() AS name',"'zcash_explorer_mainnet' AS name"),args),release:()=>client.release()});
     const reader={connect:async()=>wrap(await db.connect())};
-    const live=await data.liveCandidates(reader,now);
+    const withoutPrice={fetchPrice:async()=>({quote:null,unavailable:'http-429'})};
+    const withPrice={fetchPrice:async()=>({quote:{usd:1240,source:'coingecko',currency:'usd',basis:'spot-at-detection',
+      sourceUpdatedAt:'2026-09-29T07:59:00Z',fetchedAt:now.toISOString()},unavailable:null})};
+    const live=await data.liveCandidates(reader,now,withoutPrice);
     const flow=live.candidates.find(c=>c.type==='flow_shield');assert.ok(flow);
     assert.equal(Number(flow.evidence.sample_count),200);assert.match(flow.content,/One of the largest 0\.5% of shielding/);
     assert.ok(live.decisions.some(d=>d.reason==='context-unavailable'));assert.doesNotMatch(flow.content,/\$/);
@@ -55,8 +58,11 @@ test('editorial SQL: canonical flows, provider samples, UTC dates and atomic pub
       CREATE TABLE privacy_trends_daily(date date,pool_size bigint,chain_supply bigint,ironwood_pool_size bigint);
       INSERT INTO privacy_trends_daily SELECT d,490000000000000,1700000000000000,CASE WHEN d='2026-09-28' THEN 401000000000000 ELSE 380000000000000 END
         FROM generate_series('2026-06-01'::date,'2026-09-29'::date,interval '1 day') d;`);
-    const priced=(await data.liveCandidates(reader,now)).candidates.find(c=>c.type==='flow_shield');
-    assert.match(priced.content,/899\.99 ZEC \(\$1\.25M\) just entered Ironwood/);assert.match(priced.content,/Ironwood now holds 4\.06M ZEC/);
+    const priced=(await data.liveCandidates(reader,now,withPrice)).candidates.find(c=>c.type==='flow_shield');
+    assert.match(priced.content,/899\.99 ZEC \(\$1\.11M\) just entered Ironwood/);assert.match(priced.content,/Ironwood now holds 4\.06M ZEC/);
+    assert.equal(priced.evidence.price_usd,1240);assert.equal(priced.evidence.price_quote.source,'coingecko');
+    const unpriced=(await data.liveCandidates(reader,now,withoutPrice)).candidates.find(c=>c.type==='flow_shield');
+    assert.doesNotMatch(unpriced.content,/\$/);assert.equal(unpriced.evidence.usd,null);
     const milestones=await data.milestoneCandidates(reader,now);
     assert.deepEqual(milestones.map(m=>m.key),['milestone:ironwood_zec:4000000']);
     const swap=live.candidates.find(c=>c.type==='swap');assert.ok(swap);assert.equal(swap.evidence.exceptional,true);
@@ -67,12 +73,12 @@ test('editorial SQL: canonical flows, provider samples, UTC dates and atomic pub
     const signals=await data.signalCandidates(reader,now);assert.ok(signals.find(c=>c.evidence.metric==='mvrv'));
     // Bad balance, fully shielded migration, and coinbase must not become shielding alerts.
     await db.query('UPDATE transactions SET is_coinbase=true WHERE block_height=400');
-    assert.equal((await data.liveCandidates(reader,now)).candidates.filter(c=>c.type==='flow_shield').length,0);
+    assert.equal((await data.liveCandidates(reader,now,withoutPrice)).candidates.filter(c=>c.type==='flow_shield').length,0);
     await db.query('UPDATE transactions SET is_coinbase=false,value_balance_ironwood=-1 WHERE block_height=400');
-    assert.equal((await data.liveCandidates(reader,now)).candidates.filter(c=>c.type==='flow_shield').length,0);
+    assert.equal((await data.liveCandidates(reader,now,withoutPrice)).candidates.filter(c=>c.type==='flow_shield').length,0);
     await db.query('UPDATE sync_state SET updated_at=updated_at-interval \'1 hour\'');
     assert.equal(await data.crosschainDaily(reader,now),null);
-    assert.ok((await data.liveCandidates(reader,now)).decisions.some(d=>d.reason==='sync-unavailable-or-stale'));
+    assert.ok((await data.liveCandidates(reader,now,withoutPrice)).decisions.some(d=>d.reason==='sync-unavailable-or-stale'));
     // Concurrent dispatches of the same deterministic story call X exactly once.
     let sent=0;
     const x={post:async()=>{sent++;return {id:'12345'};}};

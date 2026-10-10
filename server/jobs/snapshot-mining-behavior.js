@@ -44,7 +44,7 @@ function getPoolNameForAddress(address) {
  * Compute miner behavior for a single date.
  * Uses a join between coinbase outputs and transaction_inputs to detect spends.
  */
-async function computeDay(client, dateStr, reader = readPool) {
+async function readDay(reader, dateStr) {
   const dayStart = Math.floor(new Date(dateStr + 'T00:00:00Z').getTime() / 1000);
   const dayEnd = dayStart + 86400;
 
@@ -112,6 +112,10 @@ async function computeDay(client, dateStr, reader = readPool) {
     entry.outputsTotal += parseInt(row.output_count || 0);
   }
 
+  return poolAgg;
+}
+
+async function writeDay(client, dateStr, poolAgg) {
   await client.query('DELETE FROM mining_behavior_daily WHERE date = $1', [dateStr]);
 
   for (const [poolName, data] of Object.entries(poolAgg)) {
@@ -134,6 +138,10 @@ async function computeDay(client, dateStr, reader = readPool) {
   }
 
   return Object.keys(poolAgg).length;
+}
+
+async function computeDay(client, dateStr, reader = readPool) {
+  return writeDay(client, dateStr, await readDay(reader, dateStr));
 }
 
 async function run() {
@@ -185,4 +193,4 @@ async function run() {
 }
 
 if (require.main === module) run();
-module.exports = { computeDay };
+module.exports = { computeDay, readDay, writeDay };

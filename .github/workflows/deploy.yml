@@ -108,25 +108,8 @@ jobs:
           NEW_SHA: ${{ github.event.workflow_run.head_sha }}
           PREV_SHA: ${{ steps.roles.outputs.prev_sha }}
         run: |
-          if [[ "$NEW_SHA" == "$PREV_SHA" ]]; then
-            echo "Primary is already at $NEW_SHA; nothing to deploy."
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          elif git cat-file -e "${PREV_SHA}^{commit}" 2>/dev/null; then
-            changed="$(git diff --name-only "$PREV_SHA" "$NEW_SHA" -- server lib package.json package-lock.json || true)"
-            if [[ -z "$changed" ]]; then
-              echo "No server/lib/package changes between $PREV_SHA and $NEW_SHA; skipping deploy."
-              echo "deploy=false" >> "$GITHUB_OUTPUT"
-            else
-              echo "Relevant changes since $PREV_SHA:"
-              echo "$changed"
-              echo "deploy=true" >> "$GITHUB_OUTPUT"
-            fi
-          else
-            # PREV_SHA isn't reachable from this checkout (force-push/rebase
-            # of main, or the very first run). Deploy rather than guess.
-            echo "Cannot diff against $PREV_SHA (not reachable); deploying to be safe."
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          fi
+          python3 scripts/api-deployment-relevance.py \
+            --previous "$PREV_SHA" --current "$NEW_SHA" >> "$GITHUB_OUTPUT"
 
       - name: Deploy to primary box
         if: steps.changes.outputs.deploy == 'true'

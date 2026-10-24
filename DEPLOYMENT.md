@@ -12,7 +12,8 @@ See also: [server infrastructure wiki](https://github.com/Kenbak/cipherscan) and
 
 | Component | Version / Notes |
 |-----------|----------------|
-| **Node.js** | 22.23.4 or newer within Node 22 (development/CI pin in `.node-version`) |
+| **Node.js frontend** | 24.22.1 or newer within Node 24 (development/CI pin in `.node-version`) |
+| **Node.js API / indexer** | 22.23.4 or newer within Node 22 (server CI pin in `.node-version.server`) |
 | **npm** | 9+ |
 | **PostgreSQL** | 16+ with `zcash_explorer_mainnet` or `zcash_explorer_testnet` database |
 | **Redis** | 6+ (pub/sub for multi-worker WebSocket; API response caching) |
@@ -21,12 +22,26 @@ See also: [server infrastructure wiki](https://github.com/Kenbak/cipherscan) and
 | **lightwalletd** | Optional — gRPC light client interface backed by Zebra (mainnet only) |
 | **Caddy** (mainnet) / **nginx** (testnet) | Reverse proxy with TLS |
 
-Node 22.23.4 is the minimum supported patch for the October 2026 Node security
-fixes. Update the executable used by each API, bot and scheduled job, then restart
-long-running processes and verify their running runtime. Docker deployments need
-rebuilt images and recreated containers; updating the host does not update them.
-Vercel manages its runtime separately from `.node-version`; verify the deployed
-runtime and redeploy affected projects after the platform patch is available.
+The frontend targets patched Node 24.22.1 or newer. The root engine range also
+supports patched Node 22.23.4 so existing self-managed API/bot installations can
+continue installing shared root dependencies. Vercel selects the newest supported
+major matching that range (24); the repository engine range overrides the dashboard.
+The previous Node 22 restriction came from development/CI standardization, with
+no documented application incompatibility that required excluding Node 24.
+
+Vercel manages the actual serving patch separately from `.node-version`. Verify
+`[node-runtime]` / `process.version` on each exact deployment: a Node 24 selection
+or patched builder does not establish a patched serving process. Node 24.22.0 is
+vulnerable to the October 2026 Brotli issue; 24.22.1 contains its fix.
+
+Self-managed servers retain Node 22.23.4 or newer within 22. Updating those
+processes requires installing the runtime and restarting each API, bot or job.
+Docker deployments require rebuilt images and recreated containers. The web image
+defaults to Node 24.22.1 (`WEB_NODE_IMAGE` override); the API image retains its
+Node 22.23.4 default (`NODE_IMAGE` override). An engine-only
+root manifest/lock change skips the API rollout only when no other API-relevant
+content differs from the previously deployed commit; dependency, server and shared
+library changes still trigger normal deployment.
 
 ---
 

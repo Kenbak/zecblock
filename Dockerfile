@@ -3,7 +3,7 @@
 # CipherScan Next.js frontend - multi-stage build producing a standalone server.
 # Base image uses an exact Node patch tag; override with
 # --build-arg NODE_IMAGE=... to build against a specific Node image / commit.
-ARG NODE_IMAGE=node:22.23.4-bookworm-slim
+ARG NODE_IMAGE=node:24.22.1-bookworm-slim
 
 # ---------------------------------------------------------------------------
 # deps: install production-resolved node_modules from the lockfile

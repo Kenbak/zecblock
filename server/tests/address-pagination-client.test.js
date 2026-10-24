@@ -200,3 +200,29 @@ test('address server/loading/empty/overview amounts and metadata use the configu
     assert.ok(markup.includes(`1.5000 ${currency}`), 'JSON-LD uses the same units as visible amounts');
   }
 });
+
+test('TEX address pages (ZIP 320) link their P2PKH form and leave indexing to it', async () => {
+  const TEX = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+  const P2PKH = 't1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC';
+  const zcash = loadAddressComponent('../../../lib/zcash.ts');
+  for (const tex of [TEX, 'textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy']) assert.equal(zcash.detectAddressType(tex), 'tex');
+  const meta = { address: TEX, transparentAddress: P2PKH, balance: 0.125, txCount: 1, type: 'transparent', isShielded: false };
+  const layout = loadAddressComponent('layout.tsx', 'ZEC', {
+    '@/components/CopyButton': { CopyButton: () => null },
+    'next/navigation': { notFound: () => { throw new Error('Unexpected not found'); } },
+    '@/lib/zcash': zcash,
+    '@/lib/isr-fallback': { retainLastGoodOrBuildFallback: value => value },
+    '@/lib/seo': {
+      getAddressResolution: async () => ({ state: 'found', meta }),
+      formatNumber: value => String(value),
+      getBaseUrl: () => 'https://zecblock.com',
+      buildPageMetadata: options => options,
+    },
+  });
+  const props = { params: Promise.resolve({ address: TEX }) };
+  const metadata = await layout.generateMetadata(props);
+  assert.match(metadata.description, /^TEX Zcash address\./);
+  assert.equal(metadata.index, false, 'the P2PKH page remains the indexed copy of this history');
+  const markup = renderToStaticMarkup(await layout.default(props));
+  assert.ok(markup.includes(`href="/address/${P2PKH}"`), 'the header links the P2PKH form');
+});

@@ -26,6 +26,10 @@ function isValidAddressSyntax(address: string): boolean {
       && /^(?:u|utest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/.test(address);
   }
 
+  if (type === 'tex') {
+    return /^(?:tex|textest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38}$/.test(address);
+  }
+
   return false;
 }
 

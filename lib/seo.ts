@@ -413,6 +413,8 @@ async function getPendingTxResolution(txid: string): Promise<TxResolution> {
 
 export interface AddressMeta {
   address: string;
+  /** For a TEX address (ZIP 320), the P2PKH address it re-encodes. */
+  transparentAddress?: string;
   balance: number;
   type: 'shielded' | 'transparent' | 'unified';
   txCount: number;
@@ -442,6 +444,7 @@ export const getAddressResolution = cache(async (address: string): Promise<Addre
       state: 'found',
       meta: {
         address: data.address,
+        transparentAddress: data.transparentAddress,
         balance: (data.balance || 0) / 100000000,
         type: data.type || 'transparent',
         txCount: data.txCount || data.transactionCount || 0,

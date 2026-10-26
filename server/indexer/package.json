@@ -12,7 +12,7 @@
   "description": "Zcash blockchain indexer",
   "dependencies": {
     "dotenv": "^17.2.3",
-    "pg": "^8.16.3",
+    "pg": "^8.23.1",
     "redis": "^5.9.0"
   }
 }

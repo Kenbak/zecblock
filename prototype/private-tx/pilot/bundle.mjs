@@ -13,7 +13,25 @@ const commit = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: ROOT, encoding:
 const binary = await readFile(resolve(nativePath));
 const nativeBuild = JSON.parse(await readFile(resolve(receiptPath), 'utf8'));
 if (!/^[a-f0-9]{40}$/.test(nativeBuild.commit) || nativeBuild.artifact.sha256 !== createHash('sha256').update(binary).digest('hex')) throw new Error('Native build receipt mismatch.');
-execFileSync('git', ['diff', '--quiet', nativeBuild.commit, commit, '--', 'prototype/pir-browser'], { cwd: ROOT });
+// The browser binding and test-only dev dependencies may change independently
+// of the native executable. Check its actual source/configuration closure;
+// never accept a binary after native/profile/normal dependency changes.
+execFileSync('git', ['diff', '--quiet', nativeBuild.commit, commit, '--',
+  'prototype/pir-browser/native', 'prototype/pir-browser/src/full_record.rs',
+  'prototype/pir-browser/bootstrap.py', 'prototype/pir-browser/build.sh',
+  'server/tests/fixtures/browser-transactions.json'], { cwd: ROOT });
+const gitFile = (revision, path) => execFileSync('git', ['show', `${revision}:prototype/pir-browser/${path}`], { cwd: ROOT, encoding: 'utf8' });
+const configurations = { oldCargo: gitFile(nativeBuild.commit, 'Cargo.toml'), newCargo: gitFile(commit, 'Cargo.toml'), oldLock: gitFile(nativeBuild.commit, 'Cargo.lock'), newLock: gitFile(commit, 'Cargo.lock') };
+execFileSync('python3', ['-c', `import json,sys,tomllib
+d=json.load(sys.stdin)
+a=tomllib.loads(d['oldCargo']); b=tomllib.loads(d['newCargo'])
+for key in ['dependencies','patch','profile','workspace']:
+ assert a.get(key)==b.get(key), 'Native build configuration changed: '+key
+a=tomllib.loads(d['oldLock']); b=tomllib.loads(d['newLock'])
+for value in [a,b]:
+ value['package']=[p for p in value['package'] if p['name']!='zecblock-pir-browser']
+assert a==b, 'Native locked dependencies changed'
+`], { input: JSON.stringify(configurations) });
 if (binary.subarray(0, 4).toString('hex') !== '7f454c46' || binary[4] !== 2 || binary[5] !== 1 || binary.readUInt16LE(18) !== 62) {
   throw new Error('Pilot requires a Linux x86_64 ELF executable.');
 }
@@ -27,6 +45,7 @@ const files = [
   'prototype/private-tx/pilot/publish-once.mjs',
   'prototype/private-tx/pilot/state-budget.mjs',
   'prototype/private-tx/pilot/install.py',
+  'prototype/private-tx/pilot/upgrade.py',
   'prototype/private-tx/pilot/zecblock-pir-pilot.slice',
   'prototype/private-tx/pilot/zecblock-pir-pilot.service',
   'prototype/private-tx/pilot/zecblock-pir-pilot-publish.service',

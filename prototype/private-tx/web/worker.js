@@ -3,8 +3,11 @@
 const MAX_MANIFEST_BYTES = 1024 * 1024;
 const MAX_SETUP_BYTES = 128 * 1024 * 1024;
 const MAX_QUERY_BYTES = 4 * 1024 * 1024;
-const MAX_RESPONSE_BYTES = 32 * 1024 * 1024;
-let client, manifest, initializing, timer;
+const MAX_BATCH_CHUNKS = 64;
+const BATCH_TIMEOUT_MS = 30_000;
+const REQUEST_BYTES = 20_992;
+const RESPONSE_BYTES = 10_240;
+let client, manifest, initializing;
 let lookupInProgress = false;
 let refreshing = false;
 class LookupError extends Error {
@@ -18,7 +21,7 @@ const errors = {
   outside: 'This transaction is outside the published confirmed range. This does not mean it is missing from Zcash.',
   query: 'The browser could not create the encrypted request. No public lookup was attempted.',
   network: 'The query service is unavailable or the publication was retired. Reload the catalogue and try again. No public lookup was attempted.',
-  decode: 'The response was incomplete, changed or incompatible. The result was rejected without a public lookup fallback.',
+  decode: 'The private lookup did not produce a complete valid record. Refresh the publication or try again manually. No public lookup was attempted.',
   busy: 'Wait for the current private lookup to finish.',
 };
 async function boundedBytes(response, maximum, code) {
@@ -40,7 +43,7 @@ async function boundedBytes(response, maximum, code) {
   for (const chunk of chunks) { result.set(chunk, offset); offset += chunk.byteLength; }
   return result;
 }
-const options = () => ({ cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'same-origin', referrerPolicy: 'no-referrer', signal: AbortSignal.timeout(60_000) });
+const options = signal => ({ cache: 'no-store', credentials: 'omit', redirect: 'error', mode: 'same-origin', referrerPolicy: 'no-referrer', signal: signal ?? AbortSignal.timeout(60_000) });
 async function refreshPublication() {
   if (lookupInProgress || refreshing) return;
   refreshing = true;
@@ -49,6 +52,8 @@ async function refreshPublication() {
     const json = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
     const next = JSON.parse(json);
     if (next.schema !== 'zecblock-private-tx-full-v1' || !/^[a-f0-9]{64}$/.test(next.publicationId) || !Array.isArray(next.catalogue)) throw new LookupError('manifest');
+    if (!Number.isSafeInteger(next.chunkCount) || next.chunkCount < 1 || next.chunkCount > MAX_BATCH_CHUNKS
+        || next.scheme?.request_bytes !== REQUEST_BYTES || next.scheme?.response_bytes !== RESPONSE_BYTES) throw new LookupError('manifest');
     const statusBytes = await boundedBytes(await fetch('/publication/status.json', options()), 8192, 'manifest');
     const status = JSON.parse(new TextDecoder().decode(statusBytes));
     const age = Date.now() - Date.parse(next.snapshot?.publishedAt);
@@ -67,11 +72,34 @@ async function refreshPublication() {
 async function initialize() {
   if (!globalThis.crypto?.subtle || typeof WebAssembly !== 'object') throw new LookupError('initialize');
   await refreshPublication();
-  clearInterval(timer);
-  // Refresh is uniform metadata traffic, independent of the selected record.
-  timer = setInterval(() => {
-    refreshPublication().catch(() => postMessage({ type: 'publication-warning', message: 'Publication refresh is unavailable. Displayed results remain tied to their captured snapshot.' }));
-  }, 30_000);
+  // Pin metadata for this page session. Automatic polling in this worker would
+  // be delayed differently by successful and failed private-content decoding.
+  // A user may explicitly reload to select a fresh publication.
+}
+
+async function collectReplies(queries, publicationId, requestId) {
+  const signal = AbortSignal.timeout(BATCH_TIMEOUT_MS);
+  let completed = 0;
+  // Invoke every fetch before awaiting any response. The browser may queue HTTP
+  // connections, but private reply contents never choose our dispatch plan.
+  const tasks = queries.map(async query => {
+    try {
+      const response = await fetch('/pir/query', { ...options(signal), method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-PIR-Publication': publicationId }, body: query });
+      if (!response.ok || response.headers.get('content-type')?.split(';')[0].trim().toLowerCase() !== 'application/octet-stream') {
+        await response.body?.cancel();
+        throw new LookupError('decode');
+      }
+      const answer = await boundedBytes(response, RESPONSE_BYTES, 'decode');
+      if (answer.length !== RESPONSE_BYTES) throw new LookupError('decode');
+      return answer;
+    } finally {
+      postMessage({ type: 'stage', requestId, stage: 'server', chunk: ++completed, chunks: queries.length });
+    }
+  });
+  // A failed slot must not reject the batch early or cancel other requests.
+  const settled = await Promise.allSettled(tasks);
+  if (settled.some(slot => slot.status !== 'fulfilled')) throw new LookupError('decode');
+  return settled.map(slot => slot.value);
 }
 async function lookup(txid, requestId) {
   if (!client || !manifest) throw new LookupError('initialize');
@@ -85,30 +113,32 @@ async function lookup(txid, requestId) {
   try {
     const chunks = client.begin_query(txid);
     txid = '';
-    if (chunks !== manifest.chunkCount) throw new LookupError('query');
-    let result;
+    if (chunks !== manifest.chunkCount || chunks < 1 || chunks > MAX_BATCH_CHUNKS) throw new LookupError('query');
+    const queries = [];
+    const t0 = performance.now();
     for (let index = 0; index < chunks; index++) {
-      phase = 'query';
-      const t0 = performance.now();
       const query = client.make_chunk_query(index);
-      encryptMs += performance.now() - t0;
-      if (!(query instanceof Uint8Array) || !query.length || query.length > MAX_QUERY_BYTES) throw new LookupError('query');
-      phase = 'network';
-      postMessage({ type: 'stage', requestId, stage: 'server', chunk: index + 1, chunks });
-      const t1 = performance.now();
-      const response = await fetch('/pir/query', { ...options(), method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-PIR-Publication': manifest.publicationId }, body: query });
-      if (!response.headers.get('content-type')?.startsWith('application/octet-stream')) throw new LookupError('network');
-      const answer = await boundedBytes(response, MAX_RESPONSE_BYTES, 'network');
-      requestMs += performance.now() - t1;
+      if (!(query instanceof Uint8Array) || query.length !== REQUEST_BYTES || query.length > MAX_QUERY_BYTES) throw new LookupError('query');
+      queries.push(query);
       queryBytes += query.length;
-      responseBytes += answer.length;
-      phase = 'decode';
-      postMessage({ type: 'stage', requestId, stage: 'decode', chunk: index + 1, chunks });
-      const t2 = performance.now();
+    }
+    encryptMs = performance.now() - t0;
+    phase = 'decode';
+    postMessage({ type: 'stage', requestId, stage: 'server', chunk: 0, chunks });
+    const t1 = performance.now();
+    const replies = await collectReplies(queries, manifest.publicationId, requestId);
+    requestMs = performance.now() - t1;
+    responseBytes = replies.reduce((total, answer) => total + answer.length, 0);
+    // Only after every transport slot settles may any content be decrypted,
+    // parsed, validated or exposed. Failure emits no partial result or retry.
+    postMessage({ type: 'stage', requestId, stage: 'decode', chunks });
+    const t2 = performance.now();
+    let result;
+    for (const answer of replies) {
       const decoded = client.decode_chunk_response(answer);
-      decodeMs += performance.now() - t2;
       if (decoded !== undefined && decoded !== null) result = JSON.parse(decoded);
     }
+    decodeMs = performance.now() - t2;
     if (!result || result.found !== true || !result.detail || !result.raw || result.publicationId !== manifest.publicationId) throw new LookupError('decode');
     postMessage({ type: 'result', requestId, result, measurements: { queryBytes, responseBytes, encryptMs, requestMs, decodeMs, totalMs: performance.now() - started, chunkCount: chunks, publicationId: manifest.publicationId } });
   } catch (error) { throw error instanceof LookupError ? error : new LookupError(phase); }

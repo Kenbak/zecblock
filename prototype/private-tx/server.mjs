@@ -7,6 +7,7 @@ import { createInterface } from 'node:readline';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_QUERY_BYTES = 4 * 1024 * 1024;
+const MAX_BATCH_CHUNKS = 64;
 const SECURITY_HEADERS = {
   'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
@@ -25,7 +26,6 @@ export function nativeEvaluator(binary, fixtureDir) {
   const waiting = new Map();
   let sequence = 0;
   let stopped = false;
-  let busy = false;
   child.stderr.resume(); // Do not persist native payloads or potentially sensitive diagnostics.
   const failAll = () => {
     stopped = true;
@@ -51,23 +51,22 @@ export function nativeEvaluator(binary, fixtureDir) {
   });
   return {
     async evaluate(query) {
-      if (stopped || busy) throw new Error('Local evaluator unavailable or busy.');
-      busy = true;
+      // The native stdin protocol evaluates in FIFO order. Bound queued work
+      // while admitting a browser's fixed batch independently of reply content.
+      if (stopped || waiting.size >= MAX_BATCH_CHUNKS) throw new Error('Local evaluator unavailable or queue full.');
       const id = ++sequence;
-      try {
-        return await new Promise((resolveReply, reject) => {
-          const timer = setTimeout(() => {
-            waiting.delete(id);
-            stopped = true;
-            child.kill();
-            reject(new Error('Local query timed out.'));
-          }, 60_000);
-          waiting.set(id, { resolve: resolveReply, reject, timer });
-          child.stdin.write(`${JSON.stringify({ id, query: query.toString('base64') })}\n`, error => {
-            if (error) failAll();
-          });
+      return await new Promise((resolveReply, reject) => {
+        const timer = setTimeout(() => {
+          waiting.delete(id);
+          stopped = true;
+          child.kill();
+          reject(new Error('Local query timed out.'));
+        }, 60_000);
+        waiting.set(id, { resolve: resolveReply, reject, timer });
+        child.stdin.write(`${JSON.stringify({ id, query: query.toString('base64') })}\n`, error => {
+          if (error) failAll();
         });
-      } finally { busy = false; }
+      });
     },
     close() { failAll(); lines.close(); child.kill(); },
   };
@@ -88,6 +87,7 @@ export function localPublications({ localDir = resolve(HERE, '.local'), binary =
     const manifestBytes = await readFile(resolve(dir, 'manifest.json'));
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
     if (manifest.schema !== 'zecblock-private-tx-full-v1' || manifest.publicationId !== pointer.publicationId) throw new Error('Incompatible local publication.');
+    if (!Number.isSafeInteger(manifest.chunkCount) || manifest.chunkCount < 1 || manifest.chunkCount > MAX_BATCH_CHUNKS) throw new Error('Unsupported fixed batch size.');
     if (!Number.isSafeInteger(manifest.scheme?.request_bytes) || manifest.scheme.request_bytes < 1 || manifest.scheme.request_bytes > MAX_QUERY_BYTES) throw new Error('Invalid encrypted query geometry.');
     const publicBytes = await readFile(resolve(dir, 'public.bin'));
     const publication = { manifest, manifestBytes, publicBytes, evaluator: createEvaluator(binary, dir) };

@@ -727,6 +727,8 @@ dependencies = [
  "wasm-bindgen",
  "zakura-pir-client",
  "zakura-pir-protocol",
+ "zakura-pir-query-server",
+ "zakura-pir-server-core",
  "zakura-transaction-wire",
 ]
 

@@ -291,7 +291,7 @@ try {
     await page.locator('#lookup-button').click();
     await page.locator('#lookup-error').waitFor({ state: 'visible', timeout: 60_000 });
     assert.equal(await page.locator('#result-section').count(), 0);
-    await auditPhase(phase, 1, { realAnswers: false });
+    await auditPhase(phase, activeManifest.chunkCount, { realAnswers: false });
     labFaults.push({ name: failure, scope: 'Browser route injection; query was not forwarded to the remote evaluator.', error: await page.locator('#lookup-error').innerText() });
   }
   fault = null;

@@ -198,9 +198,23 @@ struct FullDirectoryEntry {
 
 struct FullLookup {
     entry: FullDirectoryEntry,
-    next_chunk: usize,
-    secret: Option<NativeSecret>,
+    next_query: usize,
+    next_response: usize,
+    secrets: Vec<Option<NativeSecret>>,
     assembled: Vec<u8>,
+}
+
+/// Bound request-local keys and transport buffers before accepting a publication.
+/// At 64 chunks the secret coefficient vectors contain at most 1 MiB; this is
+/// not an estimate of the complete browser/WASM resident memory.
+pub const MAX_BATCH_CHUNKS: usize = 64;
+
+fn batch_chunk_count(value: &serde_json::Value) -> Result<usize, String> {
+    value
+        .as_u64()
+        .filter(|&n| n > 0 && n <= MAX_BATCH_CHUNKS as u64)
+        .map(|n| n as usize)
+        .ok_or_else(|| "Unsupported full-record batch chunk count".into())
 }
 
 /// Full confirmed records from one explicitly bounded, versioned publication.
@@ -242,6 +256,7 @@ impl FullPirBrowser {
         if manifest["publicationId"] != publication_id {
             return Err(js_error("Full-record publication identity mismatch"));
         }
+        let chunk_count = batch_chunk_count(&manifest["chunkCount"]).map_err(js_error)?;
         let profile = full_record::profile().map_err(js_error)?;
         if manifest["scheme"] != serde_json::to_value(&profile.scheme).map_err(js_error)?
             || public_setup.len() != profile.scheme.public_bytes
@@ -251,11 +266,6 @@ impl FullPirBrowser {
                 "Full-record public setup or pinned native profile mismatch",
             ));
         }
-        let chunk_count = manifest["chunkCount"]
-            .as_u64()
-            .filter(|&n| n > 0 && n <= full_record::ROWS as u64)
-            .ok_or_else(|| js_error("Unsupported full-record chunk count"))?
-            as usize;
         let entries: Vec<FullDirectoryEntry> =
             serde_json::from_value(manifest["catalogue"].clone()).map_err(js_error)?;
         if entries.is_empty()
@@ -300,103 +310,112 @@ impl FullPirBrowser {
     /// Resolve only in the uniformly downloaded local directory. An unknown
     /// txid is outside this publication; it is not a claim of chain absence.
     pub fn begin_query(&mut self, txid: &str) -> Result<u32, JsValue> {
+        self.begin_lookup(txid).map_err(js_error)
+    }
+
+    /// Generate the whole fixed query batch in order before dispatch or decode.
+    /// Reply bytes cannot be consumed until every query has been generated.
+    pub fn make_chunk_query(&mut self, index: u32) -> Result<Vec<u8>, JsValue> {
+        self.generate_chunk_query(index as usize).map_err(js_error)
+    }
+
+    /// Decode replies in batch order only after query generation is complete.
+    /// The transport must collect the entire fixed response schedule before
+    /// calling this method. Any failure discards all keys and partial content.
+    pub fn decode_chunk_response(&mut self, response: &[u8]) -> Result<Option<String>, JsValue> {
+        self.decode_batch_response(response).map_err(js_error)
+    }
+
+    /// Discard partial results and all retained per-query secrets. The upstream
+    /// NativeSecret destructor zeroizes its coefficient vector; complete browser
+    /// or device memory erasure is not claimed.
+    pub fn cancel_query(&mut self) {
+        self.lookup = None;
+    }
+}
+
+impl FullPirBrowser {
+    fn begin_lookup(&mut self, txid: &str) -> Result<u32, String> {
         if self.lookup.is_some() {
-            return Err(js_error(
-                "Finish or cancel the pending full-record lookup first",
-            ));
+            return Err("Finish or cancel the pending full-record lookup first".into());
         }
-        full_record::parse_display_txid(txid).map_err(js_error)?;
+        full_record::parse_display_txid(txid)?;
         let entry = self
             .catalogue
             .get(&txid.to_ascii_lowercase())
             .cloned()
-            .ok_or_else(|| {
-                js_error(
-                    "Transaction is outside this publication's catalogue; chain status is unknown",
-                )
-            })?;
+            .ok_or(
+                "Transaction is outside this publication's catalogue; chain status is unknown",
+            )?;
         self.lookup = Some(FullLookup {
             assembled: Vec::with_capacity(entry.record_bytes),
             entry,
-            next_chunk: 0,
-            secret: None,
+            next_query: 0,
+            next_response: 0,
+            secrets: (0..self.chunk_count).map(|_| None).collect(),
         });
         Ok(self.chunk_count as u32)
     }
 
-    /// A fresh upstream key and encrypted selection for every fixed-size chunk.
-    /// The ordinal is local and must never be copied into a server lookup path.
-    pub fn make_chunk_query(&mut self, index: u32) -> Result<Vec<u8>, JsValue> {
-        let lookup = self
-            .lookup
-            .as_mut()
-            .ok_or_else(|| js_error("No pending full-record lookup"))?;
-        if lookup.next_chunk != index as usize
-            || lookup.secret.is_some()
-            || index as usize >= self.chunk_count
+    fn generate_chunk_query(&mut self, index: usize) -> Result<Vec<u8>, String> {
+        let mut lookup = self.lookup.take().ok_or("No pending full-record lookup")?;
+        if lookup.next_query != index
+            || index >= self.chunk_count
+            || lookup.next_response != 0
+            || lookup.secrets[index].is_some()
         {
-            return Err(js_error("Invalid full-record chunk sequence"));
+            return Err("Invalid full-record query batch sequence".into());
         }
-        let (secret, query) = self
-            .profile
-            .prepare(lookup.entry.rows[index as usize])
-            .map_err(js_error)?;
-        lookup.secret = Some(secret);
+        let (secret, query) = self.profile.prepare(lookup.entry.rows[index])?;
+        lookup.secrets[index] = Some(secret);
+        lookup.next_query += 1;
+        self.lookup = Some(lookup);
         Ok(query)
     }
 
     /// Return the validated whole result only after every equally padded chunk
     /// has arrived. Any error discards all partial content and pending secrets.
-    pub fn decode_chunk_response(&mut self, response: &[u8]) -> Result<Option<String>, JsValue> {
-        let mut lookup = self
-            .lookup
+    fn decode_batch_response(&mut self, response: &[u8]) -> Result<Option<String>, String> {
+        let mut lookup = self.lookup.take().ok_or("No pending full-record lookup")?;
+        if lookup.next_query != self.chunk_count {
+            return Err("Generate the complete fixed query batch before decoding any reply".into());
+        }
+        let secret = lookup.secrets[lookup.next_response]
             .take()
-            .ok_or_else(|| js_error("No pending full-record lookup"))?;
-        let secret = lookup
-            .secret
-            .take()
-            .ok_or_else(|| js_error("No pending encrypted chunk"))?;
-        let row = self
-            .profile
-            .decode(&secret, &self.public, response)
-            .map_err(js_error)?;
+            .ok_or("No pending encrypted chunk")?;
+        let row = self.profile.decode(&secret, &self.public, response)?;
         let context = full_record::ChunkContext {
             publication_id: &self.publication_id,
             txid: &lookup.entry.txid,
-            index: lookup.next_chunk,
+            index: lookup.next_response,
             count: self.chunk_count,
             record_bytes: lookup.entry.record_bytes,
             record_sha256: &lookup.entry.record_sha256,
         };
-        let payload = full_record::decode_chunk(&context, &row).map_err(js_error)?;
+        let payload = full_record::decode_chunk(&context, &row)?;
         lookup.assembled.extend(payload);
-        lookup.next_chunk += 1;
-        if lookup.next_chunk < self.chunk_count {
+        lookup.next_response += 1;
+        if lookup.next_response < self.chunk_count {
             self.lookup = Some(lookup);
             return Ok(None);
         }
         if lookup.assembled.len() != lookup.entry.record_bytes
             || hex::encode(Sha256::digest(&lookup.assembled)) != lookup.entry.record_sha256
         {
-            return Err(js_error("Full-record checksum or length mismatch"));
+            return Err("Full-record checksum or length mismatch".into());
         }
         let record: serde_json::Value =
-            serde_json::from_slice(&lookup.assembled).map_err(js_error)?;
-        if serde_json::to_vec(&record).map_err(js_error)? != lookup.assembled {
-            return Err(js_error("Noncanonical full-record JSON"));
+            serde_json::from_slice(&lookup.assembled).map_err(|error| error.to_string())?;
+        if serde_json::to_vec(&record).map_err(|error| error.to_string())? != lookup.assembled {
+            return Err("Noncanonical full-record JSON".into());
         }
-        full_record::validate_record(&record, &self.manifest, &lookup.entry.txid)
-            .map_err(js_error)?;
-        full_record::result_envelope(record, &self.publication_id)
-            .map(Some)
-            .map_err(js_error)
-    }
-
-    /// Discard partial results. Guaranteed cryptographic memory erasure is not claimed.
-    pub fn cancel_query(&mut self) {
-        self.lookup = None;
+        full_record::validate_record(&record, &self.manifest, &lookup.entry.txid)?;
+        full_record::result_envelope(record, &self.publication_id).map(Some)
     }
 }
+
+#[cfg(test)]
+mod batch_tests;
 
 #[cfg(test)]
 mod tests {

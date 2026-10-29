@@ -34,6 +34,7 @@ export async function publishRecent({ source, localDir = LOCAL, binary = resolve
     });
     const manifest = JSON.parse(await readFile(resolve(staging, 'manifest.json'), 'utf8'));
     if (!/^[a-f0-9]{64}$/.test(manifest.publicationId)) throw new Error('Invalid local publication identity.');
+    if (!Number.isSafeInteger(manifest.chunkCount) || manifest.chunkCount < 1 || manifest.chunkCount > 64) throw new Error('Publication exceeds the browser fixed-batch budget; previous snapshot retained.');
     const destination = resolve(publications, manifest.publicationId);
     try { await rename(staging, destination); }
     catch (error) {

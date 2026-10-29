@@ -153,7 +153,7 @@ try {
     await page.locator('#lookup-button').click();
     await page.locator('#lookup-error').waitFor({ state: 'visible', timeout: 120_000 });
     assert.equal(await page.locator('#result-section').isVisible(), false);
-    audit(failure, 1);
+    audit(failure, manifest.chunkCount);
   }
   failQuery = false; malformedQuery = false;
   await lookup(mixed, 'recovery');

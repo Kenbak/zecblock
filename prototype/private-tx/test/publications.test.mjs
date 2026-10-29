@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, rm, chmod, readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { localPublications, startPrototype } from '../server.mjs';
@@ -14,7 +14,7 @@ test('publication routing retains in-flight generations and rejects retired/unkn
   async function advance(n) {
     const path = join(dir, 'publications', id(n));
     await mkdir(path, { recursive: true });
-    await writeFile(join(path, 'manifest.json'), JSON.stringify({ schema: 'zecblock-private-tx-full-v1', publicationId: id(n), scheme: { request_bytes: 1 } }));
+    await writeFile(join(path, 'manifest.json'), JSON.stringify({ schema: 'zecblock-private-tx-full-v1', publicationId: id(n), chunkCount: 1, scheme: { request_bytes: 1 } }));
     await writeFile(join(path, 'public.bin'), Buffer.from([n]));
     await writeFile(join(dir, 'current.json'), JSON.stringify({ publicationId: id(n), directory: id(n) }));
   }
@@ -39,6 +39,19 @@ test('publication routing retains in-flight generations and rejects retired/unkn
   assert.equal((await fetch(`${app.url}/publication/${id(1)}/public.bin`)).status, 409);
   assert.equal((await fetch(`${app.url}/publication/${id(4)}/source.json`)).status, 404);
   assert.equal((await fetch(`${app.url}/publication/${id(4)}/database.bin`)).status, 404);
+});
+
+test('oversized fixed batch cannot replace the last usable publication', async t => {
+  const dir = await mkdtemp(join(tmpdir(), 'private-tx-batch-admission-'));
+  t.after(() => rm(dir, { recursive: true, force: true }));
+  const pointer = { publicationId: id(1), directory: id(1) };
+  await writeFile(join(dir, 'current.json'), JSON.stringify(pointer));
+  const binary = join(dir, 'prepare-fixture.mjs');
+  await writeFile(binary, `#!${process.execPath}\nimport { writeFile } from 'node:fs/promises';\nawait writeFile(process.argv[4] + '/manifest.json', JSON.stringify({publicationId:'${id(2)}',chunkCount:65}));\n`);
+  await chmod(binary, 0o755);
+  await assert.rejects(publishRecent({ source: { snapshot: { publishedAt: new Date().toISOString() }, records: [] }, localDir: dir, binary }), /fixed-batch budget/);
+  assert.deepEqual(JSON.parse(await readFile(join(dir, 'current.json'), 'utf8')), pointer);
+  assert.equal(JSON.parse(await readFile(join(dir, 'publisher-status.json'), 'utf8')).state, 'unavailable');
 });
 
 test('failed native preparation retains the previous pointer and reports unavailable source status', async t => {

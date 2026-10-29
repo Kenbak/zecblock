@@ -97,6 +97,13 @@ outside that publication, not proof that it is missing from the chain.
 Full-mode exports are `FullPirBrowser(manifestJson, publicSetupBytes)`,
 `begin_query(txid) -> chunkCount`, `make_chunk_query(index) -> bytes`,
 `decode_chunk_response(bytes) -> string | undefined` and `cancel_query()`.
+Full mode admits **1–64 chunks**. Generate **all** chunk queries before decoding
+any response; interleaved generation/decoding is intentionally rejected. The host
+must dispatch its fixed plan and collect every transport slot before calling the
+decoder, so private content cannot decide later requests. The client retains a
+fresh upstream secret per query and consumes replies in ordinal order. Wrong
+sequence, failed decode and cancellation discard partial content and remaining
+secrets. Host transport/scheduling remains part of this security contract.
 Only the final response returns JSON. It preserves `detail`, `raw`, optional
 `price`/`source`, snapshot and coverage, and adds `found: true`/`publicationId`.
 Chunk ordinals and selected identifiers stay local; transport may name the
@@ -110,6 +117,13 @@ generation retention, safe refresh and no-fallback behavior require the host
 application's own checks. Full mode uses 20,992-byte queries, 10,240-byte replies
 per chunk, 45,056-byte setup and a 16 MiB plaintext table; these sizes are not a
 production capacity qualification.
+
+`examples/reply-attack-fixture.rs` is an **offline test-only** repacker: it corrupts
+one selected chunk header before rebuilding setup, preserving the original
+catalogue/record commitments and publication identity. An affected transaction
+must fail while an unaffected transaction still succeeds under that same setup.
+This tests selective failures rather than a generic bad packet. The helper is not
+part of the serving binary, deployment bundle or production CLI.
 
 ## Interfaces and checks
 

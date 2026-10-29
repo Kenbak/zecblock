@@ -92,10 +92,11 @@ UI block height is normalized from API BIGINT string to a safe integer.
 The capture is **independent HTTP observations over a recorded interval**, not an
 atomic PostgreSQL snapshot or independent chain validation. Block height/hash
 membership is checked before/after capture. Confirmations, spent flags and
-enrichments describe the captured state. Browser metadata refresh runs every
-30 seconds, outside active lookups; a new publication clears the prior result.
-An unavailable publisher or publication older than ten minutes is visibly warned.
-Old/unknown generations are rejected, with no ordinary lookup fallback.
+enrichments describe the captured state. A page pins its initial publication;
+**Refresh publication** explicitly reloads metadata. There is no automatic metadata
+polling or lookup retry. An unavailable publisher or publication older than ten
+minutes is warned at initialization. The snapshot time and pinned-page notice
+remain visible. Old/unknown generations are rejected, with no ordinary fallback.
 
 Historical USD estimates use the bundled observation and disclose its actual
 date when it is a nearest-date fallback. Bridge facts are retained if the source
@@ -180,9 +181,35 @@ transaction/page lookups must remain private. A private directory followed by a
 plaintext locator URL would reveal the selection. Domain routing, page counts,
 padding/cover policy and failure/retry transcripts need separate acceptance.
 
-Our worker stops on a malformed content reply. Successful fixed-count lookups and
-selector-string scans do not qualify resistance to an active server's selective
-corruption/reaction attacks. Reusing the engine does not inherit the upstream
-wallet application's scheduling/closure work. See the pinned
+The full-record client admits **1–64 padded chunks**. It generates the complete
+fresh query batch before dispatch. The worker invokes every fixed-path fetch
+without awaiting reply content, collects all transport slots under one **30-second
+deadline**, and only then decrypts/validates. Each accepted reply is exactly
+**10,240 bytes**; the maximum retained reply payload is **655,360 bytes**. Content,
+framing and transport failures produce one generic error after collection, with
+no partial result, automatic retry, metadata refresh, fallback or related fetch.
+Publisher admission rejects larger batches before changing the pointer; it keeps
+the previous publication instead of dropping oversized transactions.
+
+This closes the tested automatic selective-reply reaction within a **fixed accepted
+publication and trusted client**. It does not promise constant physical timing,
+that every issued HTTP call reaches the server before a deadline, or privacy of
+manual user reactions. Browser connection queues and network stalls remain
+observable. Targeted/equivocating publications, malicious delivered JS/WASM,
+publisher completeness, IP anonymity and cryptographic-profile qualification are
+separate boundaries. Reusing the engine alone does not establish those protections.
+See the pinned
 [package contracts](https://github.com/zakura-core/wallet-libraries/blob/a7c842fd4f16790ed6739346f44557a97065d242/docs/pir-packages.md)
 and [reaction-leak plan](https://github.com/zakura-core/wallet-libraries/blob/a7c842fd4f16790ed6739346f44557a97065d242/docs/pir-reaction-leak-closure.md).
+
+The dedicated VM and actual native/WASM/Chrome regressions compare successful and
+selectively poisoned first/middle/last rows for targeted and unaffected records.
+They retain an old-client negative control so the former early-stop leak must be
+reproduced before the fixed transcripts are accepted. Run the actual browser
+matrix with a frozen publication (see the test's required environment variables):
+
+```sh
+node --test prototype/private-tx/test/reply-privacy.test.mjs
+PRIVATE_TX_REPLY_CLEAN_DIR=/absolute/path/to/frozen/publication \
+node prototype/private-tx/test/reply-privacy-browser.mjs
+```

@@ -26,6 +26,12 @@ response. It does not hide the operator's IP or qualify every active attack.
   existing unauthenticated public API GETs and prepares a 16 MiB table, independent
   of browser searches. The optional timer runs 180 seconds after prior completion.
   Disk keeps four publications; the query service keeps three loaded evaluators.
+- The browser pins its publication until an explicit page refresh. It prepares
+  all queries first, dispatches the complete batch, and waits for all replies
+  before decoding. Admission is capped at 64 chunks with one 30-second batch
+  deadline and exact 10,240-byte replies. The native bridge has a bounded 64-request
+  FIFO; native evaluation itself remains serialized. There is no automatic
+  metadata polling, failure retry or public fallback.
 - A 5 GiB state budget reserves 1 GiB for preparation. Each source/artifact file
   is limited to 128 MiB by the publisher unit; only five known candidate files
   are written. Abandoned candidate directories from a killed serialized invocation
@@ -62,6 +68,14 @@ The installer does run `systemctl daemon-reload` to register the new units; it
 does not restart existing services. Record all resulting artifact and process
 identities separately from production main, node and indexer artifacts.
 
+For an existing pilot, `upgrade.py` requires the exact previous and new commits
+and archive hash. It verifies immutable content and unchanged unit definitions,
+pauses only the pilot timer, waits through an activating one-shot publisher,
+revalidates the active publication, atomically switches the pilot symlink and
+restarts only `zecblock-pir-pilot.service`. A startup failure restores its previous
+release; the previous immutable directory is retained. Existing production units
+are never restarted. Reload an already-open browser page to receive the new client.
+
 ## Access and verify
 
 Use the same local and remote port because Host/Origin checks are strict:
@@ -94,11 +108,15 @@ hashes/health. A successful `/health` alone does not verify native readiness.
 
 The server knows publication identity and its complete public catalogue, record
 locations/sizes/digests, request/response sizes, counts, timing and completion.
-Counts are uniform only within a successful publication lookup; failures abort
-early. It sees a loopback HTTP peer through this tunnel, while SSH/network
+Application dispatch uses the same full query plan for successful and bad-content
+lookups within an accepted publication. All slots settle before decoding and no
+automatic outcome-dependent traffic follows. This is not a constant-time guarantee:
+browser queues, network stalls/deadlines and user-driven actions remain observable.
+It sees a loopback HTTP peer through this tunnel, while SSH/network
 operators still observe the operator's source IP and connection timing. Browser
-code delivery remains trusted. Request scans are regression checks, not a proof
-against adaptive malicious responses or a malicious frontend distributor.
+code delivery remains trusted. The selective-reply regression covers a fixed
+accepted publication; it does not qualify malicious frontend delivery or
+publication equivocation/completeness.
 Publisher correctness, full history, mempool, concurrency/availability and
 independent IP-hiding transport remain separate qualification work.
 

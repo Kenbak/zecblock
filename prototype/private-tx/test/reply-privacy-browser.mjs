@@ -205,7 +205,8 @@ try {
   for (const result of cases) assert.deepEqual(result.requestShape, baseline, `${result.variant}/${result.selectorClass} has the same observable request shape.`);
   for (const result of cases) assert.deepEqual(result.receiverRequestShape, cases[0].receiverRequestShape, 'The receiver observes the same padded POST count and route/method order.');
   const rejectionMessages = cases.filter(result => result.outcome === 'error').map(result => result.error);
-  assert.equal(rejectionMessages.length, 3);
+  assert.equal(cases.length, variants.length * 2);
+  assert.equal(rejectionMessages.length, variants.filter(variant => variant.corruptOrdinal !== null).length);
   assert.equal(new Set(rejectionMessages).size, 1, 'Content rejection must not disclose a failed chunk ordinal.');
   assert.deepEqual(allErrors, []);
   if (oldBundle) {
@@ -216,7 +217,7 @@ try {
   const report = {
     status: 'passed', completedAt: new Date().toISOString(), publicationId: cleanManifest.publicationId,
     chunkCount: cleanManifest.chunkCount, targetId, unaffectedId,
-    attack: 'Actual native database row corruption at first/middle/last padded chunk, re-preprocessed with updated setup hashes but original publication identity, catalogue and record commitments.',
+    attack: 'Actual native database corruption at first/middle/last record chunk and, for compact layouts, the shared cover row; setup recomputed with original publication identity, catalogue and record commitments.',
     cases, quietWindows,
     oldNegativeControl: { performed: oldBundle !== null, bundle: oldBundle, cases: negativeCases, interpretation: oldBundle ? 'Retained old worker+WASM stop after one query for the poisoned target and complete N for an unaffected record; the selective-failure count leak is reproduced separately from the corrected passing matrix.' : 'Not run; set PRIVATE_TX_REPLY_OLD_BUNDLE to the retained pre-fix bundle for a real regression negative control.' },
     checks: ['real upstream native evaluator and browser WASM', 'affected-record rejection with unaffected-record full parity', 'first/middle/last selected-row corruption', 'all padded requests despite content failure', 'identical route/method/publication/body-length/order traces', 'receiver-observed padded POST count and route/method order', 'no selected identifier in HTTP requests', 'no fallback/retry/automatic request after outcome', 'actual 35-second quiet window after first-chunk content rejection', 'uniform content-error text'],

@@ -78,7 +78,7 @@ which transaction a browser selects.
 `prepare-full` verifies confirmed/canonical state, declared coverage and raw
 transaction IDs, then emits a `zecblock-private-tx-full-v1` publication. The
 fixed profile has 2,048 rows of 8,192 bytes. Each row has a 128-byte header
-binding the publication ID, internal txid, ordinal, uniform chunk count, payload
+binding the publication ID, internal txid, ordinal, record chunk count, payload
 length, record length and SHA-256 commitment. The remaining 8,064 bytes hold
 record content or canonical zero padding. The largest serialized record sets
 the publication's query count. Compact publications allocate each record's actual

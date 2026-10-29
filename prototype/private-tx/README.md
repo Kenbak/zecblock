@@ -142,3 +142,47 @@ txid verifies those raw bytes' identity; it does not authenticate block inclusio
 resolved prevouts, fees, spent status, enrichments or publisher completeness.
 These remain explicit source trust assumptions. There is no Tor/OHTTP transport,
 independently trusted installed client or claim of production resilience here.
+
+## Compatibility and the next indexing contract
+
+The pinned upstream PIR encryption/evaluation core is reused. The full transaction
+codec, public txid-to-row catalogue, fixed table and `/pir/query` transport are
+custom. This is not a Vizor-compatible Transparent `/v2` provider or its script
+receive/spend directory/history-page indexes. The upstream txid Display product
+also has different, more limited fields than this complete explorer record.
+Matching the engine does not establish matching indexes, wallet interoperability
+or application-level privacy protections.
+
+The current importer validates transaction-only records and raw txids; blocks and
+addresses cannot simply be inserted into it. The current 2,048-row table and
+publication-wide maximum chunk count are bounded feasibility geometry. Retaining
+more rolling copies does not create an arbitrary-history private lookup service.
+
+Before a substantial backfill, define a durable source journal with canonical
+height/hash checkpoints, resumable bounded read-only ingestion, immutable archive
+segments and a reorg-aware live tail. Separate immutable transaction/raw facts
+from lifecycle/spent/enrichment observations and generic tip context. Full
+snapshots should not be rewritten for every new confirmation. The canonical wiki
+records this as proposed work, not a deployed historical indexer.
+
+Reuse ingestion, publication, PIR evaluation and transport across separately
+versioned record products:
+
+- Transaction: private txid directory/locator and privately retrieved complete
+  payload pages, plus versioned lifecycle/spent overlays.
+- Block: height/hash directory, block metadata and padded transaction-list pages.
+- Transparent address: normalized supported locking-script directory, resolved
+  receive/spend event pages, exact amounts and explicit historical coverage.
+
+Shielded address histories/balances cannot be derived from public chain facts
+alone; any wallet-side viewing-key recovery is a separate client protocol. Related
+transaction/page lookups must remain private. A private directory followed by a
+plaintext locator URL would reveal the selection. Domain routing, page counts,
+padding/cover policy and failure/retry transcripts need separate acceptance.
+
+Our worker stops on a malformed content reply. Successful fixed-count lookups and
+selector-string scans do not qualify resistance to an active server's selective
+corruption/reaction attacks. Reusing the engine does not inherit the upstream
+wallet application's scheduling/closure work. See the pinned
+[package contracts](https://github.com/zakura-core/wallet-libraries/blob/a7c842fd4f16790ed6739346f44557a97065d242/docs/pir-packages.md)
+and [reaction-leak plan](https://github.com/zakura-core/wallet-libraries/blob/a7c842fd4f16790ed6739346f44557a97065d242/docs/pir-reaction-leak-closure.md).

@@ -10,5 +10,5 @@ test('offline pilot upgrade guards cover publisher wait, admission, rollback and
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stderr, /Ran 7 tests/);
+  assert.match(result.stderr, /Ran 8 tests/);
 });

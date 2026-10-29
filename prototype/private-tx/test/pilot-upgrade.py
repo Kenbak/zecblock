@@ -24,7 +24,7 @@ UNITS = ['zecblock-pir-pilot.slice', QUERY, PUBLISH, TIMER]
 
 
 class Sandbox:
-    def __init__(self, *, states=None, timer_active=True, ready_status=200, on_idle=None):
+    def __init__(self, *, states=None, timer_active=True, ready_status=200, ready_outcomes=None, on_idle=None):
         self.temp = tempfile.TemporaryDirectory(prefix='pir-upgrade-offline-')
         base = Path(self.temp.name).resolve()
         self.root, self.state, self.units = base / 'pilot', base / 'state', base / 'units'
@@ -54,6 +54,7 @@ class Sandbox:
         self.states = list(states or [('inactive', '0')])
         self.timer_active = timer_active
         self.ready_status, self.on_idle = ready_status, on_idle
+        self.ready_outcomes = list(ready_outcomes or [])
         self.idle_reported = False
         self.clock = 0
         self.events = []
@@ -98,9 +99,14 @@ class Sandbox:
         self.clock += seconds
 
     def health(self, url, **options):
-        if url != 'http://127.0.0.1:4319/health' or options.get('timeout') != 15:
+        if url != 'http://127.0.0.1:4319/health' or options.get('timeout') != 2:
             raise AssertionError(f'No network request is permitted: {url}')
         self.events.append((('readiness', str(self.ready_status)), self.current.resolve().name))
+        if self.ready_outcomes:
+            outcome = self.ready_outcomes.pop(0)
+            if isinstance(outcome, Exception):
+                raise outcome
+            return contextlib.nullcontext(types.SimpleNamespace(status=outcome))
         return contextlib.nullcontext(types.SimpleNamespace(status=self.ready_status))
 
     def execute(self):
@@ -177,6 +183,15 @@ class UpgradeGuards(unittest.TestCase):
         self.assertEqual(box.current.resolve(), box.previous)
         self.assertTrue(box.previous.is_dir())
         self.assertFalse((box.root / '.upgrade-current').exists())
+        self.assertTrue(box.timer_active)
+
+    def test_listener_startup_race_waits_without_rolling_back_valid_release(self):
+        box = self.sandbox(ready_outcomes=[ConnectionRefusedError('listener not open'), 503, 200])
+        result = box.execute()
+        self.assertEqual(box.service_calls('restart'), [(('restart', QUERY), NEW)])
+        self.assertEqual(box.current.resolve().name, NEW)
+        self.assertEqual(result['upgradedCommit'], NEW)
+        self.assertEqual(len(box.service_calls('readiness')), 3)
         self.assertTrue(box.timer_active)
 
     def test_unit_drift_aborts_before_any_service_operation(self):

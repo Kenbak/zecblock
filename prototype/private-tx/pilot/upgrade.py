@@ -9,6 +9,7 @@ import sys
 import tarfile
 import time
 import urllib.request
+from urllib.error import URLError
 
 archive, expected_sha, new_commit, previous_commit = sys.argv[1:]
 if os.geteuid() != 0 or not re.fullmatch(r'[a-f0-9]{64}', expected_sha) or not all(re.fullmatch(r'[a-f0-9]{40}', value) for value in [new_commit, previous_commit]):
@@ -86,9 +87,20 @@ try:
     switched = True
     activate(release)
     systemctl('is-active', '--quiet', 'zecblock-pir-pilot.service')
-    with urllib.request.urlopen('http://127.0.0.1:4319/health', timeout=15) as response:
-        if response.status != 200:
+    # Type=simple becomes active before Node opens its HTTP listener. Wait for
+    # readiness under a finite deadline instead of treating that startup race
+    # as a failed release. A persistent failure still rolls back below.
+    ready_deadline = time.monotonic() + 15
+    while True:
+        try:
+            with urllib.request.urlopen('http://127.0.0.1:4319/health', timeout=2) as response:
+                if response.status == 200:
+                    break
+        except (OSError, URLError):
+            pass
+        if time.monotonic() >= ready_deadline:
             raise RuntimeError('Pilot readiness failed.')
+        time.sleep(0.2)
 except BaseException:
     if switched:
         activate(previous)

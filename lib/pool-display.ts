@@ -16,6 +16,12 @@ export function formatPoolAmount(zec: number, currency: PoolCurrency, price: num
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', notation: 'compact', minimumFractionDigits: 0, maximumFractionDigits: 2 }).format(value);
 }
 
+/** Remaining issuance has no market value; only issued balances are converted to USD. */
+export function formatSupplySegmentAmount(segment: { key: string; zat: number }, currency: PoolCurrency, price: number | null): string {
+  if (segment.key === 'unmined' && currency === 'usd') return 'Not issued';
+  return formatPoolAmount(segment.zat / 1e8, currency, price);
+}
+
 /** Calendar ticks on a real time axis. Missing daily samples do not compress elapsed time. */
 export function poolDateAxis(dates: string[], width: number) {
   const times = dates.map(date => Date.parse(date)).filter(Number.isFinite);

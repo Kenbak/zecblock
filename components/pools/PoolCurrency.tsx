@@ -3,7 +3,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { quoteIsFresh, type PriceQuote } from '@/lib/valuation';
-import { formatPoolAmount, type PoolCurrency } from '@/lib/pool-display';
+import { formatPoolAmount, formatSupplySegmentAmount, type PoolCurrency } from '@/lib/pool-display';
 import { isMainnet } from '@/lib/config';
 
 const PoolCurrencyContext = createContext({
@@ -28,7 +28,11 @@ export function PoolCurrencyProvider({ children }: { children: ReactNode }) {
 
 export function usePoolCurrency() {
   const context = useContext(PoolCurrencyContext);
-  return { ...context, format: (zec: number, unit = true) => formatPoolAmount(zec, context.currency, context.price, unit) };
+  return {
+    ...context,
+    format: (zec: number, unit = true) => formatPoolAmount(zec, context.currency, context.price, unit),
+    formatSupplySegment: (segment: { key: string; zat: number }) => formatSupplySegmentAmount(segment, context.currency, context.price),
+  };
 }
 
 export function PoolCurrencyToggle() {

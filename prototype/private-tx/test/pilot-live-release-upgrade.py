@@ -21,7 +21,8 @@ OLD, NEW, PAUSED, ADVANCED, FRESH = '1' * 40, '2' * 40, 'a' * 64, 'd' * 64, 'b' 
 
 class Fixture:
     def __init__(self, *, ready=True, load=True, assets=True, advance=False, prune=False,
-                 compact=True, source_blocked=False, compact_load=True):
+                 compact=True, source_blocked=False, compact_load=True,
+                 timer_state='inactive', old_publisher_pid='0'):
         self.temp = tempfile.TemporaryDirectory(prefix='pir-live-release-offline-')
         base = Path(self.temp.name).resolve()
         spec = importlib.util.spec_from_file_location('tested_live_release_upgrade', SCRIPT)
@@ -71,6 +72,7 @@ class Fixture:
         self.ready, self.load, self.assets, self.advance, self.prune = ready, load, assets, advance, prune
         self.compact, self.source_blocked = compact, source_blocked
         self.compact_load = compact_load
+        self.timer_state, self.old_publisher_pid = timer_state, old_publisher_pid
         self.events, self.clock, self.wait = [], 0, []
         self.publisher = True
         self.active_id = PAUSED
@@ -121,9 +123,12 @@ class Fixture:
         if prop == '--property=FragmentPath,DropInPaths':
             drop = str(u.UNITS / (m.QUERY + '.d/live.conf')) if name == m.QUERY else ''
             return f'FragmentPath={u.UNITS / name}\nDropInPaths={drop}\n'
+        if name == u.TIMER:
+            self.assert_command(prop == '--property=ActiveState')
+            return f'ActiveState={self.timer_state}\n'
         self.assert_command(prop == '--property=ActiveState,MainPID')
-        if name in (u.PUBLISH, u.TIMER):
-            return 'ActiveState=inactive\nMainPID=0\n'
+        if name == u.PUBLISH:
+            return f'ActiveState=inactive\nMainPID={self.old_publisher_pid}\n'
         if name == m.PUBLISH and self.wait:
             state, pid = self.wait.pop(0)
             self.events.append(('publisher-state', state, pid))
@@ -212,6 +217,21 @@ class LiveRelease(unittest.TestCase):
         self.assertTrue(box.execute(True)['verifiedOnly'])
         self.assertEqual(box.tree(Path(box.temp.name)), before)
         self.assertEqual(box.events, [])
+
+    def test_inactive_timer_without_main_pid_is_valid(self):
+        box = self.fixture()
+        self.assertEqual(box.fields(['systemctl', 'show', box.m.u.TIMER, '--property=ActiveState']),
+                         'ActiveState=inactive\n')
+        self.assertTrue(box.execute(True)['verifiedOnly'])
+        self.assertEqual(box.events, [])
+
+    def test_active_timer_or_old_publisher_pid_refuse_before_mutation(self):
+        for options in ({'timer_state': 'active'}, {'old_publisher_pid': '321'}):
+            with self.subTest(options=options):
+                box = self.fixture(**options)
+                with self.assertRaisesRegex(RuntimeError, 'must remain stopped'):
+                    box.execute()
+                self.assertEqual(box.events, [])
 
     def test_success_waits_and_validates_final_legacy_64_chunk_view_then_compact(self):
         box = self.fixture(advance=True)

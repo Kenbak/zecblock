@@ -10,5 +10,5 @@ test('offline live release upgrade validates old native view and restores it on 
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stderr, /Ran 11 tests/);
+  assert.match(result.stderr, /Ran 13 tests/);
 });

@@ -84,10 +84,11 @@ def validate_install(previous, unit_bytes):
     for name in (QUERY, SOURCE, PUBLISH):
         state = fields(name, 'ActiveState,MainPID')
         u.require(state['ActiveState'] == 'active' and int(state['MainPID']) > 0, 'Live pilot unit is not active')
-    for name in (u.TIMER, u.PUBLISH):
-        state = fields(name, 'ActiveState,MainPID')
-        u.require(state['ActiveState'] in ('inactive', 'failed') and state['MainPID'] == '0',
-                  'Rolling publisher/timer must remain stopped')
+    timer = fields(u.TIMER, 'ActiveState')
+    u.require(timer['ActiveState'] in ('inactive', 'failed'), 'Rolling publisher/timer must remain stopped')
+    publisher = fields(u.PUBLISH, 'ActiveState,MainPID')
+    u.require(publisher['ActiveState'] in ('inactive', 'failed') and publisher['MainPID'] == '0',
+              'Rolling publisher/timer must remain stopped')
     _, manifest, _ = u.publication(u.LIVE_STATE)
     u.require(manifest['coverage']['startHeight'] == floor, 'Live publication/config floor mismatch')
     canonical_publication(manifest, floor)

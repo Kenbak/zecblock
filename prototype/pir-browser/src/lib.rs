@@ -226,6 +226,7 @@ pub struct FullPirBrowser {
     profile: TableProfile,
     public: Vec<u8>,
     chunk_count: usize,
+    cover_row: Option<usize>,
     catalogue: std::collections::BTreeMap<String, FullDirectoryEntry>,
     lookup: Option<FullLookup>,
 }
@@ -235,6 +236,55 @@ fn canonical_hash(value: &str) -> bool {
         && value
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+fn validate_full_catalogue(
+    manifest: &serde_json::Value,
+    chunk_count: usize,
+    cover_row: Option<usize>,
+) -> Result<std::collections::BTreeMap<String, FullDirectoryEntry>, String> {
+    let entries: Vec<FullDirectoryEntry> =
+        serde_json::from_value(manifest["catalogue"].clone()).map_err(|error| error.to_string())?;
+    if entries.is_empty()
+        || entries.len() > cover_row.unwrap_or(full_record::ROWS)
+        || cover_row.is_none()
+            && entries
+                .len()
+                .checked_mul(chunk_count)
+                .is_none_or(|n| n > full_record::ROWS)
+    {
+        return Err("Full-record catalogue exceeds its pinned table".into());
+    }
+    let mut catalogue = std::collections::BTreeMap::new();
+    let mut used_rows = std::collections::HashSet::new();
+    let mut max_actual = 0;
+    for entry in entries {
+        let actual = entry.record_bytes.div_ceil(full_record::PAYLOAD_BYTES);
+        let expected = if cover_row.is_some() {
+            actual
+        } else {
+            chunk_count
+        };
+        if !canonical_hash(&entry.txid)
+            || !canonical_hash(&entry.record_sha256)
+            || entry.rows.len() != expected
+            || actual == 0
+            || actual > chunk_count
+            || entry
+                .rows
+                .iter()
+                .any(|&row| row >= cover_row.unwrap_or(full_record::ROWS) || !used_rows.insert(row))
+            || catalogue.contains_key(&entry.txid)
+        {
+            return Err("Invalid full-record catalogue allocation or commitment".into());
+        }
+        max_actual = max_actual.max(actual);
+        catalogue.insert(entry.txid.clone(), entry);
+    }
+    if cover_row.is_some() && max_actual != chunk_count {
+        return Err("Compact publication batch count must match its largest record".into());
+    }
+    Ok(catalogue)
 }
 
 #[wasm_bindgen]
@@ -266,42 +316,16 @@ impl FullPirBrowser {
                 "Full-record public setup or pinned native profile mismatch",
             ));
         }
-        let entries: Vec<FullDirectoryEntry> =
-            serde_json::from_value(manifest["catalogue"].clone()).map_err(js_error)?;
-        if entries.is_empty()
-            || entries
-                .len()
-                .checked_mul(chunk_count)
-                .is_none_or(|n| n > full_record::ROWS)
-        {
-            return Err(js_error("Full-record catalogue exceeds its pinned table"));
-        }
-        let mut catalogue = std::collections::BTreeMap::new();
-        let mut used_rows = std::collections::HashSet::new();
-        for entry in entries {
-            if !canonical_hash(&entry.txid)
-                || !canonical_hash(&entry.record_sha256)
-                || entry.rows.len() != chunk_count
-                || entry.record_bytes == 0
-                || entry.record_bytes > chunk_count * full_record::PAYLOAD_BYTES
-                || entry
-                    .rows
-                    .iter()
-                    .any(|&row| row >= full_record::ROWS || !used_rows.insert(row))
-                || catalogue.contains_key(&entry.txid)
-            {
-                return Err(js_error(
-                    "Invalid full-record catalogue allocation or commitment",
-                ));
-            }
-            catalogue.insert(entry.txid.clone(), entry);
-        }
+        let cover_row = full_record::packing_cover_row(&manifest).map_err(js_error)?;
+        let catalogue =
+            validate_full_catalogue(&manifest, chunk_count, cover_row).map_err(js_error)?;
         Ok(Self {
             manifest,
             publication_id,
             profile,
             public: public_setup.to_vec(),
             chunk_count,
+            cover_row,
             catalogue,
             lookup: None,
         })
@@ -366,7 +390,14 @@ impl FullPirBrowser {
         {
             return Err("Invalid full-record query batch sequence".into());
         }
-        let (secret, query) = self.profile.prepare(lookup.entry.rows[index])?;
+        let row = lookup
+            .entry
+            .rows
+            .get(index)
+            .copied()
+            .or(self.cover_row)
+            .ok_or("Missing full-record query row")?;
+        let (secret, query) = self.profile.prepare(row)?;
         lookup.secrets[index] = Some(secret);
         lookup.next_query += 1;
         self.lookup = Some(lookup);
@@ -384,16 +415,23 @@ impl FullPirBrowser {
             .take()
             .ok_or("No pending encrypted chunk")?;
         let row = self.profile.decode(&secret, &self.public, response)?;
-        let context = full_record::ChunkContext {
-            publication_id: &self.publication_id,
-            txid: &lookup.entry.txid,
-            index: lookup.next_response,
-            count: self.chunk_count,
-            record_bytes: lookup.entry.record_bytes,
-            record_sha256: &lookup.entry.record_sha256,
-        };
-        let payload = full_record::decode_chunk(&context, &row)?;
-        lookup.assembled.extend(payload);
+        if lookup.next_response < lookup.entry.rows.len() {
+            let context = full_record::ChunkContext {
+                publication_id: &self.publication_id,
+                txid: &lookup.entry.txid,
+                index: lookup.next_response,
+                count: lookup.entry.rows.len(),
+                record_bytes: lookup.entry.record_bytes,
+                record_sha256: &lookup.entry.record_sha256,
+            };
+            let payload = full_record::decode_chunk(&context, &row)?;
+            lookup.assembled.extend(payload);
+        } else if self.cover_row.is_none()
+            || row.len() != full_record::ROW_BYTES
+            || row.iter().any(|&byte| byte != 0)
+        {
+            return Err("Invalid full-record cover reply".into());
+        }
         lookup.next_response += 1;
         if lookup.next_response < self.chunk_count {
             self.lookup = Some(lookup);

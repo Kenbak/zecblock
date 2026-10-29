@@ -41,7 +41,13 @@ Reported latency is observation-to-ready, not measured SQL-commit-to-ready laten
 The fixed floor comes from the final old publication at cutover and is saved in
 root-owned `/etc/zecblock-pir-pilot/live.json`. It never slides. New bounds are
 128 blocks/2048 records, plus the stricter actual native table capacity:
-`records * ceil(largest encoded record / 8064) <= 2048`, with at most 64 chunks.
+`sum(ceil(each encoded record / 8064)) + 1 <= 2048`, with at most 64 chunks per record.
+Compact publications bind `packing: compact-v1` and `coverRow: 2047` into their
+identity. Each record occupies only its actual chunk count. Every lookup still
+sends the publication's largest chunk count; shorter records privately query the
+shared zero cover row for the remaining slots and validate those decrypted zeros.
+All queries are generated and dispatched before any reply is decoded. Legacy
+padded publications remain readable; their identities and crypto profile do not change.
 The table remains exactly 16,777,216 bytes. Capacity exhaustion rejects the entire
 new candidate and keeps the previous complete publication; no old/large record is
 silently omitted. The source continues fresh canonical checks of the admitted
@@ -70,6 +76,16 @@ requires a fresh complete depth-zero publication plus HTTP health within a finit
 deadline. Failure removes only its owned units/config/drop-in, restores the prior
 query release/timer and preserves failed new state for inspection. Never run the
 old rolling publisher against the new cumulative state.
+
+For an already-live pilot, `upgrade-live-release.py` changes only its immutable
+release pointer and restarts the pilot query/publisher. The primary source stays
+running. It verifies all six unit files, the exact query drop-in and persisted
+floor config, then load-checks the new native binary against the paused old
+publication in a bounded shared-slice transient unit. It pins a root-owned copy
+of that publication for rollback. Readiness requires a different compact
+publication and matching served frontend/WASM hashes. A failed update restores
+the prior legacy view before restarting the old query binary; restoring only the
+old executable after a compact pointer switch would be incompatible.
 
 ## Legacy rolling layout and limits
 

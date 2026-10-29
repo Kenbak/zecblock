@@ -81,8 +81,11 @@ fixed profile has 2,048 rows of 8,192 bytes. Each row has a 128-byte header
 binding the publication ID, internal txid, ordinal, uniform chunk count, payload
 length, record length and SHA-256 commitment. The remaining 8,064 bytes hold
 record content or canonical zero padding. The largest serialized record sets
-the publication's chunk count; every record gets that many rows/queries,
-including empty padding chunks. Publications exceeding table capacity fail
+the publication's query count. Compact publications allocate each record's actual
+rows and reserve one zero cover row; shorter records still make the same number
+of encrypted queries by selecting that cover row for their remaining slots.
+Decrypted cover rows must be all zero. Legacy publications retain their original
+uniform row padding and unchanged identities. Publications exceeding table capacity fail
 instead of truncating records. Both stored databases contain public plaintext
 chain facts; PIR encrypts the selection and returned answer.
 

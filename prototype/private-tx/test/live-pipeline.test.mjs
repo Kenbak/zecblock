@@ -290,8 +290,11 @@ test('unavailable and stale source guards stop serving all retained data without
   assert.equal(evaluations, 0);
 });
 
-test('padded geometry admits the exact row budget and rejects whole-set overflow', () => {
+test('compact geometry reserves one cover row and rejects whole-set overflow', () => {
   const make = count => ({ network: 'mainnet', snapshot: {}, coverage: {}, records: Array.from({ length: count }, () => ({ txid: hash(1), detail: {}, raw: { padding: 'x'.repeat(63 * 8064) } })) });
-  assert.deepEqual(admitSource(make(32)), { chunks: 64, records: 32 });
-  assert.throws(() => admitSource(make(33)), /capacity/i);
+  assert.deepEqual(admitSource(make(31)), { chunks: 64, records: 31, payloadRows: 1984, coverRows: 1 });
+  assert.throws(() => admitSource(make(32)), /capacity/i);
+  const uneven = make(1);
+  uneven.records.push(...Array.from({ length: 200 }, () => ({ txid: hash(2), detail: {}, raw: {} })));
+  assert.equal(admitSource(uneven).payloadRows, 264, 'Smaller records must not consume the largest record count.');
 });

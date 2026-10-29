@@ -37,6 +37,21 @@ fn decode_hash(hash: &str) -> Result<[u8; 32], String> {
 /// Identity covers the public layout, source snapshot and all record commitments.
 /// serde_json's default sorted map representation gives the native/browser hash
 /// the same deterministic encoding; do not enable its preserve_order feature.
+/// Optional compact layout is explicitly bound to the publication. Legacy
+/// manifests omit both fields and retain their original identity bytes.
+pub fn packing_cover_row(manifest: &Value) -> Result<Option<usize>, String> {
+    match manifest.get("packing") {
+        None if manifest.get("coverRow").is_none() => Ok(None),
+        Some(Value::String(packing))
+            if packing == "compact-v1"
+                && manifest["coverRow"].as_u64() == Some((ROWS - 1) as u64) =>
+        {
+            Ok(Some(ROWS - 1))
+        }
+        _ => Err("Unsupported full-record packing or cover row".into()),
+    }
+}
+
 pub fn publication_identity(manifest: &Value) -> Result<Value, String> {
     let keys = [
         "schema",
@@ -57,6 +72,10 @@ pub fn publication_identity(manifest: &Value) -> Result<Value, String> {
             .get(key)
             .ok_or_else(|| format!("Missing publication field {key}"))?;
         identity.insert(key.to_string(), value.clone());
+    }
+    if packing_cover_row(manifest)?.is_some() {
+        identity.insert("packing".into(), manifest["packing"].clone());
+        identity.insert("coverRow".into(), manifest["coverRow"].clone());
     }
     Ok(Value::Object(identity))
 }
@@ -267,5 +286,21 @@ mod tests {
         let row = encode_chunk(&padding, &[]).unwrap();
         assert!(decode_chunk(&padding, &row).unwrap().is_empty());
         assert!(encode_chunk(&padding, &[1]).is_err());
+    }
+    #[test]
+    fn legacy_publication_identity_known_answer_is_unchanged() {
+        // Identity-only fixture with a hash recorded before compact fields.
+        // It does not assert that the empty catalogue is a valid publication.
+        let manifest = json!({
+            "schema":"zecblock-private-tx-full-v1","geometry":"full-2k-8k",
+            "table":"txdirectory","rows":2048,"rowBytes":8192,"payloadBytes":8064,
+            "chunkCount":3,"network":"mainnet",
+            "snapshot":{"height":1,"hash":"0".repeat(64),"publishedAt":"2026-10-29T00:00:00Z"},
+            "coverage":{"startHeight":1,"endHeight":1},"catalogue":[]
+        });
+        assert_eq!(
+            publication_id(&manifest).unwrap(),
+            "81a22924cc3fac43229edb846fae1ecbbaec9d6ad7183f956d825516af4d3c0b"
+        );
     }
 }

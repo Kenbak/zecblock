@@ -49,6 +49,7 @@ const files = [
   'prototype/private-tx/pilot/install.py',
   'prototype/private-tx/pilot/upgrade.py',
   'prototype/private-tx/pilot/upgrade-live.py',
+  'prototype/private-tx/pilot/upgrade-live-release.py',
   'prototype/private-tx/pilot/source-guard.mjs',
   'prototype/private-tx/pilot/source-watch.mjs',
   'prototype/private-tx/pilot/publish-live.mjs',

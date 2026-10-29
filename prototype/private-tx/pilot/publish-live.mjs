@@ -21,10 +21,11 @@ export function admitSource(source) {
     ...(record.price === undefined ? {} : { price: record.price }), ...(record.source === undefined ? {} : { source: record.source }),
   })));
   const chunks = Math.ceil(Math.max(...sizes) / 8064);
-  if (!sizes.length || chunks < 1 || chunks > 64 || chunks * sizes.length > 2048) {
+  const payloadRows = sizes.reduce((sum, bytes) => sum + Math.ceil(bytes / 8064), 0);
+  if (!sizes.length || chunks < 1 || chunks > 64 || payloadRows + 1 > 2048) {
     throw new Error('Cumulative pilot capacity exceeded; all previous records retained.');
   }
-  return { chunks, records: sizes.length };
+  return { chunks, records: sizes.length, payloadRows, coverRows: 1 };
 }
 
 export async function rawFromLoopback(txid) {

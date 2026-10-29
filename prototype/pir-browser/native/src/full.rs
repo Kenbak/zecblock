@@ -6,6 +6,7 @@ use std::collections::BTreeSet;
 const SOURCE_SCHEMA: &str = "zecblock-private-tx-source-v1";
 const RECORD_SCHEMA: &str = "zecblock-private-tx-record-v1";
 const MAX_SOURCE_BYTES: u64 = 128 * 1024 * 1024;
+const MAX_BATCH_CHUNKS: usize = 64;
 
 struct Record {
     txid: String,
@@ -155,16 +156,25 @@ fn publication(source: &Value) -> Result<Publication, String> {
         .map(|record| record.body.len().div_ceil(full_record::PAYLOAD_BYTES))
         .max()
         .ok_or("empty publication")?;
-    if chunk_count
-        .checked_mul(records.len())
-        .is_none_or(|rows| rows > full_record::ROWS)
-    {
-        return Err("full publication does not fit its fixed padded table".into());
+    if chunk_count > MAX_BATCH_CHUNKS {
+        return Err("full publication exceeds the fixed browser chunk budget".into());
+    }
+    let allocated_rows = records.iter().try_fold(0_usize, |total, record| {
+        total.checked_add(record.body.len().div_ceil(full_record::PAYLOAD_BYTES))
+    });
+    // The final zero row is shared by every padding query. Each record owns
+    // only its actual body rows, while every browser still sends chunk_count.
+    let cover_row = full_record::ROWS - 1;
+    if allocated_rows.is_none_or(|rows| rows > cover_row) {
+        return Err("full publication does not fit its compact table and cover row".into());
     }
     let mut catalogue = Vec::with_capacity(records.len());
     let mut expected: BTreeMap<String, Value> = BTreeMap::new();
-    for (index, record) in records.iter_mut().enumerate() {
-        record.rows = (index * chunk_count..(index + 1) * chunk_count).collect();
+    let mut next_row = 0;
+    for record in &mut records {
+        let actual = record.body.len().div_ceil(full_record::PAYLOAD_BYTES);
+        record.rows = (next_row..next_row + actual).collect();
+        next_row += actual;
         catalogue.push(json!({
             "txid": record.txid, "height": record.height,
             "label": "Confirmed mainnet snapshot transaction",
@@ -179,6 +189,7 @@ fn publication(source: &Value) -> Result<Publication, String> {
         "schema": full_record::SCHEMA, "geometry": full_record::GEOMETRY, "table": full_record::TABLE,
         "rows": full_record::ROWS, "rowBytes": full_record::ROW_BYTES,
         "payloadBytes": full_record::PAYLOAD_BYTES, "chunkCount": chunk_count,
+        "packing": "compact-v1", "coverRow": cover_row,
         "network": source["network"], "snapshot": snapshot, "coverage": coverage,
         "catalogue": catalogue,
         "upstream": {"walletLibraries": UPSTREAM, "ipirSp": IPIR},
@@ -199,7 +210,7 @@ fn publication(source: &Value) -> Result<Publication, String> {
                 publication_id: &publication_id,
                 txid: &record.txid,
                 index,
-                count: chunk_count,
+                count: record.rows.len(),
                 record_bytes: record.body.len(),
                 record_sha256: &record.sha256,
             };
@@ -229,6 +240,7 @@ pub(super) fn validate_manifest(manifest: &Value) -> Result<TableProfile, String
             return Err("full manifest profile mismatch".into());
         }
     }
+    let cover_row = full_record::packing_cover_row(manifest)?;
     if manifest["publicationId"] != full_record::publication_id(manifest)? {
         return Err("full manifest publication binding mismatch".into());
     }
@@ -236,11 +248,12 @@ pub(super) fn validate_manifest(manifest: &Value) -> Result<TableProfile, String
     let catalogue = manifest["catalogue"]
         .as_array()
         .ok_or("missing full catalogue")?;
-    if count == 0 || count > full_record::ROWS || catalogue.is_empty() {
+    if count == 0 || count > MAX_BATCH_CHUNKS || catalogue.is_empty() {
         return Err("invalid full catalogue shape".into());
     }
     let mut ids = BTreeSet::new();
     let mut rows = BTreeSet::new();
+    let mut maximum_actual = 0;
     for entry in catalogue {
         let txid = hash(&entry["txid"], "catalogue txid")?;
         if !ids.insert(txid) {
@@ -248,21 +261,29 @@ pub(super) fn validate_manifest(manifest: &Value) -> Result<TableProfile, String
         }
         hash(&entry["recordSha256"], "record checksum")?;
         let bytes = unsigned(&entry["recordBytes"], "record byte count")? as usize;
-        if bytes == 0 || bytes.div_ceil(full_record::PAYLOAD_BYTES) > count {
+        let actual = bytes.div_ceil(full_record::PAYLOAD_BYTES);
+        if bytes == 0 || actual > count {
             return Err("invalid full record byte count".into());
         }
+        maximum_actual = maximum_actual.max(actual);
         let allocation = entry["rows"]
             .as_array()
             .ok_or("missing record row allocation")?;
-        if allocation.len() != count {
-            return Err("inconsistent padded query count".into());
+        let expected_rows = if cover_row.is_some() { actual } else { count };
+        if allocation.len() != expected_rows {
+            return Err("inconsistent record row count for publication packing".into());
         }
         for row in allocation {
             let row = unsigned(row, "catalogue row")? as usize;
-            if row >= full_record::ROWS || !rows.insert(row) {
+            if row >= full_record::ROWS || Some(row) == cover_row || !rows.insert(row) {
                 return Err("duplicate or out-of-range catalogue row".into());
             }
         }
+    }
+    if let Some(cover_row) = cover_row
+        && (maximum_actual != count || rows.len() > cover_row)
+    {
+        return Err("compact publication query maximum or cover capacity mismatch".into());
     }
     Ok(profile)
 }
@@ -324,30 +345,54 @@ mod tests {
             "coverage":{"startHeight":0,"endHeight":4_000_000,"complete":false},"records":records})
     }
 
-    #[test]
-    fn full_multi_chunk_records_roundtrip_actual_pir_with_uniform_padding() {
-        let publication = publication(&source()).unwrap();
+    fn assert_actual_pir_roundtrip(publication: Publication) {
         let profile = validate_manifest(&publication.manifest).unwrap();
         let evaluator = Evaluator::with_profile(publication.database, profile).unwrap();
         let count = publication.manifest["chunkCount"].as_u64().unwrap() as usize;
+        let cover_row = full_record::packing_cover_row(&publication.manifest).unwrap();
         assert!(count > 1);
+        assert_eq!(evaluator.profile.scheme.request_bytes, 20_992);
+        assert_eq!(evaluator.profile.scheme.response_bytes, 10_240);
         for entry in publication.manifest["catalogue"].as_array().unwrap() {
+            let allocation = entry["rows"].as_array().unwrap();
+            let record_count = allocation.len();
             let mut assembled = Vec::new();
-            for (index, row) in entry["rows"].as_array().unwrap().iter().enumerate() {
-                let (secret, upload) = evaluator
-                    .profile
-                    .prepare(row.as_u64().unwrap() as usize)
-                    .unwrap();
-                let response = evaluator.answer(&upload).unwrap();
+            // Prepare and answer the complete uniform batch before decoding.
+            let queries: Vec<_> = (0..count)
+                .map(|index| {
+                    let row = allocation
+                        .get(index)
+                        .map(|row| row.as_u64().unwrap() as usize)
+                        .or(cover_row)
+                        .unwrap();
+                    let (secret, upload) = evaluator.profile.prepare(row).unwrap();
+                    assert_eq!(upload.len(), evaluator.profile.scheme.request_bytes);
+                    (index, secret, upload)
+                })
+                .collect();
+            let replies: Vec<_> = queries
+                .iter()
+                .map(|(_, _, upload)| evaluator.answer(upload).unwrap())
+                .collect();
+            assert_eq!(queries.len(), count);
+            assert_eq!(replies.len(), count);
+            for ((index, secret, _), response) in queries.into_iter().zip(replies) {
+                assert_eq!(response.len(), evaluator.profile.scheme.response_bytes);
                 let decoded = evaluator
                     .profile
                     .decode(&secret, &evaluator.public, &response)
                     .unwrap();
+                if index >= record_count {
+                    assert!(cover_row.is_some());
+                    assert_eq!(decoded.len(), full_record::ROW_BYTES);
+                    assert!(decoded.iter().all(|byte| *byte == 0));
+                    continue;
+                }
                 let context = ChunkContext {
                     publication_id: publication.manifest["publicationId"].as_str().unwrap(),
                     txid: entry["txid"].as_str().unwrap(),
                     index,
-                    count,
+                    count: record_count,
                     record_bytes: entry["recordBytes"].as_u64().unwrap() as usize,
                     record_sha256: entry["recordSha256"].as_str().unwrap(),
                 };
@@ -367,7 +412,162 @@ mod tests {
                 serde_json::from_str::<Value>(&result).unwrap(),
                 publication.expected[entry["txid"].as_str().unwrap()]
             );
-            assert_eq!(entry["rows"].as_array().unwrap().len(), count);
+        }
+    }
+
+    #[test]
+    fn compact_records_roundtrip_actual_pir_with_fixed_cover_queries() {
+        let publication = publication(&source()).unwrap();
+        let manifest = &publication.manifest;
+        assert_eq!(manifest["packing"], "compact-v1");
+        assert_eq!(manifest["coverRow"], full_record::ROWS - 1);
+        let count = manifest["chunkCount"].as_u64().unwrap() as usize;
+        let entries = manifest["catalogue"].as_array().unwrap();
+        assert!(
+            entries
+                .iter()
+                .any(|entry| entry["rows"].as_array().unwrap().len() < count)
+        );
+        let allocated: Vec<_> = entries
+            .iter()
+            .flat_map(|entry| {
+                entry["rows"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|row| row.as_u64().unwrap() as usize)
+            })
+            .collect();
+        assert_eq!(allocated, (0..allocated.len()).collect::<Vec<_>>());
+        assert!(allocated.len() < entries.len() * count);
+        assert!(
+            publication.database[(full_record::ROWS - 1) * full_record::ROW_BYTES..]
+                .iter()
+                .all(|byte| *byte == 0)
+        );
+        assert_actual_pir_roundtrip(publication);
+    }
+
+    fn legacy_publication() -> Publication {
+        let mut publication = publication(&source()).unwrap();
+        publication
+            .manifest
+            .as_object_mut()
+            .unwrap()
+            .remove("packing");
+        publication
+            .manifest
+            .as_object_mut()
+            .unwrap()
+            .remove("coverRow");
+        let count = publication.manifest["chunkCount"].as_u64().unwrap() as usize;
+        for (index, entry) in publication.manifest["catalogue"]
+            .as_array_mut()
+            .unwrap()
+            .iter_mut()
+            .enumerate()
+        {
+            entry["rows"] = json!((index * count..(index + 1) * count).collect::<Vec<_>>());
+        }
+        let id = full_record::publication_id(&publication.manifest).unwrap();
+        publication.manifest["publicationId"] = json!(id);
+        publication.database.fill(0);
+        for entry in publication.manifest["catalogue"].as_array().unwrap() {
+            let txid = entry["txid"].as_str().unwrap();
+            let mut body = publication.expected[txid].clone();
+            body.as_object_mut().unwrap().remove("found");
+            body.as_object_mut().unwrap().remove("publicationId");
+            let bytes = serde_json::to_vec(&body).unwrap();
+            assert_eq!(hex::encode(Sha256::digest(&bytes)), entry["recordSha256"]);
+            for (index, row) in entry["rows"].as_array().unwrap().iter().enumerate() {
+                let start = (index * full_record::PAYLOAD_BYTES).min(bytes.len());
+                let end = (start + full_record::PAYLOAD_BYTES).min(bytes.len());
+                let context = ChunkContext {
+                    publication_id: &id,
+                    txid,
+                    index,
+                    count,
+                    record_bytes: bytes.len(),
+                    record_sha256: entry["recordSha256"].as_str().unwrap(),
+                };
+                let row = row.as_u64().unwrap() as usize;
+                let encoded = full_record::encode_chunk(&context, &bytes[start..end]).unwrap();
+                publication.database
+                    [row * full_record::ROW_BYTES..(row + 1) * full_record::ROW_BYTES]
+                    .copy_from_slice(&encoded);
+            }
+            publication.expected.get_mut(txid).unwrap()["publicationId"] = json!(id);
+        }
+        publication
+    }
+
+    #[test]
+    fn legacy_padded_manifest_loads_and_roundtrips_actual_pir() {
+        let publication = legacy_publication();
+        assert!(publication.manifest.get("packing").is_none());
+        assert!(publication.manifest.get("coverRow").is_none());
+        assert!(validate_manifest(&publication.manifest).is_ok());
+        assert_actual_pir_roundtrip(publication);
+    }
+
+    fn synthetic_source(count: usize, padding: usize) -> Value {
+        // Structurally valid v1 coinbase encodings with distinct scripts are
+        // synthetic capacity fixtures, not claims about confirmed chain data.
+        let records: Vec<_> = (0..count).map(|index| {
+            let mut raw = 1_u32.to_le_bytes().to_vec();
+            raw.push(1); raw.extend([0; 32]); raw.extend(u32::MAX.to_le_bytes());
+            raw.push(4); raw.extend((index as u32).to_le_bytes()); raw.extend(u32::MAX.to_le_bytes());
+            raw.push(1); raw.extend(1_u64.to_le_bytes()); raw.push(1); raw.push(0x51); raw.extend(0_u32.to_le_bytes());
+            let view = TransactionView::parse_exact(&raw).unwrap();
+            let txid = Txid(view.txid()).to_display_hex();
+            json!({"txid":txid,"detail":{"txid":txid,"blockHeight":1,"blockHash":"11".repeat(32),
+                "status":"confirmed","isCanonical":true,"feeZat":"0","inputs":[],"outputs":[],"fixturePadding":"x".repeat(padding)},
+                "raw":{"hex":hex::encode(raw),"decoded":{"txid":txid}}})
+        }).collect();
+        json!({"schema":SOURCE_SCHEMA,"network":"mainnet",
+            "snapshot":{"height":4_000_000,"hash":"22".repeat(32),"publishedAt":"2026-10-28T00:00:00Z"},
+            "coverage":{"startHeight":0,"endHeight":4_000_000,"complete":false},"records":records})
+    }
+
+    #[test]
+    fn compact_capacity_reserves_cover_and_rejects_whole_set_overflow() {
+        let prepared = publication(&synthetic_source(full_record::ROWS - 1, 0)).unwrap();
+        assert_eq!(prepared.manifest["chunkCount"], 1);
+        assert_eq!(
+            prepared.manifest["catalogue"].as_array().unwrap().len(),
+            full_record::ROWS - 1
+        );
+        assert!(validate_manifest(&prepared.manifest).is_ok());
+        assert!(publication(&synthetic_source(full_record::ROWS, 0)).is_err());
+        assert!(
+            publication(&synthetic_source(
+                1,
+                MAX_BATCH_CHUNKS * full_record::PAYLOAD_BYTES
+            ))
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn compact_load_rejects_cover_overlap_bad_actual_counts_and_query_maximum() {
+        let good = publication(&source()).unwrap().manifest;
+        for mutate in 0..6 {
+            let mut bad = good.clone();
+            match mutate {
+                0 => bad["catalogue"][0]["rows"][0] = json!(full_record::ROWS - 1),
+                1 => bad["catalogue"][1]["rows"][0] = bad["catalogue"][0]["rows"][0].clone(),
+                2 => bad["catalogue"][0]["rows"] = json!([]),
+                3 => bad["chunkCount"] = json!(bad["chunkCount"].as_u64().unwrap() + 1),
+                4 => bad["coverRow"] = json!(full_record::ROWS - 2),
+                _ => bad["chunkCount"] = json!(MAX_BATCH_CHUNKS + 1),
+            }
+            if let Ok(id) = full_record::publication_id(&bad) {
+                bad["publicationId"] = json!(id);
+            }
+            assert!(
+                validate_manifest(&bad).is_err(),
+                "invalid compact layout case {mutate}"
+            );
         }
     }
 

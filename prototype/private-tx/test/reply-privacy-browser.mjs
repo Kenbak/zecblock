@@ -41,6 +41,17 @@ for (const [name, ordinal] of [['first', 0], ['middle', Math.floor(cleanManifest
   assert.equal(receipt.chunkOrdinal, ordinal);
   variants.push({ name: `poisoned-${name}`, dir, corruptOrdinal: ordinal, receipt });
 }
+if (cleanManifest.packing === 'compact-v1') {
+  const dir = resolve(output, 'poisoned-cover');
+  const prepared = spawnSync(helper, [cleanDir, dir, unaffectedId, 'cover'], { encoding: 'utf8', timeout: 120_000 });
+  assert.equal(prepared.status, 0, prepared.error?.message ?? prepared.stderr ?? 'Cover fixture preparation failed.');
+  const manifest = JSON.parse(await readFile(resolve(dir, 'manifest.json'), 'utf8'));
+  const receipt = JSON.parse(await readFile(resolve(dir, 'attack-receipt.json'), 'utf8'));
+  assert.equal(manifest.publicationId, cleanManifest.publicationId);
+  assert.deepEqual(manifest.catalogue, cleanManifest.catalogue);
+  assert.equal(receipt.chunkOrdinal, 'cover');
+  variants.push({ name: 'poisoned-cover', dir, corruptOrdinal: 'cover', receipt, affectedId: unaffectedId, unaffectedId: targetId });
+}
 
 let browser;
 const cases = [];
@@ -172,8 +183,8 @@ async function runVariant(variant, { legacy = false } = {}) {
       (legacy ? negativeCases : cases).push(summary);
       return summary;
     }
-    await lookup(targetId, true);
-    await lookup(unaffectedId, false);
+    await lookup(variant.affectedId ?? targetId, true);
+    await lookup(variant.unaffectedId ?? unaffectedId, false);
     assert.deepEqual(externalAttempts, []);
     assert.deepEqual(consoleErrors, []);
     assert.equal(await page.locator('a[href]').count(), 0);

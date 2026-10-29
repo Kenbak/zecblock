@@ -15,6 +15,7 @@ resolver = "2"
 [dependencies]
 zakura-pir-client = { path = ".upstream/wallet-libraries/zakura/pir-client", default-features = false, features = ["transparent"] }
 zakura-pir-protocol = { path = ".upstream/wallet-libraries/zakura/pir-protocol", default-features = false, features = ["native", "transparent"] }
+zakura-transaction-wire = { path = ".upstream/wallet-libraries/zakura/transaction-wire" }
 wasm-bindgen = "=0.2.127"
 getrandom = { version = "0.2", features = ["js"] }
 serde = { version = "1", features = ["derive"] }

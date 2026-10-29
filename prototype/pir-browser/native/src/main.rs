@@ -31,6 +31,10 @@ use zakura_pir_server_core::native::{
 };
 use zcash_transaction_wire::TransactionView;
 
+mod full;
+#[path = "../../src/full_record.rs"]
+pub mod full_record;
+
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
 const GEOMETRY: &str = "fixture-2k";
 const TABLE: &str = "txdirectory";
@@ -131,19 +135,24 @@ struct Evaluator {
 
 impl Evaluator {
     fn new(database: Vec<u8>) -> Result<Self, String> {
-        if database.len() != ROWS * ROW_BYTES {
+        Self::with_profile(database, profile()?)
+    }
+
+    fn with_profile(database: Vec<u8>, profile: TableProfile) -> Result<Self, String> {
+        let rows = profile.rows;
+        let row_bytes = profile.row_bytes;
+        if database.len() != rows * row_bytes {
             return Err("fixture database shape".into());
         }
-        let profile = profile()?;
         // Upstream publication primitives take column-major u8 coefficients.
         let mut columns = vec![0u8; database.len()];
-        for row in 0..ROWS {
-            for col in 0..ROW_BYTES {
-                columns[col * ROWS + row] = database[row * ROW_BYTES + col];
+        for row in 0..rows {
+            for col in 0..row_bytes {
+                columns[col * rows + row] = database[row * row_bytes + col];
             }
         }
-        let prepared_hint = hint(&profile.masks, ROWS, profile.cols, |col| {
-            &columns[col * ROWS..(col + 1) * ROWS]
+        let prepared_hint = hint(&profile.masks, rows, profile.cols, |col| {
+            &columns[col * rows..(col + 1) * rows]
         })?;
         let blocks = preprocess(&profile.setup, &prepared_hint)?;
         let public = profile.native.publish(&blocks)?;
@@ -166,7 +175,7 @@ impl Evaluator {
                     .enumerate()
                     .fold(0u64, |sum, (row, &coefficient)| {
                         sum.wrapping_add(
-                            u64::from(self.database[row * ROW_BYTES + col])
+                            u64::from(self.database[row * self.profile.row_bytes + col])
                                 .wrapping_mul(coefficient),
                         )
                     })
@@ -247,7 +256,14 @@ fn serve(dir: &Path) -> Result<(), String> {
     if manifest["databaseSha256"] != hex::encode(Sha256::digest(&db)) {
         return Err("fixture database checksum mismatch".into());
     }
-    let evaluator = Evaluator::new(db)?;
+    let profile = if manifest["schema"] == full_record::SCHEMA {
+        full::validate_manifest(&manifest)?
+    } else if manifest["schema"] == SCHEMA {
+        profile()?
+    } else {
+        return Err("unsupported publication schema".into());
+    };
+    let evaluator = Evaluator::with_profile(db, profile)?;
     if manifest["publicSha256"] != hex::encode(Sha256::digest(&evaluator.public))
         || manifest["scheme"]
             != serde_json::to_value(&evaluator.profile.scheme).map_err(|e| e.to_string())?
@@ -290,8 +306,11 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let result = match args.as_slice() {
         [_, mode, dir] if mode == "prepare" => prepare(Path::new(dir)),
+        [_, mode, source, dir] if mode == "prepare-full" => {
+            full::prepare_full(Path::new(source), Path::new(dir))
+        }
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
-        _ => Err("Usage: zecblock-pir-fixture prepare|serve <fixture-directory>".into()),
+        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory>".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");

@@ -13,6 +13,8 @@ use zakura_pir_protocol::transparent::{
     },
 };
 
+pub mod full_record;
+
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
 const GEOMETRY: &str = "fixture-2k";
 const ROWS: u64 = 2048;
@@ -182,6 +184,217 @@ impl PirBrowser {
     /// Drop pending state. This is not a claim of guaranteed memory erasure.
     pub fn cancel_query(&mut self) {
         self.pending = None;
+    }
+}
+
+#[derive(Clone, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct FullDirectoryEntry {
+    txid: String,
+    rows: Vec<usize>,
+    record_bytes: usize,
+    record_sha256: String,
+}
+
+struct FullLookup {
+    entry: FullDirectoryEntry,
+    next_chunk: usize,
+    secret: Option<NativeSecret>,
+    assembled: Vec<u8>,
+}
+
+/// Full confirmed records from one explicitly bounded, versioned publication.
+/// Every lookup reads the same number of fixed-size encrypted chunks.
+#[wasm_bindgen]
+pub struct FullPirBrowser {
+    manifest: serde_json::Value,
+    publication_id: String,
+    profile: TableProfile,
+    public: Vec<u8>,
+    chunk_count: usize,
+    catalogue: std::collections::BTreeMap<String, FullDirectoryEntry>,
+    lookup: Option<FullLookup>,
+}
+
+fn canonical_hash(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+}
+
+#[wasm_bindgen]
+impl FullPirBrowser {
+    #[wasm_bindgen(constructor)]
+    pub fn new(manifest_json: &str, public_setup: &[u8]) -> Result<FullPirBrowser, JsValue> {
+        let manifest: serde_json::Value = serde_json::from_str(manifest_json).map_err(js_error)?;
+        if manifest["schema"] != full_record::SCHEMA
+            || manifest["geometry"] != full_record::GEOMETRY
+            || manifest["table"] != full_record::TABLE
+            || manifest["rows"] != full_record::ROWS
+            || manifest["rowBytes"] != full_record::ROW_BYTES
+            || manifest["payloadBytes"] != full_record::PAYLOAD_BYTES
+            || manifest["network"] != "mainnet"
+        {
+            return Err(js_error("Unsupported full-record publication"));
+        }
+        let publication_id = full_record::publication_id(&manifest).map_err(js_error)?;
+        if manifest["publicationId"] != publication_id {
+            return Err(js_error("Full-record publication identity mismatch"));
+        }
+        let profile = full_record::profile().map_err(js_error)?;
+        if manifest["scheme"] != serde_json::to_value(&profile.scheme).map_err(js_error)?
+            || public_setup.len() != profile.scheme.public_bytes
+            || manifest["publicSha256"] != hex::encode(Sha256::digest(public_setup))
+        {
+            return Err(js_error(
+                "Full-record public setup or pinned native profile mismatch",
+            ));
+        }
+        let chunk_count = manifest["chunkCount"]
+            .as_u64()
+            .filter(|&n| n > 0 && n <= full_record::ROWS as u64)
+            .ok_or_else(|| js_error("Unsupported full-record chunk count"))?
+            as usize;
+        let entries: Vec<FullDirectoryEntry> =
+            serde_json::from_value(manifest["catalogue"].clone()).map_err(js_error)?;
+        if entries.is_empty()
+            || entries
+                .len()
+                .checked_mul(chunk_count)
+                .is_none_or(|n| n > full_record::ROWS)
+        {
+            return Err(js_error("Full-record catalogue exceeds its pinned table"));
+        }
+        let mut catalogue = std::collections::BTreeMap::new();
+        let mut used_rows = std::collections::HashSet::new();
+        for entry in entries {
+            if !canonical_hash(&entry.txid)
+                || !canonical_hash(&entry.record_sha256)
+                || entry.rows.len() != chunk_count
+                || entry.record_bytes == 0
+                || entry.record_bytes > chunk_count * full_record::PAYLOAD_BYTES
+                || entry
+                    .rows
+                    .iter()
+                    .any(|&row| row >= full_record::ROWS || !used_rows.insert(row))
+                || catalogue.contains_key(&entry.txid)
+            {
+                return Err(js_error(
+                    "Invalid full-record catalogue allocation or commitment",
+                ));
+            }
+            catalogue.insert(entry.txid.clone(), entry);
+        }
+        Ok(Self {
+            manifest,
+            publication_id,
+            profile,
+            public: public_setup.to_vec(),
+            chunk_count,
+            catalogue,
+            lookup: None,
+        })
+    }
+
+    /// Resolve only in the uniformly downloaded local directory. An unknown
+    /// txid is outside this publication; it is not a claim of chain absence.
+    pub fn begin_query(&mut self, txid: &str) -> Result<u32, JsValue> {
+        if self.lookup.is_some() {
+            return Err(js_error(
+                "Finish or cancel the pending full-record lookup first",
+            ));
+        }
+        full_record::parse_display_txid(txid).map_err(js_error)?;
+        let entry = self
+            .catalogue
+            .get(&txid.to_ascii_lowercase())
+            .cloned()
+            .ok_or_else(|| {
+                js_error(
+                    "Transaction is outside this publication's catalogue; chain status is unknown",
+                )
+            })?;
+        self.lookup = Some(FullLookup {
+            assembled: Vec::with_capacity(entry.record_bytes),
+            entry,
+            next_chunk: 0,
+            secret: None,
+        });
+        Ok(self.chunk_count as u32)
+    }
+
+    /// A fresh upstream key and encrypted selection for every fixed-size chunk.
+    /// The ordinal is local and must never be copied into a server lookup path.
+    pub fn make_chunk_query(&mut self, index: u32) -> Result<Vec<u8>, JsValue> {
+        let lookup = self
+            .lookup
+            .as_mut()
+            .ok_or_else(|| js_error("No pending full-record lookup"))?;
+        if lookup.next_chunk != index as usize
+            || lookup.secret.is_some()
+            || index as usize >= self.chunk_count
+        {
+            return Err(js_error("Invalid full-record chunk sequence"));
+        }
+        let (secret, query) = self
+            .profile
+            .prepare(lookup.entry.rows[index as usize])
+            .map_err(js_error)?;
+        lookup.secret = Some(secret);
+        Ok(query)
+    }
+
+    /// Return the validated whole result only after every equally padded chunk
+    /// has arrived. Any error discards all partial content and pending secrets.
+    pub fn decode_chunk_response(&mut self, response: &[u8]) -> Result<Option<String>, JsValue> {
+        let mut lookup = self
+            .lookup
+            .take()
+            .ok_or_else(|| js_error("No pending full-record lookup"))?;
+        let secret = lookup
+            .secret
+            .take()
+            .ok_or_else(|| js_error("No pending encrypted chunk"))?;
+        let row = self
+            .profile
+            .decode(&secret, &self.public, response)
+            .map_err(js_error)?;
+        let context = full_record::ChunkContext {
+            publication_id: &self.publication_id,
+            txid: &lookup.entry.txid,
+            index: lookup.next_chunk,
+            count: self.chunk_count,
+            record_bytes: lookup.entry.record_bytes,
+            record_sha256: &lookup.entry.record_sha256,
+        };
+        let payload = full_record::decode_chunk(&context, &row).map_err(js_error)?;
+        lookup.assembled.extend(payload);
+        lookup.next_chunk += 1;
+        if lookup.next_chunk < self.chunk_count {
+            self.lookup = Some(lookup);
+            return Ok(None);
+        }
+        if lookup.assembled.len() != lookup.entry.record_bytes
+            || hex::encode(Sha256::digest(&lookup.assembled)) != lookup.entry.record_sha256
+        {
+            return Err(js_error("Full-record checksum or length mismatch"));
+        }
+        let record: serde_json::Value =
+            serde_json::from_slice(&lookup.assembled).map_err(js_error)?;
+        if serde_json::to_vec(&record).map_err(js_error)? != lookup.assembled {
+            return Err(js_error("Noncanonical full-record JSON"));
+        }
+        full_record::validate_record(&record, &self.manifest, &lookup.entry.txid)
+            .map_err(js_error)?;
+        full_record::result_envelope(record, &self.publication_id)
+            .map(Some)
+            .map_err(js_error)
+    }
+
+    /// Discard partial results. Guaranteed cryptographic memory erasure is not claimed.
+    pub fn cancel_query(&mut self) {
+        self.lookup = None;
     }
 }
 

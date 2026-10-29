@@ -8,7 +8,7 @@ import { createInterface } from 'node:readline';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_QUERY_BYTES = 4 * 1024 * 1024;
 const SECURITY_HEADERS = {
-  'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+  'Content-Security-Policy': "default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; connect-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
   'X-Content-Type-Options': 'nosniff',
   'X-Frame-Options': 'DENY',
   'Referrer-Policy': 'no-referrer',
@@ -73,6 +73,47 @@ export function nativeEvaluator(binary, fixtureDir) {
   };
 }
 
+// No upstream reads happen here. Only the independent publisher can advance
+// current.json. Retained evaluators keep in-flight sessions on their own setup.
+export function localPublications({ localDir = resolve(HERE, '.local'), binary = resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'), createEvaluator = nativeEvaluator } = {}) {
+  const retained = new Map();
+  let active = null;
+  let loading = null;
+  async function refresh() {
+    const pointer = JSON.parse(await readFile(resolve(localDir, 'current.json'), 'utf8'));
+    if (!/^[a-f0-9]{64}$/.test(pointer.publicationId) || pointer.directory !== pointer.publicationId) throw new Error('Invalid local publication pointer.');
+    if (active?.manifest.publicationId === pointer.publicationId) return active;
+    if (retained.has(pointer.publicationId)) { active = retained.get(pointer.publicationId); return active; }
+    const dir = resolve(localDir, 'publications', pointer.directory);
+    const manifestBytes = await readFile(resolve(dir, 'manifest.json'));
+    const manifest = JSON.parse(manifestBytes.toString('utf8'));
+    if (manifest.schema !== 'zecblock-private-tx-full-v1' || manifest.publicationId !== pointer.publicationId) throw new Error('Incompatible local publication.');
+    const publicBytes = await readFile(resolve(dir, 'public.bin'));
+    const publication = { manifest, manifestBytes, publicBytes, evaluator: createEvaluator(binary, dir) };
+    retained.set(pointer.publicationId, publication);
+    active = publication;
+    // Three generations bound RAM while allowing ordinary in-flight lookups.
+    while (retained.size > 3) {
+      const id = retained.keys().next().value;
+      retained.get(id).evaluator.close();
+      retained.delete(id);
+    }
+    return publication;
+  }
+  return {
+    async current() {
+      loading ??= refresh().finally(() => { loading = null; });
+      return loading;
+    },
+    get(id) { return retained.get(id); },
+    async status() {
+      try { return JSON.parse(await readFile(resolve(localDir, 'publisher-status.json'), 'utf8')); }
+      catch { return { state: 'unknown' }; }
+    },
+    close() { for (const item of retained.values()) item.evaluator.close(); retained.clear(); },
+  };
+}
+
 function respond(res, status, body, type = 'text/plain; charset=utf-8') {
   res.writeHead(status, { ...SECURITY_HEADERS, 'Content-Type': type });
   res.end(body);
@@ -97,10 +138,12 @@ export async function startPrototype({
   fixtureDir = resolve(HERE, '.local/fixture'),
   wasmDir = resolve(HERE, '../pir-browser/pkg'),
   evaluator,
+  publications,
   onRequest = () => {},
 } = {}) {
-  if (!evaluator) throw new Error('A local PIR evaluator is required.');
-  const manifestBytes = await readFile(resolve(fixtureDir, 'manifest.json'));
+  if (!evaluator && !publications) throw new Error('A local PIR evaluator is required.');
+  const initialPublication = publications && await publications.current();
+  const manifestBytes = initialPublication?.manifestBytes ?? await readFile(resolve(fixtureDir, 'manifest.json'));
   const manifest = JSON.parse(manifestBytes.toString('utf8'));
   const setupFile = manifest.setupFile ?? 'public.bin';
   if (basename(setupFile) !== setupFile) throw new Error('Invalid fixture setup path.');
@@ -109,6 +152,8 @@ export async function startPrototype({
     ['/app.js', [resolve(HERE, 'web/app.js'), 'text/javascript; charset=utf-8']],
     ['/worker.js', [resolve(HERE, 'web/worker.js'), 'text/javascript; charset=utf-8']],
     ['/style.css', [resolve(HERE, 'web/style.css'), 'text/css; charset=utf-8']],
+    ['/fonts/geist-sans.woff2', [resolve(HERE, 'web/fonts/geist-sans.woff2'), 'font/woff2']],
+    ['/fonts/geist-mono.woff2', [resolve(HERE, 'web/fonts/geist-mono.woff2'), 'font/woff2']],
     [`/fixture/${setupFile}`, [resolve(fixtureDir, setupFile), 'application/octet-stream']],
     ['/wasm/zecblock_pir_browser.js', [resolve(wasmDir, 'zecblock_pir_browser.js'), 'text/javascript; charset=utf-8']],
     ['/wasm/zecblock_pir_browser_bg.wasm', [resolve(wasmDir, 'zecblock_pir_browser_bg.wasm'), 'application/wasm']],
@@ -130,20 +175,41 @@ export async function startPrototype({
     onRequest({ method: req.method, path: req.url });
     try {
       if (req.method === 'GET' && req.url === '/health') {
-        respond(res, 200, JSON.stringify({ local: true, fixtureOnly: true }), 'application/json'); return;
+        const current = publications && await publications.current();
+        respond(res, 200, JSON.stringify({ local: true, fixtureOnly: !publications, publicationId: current?.manifest.publicationId, snapshot: current?.manifest.snapshot }), 'application/json'); return;
       }
       if (req.method === 'GET' && req.url === '/robots.txt') {
         respond(res, 200, 'User-agent: *\nDisallow: /\n'); return;
       }
-      if (req.method === 'GET' && req.url === '/fixture/manifest.json') {
-        respond(res, 200, manifestBytes, 'application/json'); return;
+      if (req.method === 'GET' && req.url === '/publication/status.json') {
+        const status = publications ? await publications.status() : { state: 'unknown' };
+        respond(res, 200, JSON.stringify(status), 'application/json'); return;
+      }
+      if (req.method === 'GET' && ['/fixture/manifest.json', '/publication/manifest.json'].includes(req.url)) {
+        const current = publications && await publications.current();
+        respond(res, 200, current?.manifestBytes ?? manifestBytes, 'application/json'); return;
+      }
+      const setupMatch = req.method === 'GET' && req.url.match(/^\/publication\/([a-f0-9]{64})\/public\.bin$/);
+      if (setupMatch && publications) {
+        await publications.current();
+        const publication = publications.get(setupMatch[1]);
+        if (!publication) { respond(res, 409, 'Publication retired; refresh the local catalogue.'); return; }
+        respond(res, 200, publication.publicBytes, 'application/octet-stream'); return;
       }
       if (req.method === 'POST' && req.url === '/pir/query') {
         if (req.headers['content-type'] !== 'application/octet-stream') {
           respond(res, 415, 'Binary PIR queries only.'); return;
         }
         const query = await requestBytes(req);
-        const result = await evaluator.evaluate(query);
+        let selectedEvaluator = evaluator;
+        if (publications) {
+          const id = req.headers['x-pir-publication'];
+          if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) { respond(res, 409, 'A supported local publication is required.'); return; }
+          const publication = publications.get(id);
+          if (!publication) { respond(res, 409, 'Publication retired; refresh the local catalogue.'); return; }
+          selectedEvaluator = publication.evaluator;
+        }
+        const result = await selectedEvaluator.evaluate(query);
         respond(res, 200, result, 'application/octet-stream'); return;
       }
       const file = req.method === 'GET' && staticFiles.get(req.url);
@@ -163,7 +229,8 @@ export async function startPrototype({
     url: `http://127.0.0.1:${server.address().port}`,
     manifest,
     close: async () => {
-      evaluator.close?.();
+      evaluator?.close?.();
+      publications?.close();
       server.closeAllConnections();
       await new Promise(resolveClose => server.close(resolveClose));
     },
@@ -175,10 +242,12 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const binary = resolve(process.env.PRIVATE_TX_EVALUATOR ?? resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'));
   const port = Number(process.env.PRIVATE_TX_PORT ?? '4318');
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
-  const evaluator = nativeEvaluator(binary, fixtureDir);
+  const fixtureMode = Boolean(process.env.PRIVATE_TX_FIXTURE_DIR);
+  const evaluator = fixtureMode ? nativeEvaluator(binary, fixtureDir) : undefined;
+  const publications = fixtureMode ? undefined : localPublications({ binary });
   try {
-    const app = await startPrototype({ port, fixtureDir, evaluator });
-    process.stdout.write(`Local fixture prototype: ${app.url}\n`);
+    const app = await startPrototype({ port, fixtureDir, evaluator, publications });
+    process.stdout.write(`Local private transaction view: ${app.url}\n`);
     for (const signal of ['SIGINT', 'SIGTERM']) process.once(signal, async () => { await app.close(); process.exit(0); });
-  } catch (error) { evaluator.close(); throw error; }
+  } catch (error) { evaluator?.close(); publications?.close(); throw error; }
 }

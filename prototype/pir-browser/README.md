@@ -1,10 +1,11 @@
 # Pinned upstream PIR browser fixture
 
 This directory binds the actual upstream native P8 PIR client to WebAssembly.
-It is a local feasibility prototype over three existing public mainnet
-coinbase fixtures, not a live ZecBlock lookup service or a production anonymity
-set. It does not implement the production wallet-pir HTTP envelope, publication
-discovery, private address history, or full transaction display.
+It supports the original three-coinbase Display fixture and a bounded full
+confirmed-transaction snapshot imported from an explicit source file. It is a
+local feasibility prototype, not a public ZecBlock service or a qualified
+production anonymity set. It does not implement the production wallet-pir HTTP
+envelope, private address history or mempool retrieval.
 
 `bootstrap.py` downloads and verifies wallet-libraries
 `a7c842fd4f16790ed6739346f44557a97065d242` and ipir-sp
@@ -57,12 +58,66 @@ fixture context; the Display codec does not contain or authenticate heights.
 Only the first two transparent outputs fit in the upstream Display codec;
 count/omission flags preserve that limitation.
 
+## Full confirmed snapshot mode
+
+After building, a separate read-only exporter can supply a source file:
+
+```sh
+prototype/pir-browser/target/release/zecblock-pir-fixture \
+  prepare-full /absolute/path/source.json /absolute/path/publication
+```
+
+The source schema is `zecblock-private-tx-source-v1`, with `network: mainnet`,
+`snapshot: {height, hash, publishedAt}`, declared `coverage: {startHeight,
+endHeight, ...}`, and `records: [{txid, detail, raw: {hex, decoded}, price?,
+source?}]`. `detail` preserves the full indexed API response and exact zatoshi
+string/null fields. The exporter, its capture/recheck policy and its update
+schedule are separate from this Rust library. Publishing never depends on
+which transaction a browser selects.
+
+`prepare-full` verifies confirmed/canonical state, declared coverage and raw
+transaction IDs, then emits a `zecblock-private-tx-full-v1` publication. The
+fixed profile has 2,048 rows of 8,192 bytes. Each row has a 128-byte header
+binding the publication ID, internal txid, ordinal, uniform chunk count, payload
+length, record length and SHA-256 commitment. The remaining 8,064 bytes hold
+record content or canonical zero padding. The largest serialized record sets
+the publication's chunk count; every record gets that many rows/queries,
+including empty padding chunks. Publications exceeding table capacity fail
+instead of truncating records. Both stored databases contain public plaintext
+chain facts; PIR encrypts the selection and returned answer.
+
+The uniform public catalogue supplies each record's row allocation, length and
+digest. Publication identity commits to the layout, snapshot, coverage and
+catalogue. `FullPirBrowser` verifies that identity, the pinned native scheme and
+setup digest. It assembles all chunks locally, checks every header, canonical
+padding, whole-record digest, JSON encoding, confirmed range and raw txid before
+returning the result. A failure discards partial state. An unknown txid is
+outside that publication, not proof that it is missing from the chain.
+
+Full-mode exports are `FullPirBrowser(manifestJson, publicSetupBytes)`,
+`begin_query(txid) -> chunkCount`, `make_chunk_query(index) -> bytes`,
+`decode_chunk_response(bytes) -> string | undefined` and `cancel_query()`.
+Only the final response returns JSON. It preserves `detail`, `raw`, optional
+`price`/`source`, snapshot and coverage, and adds `found: true`/`publicationId`.
+Chunk ordinals and selected identifiers stay local; transport may name the
+public publication ID to pin the generation.
+
+Raw txid recomputation verifies byte identity, not block inclusion or truth of
+prevout-resolved fees, spent state, indexer enrichment or complete coverage.
+Those fields retain the captured publisher/source trust and as-of semantics.
+There is no wall-clock freshness assertion in decoding. Exact source snapshots,
+generation retention, safe refresh and no-fallback behavior require the host
+application's own checks. Full mode uses 20,992-byte queries, 10,240-byte replies
+per chunk, 45,056-byte setup and a 16 MiB plaintext table; these sizes are not a
+production capacity qualification.
+
 ## Interfaces and checks
 
 WASM exports `PirBrowser(manifestJson, publicSetupBytes)`,
 `make_query(txid)`, `decode_response(bytes)` and `cancel_query()`.
 
-The native binary accepts `prepare <fixture-dir>` and `serve <fixture-dir>`.
+The native binary accepts `prepare <fixture-dir>`,
+`prepare-full <source.json> <publication-dir>` and `serve <publication-dir>`.
 The latter reads one JSON line `{id,query:<base64>}` per request and returns
 `{id,response:<base64>}` or a generic error. It writes diagnostics only to
 stderr. This framing is a local harness around the pinned native primitives,
@@ -74,7 +129,8 @@ CARGO_HOME=/path/to/writable/cache cargo test \
   -p zecblock-pir-fixture -p zecblock-pir-browser
 ```
 
-Native known-answer checks cover all three fixture records and malformed query
-length. Browser end-to-end tests live with the localhost application. No test
+Native known-answer checks cover the original fixture records, actual padded
+multi-chunk PIR, row-header/padding tampering and invalid source records.
+Browser end-to-end tests live with the localhost application. No test
 here establishes a cryptographic audit, production dataset capacity, IP
 anonymity, or protection from compromised frontend delivery.

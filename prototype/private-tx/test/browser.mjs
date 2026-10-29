@@ -3,179 +3,176 @@ import { createRequire } from 'node:module';
 import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { nativeEvaluator, startPrototype } from '../server.mjs';
+import { localPublications, startPrototype } from '../server.mjs';
 
 const require = createRequire(import.meta.url);
-// Standard local npm dependency; NODE_PATH can reuse an existing Playwright
-// installation without changing the explorer's dependencies.
 const { chromium } = require('playwright');
-const HERE = dirname(fileURLToPath(import.meta.url));
-const root = resolve(HERE, '..');
-const fixtureDir = resolve(root, '.local/fixture');
-const outputDir = resolve(root, 'test-results');
-const manifest = JSON.parse(await readFile(resolve(fixtureDir, 'manifest.json'), 'utf8'));
-const expected = manifest.catalogue;
-// Private-to-the-test oracle from the checked raw transaction fixtures. The
-// server never serves this file; success requires retrieved facts, not an ID echo.
-const oracle = JSON.parse(await readFile(resolve(fixtureDir, 'expected.json'), 'utf8'));
-assert.ok(expected.length >= 2, 'Multiple fixture choices are needed to test selection privacy.');
-const evaluator = nativeEvaluator(resolve(root, '../pir-browser/target/release/zecblock-pir-fixture'), fixtureDir);
-const app = await startPrototype({ port: 0, fixtureDir, evaluator });
-const browser = await chromium.launch({ channel: 'chrome', headless: true });
-const context = await browser.newContext({ viewport: { width: 1280, height: 950 }, serviceWorkers: 'block' });
-const requests = [];
-const replies = [];
-const errors = [];
-let blockQueries = false;
-let truncateReply = false;
-let activePhase = 'initialization';
-
-// These independent browser controls ensure no test can accidentally contact
-// production, even if application code regresses. Worker traffic is included.
-await context.route('**/*', async route => {
-  const request = route.request();
-  if (new URL(request.url()).origin !== app.url) {
-    errors.push('Non-local request attempted.');
-    await route.abort('blockedbyclient'); return;
-  }
-  if (request.url().endsWith('/pir/query') && blockQueries) {
-    await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Evaluator unavailable.' }); return;
-  }
-  if (request.url().endsWith('/pir/query') && truncateReply) {
-    await route.fulfill({ status: 200, contentType: 'application/octet-stream', body: Buffer.from([0, 1, 2]) }); return;
-  }
-  await route.continue();
-});
-context.on('request', request => {
-  requests.push({ phase: activePhase, url: request.url(), method: request.method(), headers: request.headers(), body: request.postDataBuffer() });
-});
-context.on('response', response => {
-  if (response.url().endsWith('/pir/query')) replies.push(response.status());
-});
-const page = await context.newPage();
-page.on('pageerror', error => errors.push(error.message));
-page.on('console', message => {
-  if (message.type() === 'error') errors.push(message.text());
-});
-
-async function lookup(txid) {
-  await page.locator('#txid').fill(txid);
-  await page.locator('#lookup-button').click();
-  await page.locator('#result-section').waitFor({ state: 'visible', timeout: 120_000 });
-  const text = await page.locator('#result-facts').innerText();
-  assert.ok(text.includes(txid), 'The selected full identifier must be decoded and rendered.');
-  const facts = await page.locator('#result-facts .result-fact').evaluateAll(rows => Object.fromEntries(rows.map(row => [row.querySelector('dt').textContent, row.querySelector('dd').textContent])));
-  const expectedFacts = oracle[txid];
-  assert.ok(expectedFacts, 'Fixture must have a checked raw-transaction oracle.');
-  assert.equal(facts.Found, 'true', 'A selected ID echo is insufficient: the record must be found.');
-  assert.equal(facts.Coinbase, String(expectedFacts.coinbase));
-  assert.equal(facts['Fee (zatoshis)'], expectedFacts.feeZatoshis);
-  assert.equal(facts['Input Count'], String(expectedFacts.inputCount));
-  assert.equal(facts['Output Count'], String(expectedFacts.outputCount));
-  assert.deepEqual(JSON.parse(facts.Outputs), expectedFacts.outputs);
-  assert.equal(page.url(), `${app.url}/`);
-  return text;
-}
-
-function assertPrivateRequests(phase, { queryExpected = true } = {}) {
-  const selected = requests.filter(request => request.phase === phase);
-  const queries = selected.filter(request => new URL(request.url).pathname === '/pir/query');
-  assert.equal(queries.length, queryExpected ? 1 : 0, phase);
-  for (const request of selected) {
-    assert.equal(new URL(request.url).origin, app.url);
-    assert.equal(new URL(request.url).search, '');
-    for (const { txid } of expected) {
-      assert.ok(!request.url.includes(txid), 'Selector leaked in request URL.');
-      assert.ok(!JSON.stringify(request.headers).includes(txid), 'Selector leaked in request headers.');
-      if (request.body) {
-        assert.equal(request.body.indexOf(Buffer.from(txid, 'utf8')), -1, 'Selector leaked as text.');
-        assert.equal(request.body.indexOf(Buffer.from(txid, 'hex')), -1, 'Selector leaked as raw bytes.');
-        assert.equal(request.body.indexOf(Buffer.from(txid, 'hex').reverse()), -1, 'Selector leaked as reversed bytes.');
-      }
-    }
-    if (request.body) assert.equal(request.headers['content-type'], 'application/octet-stream');
-  }
-  return queries[0]?.body;
-}
+const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const pointer = JSON.parse(await readFile(resolve(ROOT, '.local/current.json'), 'utf8'));
+const dir = resolve(ROOT, '.local/publications', pointer.directory);
+const source = JSON.parse(await readFile(resolve(dir, 'source.json'), 'utf8'));
+const manifest = JSON.parse(await readFile(resolve(dir, 'manifest.json'), 'utf8'));
+const publications = localPublications({ localDir: resolve(ROOT, '.local') });
+const app = await startPrototype({ port: 0, publications });
+let browser;
+const requests = [], errors = [], records = [];
+let phase = 'initialization', failQuery = false, malformedQuery = false;
 
 try {
-  const start = performance.now();
-  const initialResponse = await page.goto(app.url);
-  assert.equal(initialResponse.status(), 200);
-  assert.match(initialResponse.headers()['x-robots-tag'], /noindex/);
-  await page.locator('#lookup-button').waitFor({ state: 'visible' });
-  await page.waitForFunction(() => !document.querySelector('#lookup-button').disabled, null, { timeout: 120_000 });
-  const initializationMs = performance.now() - start;
+  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  const context = await browser.newContext({ viewport: { width: 1280, height: 1000 }, serviceWorkers: 'block' });
+  await context.addInitScript(() => {
+    const OriginalWorker = window.Worker;
+    // Test-only observation of the decrypted worker result. No application
+    // debug hook, secret exposure or request interception is added to the UI.
+    window.Worker = class extends OriginalWorker {
+      constructor(...args) {
+        super(...args);
+        this.addEventListener('message', ({ data }) => {
+          if (data.type === 'result') window.__pirTestResult = data;
+        });
+      }
+    };
+  });
+  await context.route('**/*', async route => {
+    const request = route.request();
+    if (new URL(request.url()).origin !== app.url) { errors.push('Non-local browser request attempted.'); await route.abort(); return; }
+    if (request.url().endsWith('/pir/query') && failQuery) { await route.fulfill({ status: 503, contentType: 'text/plain', body: 'Unavailable' }); return; }
+    if (request.url().endsWith('/pir/query') && malformedQuery) { await route.fulfill({ status: 200, contentType: 'application/octet-stream', body: Buffer.from([0, 1, 2]) }); return; }
+    await route.continue();
+  });
+  context.on('request', request => requests.push({ phase, url: request.url(), method: request.method(), headers: request.headers(), body: request.postDataBuffer() }));
+  const page = await context.newPage();
+  page.on('pageerror', error => errors.push(error.message));
+  page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+  const started = performance.now();
+  const response = await page.goto(app.url);
+  assert.equal(response.status(), 200);
+  assert.match(response.headers()['x-robots-tag'], /noindex/);
+  await page.waitForFunction(() => !document.querySelector('#lookup-button')?.disabled || document.querySelector('#lookup-error'), null, { timeout: 120_000 });
+  assert.equal(await page.locator('#lookup-error').count(), 0, 'Browser initialization must succeed.');
+  const initializationMs = performance.now() - started;
   assert.equal(await page.locator('h1').count(), 1);
-  const noInputRequests = requests.length;
-  await page.locator('#txid').fill(expected[0].txid);
-  assert.equal(requests.length, noInputRequests, 'Typing must not trigger a network lookup.');
 
-  activePhase = 'first';
-  const firstFacts = await lookup(expected[0].txid);
-  const first = assertPrivateRequests('first');
-  const firstMetrics = await page.locator('#metrics').innerText();
-  activePhase = 'repeat';
-  await lookup(expected[0].txid);
-  const repeated = assertPrivateRequests('repeat');
-  assert.equal(first.length, repeated.length, 'Same profile has fixed query length.');
-  assert.notDeepEqual(first, repeated, 'Repeated queries must use fresh cryptographic randomness.');
+  function audit(lookupPhase, expectedCount) {
+    const selected = requests.filter(request => request.phase === lookupPhase);
+    const queries = selected.filter(request => new URL(request.url).pathname === '/pir/query');
+    assert.equal(queries.length, expectedCount, lookupPhase);
+    for (const request of selected) {
+      const path = new URL(request.url).pathname;
+      assert.equal(new URL(request.url).origin, app.url);
+      assert.equal(new URL(request.url).search, '');
+      assert.ok(path === '/pir/query' || path === '/publication/manifest.json' || path === '/publication/status.json' || /^\/publication\/[a-f0-9]{64}\/public.bin$/.test(path), `Unexpected lookup-dependent request: ${path}`);
+      for (const record of source.records) {
+        const id = record.txid;
+        assert.ok(!request.url.includes(id), 'Transaction ID leaked in URL.');
+        assert.ok(!JSON.stringify(request.headers).includes(id), 'Transaction ID leaked in headers.');
+        if (request.body) {
+          for (const encoding of [Buffer.from(id), Buffer.from(id, 'hex'), Buffer.from(id, 'hex').reverse()]) {
+            assert.equal(request.body.indexOf(encoding), -1, 'Transaction ID leaked in request body.');
+          }
+        }
+      }
+      if (request.body) {
+        assert.equal(request.headers['content-type'], 'application/octet-stream');
+        assert.equal(request.headers['x-pir-publication'], manifest.publicationId);
+        assert.equal(request.body.length, manifest.scheme.request_bytes);
+      }
+    }
+    return queries;
+  }
 
-  activePhase = 'second';
-  const secondFacts = await lookup(expected[1].txid);
-  const second = assertPrivateRequests('second');
-  assert.equal(first.length, second.length, 'Both selected rows use the same query shape.');
-  assert.notDeepEqual(first, second);
+  async function lookup(record, name) {
+    phase = name;
+    console.log(`Checking local browser lookup: ${name}`);
+    await page.evaluate(() => { window.__pirTestResult = null; });
+    await page.locator('#txid').fill(record.txid);
+    await page.locator('#lookup-button').click();
+    await page.waitForFunction(() => document.querySelector('#result-section') || document.querySelector('[role="alert"]'), null, { timeout: 180_000 });
+    const alert = await page.locator('[role="alert"]').allTextContents();
+    assert.deepEqual(alert, [], 'Full transaction rendering must not hit the error boundary.');
+    assert.equal(await page.locator('#lookup-error').count(), 0, await page.locator('#lookup-status').innerText());
+    assert.equal(await page.locator('#result-txid').textContent(), record.txid);
+    const decoded = await page.evaluate(() => window.__pirTestResult);
+    assert.equal(decoded.result.found, true);
+    assert.equal(decoded.result.txid, record.txid);
+    assert.equal(decoded.result.publicationId, manifest.publicationId);
+    assert.deepEqual(decoded.result.detail, record.detail, 'Full indexed detail must match the read-only source.');
+    assert.deepEqual(decoded.result.raw, record.raw, 'Full raw and decoded bytes must match the read-only source.');
+    assert.deepEqual(decoded.result.price, record.price);
+    assert.deepEqual(decoded.result.source, record.source);
+    assert.deepEqual(decoded.result.snapshot, source.snapshot);
+    assert.equal(page.url(), `${app.url}/`);
+    const queries = audit(name, manifest.chunkCount);
+    records.push({ txid: record.txid, measurements: decoded.measurements, inputs: record.detail.inputs.length, outputs: record.detail.outputs.length, rawBytes: record.raw.hex.length / 2 });
+    return queries;
+  }
 
-  activePhase = 'invalid';
+  const mixed = source.records.find(record => (record.detail.ironwoodActions ?? 0) > 0);
+  const manyInputs = [...source.records].sort((a, b) => b.detail.inputs.length - a.detail.inputs.length)[0];
+  const manyOutputs = [...source.records].sort((a, b) => b.detail.outputs.length - a.detail.outputs.length)[0];
+  const coinbase = source.records.find(record => record.detail.isCoinbase === true);
+  assert.ok(mixed && coinbase && manyInputs && manyOutputs, 'Live window needs representative confirmed records.');
+  const beforeTyping = requests.filter(r => new URL(r.url).pathname === '/pir/query').length;
+  await page.locator('#txid').fill(mixed.txid);
+  assert.equal(requests.filter(r => new URL(r.url).pathname === '/pir/query').length, beforeTyping);
+  const firstQueries = await lookup(mixed, 'mixed');
+  const repeated = await lookup(mixed, 'repeat');
+  assert.notDeepEqual(firstQueries[0].body, repeated[0].body, 'Repeated queries require fresh randomness.');
+  await lookup(manyInputs, 'many-inputs');
+  await page.locator('#tx-tabs').getByText('Inputs / Outputs', { exact: true }).click();
+  assert.ok((await page.locator('#result-facts').innerText()).length > 0);
+  audit('many-inputs', manifest.chunkCount);
+  await lookup(manyOutputs, 'many-outputs');
+  await page.locator('#tx-tabs').getByText('Inputs / Outputs', { exact: true }).click();
+  const ioText = await page.locator('#result-facts').innerText();
+  for (const output of manyOutputs.detail.outputs) if (output.address) assert.ok(ioText.includes(output.address), 'Every output address must remain available in the local view.');
+  await page.locator('#tx-tabs').getByText('Raw', { exact: true }).click();
+  assert.deepEqual(JSON.parse(await page.locator('#raw-decoded').innerText()), manyOutputs.raw.decoded);
+  await page.getByRole('tab', { name: 'Hex', exact: true }).click();
+  assert.equal(await page.locator('#raw-hex').textContent(), manyOutputs.raw.hex);
+  audit('many-outputs', manifest.chunkCount);
+  await lookup(coinbase, 'coinbase');
+  assert.equal(await page.locator('a[href]').count(), 0, 'Selected block/address/transaction links must not navigate outside the private view.');
+
+  phase = 'outside';
+  await page.locator('#txid').fill('f'.repeat(64));
+  await page.locator('#lookup-button').click();
+  await page.locator('#lookup-error').waitFor({ state: 'visible' });
+  assert.match(await page.locator('#lookup-error').innerText(), /outside|coverage|publication/i);
+  audit('outside', 0);
+  phase = 'invalid';
   await page.locator('#txid').fill('invalid');
   await page.locator('#lookup-button').click();
   await page.locator('#lookup-error').waitFor({ state: 'visible' });
-  assertPrivateRequests('invalid', { queryExpected: false });
-
-  activePhase = 'unavailable';
-  blockQueries = true;
-  await page.locator('#txid').fill(expected[0].txid);
-  await page.locator('#lookup-button').click();
-  await page.locator('#lookup-error').waitFor({ state: 'visible', timeout: 120_000 });
-  assert.equal(await page.locator('#result-section').isVisible(), false, 'Old result must not survive a failed lookup.');
-  assertPrivateRequests('unavailable');
-  assert.equal(requests.filter(request => request.phase === 'unavailable').length, 1, 'Failure must not trigger fallback traffic.');
-
-  activePhase = 'malformed';
-  blockQueries = false;
-  truncateReply = true;
-  await page.locator('#txid').fill(expected[0].txid);
-  await page.locator('#lookup-button').click();
-  await page.locator('#lookup-error').waitFor({ state: 'visible', timeout: 120_000 });
-  assert.equal(await page.locator('#result-section').isVisible(), false);
-  assertPrivateRequests('malformed');
-  assert.equal(requests.filter(request => request.phase === 'malformed').length, 1);
-
-  activePhase = 'recovery';
-  truncateReply = false;
-  await lookup(expected[0].txid);
-  assertPrivateRequests('recovery');
+  audit('invalid', 0);
+  for (const failure of ['unavailable', 'malformed']) {
+    phase = failure;
+    failQuery = failure === 'unavailable'; malformedQuery = failure === 'malformed';
+    await page.locator('#txid').fill(coinbase.txid);
+    await page.locator('#lookup-button').click();
+    await page.locator('#lookup-error').waitFor({ state: 'visible', timeout: 120_000 });
+    assert.equal(await page.locator('#result-section').isVisible(), false);
+    audit(failure, 1);
+  }
+  failQuery = false; malformedQuery = false;
+  await lookup(mixed, 'recovery');
   const storage = await page.evaluate(() => ({ local: localStorage.length, session: sessionStorage.length, cookie: document.cookie }));
   assert.deepEqual(storage, { local: 0, session: 0, cookie: '' });
-  // Expected 503 in the negative test can produce Chromium's resource message.
-  const unexpectedErrors = errors.filter(error => !/Failed to load resource.*503/.test(error));
-  assert.deepEqual(unexpectedErrors, []);
-  await mkdir(outputDir, { recursive: true });
-  await page.screenshot({ path: resolve(outputDir, 'private-transaction-desktop.png'), fullPage: true });
+  assert.deepEqual(errors.filter(error => !/Failed to load resource.*503/.test(error)), []);
+  const output = resolve(ROOT, 'test-results');
+  await mkdir(output, { recursive: true });
+  await page.screenshot({ path: resolve(output, 'private-full-tx-desktop.png'), fullPage: true });
   await page.setViewportSize({ width: 390, height: 844 });
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
-  await page.screenshot({ path: resolve(outputDir, 'private-transaction-mobile.png'), fullPage: true });
+  await page.screenshot({ path: resolve(output, 'private-full-tx-mobile.png'), fullPage: true });
   const report = {
-    scope: 'Local bounded public-chain fixture transaction PIR; no production requests.',
-    initializationMs, queryBytes: first.length, firstMetrics, firstFacts, secondFacts,
-    checks: ['browser WASM encryption and decode', 'native upstream evaluator', 'two distinct record selections', 'randomized repeat query', 'no cleartext selector in URL/header/body', 'identical query length', 'no request on typing/invalid input', '503 without fallback', 'malformed response rejected', 'recovery after failure', 'empty browser storage', 'desktop and mobile layout'],
+    scope: 'Local full transaction view over recent confirmed mainnet data captured through independent public GET reads. Browser traffic restricted to loopback.',
+    publicationId: manifest.publicationId, snapshot: source.snapshot, coverage: source.coverage,
+    browserVersion: browser.version(), initializationMs, chunkCount: manifest.chunkCount, records,
+    checks: ['full detail/raw/price/source parity in browser', 'Ironwood/mixed, many-input, many-output and coinbase records', 'same design components reused', 'all three tabs and exact full raw hex/JSON', 'uniform query count and lengths', 'randomized repeat queries', 'no selected ID in URLs/headers/text/raw/reversed request bodies', 'no ordinary API or external navigation', 'no queries on typing/outside/invalid input', '503 and malformed response rejected without fallback', 'successful recovery', 'empty browser storage', 'desktop and mobile layout'],
     requests: requests.map(({ body, ...request }) => ({ ...request, bodyBytes: body?.length ?? 0 })),
-    replyStatuses: replies,
   };
-  await writeFile(resolve(outputDir, 'browser-report.json'), `${JSON.stringify(report, null, 2)}\n`);
-  console.log(JSON.stringify({ passed: report.checks, initializationMs, queryBytes: first.length, outputDir }, null, 2));
-} finally {
-  await browser.close();
-  await app.close();
-}
+  await writeFile(resolve(output, 'browser-full-report.json'), `${JSON.stringify(report, null, 2)}\n`);
+  console.log(JSON.stringify({ passed: report.checks, publicationId: report.publicationId, chunkCount: report.chunkCount, records: records.length, initializationMs, output }, null, 2));
+} finally { await browser?.close(); await app.close(); }

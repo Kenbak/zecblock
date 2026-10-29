@@ -1,0 +1,271 @@
+//! Fixed-size full-record fixture rows shared by the browser and local publisher.
+//! Cryptography remains in the pinned upstream native PIR implementation.
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use zakura_pir_protocol::transparent::{events::Txid, native::TableProfile};
+
+pub const SCHEMA: &str = "zecblock-private-tx-full-v1";
+pub const RECORD_SCHEMA: &str = "zecblock-private-tx-record-v1";
+pub const GEOMETRY: &str = "full-2k-8k";
+pub const TABLE: &str = "txdirectory";
+pub const ROWS: usize = 2048;
+pub const ROW_BYTES: usize = 8192;
+pub const HEADER_BYTES: usize = 128;
+pub const PAYLOAD_BYTES: usize = ROW_BYTES - HEADER_BYTES;
+const MAGIC: &[u8; 8] = b"ZBFTX001";
+
+pub fn profile() -> Result<TableProfile, String> {
+    TableProfile::new(SCHEMA, GEOMETRY, TABLE, ROWS as u64, ROW_BYTES as u32)
+}
+
+pub fn parse_display_txid(display: &str) -> Result<Txid, String> {
+    let mut bytes = decode_hash(display)?;
+    bytes.reverse();
+    Ok(Txid(bytes))
+}
+
+fn decode_hash(hash: &str) -> Result<[u8; 32], String> {
+    if hash.len() != 64 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return Err("Expected a 64-character hexadecimal identifier".into());
+    }
+    hex::decode(hash)
+        .map_err(|_| "Invalid hexadecimal identifier".to_string())?
+        .try_into()
+        .map_err(|_| "Invalid hexadecimal identifier".to_string())
+}
+
+/// Identity covers the public layout, source snapshot and all record commitments.
+/// serde_json's default sorted map representation gives the native/browser hash
+/// the same deterministic encoding; do not enable its preserve_order feature.
+pub fn publication_identity(manifest: &Value) -> Result<Value, String> {
+    let keys = [
+        "schema",
+        "geometry",
+        "table",
+        "rows",
+        "rowBytes",
+        "payloadBytes",
+        "chunkCount",
+        "network",
+        "snapshot",
+        "coverage",
+        "catalogue",
+    ];
+    let mut identity = serde_json::Map::new();
+    for key in keys {
+        let value = manifest
+            .get(key)
+            .ok_or_else(|| format!("Missing publication field {key}"))?;
+        identity.insert(key.to_string(), value.clone());
+    }
+    Ok(Value::Object(identity))
+}
+
+pub fn publication_id(manifest: &Value) -> Result<String, String> {
+    let bytes = serde_json::to_vec(&publication_identity(manifest)?).map_err(|e| e.to_string())?;
+    Ok(hex::encode(Sha256::digest(bytes)))
+}
+
+pub struct ChunkContext<'a> {
+    pub publication_id: &'a str,
+    pub txid: &'a str,
+    pub index: usize,
+    pub count: usize,
+    pub record_bytes: usize,
+    pub record_sha256: &'a str,
+}
+
+impl ChunkContext<'_> {
+    fn payload_len(&self) -> Result<usize, String> {
+        if self.count == 0
+            || self.count > ROWS
+            || self.index >= self.count
+            || self.record_bytes == 0
+            || self.record_bytes > self.count * PAYLOAD_BYTES
+        {
+            return Err("Unsupported full-record chunk shape".into());
+        }
+        Ok(self
+            .record_bytes
+            .saturating_sub(self.index * PAYLOAD_BYTES)
+            .min(PAYLOAD_BYTES))
+    }
+}
+
+pub fn encode_chunk(context: &ChunkContext<'_>, payload: &[u8]) -> Result<Vec<u8>, String> {
+    if payload.len() != context.payload_len()? {
+        return Err("Full-record chunk payload length mismatch".into());
+    }
+    let mut row = vec![0; ROW_BYTES];
+    row[..8].copy_from_slice(MAGIC);
+    row[8..40].copy_from_slice(&decode_hash(context.publication_id)?);
+    row[40..72].copy_from_slice(&parse_display_txid(context.txid)?.0);
+    for (offset, number) in [
+        (72, context.index),
+        (76, context.count),
+        (80, payload.len()),
+        (84, context.record_bytes),
+    ] {
+        row[offset..offset + 4].copy_from_slice(&(number as u32).to_le_bytes());
+    }
+    row[88..120].copy_from_slice(&decode_hash(context.record_sha256)?);
+    row[HEADER_BYTES..HEADER_BYTES + payload.len()].copy_from_slice(payload);
+    Ok(row)
+}
+
+pub fn decode_chunk(context: &ChunkContext<'_>, row: &[u8]) -> Result<Vec<u8>, String> {
+    let payload_len = context.payload_len()?;
+    if row.len() != ROW_BYTES
+        || &row[..8] != MAGIC
+        || row[8..40] != decode_hash(context.publication_id)?
+        || row[40..72] != parse_display_txid(context.txid)?.0
+        || row[88..120] != decode_hash(context.record_sha256)?
+        || row[120..HEADER_BYTES].iter().any(|&b| b != 0)
+    {
+        return Err("Full-record chunk identity mismatch".into());
+    }
+    let number = |offset| u32::from_le_bytes(row[offset..offset + 4].try_into().unwrap()) as usize;
+    if number(72) != context.index
+        || number(76) != context.count
+        || number(80) != payload_len
+        || number(84) != context.record_bytes
+        || row[HEADER_BYTES + payload_len..].iter().any(|&b| b != 0)
+    {
+        return Err("Full-record chunk shape or padding mismatch".into());
+    }
+    Ok(row[HEADER_BYTES..HEADER_BYTES + payload_len].to_vec())
+}
+
+fn number(value: &Value) -> Option<u64> {
+    value.as_u64().or_else(|| value.as_str()?.parse().ok())
+}
+
+/// Verify the claimed confirmed range and raw transaction identity. Derived
+/// indexer fields remain publisher-trusted; this is not an inclusion proof.
+pub fn validate_record(record: &Value, manifest: &Value, selected: &str) -> Result<(), String> {
+    if record["schema"] != RECORD_SCHEMA
+        || record["txid"] != selected
+        || record["network"] != "mainnet"
+        || record["network"] != manifest["network"]
+        || record["snapshot"] != manifest["snapshot"]
+        || record["coverage"] != manifest["coverage"]
+        || record["detail"]["txid"] != selected
+        || record["detail"]["status"] != "confirmed"
+        || record["detail"]["isCanonical"] != true
+        || !record["detail"]["inputs"].is_array()
+        || !record["detail"]["outputs"].is_array()
+        || !record["raw"]["decoded"].is_object()
+    {
+        return Err("Full-record envelope or confirmed-state mismatch".into());
+    }
+    let height = number(&record["detail"]["blockHeight"]).ok_or("Missing confirmed height")?;
+    let start = number(&manifest["coverage"]["startHeight"]).ok_or("Missing coverage start")?;
+    let end = number(&manifest["coverage"]["endHeight"]).ok_or("Missing coverage end")?;
+    let tip = number(&manifest["snapshot"]["height"]).ok_or("Missing snapshot height")?;
+    if start > end || end > tip || height < start || height > end {
+        return Err("Confirmed transaction lies outside the declared snapshot coverage".into());
+    }
+    decode_hash(
+        manifest["snapshot"]["hash"]
+            .as_str()
+            .ok_or("Missing snapshot hash")?,
+    )?;
+    decode_hash(
+        record["detail"]["blockHash"]
+            .as_str()
+            .ok_or("Missing transaction block hash")?,
+    )?;
+    if height == tip && record["detail"]["blockHash"] != manifest["snapshot"]["hash"] {
+        return Err("Transaction at the snapshot height names a different block".into());
+    }
+    if manifest["snapshot"]["publishedAt"]
+        .as_str()
+        .is_none_or(str::is_empty)
+    {
+        return Err("Missing publication time".into());
+    }
+    for key in [
+        "feeZat",
+        "totalInputZat",
+        "totalOutputZat",
+        "valueBalanceZat",
+        "valueBalanceSaplingZat",
+        "valueBalanceOrchardZat",
+        "valueBalanceIronwoodZat",
+    ] {
+        if let Some(value) = record["detail"].get(key)
+            && !value.is_null()
+        {
+            let text = value
+                .as_str()
+                .ok_or("Exact zatoshi amounts must be strings or null")?;
+            let magnitude = text.strip_prefix('-').unwrap_or(text);
+            if magnitude.is_empty()
+                || !magnitude.bytes().all(|b| b.is_ascii_digit())
+                || (magnitude.len() > 1 && magnitude.starts_with('0'))
+            {
+                return Err("Invalid exact zatoshi integer".into());
+            }
+        }
+    }
+    let raw = hex::decode(
+        record["raw"]["hex"]
+            .as_str()
+            .ok_or("Missing raw transaction")?,
+    )
+    .map_err(|_| "Invalid raw transaction hex")?;
+    let parsed =
+        zcash_transaction_wire::TransactionView::parse_exact(&raw).map_err(|e| e.to_string())?;
+    if parsed.txid() != parse_display_txid(selected)?.0 {
+        return Err("Raw transaction does not match the selected txid".into());
+    }
+    for candidate in [&record["raw"]["txid"], &record["raw"]["decoded"]["txid"]] {
+        if let Some(id) = candidate.as_str()
+            && id != selected
+        {
+            return Err("Verbose transaction identity mismatch".into());
+        }
+    }
+    Ok(())
+}
+
+pub fn result_envelope(mut record: Value, id: &str) -> Result<String, String> {
+    let object = record.as_object_mut().ok_or("Invalid record object")?;
+    object.insert("found".into(), json!(true));
+    object.insert("publicationId".into(), json!(id));
+    serde_json::to_string(&record).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn full_chunks_bind_every_field_and_zero_padding() {
+        let id = "1".repeat(64);
+        let txid = "2".repeat(64);
+        let digest = "3".repeat(64);
+        let context = ChunkContext {
+            publication_id: &id,
+            txid: &txid,
+            index: 0,
+            count: 2,
+            record_bytes: 3,
+            record_sha256: &digest,
+        };
+        let row = encode_chunk(&context, b"abc").unwrap();
+        assert_eq!(decode_chunk(&context, &row).unwrap(), b"abc");
+        for offset in [0, 8, 40, 72, 76, 80, 84, 88, 120, HEADER_BYTES + 3] {
+            let mut bad = row.clone();
+            bad[offset] ^= 1;
+            assert!(decode_chunk(&context, &bad).is_err(), "offset {offset}");
+        }
+        let padding = ChunkContext {
+            index: 1,
+            ..context
+        };
+        let row = encode_chunk(&padding, &[]).unwrap();
+        assert!(decode_chunk(&padding, &row).unwrap().is_empty());
+        assert!(encode_chunk(&padding, &[1]).is_err());
+    }
+}

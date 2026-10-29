@@ -214,11 +214,12 @@ try {
         item.responseSizeSource = 'body';
       } catch {
         // Chromium can discard a dedicated worker's response body before
-        // DevTools exposes it. Sizes remain an independent network measure.
+        // DevTools exposes it. Encoded transfer size can include HTTP chunk
+        // framing, so retain it separately from decoded payload byte length.
         try {
           const sizes = await observe(response.request().sizes());
-          if (sizes.responseBodySize > 0) { item.responseBytes = sizes.responseBodySize; item.responseSizeSource = 'network-encoded-size'; }
-          else item.responseUnavailable = true;
+          if (sizes.responseBodySize > 0) item.encodedTransferBytes = sizes.responseBodySize;
+          item.responseUnavailable = true;
         } catch { item.responseUnavailable = true; }
       }
       item.completedAtMs = performance.now();

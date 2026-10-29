@@ -1,0 +1,14 @@
+{
+  "name": "zecblock-private-tx-local-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash ../pir-browser/build.sh",
+    "start": "node server.mjs",
+    "test": "node --test test/server.test.mjs",
+    "test:browser": "node test/browser.mjs"
+  },
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

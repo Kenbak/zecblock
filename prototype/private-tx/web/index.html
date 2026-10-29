@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex, nofollow, noarchive">
+    <meta name="description" content="Local ZecBlock transaction lookup experiment using browser-side private information retrieval and a fixed public fixture dataset.">
+    <meta name="referrer" content="no-referrer">
+    <title>Private transaction lookup · ZecBlock local prototype</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%230b0d10'/%3E%3Cpath d='M9 9h14L9 23h14' fill='none' stroke='%23e4bc66' stroke-width='3'/%3E%3C/svg%3E">
+    <link rel="stylesheet" href="/style.css">
+    <script type="module" src="/app.js"></script>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="site-header">
+        <span class="wordmark">ZecBlock<span class="brand-dot" aria-hidden="true">.</span></span>
+        <span class="environment">LOCAL PROTOTYPE</span>
+      </header>
+
+      <main>
+        <section class="introduction" aria-labelledby="page-title">
+          <p class="eyebrow">PRIVATE INFORMATION RETRIEVAL</p>
+          <h1 id="page-title">A transaction lookup.<br>Selected in your browser.</h1>
+          <p class="lead">Your browser prepares an encrypted query, the local server evaluates it, and your browser decodes the result.</p>
+          <p class="scope">Fixed public fixtures only. This experiment does not query the live Zcash network or establish production privacy.</p>
+        </section>
+
+        <section class="lookup-section" aria-labelledby="lookup-title">
+          <div class="section-heading">
+            <h2 id="lookup-title">Look up a fixture transaction</h2>
+            <span class="runtime-status" id="runtime-status">Loading client</span>
+          </div>
+          <form id="lookup-form" autocomplete="off">
+            <label for="txid">Transaction ID</label>
+            <div class="input-row">
+              <input id="txid" name="transaction-fixture" type="text" inputmode="text" spellcheck="false" autocapitalize="off" autocomplete="off" maxlength="64" placeholder="Enter a 64-character transaction ID" aria-describedby="input-help" required>
+              <button class="primary-button" id="lookup-button" type="submit" disabled>Look up privately <span aria-hidden="true">→</span></button>
+            </div>
+            <p class="input-help" id="input-help">The selected ID stays in browser memory. It is not put in the URL or saved to browser storage.</p>
+          </form>
+
+          <div class="sample-area" id="sample-area" hidden>
+            <p class="sample-heading">PUBLIC FIXTURE CATALOGUE</p>
+            <p class="sample-help">Every browser receives this same sample list. Select a record to try the encrypted lookup.</p>
+            <div class="samples" id="samples"></div>
+          </div>
+
+          <ol class="flow" aria-label="Lookup stages">
+            <li id="stage-query"><span class="stage-number">01</span><span>Encrypt locally</span></li>
+            <li id="stage-server"><span class="stage-number">02</span><span>Evaluate encrypted query</span></li>
+            <li id="stage-decode"><span class="stage-number">03</span><span>Decode locally</span></li>
+          </ol>
+
+          <p class="status-line" id="lookup-status" role="status" aria-live="polite">Preparing the browser client and public setup.</p>
+          <p class="error-message" id="lookup-error" role="alert" hidden></p>
+        </section>
+
+        <section class="result-section" id="result-section" aria-labelledby="result-title" hidden>
+          <div class="section-heading">
+            <h2 id="result-title">Decoded in your browser</h2>
+            <button class="text-button" id="clear-button" type="button">Clear result</button>
+          </div>
+          <p class="result-context">Public fixture data retrieved through the local PIR evaluator. No live-chain freshness or completeness claim.</p>
+          <dl class="result-facts" id="result-facts"></dl>
+          <div class="metrics" id="metrics" aria-label="Lookup measurements"></div>
+        </section>
+
+        <aside class="privacy-note" aria-labelledby="boundary-title">
+          <h2 id="boundary-title">What this experiment proves</h2>
+          <p>A working client can hide its selected record within the fixture dataset. The local server still sees requests, timing and sizes. Your browser trusts the code served to it. This is not an anonymity service or a security audit.</p>
+        </aside>
+      </main>
+      <footer>Local browser → encrypted binary query → local evaluator → local decoding</footer>
+    </div>
+  </body>
+</html>

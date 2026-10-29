@@ -22,23 +22,23 @@
   "license": "MIT",
   "dependencies": {
     "@cipherpay/x402": "^0.6.0",
-    "@grpc/grpc-js": "^1.14.5",
+    "@grpc/grpc-js": "^1.14.6",
     "@grpc/proto-loader": "^0.8.0",
     "@modelcontextprotocol/sdk": "1.32.2",
     "bech32": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
-    "express": "^5.0.0",
-    "express-rate-limit": "^8.7.0",
+    "express": "^5.3.0",
+    "express-rate-limit": "^8.7.1",
     "helmet": "^8.0.0",
-    "pg": "^8.23.0",
-    "pgsql-parser": "18.2.9",
-    "redis": "^6.2.1",
-    "ws": "^8.21.3",
+    "pg": "^8.23.1",
+    "pgsql-parser": "18.3.1",
+    "redis": "^6.3.0",
+    "ws": "^8.22.0",
     "zod": "^4.6.7"
   },
   "devDependencies": {
-    "js-yaml": "^5.4.1"
+    "js-yaml": "^5.5.0"
   },
   "overrides": {
     "brace-expansion": ">=5.0.9",

@@ -8,7 +8,7 @@ import { exportRecent, saveSource } from './export-recent.mjs';
 const HERE = dirname(fileURLToPath(import.meta.url));
 const LOCAL = resolve(HERE, '.local');
 
-export async function publishRecent({ source, localDir = LOCAL, binary = resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture') } = {}) {
+export async function publishRecent({ source, localDir = LOCAL, binary = resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'), beforeActivate = async () => {} } = {}) {
   await mkdir(localDir, { recursive: true });
   const statusPath = resolve(localDir, 'publisher-status.json');
   let previous = {};
@@ -40,6 +40,7 @@ export async function publishRecent({ source, localDir = LOCAL, binary = resolve
     catch (error) {
       if (!['EEXIST', 'ENOTEMPTY'].includes(error.code) || !(await readFile(resolve(destination, 'manifest.json'))).equals(await readFile(resolve(staging, 'manifest.json')))) throw error;
     }
+    await beforeActivate(manifest);
     const pointer = resolve(localDir, 'current.json');
     const temporary = `${pointer}.${process.pid}.tmp`;
     await writeFile(temporary, `${JSON.stringify({ publicationId: manifest.publicationId, directory: manifest.publicationId })}\n`);

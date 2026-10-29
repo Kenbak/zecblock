@@ -4,6 +4,7 @@ import { readFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { createInterface } from 'node:readline';
+import { freshGuard } from './pilot/source-guard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const MAX_QUERY_BYTES = 4 * 1024 * 1024;
@@ -74,7 +75,7 @@ export function nativeEvaluator(binary, fixtureDir) {
 
 // No upstream reads happen here. Only the independent publisher can advance
 // current.json. Retained evaluators keep in-flight sessions on their own setup.
-export function localPublications({ localDir = resolve(HERE, '.local'), binary = resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'), createEvaluator = nativeEvaluator } = {}) {
+export function localPublications({ localDir = resolve(HERE, '.local'), binary = resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'), createEvaluator = nativeEvaluator, sourceDir = process.env.PRIVATE_TX_SOURCE_DIR } = {}) {
   const retained = new Map();
   let active = null;
   let loading = null;
@@ -104,9 +105,12 @@ export function localPublications({ localDir = resolve(HERE, '.local'), binary =
   return {
     async current() {
       loading ??= refresh().finally(() => { loading = null; });
-      return loading;
+      const publication = await loading;
+      if (sourceDir) await freshGuard(sourceDir, publication.manifest);
+      return publication;
     },
     get(id) { return retained.get(id); },
+    async assertUsable(publication) { if (sourceDir) await freshGuard(sourceDir, publication.manifest); },
     async status() {
       try { return JSON.parse(await readFile(resolve(localDir, 'publisher-status.json'), 'utf8')); }
       catch { return { state: 'unknown' }; }
@@ -195,6 +199,7 @@ export async function startPrototype({
         await publications.current();
         const publication = publications.get(setupMatch[1]);
         if (!publication) { respond(res, 409, 'Publication retired; refresh the local catalogue.'); return; }
+        await publications.assertUsable?.(publication);
         respond(res, 200, publication.publicBytes, 'application/octet-stream'); return;
       }
       if (req.method === 'POST' && req.url === '/pir/query') {
@@ -208,6 +213,7 @@ export async function startPrototype({
           if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) { respond(res, 409, 'A supported local publication is required.'); return; }
           const publication = publications.get(id);
           if (!publication) { respond(res, 409, 'Publication retired; refresh the local catalogue.'); return; }
+          await publications.assertUsable?.(publication);
           if (query.length !== publication.manifest.scheme.request_bytes) {
             respond(res, 400, 'Invalid encrypted query length.'); return;
           }

@@ -7,7 +7,71 @@ firewall rule, wallet endpoint or public listener is changed. The sample databas
 contains public plaintext chain records; PIR encrypts the selected lookup and
 response. It does not hide the operator's IP or qualify every active attack.
 
-## Layout and limits
+## Cumulative live mode
+
+`upgrade-live.py` migrates an existing rolling pilot into a separate cumulative
+state directory. It preserves the old release and `/var/lib/zecblock-pir-pilot`
+for rollback. The new query state is `/var/lib/zecblock-pir-live`; only the pilot
+query service gets a state-path/source-path environment drop-in. The old timer
+stays stopped on success. None of the existing production services is restarted.
+
+Two new pilot-only services share the existing two-CPU/4-GiB slice:
+
+- `zecblock-pir-pilot-source.service` runs fixed bounded SQL through existing Unix
+  peer authentication as `postgres`. Every capture uses `REPEATABLE READ READ ONLY`,
+  a three-second statement timeout and a 200-ms lock timeout. The process has no
+  TCP access, secrets or request listener, and cannot read the PostgreSQL data or
+  configuration directories. This is a trusted fixed-code local collector using
+  a powerful existing peer identity, not a qualified least-privilege public
+  service design. No database role, grant, slot or source schema is changed.
+- `zecblock-pir-pilot-live-publish.service` runs as the unprivileged pilot user.
+  It reads only the collector's public-data spool and fetches raw bytes through
+  fixed loopback API GETs. It receives no database credential. Old raw observations
+  are cached by transaction and canonical block identity; indexed facts are
+  refreshed together in each primary snapshot. Optional price, bridge and ZIP318
+  enrichments are explicitly unavailable in this mode.
+
+The collector checks committed data every second after its previous read finishes.
+This is bounded polling, not WAL CDC or atomic commit-to-PIR visibility. It imposes
+no extra confirmation-depth wait or three-minute publication timer. Publication
+starts when facts change, recaptures the entire retained cohort, prepares the same
+PIR format and requires a fresh matching facts fingerprint before activation.
+Reported latency is observation-to-ready, not measured SQL-commit-to-ready latency.
+
+The fixed floor comes from the final old publication at cutover and is saved in
+root-owned `/etc/zecblock-pir-pilot/live.json`. It never slides. New bounds are
+128 blocks/2048 records, plus the stricter actual native table capacity:
+`records * ceil(largest encoded record / 8064) <= 2048`, with at most 64 chunks.
+The table remains exactly 16,777,216 bytes. Capacity exhaustion rejects the entire
+new candidate and keeps the previous complete publication; no old/large record is
+silently omitted. The source continues fresh canonical checks of the admitted
+cohort even if extension capture exceeds its bound. This is bounded accumulation,
+not full-history backfill or a release-scale archive layout.
+
+The query service checks a fresh local source guard for every served generation.
+Reorged generations, unavailable source guards and guards older than ten seconds
+fail closed. This protects canonical serving state; historical facts in an old
+pinned publication remain explicitly as-of that publication. It is not an
+independent chain proof. The existing fixed browser batch/manual-refresh behavior
+is unchanged. Reload the page explicitly to see a later publication.
+
+The 5-GiB live-state budget/1-GiB preparation reserve and 128-MiB file limits remain.
+Native preparation and the collectors share the pilot slice, but PostgreSQL
+backends and existing API/node RPC work are outside that cgroup; fixed read bounds
+and timeouts limit source work. Source spool has only the latest bounded snapshot,
+guard and atomic-write candidates, with a 1-GiB free-disk reserve. No boot
+enablement, public domain/proxy, firewall or ordinary explorer endpoint changes.
+
+Use `upgrade-live.py <archive> <sha256> <new-commit> <old-commit> --verify-only`
+first. Actual migration checks closed immutable inventories, unchanged existing
+pilot units and absent overrides, freezes the old publisher, seeds separate live
+state, starts only the two new units and switches the pilot query release. It
+requires a fresh complete depth-zero publication plus HTTP health within a finite
+deadline. Failure removes only its owned units/config/drop-in, restores the prior
+query release/timer and preserves failed new state for inspection. Never run the
+old rolling publisher against the new cumulative state.
+
+## Legacy rolling layout and limits
 
 - Root-owned immutable release: `/opt/zecblock-pir-pilot/releases/<commit>`;
   `/opt/zecblock-pir-pilot/current` selects it.

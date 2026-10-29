@@ -245,6 +245,14 @@ try {
 
   const selected = [];
   function select(record) { if (record && !selected.some(item => item.txid === record.txid) && selected.length < selectedLimit) selected.push(record); }
+  const requested = (process.env.PRIVATE_TX_TEST_SELECTED_IDS ?? '').split(',').filter(Boolean);
+  assert.ok(requested.length <= selectedLimit && new Set(requested).size === requested.length);
+  for (const identifier of requested) {
+    assert.match(identifier, /^[a-f0-9]{64}$/);
+    const record = source.records.find(item => item.txid === identifier);
+    assert.ok(record, 'Explicit acceptance selection must belong to the copied source oracle.');
+    select(record);
+  }
   select(source.records.find(record => record.detail.isCoinbase));
   select(source.records.find(record => (record.detail.ironwoodActions ?? 0) > 0 || (record.detail.orchardActions ?? 0) > 0));
   select([...source.records].sort((a, b) => b.detail.inputs.length - a.detail.inputs.length)[0]);

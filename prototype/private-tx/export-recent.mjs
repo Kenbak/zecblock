@@ -58,9 +58,27 @@ export async function exportRecent({ read = readPublicData, blockCount = 4, tipD
   const height = integer(network.data.height ?? network.data.blocks);
   const endHeight = height - tipDepth;
   const startHeight = endHeight - blockCount + 1;
+  return exportConfirmedRange({ read, height, startHeight, endHeight, maxRecords, now, captureStartedAt });
+}
+
+// Shared full-range capture. The caller owns source connection/snapshot lifetime;
+// this helper does not establish a SQL transaction or choose a coverage floor.
+export async function exportConfirmedRange({
+  read, height, startHeight, endHeight, maxRecords = 2048,
+  now = () => new Date().toISOString(), captureStartedAt = now(),
+  expectedSnapshotHash,
+  sourceOrigin = SOURCE_ORIGIN,
+  sourceAuthority = 'Read-only public ZecBlock indexed detail and serving-node verbose API; block identities checked before and after capture. Independent HTTP observations, not an atomic database snapshot.',
+  scope = 'Bounded recent confirmed mainnet range; no mempool or full-history coverage.',
+}) {
+  requireCondition(typeof read === 'function', 'An indexed source reader is required.');
+  requireCondition(Number.isSafeInteger(height) && height >= 0 && Number.isSafeInteger(startHeight) && Number.isSafeInteger(endHeight)
+    && endHeight >= startHeight && endHeight <= height, 'Invalid indexed coverage boundaries.');
+  requireCondition(Number.isSafeInteger(maxRecords) && maxRecords >= 1 && maxRecords <= 2048, 'Choose a record limit from 1–2048.');
   requireCondition(startHeight > 0, 'Insufficient indexed coverage.');
   const anchor = (await read(`/v1/blocks/${height}?summary=1`)).data;
   requireCondition(HASH.test(anchor.hash) && integer(anchor.height) === height, 'Invalid indexed tip anchor.');
+  requireCondition(expectedSnapshotHash === undefined || anchor.hash === expectedSnapshotHash, 'Canonical indexed tip changed before capture.');
   const blocks = [];
   let recordCount = 0;
   // Bounded sequential block reads and at most two transaction reads at once.
@@ -70,7 +88,7 @@ export async function exportRecent({ read = readPublicData, blockCount = 4, tipD
     requireCondition(Array.isArray(block.transactions) && block.transactions.length === integer(block.transactionCount ?? block.transaction_count), 'Incomplete source block transaction list.');
     if (blocks.length) requireCondition(block.previous_block_hash === blocks.at(-1).hash, 'Source block range is not contiguous.');
     recordCount += block.transactions.length;
-    requireCondition(recordCount <= maxRecords, 'Recent range exceeds bounded publication capacity; choose fewer blocks.');
+    requireCondition(recordCount <= maxRecords, 'Indexed range exceeds bounded publication capacity; previous coverage must be retained.');
     blocks.push(block);
   }
   const records = [];
@@ -103,7 +121,7 @@ export async function exportRecent({ read = readPublicData, blockCount = 4, tipD
         raw,
         price: prices.get(date),
         source: {
-          origin: SOURCE_ORIGIN,
+          origin: sourceOrigin,
           detailObservedAt: detailResponse.meta.generatedAt,
           rawObservedAt: rawResponse.meta.generatedAt,
           observedConfirmations: detail.confirmations,
@@ -126,8 +144,8 @@ export async function exportRecent({ read = readPublicData, blockCount = 4, tipD
       startHeight, endHeight, transactionCount: records.length, complete: true,
       blocks: blocks.map(block => ({ height: integer(block.height), hash: block.hash, transactionCount: block.transactions.length })),
       captureStartedAt, captureCompletedAt,
-      authority: 'Read-only public ZecBlock indexed detail and serving-node verbose API; block identities checked before and after capture. Independent HTTP observations, not an atomic database snapshot.',
-      scope: 'Bounded recent confirmed mainnet range; no mempool or full-history coverage.',
+      authority: sourceAuthority,
+      scope,
     },
     records,
   };

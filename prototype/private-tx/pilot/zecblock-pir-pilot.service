@@ -1,0 +1,47 @@
+[Unit]
+Description=Loopback-only experimental ZecBlock PIR transaction viewer
+After=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=zecblock-pir-pilot
+Group=zecblock-pir-pilot
+Slice=zecblock-pir-pilot.slice
+WorkingDirectory=/opt/zecblock-pir-pilot/current/prototype/private-tx
+Environment=PRIVATE_TX_PORT=4319
+Environment=PRIVATE_TX_LOCAL_DIR=/var/lib/zecblock-pir-pilot
+Environment=PRIVATE_TX_EVALUATOR=/opt/zecblock-pir-pilot/current/prototype/pir-browser/target/release/zecblock-pir-fixture
+Environment=RAYON_NUM_THREADS=2
+Environment=UV_THREADPOOL_SIZE=2
+ExecStart=/usr/bin/node server.mjs
+Restart=on-failure
+RestartSec=10
+OOMPolicy=stop
+TimeoutStopSec=15
+UMask=0077
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+# Query service has no outbound dependency, including loopback API access.
+SystemCallFilter=~connect
+StandardOutput=journal
+StandardError=journal
+
+# Intentionally no Install section: the experiment is not enabled at boot.

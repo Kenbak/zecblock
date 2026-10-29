@@ -88,6 +88,7 @@ export function localPublications({ localDir = resolve(HERE, '.local'), binary =
     const manifestBytes = await readFile(resolve(dir, 'manifest.json'));
     const manifest = JSON.parse(manifestBytes.toString('utf8'));
     if (manifest.schema !== 'zecblock-private-tx-full-v1' || manifest.publicationId !== pointer.publicationId) throw new Error('Incompatible local publication.');
+    if (!Number.isSafeInteger(manifest.scheme?.request_bytes) || manifest.scheme.request_bytes < 1 || manifest.scheme.request_bytes > MAX_QUERY_BYTES) throw new Error('Invalid encrypted query geometry.');
     const publicBytes = await readFile(resolve(dir, 'public.bin'));
     const publication = { manifest, manifestBytes, publicBytes, evaluator: createEvaluator(binary, dir) };
     retained.set(pointer.publicationId, publication);
@@ -207,6 +208,9 @@ export async function startPrototype({
           if (typeof id !== 'string' || !/^[a-f0-9]{64}$/.test(id)) { respond(res, 409, 'A supported local publication is required.'); return; }
           const publication = publications.get(id);
           if (!publication) { respond(res, 409, 'Publication retired; refresh the local catalogue.'); return; }
+          if (query.length !== publication.manifest.scheme.request_bytes) {
+            respond(res, 400, 'Invalid encrypted query length.'); return;
+          }
           selectedEvaluator = publication.evaluator;
         }
         const result = await selectedEvaluator.evaluate(query);
@@ -221,6 +225,9 @@ export async function startPrototype({
       respond(res, status, status === 413 ? 'Query too large.' : 'Local lookup unavailable. No public lookup was attempted.');
     }
   });
+  server.requestTimeout = 15_000;
+  server.headersTimeout = 10_000;
+  server.maxConnections = 16;
   await new Promise((resolveListen, reject) => {
     server.once('error', reject);
     server.listen(port, '127.0.0.1', resolveListen);
@@ -240,11 +247,12 @@ export async function startPrototype({
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const fixtureDir = resolve(process.env.PRIVATE_TX_FIXTURE_DIR ?? resolve(HERE, '.local/fixture'));
   const binary = resolve(process.env.PRIVATE_TX_EVALUATOR ?? resolve(HERE, '../pir-browser/target/release/zecblock-pir-fixture'));
+  const localDir = resolve(process.env.PRIVATE_TX_LOCAL_DIR ?? resolve(HERE, '.local'));
   const port = Number(process.env.PRIVATE_TX_PORT ?? '4318');
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
   const fixtureMode = Boolean(process.env.PRIVATE_TX_FIXTURE_DIR);
   const evaluator = fixtureMode ? nativeEvaluator(binary, fixtureDir) : undefined;
-  const publications = fixtureMode ? undefined : localPublications({ binary });
+  const publications = fixtureMode ? undefined : localPublications({ binary, localDir });
   try {
     const app = await startPrototype({ port, fixtureDir, evaluator, publications });
     process.stdout.write(`Local private transaction view: ${app.url}\n`);

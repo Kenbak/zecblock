@@ -11,13 +11,13 @@ class LookupError extends Error {
   constructor(code) { super(code); this.code = code; }
 }
 const errors = {
-  initialize: 'The local private publication could not initialize. Publish recent data and reload.',
-  manifest: 'The local publication is unavailable or incompatible. No public lookup was attempted.',
+  initialize: 'The private publication could not initialize. Publish recent data and reload.',
+  manifest: 'The publication is unavailable or incompatible. No public lookup was attempted.',
   setup: 'The publication setup failed validation. No public lookup was attempted.',
   invalid: 'Enter exactly 64 hexadecimal characters. Validation stays in this browser.',
   outside: 'This transaction is outside the published confirmed range. This does not mean it is missing from Zcash.',
   query: 'The browser could not create the encrypted request. No public lookup was attempted.',
-  network: 'The local query service is unavailable or the publication was retired. Reload the catalogue and try again. No public lookup was attempted.',
+  network: 'The query service is unavailable or the publication was retired. Reload the catalogue and try again. No public lookup was attempted.',
   decode: 'The response was incomplete, changed or incompatible. The result was rejected without a public lookup fallback.',
   busy: 'Wait for the current private lookup to finish.',
 };

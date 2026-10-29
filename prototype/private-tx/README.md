@@ -1,11 +1,13 @@
-# Local private transaction explorer
+# Experimental private transaction explorer
 
 This standalone application on `new/private-tx-browser-prototype` renders the
 existing ZecBlock transaction design over full recent confirmed mainnet records
-retrieved with browser-side PIR. The app, publisher artifacts and query service
-stay local. Source capture uses bounded, unauthenticated **GET-only** reads from
-`https://api.zecblock.com`. There are no production writes, schema migrations,
-service changes, DNS changes or deployments.
+retrieved with browser-side PIR. The default workflow runs the app, publisher and
+query service locally. Source capture uses bounded, unauthenticated **GET-only**
+reads from `https://api.zecblock.com`. The optional [isolated Linux pilot](pilot/README.md)
+uses a separate unprivileged runtime/data directory on the mainnet primary,
+accessed only through an SSH loopback tunnel. It changes no production explorer
+route, API/indexer code, database schema, DNS or public listener.
 
 ## Run
 

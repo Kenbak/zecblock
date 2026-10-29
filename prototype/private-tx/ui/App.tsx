@@ -65,7 +65,7 @@ export function App() {
         }
         const catalogue = data.samples ?? data.catalogue ?? data.manifest?.catalogue ?? [];
         setSamples(Array.isArray(catalogue) ? catalogue.filter((sample: Sample | null) => sample !== null && typeof sample === 'object' && typeof sample.txid === 'string' && TXID.test(sample.txid)) : []);
-        setStatus(changed ? 'The local publication changed. Previous results were cleared; enter a transaction from the new coverage.' : 'Ready. The selected transaction ID stays in your browser.');
+        setStatus(changed ? 'The publication changed. Previous results were cleared; enter a transaction from the new coverage.' : 'Ready. The selected transaction ID stays in your browser.');
         return;
       }
       if (data.type === 'publication-warning') {
@@ -76,7 +76,7 @@ export function App() {
       if (data.type === 'stage') {
         setStage(data.stage);
         const part = Number.isSafeInteger(data.chunk) && Number.isSafeInteger(data.chunks) ? ` (${data.chunk} of ${data.chunks})` : '';
-        setStatus(data.stage === 'server' ? `Retrieving the encrypted record from the local PIR service${part}.` : data.stage === 'decode' ? `Decoding and checking the record in this browser${part}.` : 'Preparing the private lookup in this browser.');
+        setStatus(data.stage === 'server' ? `Retrieving the encrypted record from the PIR service${part}.` : data.stage === 'decode' ? `Decoding and checking the record in this browser${part}.` : 'Preparing the private lookup in this browser.');
       } else if (data.type === 'result') {
         const decoded = fullRecord(data.result?.record ?? data.result);
         setBusy(false);
@@ -170,7 +170,7 @@ export function App() {
   const snapshot = manifest?.snapshot;
 
   return <>
-    <header className="private-header"><div className="private-shell private-header-inner"><span className="private-brand">ZecBlock<span>.</span></span><div className="flex items-center gap-2"><Badge color="gold" variant="subtle">PRIVATE</Badge><span className="private-header-local">LOCAL PROTOTYPE</span></div></div></header>
+    <header className="private-header"><div className="private-shell private-header-inner"><span className="private-brand">ZecBlock<span>.</span></span><div className="flex items-center gap-2"><Badge color="gold" variant="subtle">PRIVATE</Badge><span className="private-header-local">ISOLATED PILOT</span></div></div></header>
     <main className="private-shell private-main">
       <div className="private-page-heading"><div><p className="text-caption text-muted font-mono uppercase tracking-widest mb-2">EXPLORER / PRIVATE LOOKUP</p><h1>Private transaction explorer</h1><p className="private-intro">Explore a confirmed mainnet publication with browser-side private information retrieval.</p></div><span className={`private-runtime ${ready ? 'ready' : ''}`} id="runtime-status">{ready ? 'Browser client ready' : 'Loading client'}</span></div>
 
@@ -187,9 +187,9 @@ export function App() {
       {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
       {snapshot && !record && <div className="private-publication"><span>Publication snapshot</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
-      {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`], ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`], ['Browser encryption', formatMs(measurements.encryptMs)], ['Local service', formatMs(measurements.requestMs)], ['Browser decoding', formatMs(measurements.decodeMs)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>}
+      {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`], ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`], ['Browser encryption', formatMs(measurements.encryptMs)], ['PIR service', formatMs(measurements.requestMs)], ['Browser decoding', formatMs(measurements.decodeMs)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>}
 
-      <aside className="private-footer-note"><p><strong>Local prototype.</strong> Coverage is limited to the captured publication. This does not provide live mempool or full-history search. Record selection is private within the published query domain; direct connections still reveal IP, timing and sizes.</p><p>Your browser trusts the delivered client code. Public blockchain data and bundled enrichments remain publisher-supplied facts, not a cryptographic proof of completeness.</p></aside>
+      <aside className="private-footer-note"><p><strong>Isolated pilot.</strong> Coverage is limited to the captured publication. This does not provide live mempool or full-history search. PIR conceals the selected record under the protocol assumptions. Connection operators can still observe IP, timing and sizes.</p><p>Your browser trusts the delivered client code. Public blockchain data and bundled enrichments remain publisher-supplied facts, not a cryptographic proof of completeness.</p></aside>
     </main>
   </>;
 }

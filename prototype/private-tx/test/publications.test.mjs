@@ -14,7 +14,7 @@ test('publication routing retains in-flight generations and rejects retired/unkn
   async function advance(n) {
     const path = join(dir, 'publications', id(n));
     await mkdir(path, { recursive: true });
-    await writeFile(join(path, 'manifest.json'), JSON.stringify({ schema: 'zecblock-private-tx-full-v1', publicationId: id(n) }));
+    await writeFile(join(path, 'manifest.json'), JSON.stringify({ schema: 'zecblock-private-tx-full-v1', publicationId: id(n), scheme: { request_bytes: 1 } }));
     await writeFile(join(path, 'public.bin'), Buffer.from([n]));
     await writeFile(join(dir, 'current.json'), JSON.stringify({ publicationId: id(n), directory: id(n) }));
   }
@@ -24,6 +24,9 @@ test('publication routing retains in-flight generations and rejects retired/unkn
   await advance(2);
   assert.equal((await (await fetch(`${app.url}/publication/manifest.json`)).json()).publicationId, id(2));
   const query = generation => fetch(`${app.url}/pir/query`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-PIR-Publication': id(generation) }, body: Buffer.from([9]) });
+  const wrongLength = await fetch(`${app.url}/pir/query`, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream', 'X-PIR-Publication': id(1) }, body: Buffer.alloc(2) });
+  assert.equal(wrongLength.status, 400);
+  assert.equal(calls.length, 0, 'Wrong-sized ciphertext must not reach native IPC.');
   assert.equal((await query(1)).status, 200);
   assert.ok(calls.at(-1).endsWith(id(1)), 'Old query must use its original setup/data.');
   assert.equal((await query(2)).status, 200);

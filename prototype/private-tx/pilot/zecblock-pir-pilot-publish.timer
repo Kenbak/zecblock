@@ -1,0 +1,10 @@
+[Unit]
+Description=Independent bounded PIR publication refresh
+
+[Timer]
+OnActiveSec=180
+OnUnitInactiveSec=180
+AccuracySec=5
+Unit=zecblock-pir-pilot-publish.service
+
+# Intentionally no Install section: start explicitly for the pilot only.

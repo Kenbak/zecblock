@@ -486,7 +486,7 @@ function checkedCaption(summary,facts,numeric,locale='en',reject=()=>{},months=n
  const bare=template.replace(/\{\{[a-z_]+\}\}/g,' ');
  if(lookalike.test(masked)||latinLocale(locale)&&/(?![\p{Script=Latin}\p{Script=Greek}])\p{L}/u.test(bare))return no('artifact');
  // A dropped digit leaves a doubled word ("October October") or a gap before punctuation ("October , sending").
- if(/\b(\p{L}+)\s+\1\b/iu.test(bare.replace(/\s+/g,' ').replace(/ (?=[,.;:])/g,' '))||/\p{L}\s+[,.]/u.test(masked))return no('dropped_value');
+ if(/\b(\p{L}+)\s+\1\b/iu.test(bare.replace(/\s+/g,' '))||/\p{L}\s+[,.]/u.test(masked))return no('dropped_value');
  if(/[A-Za-z0-9]\{\{|\}\}[A-Za-z0-9]/.test(template))return no('glued_fact');
  if(/^en(?:-|$)/.test(locale)&&spelledNumber.test(masked))return no('spelled_number');
  if([...template.matchAll(/\{\{([a-z_]+)\}\}\s*\{\{([a-z_]+)\}\}/g)].some(([,left,right])=>numeric.has(left)&&numeric.has(right)))return no('fused_facts');

@@ -9,7 +9,7 @@ import { normalizeMigrationData } from '@/app/ironwood/components/api-data';
 import type { Overview } from '@/app/ironwood/components/types';
 
 type Stats = {
-  mining?: { avgBlockTime?: number | null; targetBlockTime?: number | null };
+  mining?: { avgBlockTime?: number | null; targetBlockTime?: number | null; blocks24h?: number | null };
   supply?: { chain?: string; sapling?: number | null; orchard?: number | null } | null;
 };
 type Accounting = {
@@ -80,8 +80,13 @@ export function UpgradeImpact({ upgradeId, network, active }: {
       && validHeight(activation) && activation > 0 && validHeight(accounting.data.nodeHeight)
       && accounting.data.nodeHeight >= activation;
     const reserve = verifiedActive ? reserveAmount(accounting.data?.nsmBalanceZat, currency) : null;
+    // Blocks per day is one unambiguous window; averages elsewhere use other windows.
+    const blocks24h = statsMatch && Number.isSafeInteger(stats.data?.mining?.blocks24h) ? stats.data!.mining!.blocks24h! : null;
+    const target = statsMatch ? stats.data?.mining?.targetBlockTime : null;
+    const targetPerDay = finiteAmount(target) && target > 0 ? Math.round(86_400 / target) : null;
     metrics = [
-      { label: 'Block interval', value: interval, href: '/network/block-speed', actionLabel: 'View block speed', note: `${observedNote} · NU7 target 25s` },
+      { label: 'Blocks · last 24h', value: blocks24h != null ? blocks24h.toLocaleString('en-US') : 'Unavailable', href: '/network/block-speed', actionLabel: 'View block speed',
+        note: `${stats.error ? 'Last available · ' : ''}${active ? `NU7 target ${(86_400 / 25).toLocaleString('en-US')} a day` : `Target ${targetPerDay?.toLocaleString('en-US') ?? '—'} today · ${(86_400 / 25).toLocaleString('en-US')} with NU7`}` },
       { label: 'NSM reserve', value: active ? reserve ?? 'Unavailable' : 'At NU7', href: '/network#nu7-accounting', actionLabel: 'Explore NSM',
         note: active ? 'Recorded separately from issued supply' : 'Accounting begins at activation' },
     ];

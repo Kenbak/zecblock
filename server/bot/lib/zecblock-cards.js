@@ -19,7 +19,7 @@ const C = {
   gold: '#F8BC21', ironwood: '#E8CF78', orchard: '#B6A0E0', sapling: '#91AC90',
   in: '#65C79A', out: '#E8776A',
 };
-const TONES = { in: C.in, out: C.out, gold: C.gold, ironwood: C.ironwood, text: C.text };
+const TONES = { in: C.in, out: C.out, gold: C.gold, ironwood: C.ironwood, sapling: C.sapling, orchard: C.orchard, text: C.text, muted: C.faint };
 const NODE_FILL = { ironwood: C.ironwood, orchard: C.orchard, sapling: C.sapling, gold: C.gold };
 const CHAIN_ICONS = { trx: 'tron', bnb: 'bsc', matic: 'pol' };
 
@@ -453,6 +453,34 @@ function drawReorg(ctx, v) {
   ctx.fillText('canonical', fx, mid + 70 + size / 2 + 26);
 }
 
+// Blocks on a time axis: each tick is a block at its header time, so the gaps
+// are block intervals. NU7 blocks are gold; activation is a dashed marker.
+function drawPulse(ctx, v) {
+  const x = 700, w = W - PAD - x, top = 200, h = 170;
+  const span = v.end - v.start;
+  if (!(span > 0) || !v.blocks.length) throw new Error('Invalid pulse');
+  const px = t => x + Math.max(0, Math.min(1, (t - v.start) / span)) * w;
+  ctx.fillStyle = C.surface; ctx.fillRect(x, top, w, h);
+  ctx.strokeStyle = C.border; ctx.lineWidth = 1; ctx.strokeRect(x + 0.5, top + 0.5, w - 1, h - 1);
+  for (const block of v.blocks) {
+    ctx.fillStyle = block.nu7 ? C.gold : C.faint;
+    ctx.fillRect(Math.round(px(block.t)) - 2, top + 30, 4, h - 60);
+  }
+  const first = v.blocks.find(block => block.nu7);
+  if (first) {
+    const mx = Math.round(px(first.t)) - 7;
+    ctx.strokeStyle = C.gold; ctx.setLineDash([4, 4]);
+    ctx.beginPath(); ctx.moveTo(mx, top - 16); ctx.lineTo(mx, top + h); ctx.stroke(); ctx.setLineDash([]);
+    ctx.font = 'normal 16px GeistMono'; ctx.fillStyle = C.gold; ctx.fillText('NU7', mx + 8, top - 4);
+  }
+  ctx.font = 'normal 15px GeistMono'; ctx.fillStyle = C.muted;
+  ctx.fillText(`${Math.round(span / 60)} min earlier`, x, top + h + 28);
+  const now = 'latest block';
+  ctx.fillText(now, x + w - ctx.measureText(now).width, top + h + 28);
+  ctx.font = 'normal 18px Geist'; ctx.fillStyle = C.secondary;
+  ctx.fillText('Each line is a block at its header time.', x, top + h + 66);
+}
+
 async function renderEditorial(story) {
   const card = story.evidence?.card;
   if (!card?.hero || !card.line || !card.kicker) throw new Error('Story has no card');
@@ -476,6 +504,7 @@ async function renderEditorial(story) {
   else if (v?.kind === 'rank') drawRank(ctx, v);
   else if (v?.kind === 'bars') drawBars(ctx, v);
   else if (v?.kind === 'reorg') drawReorg(ctx, v);
+  else if (v?.kind === 'pulse') drawPulse(ctx, v);
   else if (v && v.kind !== 'briefing') throw new Error(`Unknown card visual: ${v.kind}`);
   drawFooter(ctx, card.source, v?.kind === 'comparison' && card.date ? `Latest window: ${card.date} UTC` : card.date);
   const file = path.join(os.tmpdir(), `zecblock-card-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`);

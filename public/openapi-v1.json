@@ -8410,7 +8410,7 @@
     "/v1/mining/orphan-rates": {
       "get": {
         "operationId": "get_mining_Orphan-rates",
-        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
         "tags": [
           "mining"
         ],
@@ -8420,7 +8420,7 @@
         "x-cipherscan-v1-status": "adapter",
         "responses": {
           "200": {
-            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
             "content": {
               "application/json": {
                 "schema": {

@@ -55,12 +55,25 @@ test('paid interpretation fails closed unless provider, model and explicit daily
   assert.equal(providerConfig(env).dailyCalls, 5);
 });
 
+test('planning reasoning can be turned off, and prose tasks keep the base effort', async () => {
+  const { z } = require('zod');
+  for (const [envExtra, task, effort, cap] of [[{ ASK_PLANNING_REASONING_EFFORT: 'none' }, undefined, 'none', 500], [{}, { name: 'research_caption', instruction: 'x', schema: { type: 'object' }, validator: z.object({}).passthrough() }, 'none', 500]]) {
+    await interpret(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none', ...envExtra }), { question: 'show pools', context: null }, new AbortController().signal, async (url, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(body.reasoning_effort, effort); assert.equal(body.max_completion_tokens, cap);
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(task ? {} : { spec: sample }) } }] });
+    }, task);
+  }
+  assert.equal(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none', ASK_PLANNING_REASONING_EFFORT: 'unbounded' }), null);
+});
+
 test('provider output is validated and only the bounded interpretation request is sent', async () => {
   const result = await interpret(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none' }), { question: 'show pools', context: null }, new AbortController().signal, async (url, init) => {
     assert.equal(url, 'https://api.openai.com/v1/chat/completions');
     const body = JSON.parse(init.body);
-    assert.equal(body.store, false); assert.equal(body.service_tier, 'default'); assert.equal(body.max_completion_tokens, 500);
-    assert.equal(body.reasoning_effort, 'none');
+    // Routing is a planning task: it reasons at low effort with room for reasoning tokens.
+    assert.equal(body.store, false); assert.equal(body.service_tier, 'default'); assert.equal(body.max_completion_tokens, 2500);
+    assert.equal(body.reasoning_effort, 'low');
     assert.equal(body.messages.length, 2); assert.equal(body.response_format.json_schema.strict, true);
     return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ spec: sample }) } }] });
   });
@@ -208,6 +221,6 @@ test('SQL drafting gets a bounded larger output allowance reserved before either
   },task,async body=>{assert.equal(maximumCost(config,body),Math.ceil((Buffer.byteLength(body)+4096)*config.inputRate+1500*config.outputRate));reserved=true;return async()=>{};});
  }
  const config=providerConfig(env);
- for(const cap of [0,1501,-1,'1500',1.5])assert.throws(()=>maximumCost(config,JSON.stringify({max_completion_tokens:cap})),/output allowance/);
+ for(const cap of [0,4001,-1,'1500',1.5])assert.throws(()=>maximumCost(config,JSON.stringify({max_completion_tokens:cap})),/output allowance/);
  assert.equal(maximumCost(config,JSON.stringify({max_tokens:1500,max_completion_tokens:500})),Math.ceil((Buffer.byteLength(JSON.stringify({max_tokens:1500,max_completion_tokens:500}))+4096)*config.inputRate+1500*config.outputRate));
 });

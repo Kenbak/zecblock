@@ -35,6 +35,7 @@ CREATE TABLE fixture_private.swaps(timestamp timestamptz,direction text,chain te
 CREATE TABLE fixture_private.addresses(address text PRIMARY KEY,balance bigint,received bigint,sent bigint,transactions integer,first_seen bigint,last_seen bigint);
 CREATE TABLE fixture_private.address_activity(address text,txid text,height integer,timestamp bigint,tx_index integer,is_input boolean,is_output boolean,received bigint,sent bigint);
 CREATE TABLE fixture_private.activity_daily(date date PRIMARY KEY,blocks bigint,transactions bigint,shielded_transactions bigint,transparent_transactions bigint,unclassified_transactions bigint,bytes numeric,fees numeric,missing_fees bigint,missing_bytes bigint);
+CREATE TABLE fixture_private.address_daily(date date PRIMARY KEY,active_addresses bigint,sending_addresses bigint,receiving_addresses bigint,new_addresses bigint,incidences bigint,input_incidences bigint,output_incidences bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
 CREATE VIEW analytics_public.blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.blocks;
 CREATE VIEW analytics_public.transactions_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.transactions;
@@ -45,6 +46,7 @@ CREATE VIEW analytics_public.addresses_query WITH(security_barrier=true) AS SELE
 CREATE VIEW analytics_public.address_activity_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_activity;
 CREATE VIEW analytics_public.activity_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.activity_daily;
 CREATE VIEW analytics_public.flow_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.flow_daily;
+CREATE VIEW analytics_public.address_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_daily;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -59,6 +61,8 @@ INSERT INTO fixture_private.flow_daily SELECT DATE '2026-08-25'+i,p,d,2,CASE WHE
 INSERT INTO fixture_private.swaps SELECT (DATE '2026-08-25'+i)::timestamptz,d,'fixture_chain','fixture_token',CASE WHEN i=7 THEN NULL ELSE 100*(CASE WHEN i=23 THEN 2 ELSE 1 END) END FROM generate_series(0,36) i CROSS JOIN(VALUES('inflow'),('outflow')) directions(d);
 INSERT INTO fixture_private.addresses VALUES('fixture_address_a',1000000000,2000000000,1000000000,2,1788220800,1788220800),('fixture_address_b',500000000,500000000,0,1,1788220800,1788220800);
 INSERT INTO fixture_private.address_activity VALUES('fixture_address_a','fixture_tx_0',3500000,1788220800,0,true,true,100,50),('fixture_address_b','fixture_tx_0',3500000,1788220800,0,false,true,50,0),('fixture_address_a','fixture_tx_1',3500001,1788220875,1,true,false,0,50);
+-- The same three September 1 incidences, summarized; other September dates have blocks but no incidences.
+INSERT INTO fixture_private.address_daily SELECT DATE '2026-09-01'+i,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 1 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 3 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END FROM generate_series(0,29) i;
 RESET ROLE;`;
 
 // Independent, fixed mathematical oracles; these do not trust case.fixtureRows.

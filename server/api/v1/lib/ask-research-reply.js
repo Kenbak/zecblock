@@ -589,7 +589,7 @@ function chartChoice(result,evidence,raw){
  return fitResearchChart(result,{view,x:labelColumn(result),y:index(value),series:extra.slice(0,3).map(index),stacked,highlight:highlight==='none'?undefined:highlight},evidence.units)||fallback;
 }
 
-const datasetKnowledge={blocks:'block',transactions:'transactions',flows:'pools',daily:'pools',swaps:'crosschain',addresses:'addresses',address_activity:'address',activity_daily:'transactions',flow_daily:'pools'};
+const datasetKnowledge={blocks:'block',transactions:'transactions',flows:'pools',daily:'pools',swaps:'crosschain',addresses:'addresses',address_activity:'address',activity_daily:'transactions',address_daily:'address',flow_daily:'pools'};
 async function researchReply(raw,input,run,locale){
  const result=researchResultSchema.parse(raw);
  const question=String(input.question||'');

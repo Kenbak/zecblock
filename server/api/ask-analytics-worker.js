@@ -12,6 +12,7 @@ const {compileResearchSQL}=require('./v1/lib/ask-research-sql');
 const {createMemoryPressure}=require('./v1/lib/ask-memory-pressure');
 const {sqlQuotaDetails}=require('./v1/lib/ask-sql-quota');
 const {sqlFeedbackSchema}=require('../../lib/ask/sql-feedback');
+const {recordMetrics}=require('./v1/lib/ask-research-metrics');
 
 function createWorker(env, { analytics, redis, memoryPressure=createMemoryPressure(env) } = {}) {
   if (!env.ASK_ANALYTICS_SERVICE_KEY || env.ASK_ANALYTICS_SERVICE_KEY.length < 32 || !analytics || !redis) throw new Error('Analytics worker not configured');
@@ -33,12 +34,16 @@ function createWorker(env, { analytics, redis, memoryPressure=createMemoryPressu
     }catch(error){const quota=sqlQuotaDetails(error);if(quota)res.set('Retry-After',String(quota.retryAfter));res.status(error?.askKind==='job'?404:error?.askKind==='quota'?429:error?.askKind==='resource'?422:error?.askKind?503:400).json({error:error?.askKind==='job'?'expired':error?.askKind==='quota'?'allowance':error?.askKind==='resource'?'resource':error?.askKind?'unavailable':'invalid-request',...(quota?{quota}:{})});}
   });
   app.post('/query', express.json({ limit:'12kb' }), async (req, res) => {
-    try { if(req.body?.version===3){if(env.ASK_RESEARCH_ENABLED!=='true'||env.ASK_ANALYTICS_STORE!=='logical_public_core')throw Error('Research is disabled');await compileResearchSQL(req.body,{extended:env.ASK_RESEARCH_EXTENDED==='true'});}else compilePlan(req.body,undefined,env.ASK_ANALYTICS_STORE); } catch { return res.status(400).json({error:'invalid-plan'}); }
+    let compiled;
+    try { if(req.body?.version===3){if(env.ASK_RESEARCH_ENABLED!=='true'||env.ASK_ANALYTICS_STORE!=='logical_public_core')throw Error('Research is disabled');compiled=await compileResearchSQL(req.body,{extended:env.ASK_RESEARCH_EXTENDED==='true'});}else compilePlan(req.body,undefined,env.ASK_ANALYTICS_STORE); } catch { return res.status(400).json({error:'invalid-plan'}); }
     const controller = new AbortController();
     const abort = () => { if (!res.writableEnded) controller.abort(); };
     res.once('close', abort);
+    // Quick research runs share the queued jobs' anonymous categories only.
+    const started=Date.now(),measure=outcome=>compiled&&env.ASK_RESEARCH_METRICS_ENABLED==='true'?recordMetrics(redis,{outcome:controller.signal.aborted?'cancelled':outcome,datasets:compiled.datasets,features:compiled.shape.features,span:compiled.shape.span,mode:'quick',elapsedMs:Date.now()-started}):undefined;
     try {
       const evidence = await guardedAnalytics.execute(req.body, {redis, signal:controller.signal});
+      void measure('success');
       if (!controller.signal.aborted && req.body.version===3)return res.json({research:evidence.result});
       if (!controller.signal.aborted) res.json({ rows: evidence.result.plan.version === 2 ? evidence.result.rows.map(row => Object.fromEntries(Object.entries(row).flatMap(([key,cell]) => [[key,cell.value], ...(/^m[0-3]$/.test(key) ? [['u'+key.slice(1),String(cell.missing)]] : [])]))) : evidence.result.rows.map(row => ({bucket:row.date,value:row.value,observed_days:row.observedDays,observed_through:row.observedThrough})), consistency:env.ASK_ANALYTICS_STORE==='logical_public_core'?'verified-canonical-core':null, observedDays:evidence.result.coverage.observedDays, indexedThrough:evidence.result.coverage.indexedThrough, retrievedAt:evidence.result.retrievedAt });
     } catch (error) {
@@ -46,6 +51,7 @@ function createWorker(env, { analytics, redis, memoryPressure=createMemoryPressu
       const invalid=error?.askKind==='query'||['42601','42703','42883','42804','22012','22003','42P01'].includes(error?.code);
       // sqlFeedback is built from allowlisted visitor-caused errors only.
       const sql=sqlFeedbackSchema.safeParse(error?.sqlFeedback);
+      void measure(error?.askKind==='dataset'?'dataset':error?.quota?'quota':error?.code==='57014'||error?.askKind==='timeout'?'timeout':error?.askKind==='resource'||error?.code==='53400'?'resource':invalid?'query':error?.askKind==='unavailable'?'unavailable':'source');
       if (!controller.signal.aborted) res.status(error?.askKind==='dataset'?425:error?.quota?429:error?.code==='57014'?504:error?.askKind==='resource'||error?.code==='53400'?422:invalid?400:503).json({error:error?.askKind==='dataset'?'dataset-warming':error?.quota?'allowance':error?.code==='57014'?'timeout':error?.askKind==='resource'||error?.code==='53400'?'resource':invalid?'invalid-query':'unavailable',...(quota?{quota}:{}),...(sql.success?{sql:sql.data}:{})});
     } finally { res.off('close', abort); }
   });

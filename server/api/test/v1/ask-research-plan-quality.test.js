@@ -69,7 +69,7 @@ test('research captions keep two complete sentences without treating decimal poi
  assert.equal(checkedCaption('The peak was {{row_a_b}}',facts,numeric),null);
  assert.equal(checkedCaption('A complete finding of {{row_a_b}}.',facts,numeric),'A complete finding of 944.58%.');
  assert.equal(checkedCaption('A finding with no cited fact.',facts,numeric),null);
- assert.equal(checkedCaption('観測値は{{row_a_b}}でした。 表は',facts,numeric),'観測値は944.58%でした。');
+ assert.equal(checkedCaption('観測値は{{row_a_b}}でした。 表は',facts,numeric,'ja'),'観測値は944.58%でした。');
  assert.equal(checkedCaption('A finding of {{row_a_b}}. Its meaning. An unrelated third sentence.',facts,numeric),'A finding of 944.58%. Its meaning.');
  // Literal calendar words are dates without a fact: the whole caption fails.
  assert.equal(checkedCaption('Seven dates met both conditions. On Sep of the returned dates, flows rose.',facts,numeric),null);

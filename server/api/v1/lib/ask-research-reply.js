@@ -415,7 +415,9 @@ function checkedCaption(summary,facts,numeric,locale='en',reject=()=>{},months=n
  if([...masked.matchAll(new RegExp(calendarWord.source,'g'))].some(([word])=>!months?.has(monthKey(word))))return no('calendar_word');
  if(/[*#_]{3,}|\.{4,}|(?:^|\s)\p{M}/u.test(masked)||/^en(?:-|$)/.test(locale)&&/[ɯ\u{1104D}]/u.test(masked))return no('artifact');
  const bare=template.replace(/\{\{[a-z_]+\}\}/g,' ');
- if(lookalike.test(masked)||latinLocale(locale)&&/\p{Script=Latin}(?!\p{Script=Latin})\p{L}|(?!\p{Script=Latin})\p{L}\p{Script=Latin}/u.test(bare))return no('artifact');
+ if(lookalike.test(masked)||latinLocale(locale)&&/(?![\p{Script=Latin}\p{Script=Greek}])\p{L}/u.test(bare))return no('artifact');
+ // A dropped digit leaves a doubled word ("October October") or a gap before punctuation ("October , sending").
+ if(/\b(\p{L}+)\s+\1\b/iu.test(bare.replace(/\s+/g,' ').replace(/ (?=[,.;:])/g,' '))||/\p{L}\s+[,.]/u.test(masked))return no('dropped_value');
  if(/[A-Za-z0-9]\{\{|\}\}[A-Za-z0-9]/.test(template))return no('glued_fact');
  if(/^en(?:-|$)/.test(locale)&&spelledNumber.test(masked))return no('spelled_number');
  if([...template.matchAll(/\{\{([a-z_]+)\}\}\s*\{\{([a-z_]+)\}\}/g)].some(([,left,right])=>numeric.has(left)&&numeric.has(right)))return no('fused_facts');
@@ -439,7 +441,9 @@ function checkedCaption(summary,facts,numeric,locale='en',reject=()=>{},months=n
   if(down!==negative){contradiction=true;return whole;}
   return `${word}${by||''} ${approx||''}`;
  });
- return contradiction?no('signed_direction'):rendered;
+ if(contradiction)return no('signed_direction');
+ // A word written next to a fact that already contains it: "October October 2026", "May May 15".
+ return /\b(\p{L}{3,})\s+\1\b/iu.test(rendered)?no('dropped_value'):rendered;
 }
 const fallWords=/^(?:decreased|declined|fell|dropped|shrank|contracted|lost|down)$/i;
 const directionSign=/\b(decreased|declined|fell|dropped|shrank|contracted|lost|down|increased|rose|grew|climbed|expanded|gained|up)(\s+by)?\s+(≈\s?|~)?([+\-−])(?=\d)/gi;

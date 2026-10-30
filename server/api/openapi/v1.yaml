@@ -754,6 +754,7 @@ paths:
                           - addresses
                           - address_activity
                           - activity_daily
+                          - address_daily
                           - flow_daily
                           - labels
                     measures:

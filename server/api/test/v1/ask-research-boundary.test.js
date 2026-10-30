@@ -196,7 +196,7 @@ test('a unit attached to a research value must match its column conversion',asyn
 test('research facts preserve exact figures and legitimate ranks, dates and repeated values',async()=>{
  const {researchReply}=require('../../v1/lib/ask-research-reply');
  const base={query:{version:3,sql:'SELECT count(*) AS total FROM transactions',limit:100},columns:[{key:'c0',label:'total',type:'number'}],rows:[['542746']],truncated:false,datasets:['transactions'],fingerprint:'a'.repeat(64),retrievedAt:'2026-10-15T00:00:00Z',indexedThrough:'2026-10-15T00:00:00Z',coverage:'verified canonical records',units:'exact'};
- const answer=async(result,summary,locale='en')=>(await researchReply(result,{question:'Explain the result',history:[]},async(input,task)=>{
+ const answer=async(result,summary,locale='en')=>(await researchReply(result,{question:'Explain the result',history:[]},async()=>{
   return {finding:summary};
  },locale)).answer;
  assert.equal(await answer(base,'Transactions amounted to {{row_a_a}}.'),'Transactions amounted to 542,746.');

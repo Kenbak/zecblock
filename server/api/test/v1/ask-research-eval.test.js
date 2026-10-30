@@ -118,30 +118,31 @@ test('live adapter exercises API selection, worker job, same-snapshot verificati
  assert.equal(summary.accepted,true);assert.equal(summary.providerAttempts,3);assert.ok(fixture.paths.includes('/v1/ask/chat'));assert.ok(fixture.paths.includes('/v1/ask/research/jobs/explain'));
  const report=JSON.stringify(fixture.emitted);for(const forbidden of ['SELECT','0.00393737','2026-09-01','b'.repeat(64),fee.question,'secret','fingerprint'])assert.ok(!report.includes(forbidden));
 });
-test('a research draft repair and explanation format repair fit within four attested attempts',async()=>{
- const fixture=liveFixture({initial:attestation({providerAttemptLimit:4}),explanationAttempts:2});
+test('a research draft repair and a restated caption fit within five attested attempts',async()=>{
+ const fixture=liveFixture({initial:attestation({providerAttemptLimit:5}),explanationAttempts:2});
  const summary=await run(liveArgs,{},fixture);
- assert.equal(summary.accepted,true);assert.equal(summary.providerAttempts,4);assert.equal(summary.providerAttemptLimit,4);
+ assert.equal(summary.accepted,true);assert.equal(summary.providerAttempts,4);assert.equal(summary.providerAttemptLimit,5);
  assert.equal(fixture.paths.filter(path=>path.endsWith('/chat')).length,1);assert.equal(fixture.paths.filter(path=>path.endsWith('/jobs/explain')).length,1);
  assert.equal(fixture.emitted[0].checks.includes('provider-attempt-bound-exceeded'),false);
 });
-test('research admission requires room for all four attempts before sending a question',async()=>{
- const fixture=liveFixture({initial:attestation({providerAttemptLimit:3})});
+test('research admission requires room for all five attempts before sending a question',async()=>{
+ const fixture=liveFixture({initial:attestation({providerAttemptLimit:4})});
  const summary=await run(liveArgs,{},fixture);
  assert.equal(summary.accepted,false);assert.equal(summary.providerAttempts,0);assert.deepEqual(fixture.emitted[0].checks,['attempt-budget']);
  assert.ok(fixture.paths.every(path=>path==='/__ask_eval/runtime'));
 });
 test('extra explanation attempts remain a fatal evaluation-bound violation',async()=>{
- const fixture=liveFixture({explanationAttempts:3});const summary=await run(liveArgs,{},fixture);
- assert.equal(summary.accepted,false);assert.equal(summary.providerAttempts,5);assert.ok(fixture.emitted[0].checks.includes('provider-attempt-bound-exceeded'));
+ const fixture=liveFixture({explanationAttempts:4});const summary=await run(liveArgs,{},fixture);
+ assert.equal(summary.accepted,false);assert.equal(summary.providerAttempts,6);assert.ok(fixture.emitted[0].checks.includes('provider-attempt-bound-exceeded'));
 });
-test('four-attempt research paths preserve the total twelve-attempt evaluation ceiling',async()=>{
+test('five-attempt research paths preserve the total twelve-attempt evaluation ceiling',async()=>{
  const fixture=liveFixture({explanationAttempts:2});
  const args=liveArgs.slice(0,3).concat(['fee_units','classification_denominator','monthly_change_2026_summer','annual_2025']);
  const summary=await run(args,{},{...fixture,pause:async()=>{}});
- assert.equal(summary.providerAttempts,12);assert.equal(summary.providerAttemptLimit,12);assert.equal(summary.accepted,false);
- assert.equal(fixture.paths.filter(path=>path.endsWith('/chat')).length,3);
- assert.deepEqual(fixture.emitted[3].checks,['attempt-budget']);assert.equal(fixture.emitted[3].providerAttempts,0);
+ // Each case reserves five: after two four-attempt cases (8 used) a third would exceed twelve.
+ assert.equal(summary.providerAttempts,8);assert.equal(summary.providerAttemptLimit,12);assert.equal(summary.accepted,false);
+ assert.equal(fixture.paths.filter(path=>path.endsWith('/chat')).length,2);
+ assert.deepEqual(fixture.emitted[2].checks,['attempt-budget']);assert.equal(fixture.emitted[2].providerAttempts,0);
 });
 test('live adapter refuses unattested or nonfresh profiles before any question/provider request',async()=>{
  for(const initial of [attestation({model:'gpt-4o-mini'}),attestation({isolated:false}),attestation({providerAttemptLimit:13}),attestation({providerAttempts:1})]){const fixture=liveFixture({initial});await assert.rejects(()=>run(liveArgs,{},fixture));assert.ok(fixture.paths.every(path=>path==='/__ask_eval/runtime'));}

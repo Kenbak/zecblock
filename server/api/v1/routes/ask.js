@@ -91,6 +91,7 @@ async function providerRequest(config, body, signal, fetchImpl, beforeRequest) {
   const anthropic = config.provider === 'anthropic';
   const serialized = JSON.stringify(body);
   const release = beforeRequest ? await beforeRequest(serialized) : null;
+  let parsed = null;
   try {
     const response = await askStage('provider', () => fetchImpl(anthropic ? 'https://api.anthropic.com/v1/messages' : 'https://api.openai.com/v1/chat/completions', {
       method: 'POST', signal, redirect: 'error',
@@ -110,8 +111,10 @@ async function providerRequest(config, body, signal, fetchImpl, beforeRequest) {
         chunks.push(Buffer.from(value));
       }
     } finally { await reader.cancel(); }
-    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
-  } finally { await release?.(); }
+    parsed = JSON.parse(Buffer.concat(chunks).toString('utf8'));
+    return parsed;
+  // The budget release reconciles the reservation to the reported usage.
+  } finally { await release?.(parsed); }
 }
 
 // One agent step: the model must call exactly one of the offered tools. Earlier

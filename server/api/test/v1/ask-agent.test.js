@@ -5,7 +5,7 @@ const express = require('express');
 const { once } = require('node:events');
 const { randomUUID } = require('node:crypto');
 const { createAskRouter } = require('../../v1/routes/ask');
-const { ADMIT, ADMIT_WORK, RESERVE } = require('../../v1/lib/ask-budget');
+const { ADMIT, ADMIT_WORK, RESERVE, RECONCILE } = require('../../v1/lib/ask-budget');
 const { compileResearchSQL, researchEvidence } = require('../../v1/lib/ask-research-sql');
 const { coreCatalogue } = require('../../v1/lib/ask-core-catalogue');
 const { MAX_STEPS, toolsFor } = require('../../v1/lib/ask-agent');
@@ -30,13 +30,14 @@ async function evidence(input, rows = [['100', '100000'], ['99', '200000']], fie
 
 // script: the agent's tool calls in order. Other tasks (captions, knowledge
 // answers) get fixed checked replies.
-async function fixture(t, { script = [], jobsEnabled = false, envOverrides = {}, execute, jobState } = {}) {
-  const state = { steps: [], tasks: [], admitted: { ai: 0, sql: 0 }, reserved: 0, provider: 0, executed: 0, submitted: 0, source: 0, denyReserveAt: null, logs: [] };
+async function fixture(t, { script = [], jobsEnabled = false, envOverrides = {}, execute, jobState, usage } = {}) {
+  const state = { refunds: [], steps: [], tasks: [], admitted: { ai: 0, sql: 0 }, reserved: 0, provider: 0, executed: 0, submitted: 0, source: 0, denyReserveAt: null, logs: [] };
   const redis = {
     isReady: true,
     async eval(scriptName, options) {
       if (scriptName === ADMIT) return 1;
       if (scriptName === ADMIT_WORK) { state.admitted[/:work:(ai|sql):/.exec(options.keys[0])[1]]++; return 1; }
+      if (scriptName === RECONCILE) { state.refunds.push(Number(options.arguments[0])); return 1; }
       assert.equal(scriptName, RESERVE);
       state.reserved++;
       return state.reserved === state.denyReserveAt ? -1 : 1;
@@ -68,16 +69,16 @@ async function fixture(t, { script = [], jobsEnabled = false, envOverrides = {},
         state.steps.push(input);
         const next = script[state.steps.length - 1];
         if (!next) throw Error('Fixture script exhausted');
-        if (next.prose) return Response.json({ choices: [{ finish_reason: 'stop', message: { content: next.prose } }] });
+        if (next.prose) return Response.json({ ...(usage ? { usage } : {}), choices: [{ finish_reason: 'stop', message: { content: next.prose } }] });
         if (next.refusal) return Response.json({ choices: [{ finish_reason: 'stop', message: { content: null, refusal: next.refusal } }] });
-        return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ call: { tool: next.name, ...next.args } }) } }] });
+        return Response.json({ ...(usage ? { usage } : {}), choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ call: { tool: next.name, ...next.args } }) } }] });
       }
       const task = input.response_format.json_schema.name;
       state.tasks.push(task);
       const value = task === 'contextual_intent' ? { intent: 'research', sql: goodSQL, spec: null, blockQuery: null, transactionQuery: null, flowQuery: null, topics: [], locale: 'en' }
         : task === 'research_caption' ? { finding: 'The first returned fee is {{row_a_b}} zatoshis.', interpretation: '' }
           : { summary: 'Shielded pools keep amounts private while the protocol checks value balance.', observations: [], limitation: '', sources: [JSON.parse(input.messages[1].content).documents[0].id] };
-      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] });
+      return Response.json({ ...(usage ? { usage } : {}), choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(value) } }] });
   }
   const app = express(); app.use(express.json());
   app.use((req, _res, next) => { req.v1 = { network: 'mainnet', requestId: 'fixture', abortSignal: new AbortController().signal }; next(); });
@@ -116,6 +117,26 @@ test('run_sql answers a data question through the research path with one admissi
   assert.deepEqual(state.admitted, { ai: 1, sql: 1 });
   assert.equal(state.reserved, state.provider, 'every provider call reserves budget');
   assert.deepEqual(state.logs, [{ event: 'ask_agent', steps: 1, tools: ['run_sql'], repairs: 0, outcome: 'answered' }]);
+});
+
+test('each paid call is reconciled to its billed usage after the provider answers', async t => {
+  const usage = { prompt_tokens: 6000, completion_tokens: 300, prompt_tokens_details: { cached_tokens: 5000 } };
+  const { state, post } = await fixture(t, { usage, script: [call('run_sql', { sql: 'DELETE FROM blocks' }), call('run_sql', { sql: goodSQL })] });
+  const reply = await post(body);
+  assert.equal(reply.status, 200);
+  // Two agent steps and the caption: three reservations, three refunds.
+  assert.equal(state.provider, 3); assert.equal(state.reserved, 3); assert.equal(state.refunds.length, 3);
+  assert.ok(state.refunds.every(refund => Number.isSafeInteger(refund) && refund > 0));
+});
+
+test('an answered but invalid step is billed at its usage; a call with no response keeps its reservation', async t => {
+  const billedButInvalid = await fixture(t, { usage: { prompt_tokens: 10, completion_tokens: 1 }, script: [{ prose: 'not a call' }] });
+  assert.equal((await billedButInvalid.post(body)).status, 503);
+  assert.equal(billedButInvalid.state.reserved, 1); assert.equal(billedButInvalid.state.refunds.length, 1);
+  // The fixture provider throws when its script is empty: no response, no usage.
+  const noResponse = await fixture(t, { usage: { prompt_tokens: 10, completion_tokens: 1 }, script: [] });
+  assert.equal((await noResponse.post(body)).status, 503);
+  assert.equal(noResponse.state.reserved, 1); assert.equal(noResponse.state.refunds.length, 0);
 });
 
 test('queued jobs return the existing job contract once the job settles with rows', async t => {

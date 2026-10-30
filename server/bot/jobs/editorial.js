@@ -101,6 +101,11 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
     };
     if (pacing) await collect('reorg', () => collectors.reorgCandidates(reader,now));
     else await collect('live', () => collectors.liveCandidates(reader,now));
+    // NU7 is live is time-critical and may break pacing; other NU7 stories wait their turn.
+    if (collectors.nu7Candidates) await collect('nu7', async () => {
+      const result = await collectors.nu7Candidates(reader,now);
+      return pacing ? { candidates: result.candidates.filter(c => c.evidence.nu7Kind === 'activation'), decisions: result.decisions } : result;
+    });
     if (!pacing && now.getUTCHours() >= 6 && Date.parse(`${now.toISOString().slice(0,10)}T06:00:00Z`) >= Date.parse(activatedAt)) {
       const target = addDays(now.toISOString().slice(0,10), -1);
       const week = addDays(completedWeekEnd(now), -7);

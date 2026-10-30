@@ -449,3 +449,26 @@ test('block-speed image keeps Crosslink absent and outages uncached, then recove
   snapshot = { host, story: { ...snapshot.story, points: [] } };
   assert.equal((await route.GET()).status, 503, 'an empty chart does not become a cached image');
 });
+
+test('blocks-per-day view keeps the NU7 marker and clips irregular testnet days to the comparable scale', () => {
+  const point = (date, nu7, kind, blocks, target) => ({ key: date, date, nu7, kind, averageSeconds: 86400 / blocks, targetSeconds: target, lastHeight: 1, blocks });
+  const points = [point('2026-10-01', false, 'irregular', 17000, 75), point('2026-10-05', true, 'measured', 3400, 25), point('2026-10-06', true, 'measured', 3460, 25)];
+  const html = renderToStaticMarkup(React.createElement(load('components/network/BlockSpeedChart.tsx').BlockSpeedChart, { points, activation: null, metric: 'blocks' }));
+  assert.match(html, /aria-label="Blocks mined per UTC day/);
+  assert.match(html, /<text[^>]*>4k<\/text>/, 'scaled to the comparable NU7 days, not the 17k irregular day');
+  assert.equal((html.match(/data-clipped="true"/g) || []).length, 1);
+  assert.match(html, /Oct 1 · minimum-difficulty era · 17,000 blocks/);
+  assert.match(html, /fill-cipher-gold[^"]*"/);
+  assert.match(html, /NU7 activation|Estimated NU7 activation/);
+});
+
+test('NU7 cards draw only authoritative facts', () => {
+  const cards = load('lib/nu7-cards.ts');
+  assert.equal(cards.zatHeadline('811560160', 'TAZ'), '8.11 TAZ');
+  assert.equal(cards.zatHeadline('-1', 'ZEC'), '-0.00 ZEC');
+  assert.equal(cards.nsmCard('mainnet', { reserve: { growthSinceNu7Zat: null } }), null, 'no NSM card before activation');
+  assert.equal(cards.readinessCard('mainnet', { referenceUpgrade: 'NU6.3', readinessPct: 100, totalActive: 5 }), null, 'old NU6.3 readiness is never shown as NU7');
+  const ready = cards.readinessCard('mainnet', { referenceUpgrade: 'NU7', latestProtocol: 170190, readinessPct: 61.3, latestCount: 285, totalActive: 465 });
+  assert.equal(ready.headline, '61.3%');
+  assert.match(ready.detail, /285 of 465 nodes report protocol 170190/);
+});

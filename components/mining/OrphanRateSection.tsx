@@ -7,7 +7,8 @@ import { SectionHeader } from '@/components/ui';
 import { useUrlState } from '@/lib/use-url-state';
 import { SortableDataTable } from '@/components/ui/SortableDataTable';
 
-type Period = '24h' | '7d' | '30d';
+type Period = '24h' | '7d' | '30d' | 'pre-nu7' | 'nu7';
+const PERIOD_LABELS: Record<Period, string> = { '24h': '24h', '7d': '7d', '30d': '30d', 'pre-nu7': 'Before NU7', nu7: 'Since NU7' };
 interface PoolRate {
   name: string;
   canonicalBlocks: number;
@@ -24,6 +25,8 @@ interface RateWindow {
   unavailableReason: string | null;
   pools: PoolRate[];
 }
+/** Present only once the NU7 activation block is indexed. */
+interface Nu7Comparison { activationHeight: number | null; activationTimestamp: string; before: RateWindow; since: RateWindow }
 interface OrphanRates {
   method: string;
   capture?: { startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string };
@@ -31,6 +34,7 @@ interface OrphanRates {
   indexedHeight: number | null;
   indexedTimestamp: string | null;
   periods: RateWindow[];
+  nu7?: Nu7Comparison | null;
 }
 
 function percent(rate: number | null) {
@@ -44,10 +48,13 @@ function utc(value: string) {
 }
 
 export function OrphanRateSection() {
-  const [period, setPeriod] = useUrlState<Period>('orphans', '30d', ['24h', '7d', '30d']);
+  const [period, setPeriod] = useUrlState<Period>('orphans', '30d', ['24h', '7d', '30d', 'pre-nu7', 'nu7']);
   const { data, loading, error } = useApiQuery<OrphanRates>('/v1/mining/orphan-rates', undefined, { refreshInterval: 60_000 });
   const supported = data?.method === 'observed-indexer-reorg-v1' || data?.method === 'observed-block-capture-v2';
-  const selected = supported ? data.periods.find(window => window.period === period) : null;
+  const nu7 = supported ? data.nu7 ?? null : null;
+  const windows = supported ? [...data.periods, ...(nu7 ? [nu7.before, nu7.since] : [])] : [];
+  // A shared NU7 link opened before activation falls back to the default window.
+  const selected = windows.find(window => window.period === period) ?? windows.find(window => window.period === '30d') ?? null;
 
   return (
     <section id="orphans" className="scroll-mt-36 mb-12">
@@ -70,11 +77,11 @@ export function OrphanRateSection() {
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>
           {error && <p role="status" className="text-caption text-muted mb-3">Refresh failed. Showing the previous snapshot from {utc(data.asOf)} UTC.</p>}
-          <div className="grid sm:grid-cols-3 gap-3 mb-6">
-            {data.periods.map(window => (
-              <button key={window.period} type="button" aria-pressed={period === window.period} onClick={() => setPeriod(window.period)}
-                className={`card p-4 text-left transition ${period === window.period ? 'ring-1 ring-cipher-gold/40' : 'hover:bg-glass-3'}`}>
-                <span className="block text-caption font-mono text-muted uppercase mb-2">{window.period} observed rate</span>
+          <div className={`grid grid-cols-2 sm:grid-cols-3 ${nu7 ? 'lg:grid-cols-5' : ''} gap-3 mb-6`}>
+            {windows.map(window => (
+              <button key={window.period} type="button" aria-pressed={selected?.period === window.period} onClick={() => setPeriod(window.period)}
+                className={`card p-4 text-left transition ${selected?.period === window.period ? 'ring-1 ring-cipher-gold/40' : 'hover:bg-glass-3'} ${window.period === 'nu7' ? 'border-cipher-gold/30' : ''}`}>
+                <span className={`block text-caption font-mono uppercase mb-2 ${window.period === 'nu7' ? 'text-cipher-gold' : 'text-muted'}`}>{PERIOD_LABELS[window.period]} observed rate</span>
                 <span className="block text-xl font-mono font-semibold text-primary mb-2">{percent(window.rate)}</span>
                 <span className="block text-caption text-muted">{window.orphanedBlocks.toLocaleString()} observed orphans · {window.canonicalBlocks.toLocaleString()} canonical blocks</span>
               </button>
@@ -82,8 +89,9 @@ export function OrphanRateSection() {
           </div>
           {selected && <>
             <p className="text-caption text-muted mb-3">{utc(selected.windowStart)} – {utc(selected.windowEnd)} UTC · block-header timestamps</p>
-            {selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
-              <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${period}`} columns={[
+            {selected.unavailableReason === 'capture-began-after-activation' ? <p className="text-sm text-muted py-4">Competing-block capture began after NU7 activated on this network, so there is no comparable before-NU7 window.</p>
+              : selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
+              <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${PERIOD_LABELS[selected.period]}`} columns={[
                 { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="font-mono text-xs text-primary">{pool.name}</span> },
                 { id: 'canonical', header: 'Canonical blocks', align: 'right', sortValue: pool => pool.canonicalBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.canonicalBlocks.toLocaleString()}</span> },
                 { id: 'orphans', header: 'Observed orphans', align: 'right', sortValue: pool => pool.orphanedBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
@@ -91,6 +99,8 @@ export function OrphanRateSection() {
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
+            {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.{' '}</>
+              : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.{' '}</>}
             Observed orphans ÷ (canonical blocks + observed orphans). Pool labels use public coinbase data; Unknown remains included. Small samples can produce large percentages.{' '}
             Snapshot {utc(data.asOf)} UTC{data.indexedHeight != null && ` · indexed height ${data.indexedHeight.toLocaleString()}`}
             {data.indexedTimestamp && ` · tip header ${utc(data.indexedTimestamp)} UTC`}.

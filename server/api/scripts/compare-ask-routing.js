@@ -5,8 +5,9 @@
 // reservations, and reports route, pass/fail, latency and cost per question.
 //
 // Required: ASK_API_KEY_FILE (a file holding an eval-only key; never printed).
-// Optional data path: ASK_ANALYTICS_ENABLED=true, ASK_ANALYTICS_SERVICE_URL,
-// ASK_ANALYTICS_SERVICE_KEY (the private worker, usually over an SSH tunnel).
+// Data path: ASK_ANALYTICS_ENABLED=true, ASK_ANALYTICS_SERVICE_URL and
+// ASK_ANALYTICS_SERVICE_KEY_FILE (the private worker, usually over an SSH
+// tunnel). Without them, pass --routing-only.
 // Without it, SQL is compiled and reviewed but not executed ("offline data"):
 // research cases are then graded on routing and a compiled query only.
 //
@@ -94,7 +95,12 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
   if (config.estimate) { const result = estimate(config, casesFor(config)); console.log(JSON.stringify(result)); return result; }
   const key = fs.readFileSync(process.env.ASK_API_KEY_FILE, 'utf8').trim();
   if (!/^sk-/.test(key)) throw Error('ASK_API_KEY_FILE does not hold an OpenAI key');
-  const live = config.routingOnly ? null : createAnalyticsClient({ ...process.env, ASK_RESEARCH_JOBS_ENABLED: 'false' });
+  const workerStatuses = [];
+  const workerFetch = async (url, init) => { const response = await fetch(url, init); workerStatuses.push(response.status); return response; };
+  // The worker key is read from a file too, never from the command line.
+  if (process.env.ASK_ANALYTICS_SERVICE_KEY_FILE) process.env.ASK_ANALYTICS_SERVICE_KEY = fs.readFileSync(process.env.ASK_ANALYTICS_SERVICE_KEY_FILE, 'utf8').trim();
+  const live = config.routingOnly ? null : createAnalyticsClient({ ...process.env, ASK_RESEARCH_ENABLED: 'true', ASK_RESEARCH_EXTENDED: 'true', ASK_ANALYTICS_STORE: 'logical_public_core', ASK_RESEARCH_JOBS_ENABLED: 'false' }, workerFetch);
+  if (!config.routingOnly && !live) throw Error('Worker settings missing; pass --routing-only to run without data');
   const analytics = live ? Object.assign(live, { jobsEnabled: false }) : offlineAnalytics();
   const dataMode = live ? 'live-worker' : 'offline';
   const cases = casesFor(config);
@@ -103,7 +109,7 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
   for (const mode of config.modes) for (const item of cases) {
     if (spent >= config.maxUSD) { records.push({ mode, id: item.id, skipped: 'budget' }); continue; }
     const calls = [];
-    let offlineSQL = null;
+    let offlineSQL = null; const workerErrors = []; workerStatuses.length = 0;
     const fetchImpl = async (url, init) => {
       const request = JSON.parse(init.body);
       const response = await providerFetch(url, init);
@@ -124,7 +130,7 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
     };
     const saved = new Map();
     const redis = { isReady: true, eval: async () => 1, get: async name => saved.get(name) ?? null, set: async (name, value) => { saved.set(name, value); return 'OK'; }, zRem: async () => 1 };
-    const tracked = { ...analytics, execute: async (...args) => { try { return await analytics.execute(...args); } catch (error) { if (error.offlineSQL) offlineSQL = error.offlineSQL; throw error; } } };
+    const tracked = { ...analytics, execute: async (...args) => { try { return await analytics.execute(...args); } catch (error) { if (error.offlineSQL) offlineSQL = error.offlineSQL; else workerErrors.push(error.askKind || error.name || 'unknown'); throw error; } } };
     // A fresh router per question keeps the per-IP request limiter out of the way.
     const router = createAskRouter(baseEnv(mode, key), {
       redis, analytics: tracked, fetch: fetchImpl,
@@ -147,21 +153,22 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
     // Final route: the last routing decision, or the no-AI path that answered.
     const direct = directSelection({ question: item.question, page: item.page, context: null, history: item.history, locale: 'auto' });
     const route = routes.at(-1) || (direct ? intentRoutes[direct.intent] : null) || (reply?.blocks ? 'block' : reply?.transactions ? 'transaction' : reply?.spec ? 'chart' : reply ? 'knowledge' : 'none');
-    // Offline, a data route counts once its query compiled (SQL) or its loader
-    // was reached (blocks, transactions, charts read the public API).
-    const reached = status === 200 || (!live && body?.code === 'ask-source' && (route === 'sql' ? !!offlineSQL : ['block', 'transaction', 'chart'].includes(route)));
+    // Blocks, transactions and charts read the internal API, which the harness
+    // does not have: those routes count once their loader is reached. Offline,
+    // SQL counts once its query compiled and passed review.
+    const reached = status === 200 || body?.code === 'ask-source' && (route === 'sql' ? !live && !!offlineSQL : ['block', 'transaction', 'chart'].includes(route));
     let passed = item.expect.includes(route) && !!reached;
     let grade = null;
     if (item.item && status === 200) {
       let verification = null;
       if (item.item.kind === 'research' && reply?.research && live) {
-        try { verification = (await analytics.execute(await comparisonQuery(item.item, reply.research), {})).result; } catch { verification = null; }
+        try { verification = (await analytics.execute(await comparisonQuery(item.item, reply.research), {})).result; } catch (error) { workerErrors.push(`verification:${error.askKind || error.name}`); verification = null; }
       }
       if (item.item.kind !== 'research' || live) { grade = gradeReply(item.item, reply, verification); passed = passed && grade.passed; }
     }
     const record = {
       mode, set: item.set, id: item.id, expect: item.expect, route, routes, status, code: body?.code || null, passed,
-      grade: grade ? { passed: grade.passed, checks: grade.checks } : null, offlineSQL: !!offlineSQL,
+      grade: grade ? { passed: grade.passed, checks: grade.checks } : null, offlineSQL: !!offlineSQL, workerErrors, workerStatuses: [...workerStatuses],
       steps: calls.filter(entry => entry.task === 'agent_step').length, calls: calls.length, latencyMs,
       tokens: calls.reduce((sum, entry) => ({ input: sum.input + entry.input, cached: sum.cached + entry.cached, output: sum.output + entry.output, reasoning: sum.reasoning + entry.reasoning }), { input: 0, cached: 0, output: 0, reasoning: 0 }),
       costUSD: Number(calls.reduce((sum, entry) => sum + entry.cost, 0).toFixed(6)),

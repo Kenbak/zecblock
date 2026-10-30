@@ -98,8 +98,18 @@ function unsupportedAnswer(question,locale){
 // The agent's decline tool. Off-topic questions get one fixed line; private or
 // unavailable requests keep the more specific copy above.
 const offTopic = { en: 'I only answer questions about Zcash and ZecBlock’s public data.' };
+// Each reason names what cannot be provided, so a refusal is specific.
+const declineCopy = {
+  read_only: 'Zift is read-only: it cannot delete, write or modify data. I can query and explain the public data instead.',
+  private_data: 'Zift cannot reveal private recipient addresses, decrypted memos, shielded-wallet owners or private amounts: public chain data does not contain them. I can analyze the available public Zcash data instead.',
+  historical_balance: 'Historical address balances are unavailable: the address summaries contain current balances only and do not establish balances at an earlier date. I can show current balances or analyze public address activity for that period.',
+  prediction: 'I cannot predict prices or give investment advice. I can show what public Zcash data has recorded.',
+};
 function declineReply(reason, question, locale) {
-  return { answer: reason === 'off_topic' ? offTopic[locale] || unsupported[locale] || unsupported.en : unsupportedAnswer(question, locale), sources: [], spec: null, locale };
+  if (locale !== 'en') return { answer: (reason === 'off_topic' && offTopic[locale]) || unsupported[locale] || unsupported.en, sources: [], spec: null, locale };
+  const specific = unsupportedAnswer(question, locale);
+  const answer = reason === 'off_topic' ? offTopic.en : reason === 'private_data' && specific !== unsupported.en ? specific : declineCopy[reason] || specific;
+  return { answer, sources: [], spec: null, locale };
 }
 // A capability question needs a useful clarification, not an out-of-scope reply.
 // Server-owned copy prevents ungrounded numerical claims or model-provided SQL

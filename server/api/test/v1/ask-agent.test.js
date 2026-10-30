@@ -190,6 +190,12 @@ test('off-topic questions get the fixed decline line and touch no data', async t
   assert.equal(state.admitted.sql, 0);
 });
 
+test('decline reasons name what cannot be provided', async t => {
+  const { post } = await fixture(t, { script: [call('decline', { reason: 'read_only' }), call('decline', { reason: 'historical_balance' })] });
+  assert.match((await post({ ...body, question: 'DELETE the missing-fee rows from blocks' })).body.data.answer, /read-only: it cannot delete/);
+  assert.match((await post({ ...body, question: 'Exact address balances on September 1?' })).body.data.answer, /^Historical address balances are unavailable/);
+});
+
 test('clarify shows fixed server copy for an unspecified measure or baseline', async t => {
   const { state, post } = await fixture(t, { script: [call('clarify', { kind: 'growth' })] });
   const reply = await post({ ...body, question: 'What are the fastest growing metrics over the past year?' });
@@ -199,7 +205,7 @@ test('clarify shows fixed server copy for an unspecified measure or baseline', a
 });
 
 test('private requests keep the specific refusal copy', async t => {
-  const { post } = await fixture(t, { script: [call('decline', { reason: 'private_or_unavailable' })] });
+  const { post } = await fixture(t, { script: [call('decline', { reason: 'private_data' })] });
   const reply = await post({ ...body, question: 'Who owns this shielded wallet address?' });
   assert.match(reply.body.data.answer, /cannot identify shielded-wallet owners/);
 });

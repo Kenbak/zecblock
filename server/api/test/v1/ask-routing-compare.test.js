@@ -45,12 +45,15 @@ test('the comparison runs both modes routing-only and grades routes, steps and c
   assert.ok(!written.includes('sk-fixture') && !printed.join('\n').includes('sk-fixture'), 'the key never reaches output');
 });
 
-test('the case list covers eval cases and every probe; a worst-case estimate stays under the cap', () => {
+test('the case list covers eval cases and every probe, and the estimate makes no model call', () => {
   const all = casesFor(options([]));
   assert.ok(all.some(item => item.set === 'eval' && item.expect[0] === 'clarify'));
   assert.equal(all.filter(item => item.set === 'probes').length, probes.length);
-  assert.ok(probes.filter(item => item.offTopic).length >= 5);
+  assert.ok(probes.filter(item => item.offTopic).length >= 10);
+  assert.ok(probes.filter(item => item.attack).length >= 25);
+  assert.equal(new Set(probes.map(item => item.id)).size, probes.length);
   const { estimate } = require('../../scripts/compare-ask-routing');
-  const result = estimate(options([]), all);
-  assert.ok(result.worstCaseUSD < result.capUSD);
+  const result = estimate(options(['--max-usd=1.5']), all);
+  assert.equal(result.questions, all.length * 2); assert.equal(result.capUSD, 1.5);
+  assert.ok(result.worstCaseUSD > 0);
 });

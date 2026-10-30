@@ -11,7 +11,9 @@ const { parseKeys, KEY_LIMITS } = require('../../v1/mcp/sql');
 const { ADMIT_WORK } = require('../../v1/lib/ask-budget');
 const { compileResearchSQL, researchEvidence } = require('../../v1/lib/ask-research-sql');
 
-const KEY = 'zift_test_key_0123456789abcdefghij';
+// Obviously fake, low-entropy test tokens (built at runtime, never real keys).
+const token = letter => `zift_${letter.repeat(30)}`;
+const KEY = token('k');
 const hash = value => createHash('sha256').update(value).digest('hex');
 const env = { ZIFT_MCP_SQL_ENABLED: 'true', ZIFT_MCP_SQL_KEYS: `acme:${hash(KEY)}`, ASK_RESEARCH_ENABLED: 'true', ASK_RESEARCH_EXTENDED: 'true', ASK_ANALYTICS_STORE: 'logical_public_core' };
 const config = { network: 'mainnet', internalBaseUrl: 'http://127.0.0.1:1', internalServiceKey: 'x', maxResponseBytes: 1048576 };
@@ -61,7 +63,7 @@ test('SQL tools appear only when enabled on mainnet; the catalogue needs no key'
 
 test('sql_query needs a valid key; a missing or wrong key never reaches the worker or quotas', async t => {
   const api = await serve(t);
-  for (const key of [undefined, 'zift_wrong_key_0123456789abcdefghij']) {
+  for (const key of [undefined, token('w')]) {
     const result = await (await api.client(key)).callTool({ name: 'sql_query', arguments: { sql: 'SELECT height FROM blocks LIMIT 1' } });
     assert.equal(result.isError, true); assert.match(text(result), /requires an API key/);
   }
@@ -101,7 +103,7 @@ test('per-key quotas and database errors come back as readable tool errors', asy
 });
 
 test('keys are parsed strictly and stored only as hashes', () => {
-  const keys = parseKeys(`acme:${hash(KEY)}, bad entry ,UPPER:${hash('x')},x:${'z'.repeat(64)}, team-2:${hash('another_key_0123456789abcdefgh')}`);
+  const keys = parseKeys(`acme:${hash(KEY)}, bad entry ,UPPER:${hash('x')},x:${'z'.repeat(64)}, team-2:${hash(token('a'))}`);
   assert.deepEqual(keys.map(key => key.label), ['acme', 'team-2']);
   assert.ok(keys.every(key => Buffer.isBuffer(key.hash) && key.hash.length === 32));
 });

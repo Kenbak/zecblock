@@ -529,6 +529,7 @@ export function AskWorkspace() {
           <Link href="/privacy" className={styles.sourceLink}>Privacy score <span>↗</span></Link>
           <Link href="/charts" className={styles.sourceLink}>Chart library <span>↗</span></Link>
         </details>
+        <Link href="/docs/mcp" className={styles.mcpLink}><span>Use in Claude or Codex <span aria-hidden="true">↗</span></span><small>Via the ZecBlock MCP server</small></Link>
       </div>
       <p className={styles.sessionNote}>Your library stays on this device.</p>
     </aside>

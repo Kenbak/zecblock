@@ -4,7 +4,7 @@ const { spawn } = require('node:child_process');
 const { mkdtemp, rm } = require('node:fs/promises');
 const { createHmac } = require('node:crypto');
 const { createClient } = require('redis');
-const { admit, admitWork, reserve, maximumCost, REQUEST_LIMITS, WORK_LIMITS } = require('../../v1/lib/ask-budget');
+const { admit, admitWork, reserve, maximumCost, billedCost, budgetConfig, REQUEST_LIMITS, WORK_LIMITS } = require('../../v1/lib/ask-budget');
 const R = REQUEST_LIMITS, W = WORK_LIMITS;
 
 const NOW = Date.UTC(2026, 9, 27, 12, 34, 56, 100);
@@ -222,4 +222,46 @@ test('invalid work classes never reach Redis; Redis errors and unknown replies f
     await assert.rejects(operation({ eval: async () => { throw Error('Isolated Redis unavailable'); } }));
     await assert.rejects(operation({ eval: async () => 0 }), error => error.askKind === 'unavailable');
   }
+});
+
+test('a reservation is replaced by the billed cost once usage is reported, in the day and month totals', async t => {
+  const redis = await fixture(t), body = JSON.stringify({ max_completion_tokens: 4000 }), day = '2026-10-27', month = '2026-10';
+  const reserved = maximumCost(config, body);
+  const usage = { prompt_tokens: 6000, completion_tokens: 300, prompt_tokens_details: { cached_tokens: 5000 } };
+  const billed = billedCost(config, usage);
+  assert.equal(billed, Math.ceil(6000 * 0.25 + 300 * 0.75), 'cached tokens bill at the input rate unless a cached rate is configured');
+  const release = await reserve(redis, config, body, NOW);
+  assert.equal(Number(await redis.get(`ask:{mainnet}:usd:${day}`)), reserved);
+  await release({ choices: [], usage });
+  assert.equal(Number(await redis.get(`ask:{mainnet}:usd:${day}`)), billed);
+  assert.equal(Number(await redis.get(`ask:{mainnet}:usd:${month}`)), billed);
+  assert.equal(Number(await redis.get(`ask:{mainnet}:calls:${day}`)), 1, 'the call still counts');
+  assert.equal(await redis.zCard('ask:{mainnet}:active'), 0, 'the lease is released');
+});
+
+test('calls without usage keep their full reservation, and a refund never goes below zero', async t => {
+  const redis = await fixture(t), body = JSON.stringify({ max_completion_tokens: 4000 }), key = 'ask:{mainnet}:usd:2026-10-27';
+  const reserved = maximumCost(config, body);
+  for (const response of [undefined, null, {}, { usage: { prompt_tokens: -1, completion_tokens: 1 } }, { usage: { prompt_tokens: 10, completion_tokens: 1, prompt_tokens_details: { cached_tokens: 11 } } }, { usage: { prompt_tokens: '10', completion_tokens: 1 } }]) {
+    await (await reserve(redis, config, body, NOW))(response);
+  }
+  assert.equal(Number(await redis.get(key)), reserved * 6, 'failed, cancelled or malformed usage keeps the reservation');
+  // A refund larger than what is left (e.g. after a manual correction) stops at zero.
+  const release = await reserve(redis, config, body, NOW);
+  await redis.set(key, '5');
+  await release({ usage: { prompt_tokens: 1, completion_tokens: 1 } });
+  assert.equal(Number(await redis.get(key)), 0);
+});
+
+test('billed cost reads OpenAI and Anthropic usage and an optional cached-input price', () => {
+  const env = { ASK_DAILY_BUDGET_USD: '25', ASK_MONTHLY_BUDGET_USD: '400', ASK_MAX_INPUT_USD_PER_MILLION: '1', ASK_MAX_OUTPUT_USD_PER_MILLION: '5', ASK_ABUSE_SECRET: 'x'.repeat(32), ASK_TURNSTILE_SECRET: 's', ASK_TURNSTILE_HOSTNAME: 'h', ASK_TURNSTILE_SITE_KEY: 'k' };
+  const plain = budgetConfig(env), cached = budgetConfig({ ...env, ASK_CACHED_INPUT_USD_PER_MILLION: '0.05' });
+  assert.equal(plain.cachedInputRate, 1);
+  const openai = { prompt_tokens: 6000, completion_tokens: 300, prompt_tokens_details: { cached_tokens: 5000 } };
+  assert.equal(billedCost(plain, openai), 6000 + 1500);
+  assert.equal(billedCost(cached, openai), 1000 + 250 + 1500);
+  assert.equal(billedCost(cached, { input_tokens: 1000, cache_read_input_tokens: 5000, output_tokens: 300 }), 1000 + 250 + 1500);
+  for (const usage of [undefined, {}, { prompt_tokens: 1.5, completion_tokens: 1 }, { prompt_tokens: 1e8, completion_tokens: 1 }]) assert.equal(billedCost(plain, usage), null);
+  assert.equal(budgetConfig({ ...env, ASK_CACHED_INPUT_USD_PER_MILLION: '2' }), null, 'a cached price above the input price is rejected');
+  assert.equal(budgetConfig({ ...env, ASK_CACHED_INPUT_USD_PER_MILLION: 'cheap' }), null);
 });

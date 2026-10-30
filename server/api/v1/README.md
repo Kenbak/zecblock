@@ -244,6 +244,13 @@ Paid mode requires all of these **backend** settings:
   `ASK_MONTHLY_BUDGET_USD` (each positive, at most 1,000 USD).
 - `ASK_MAX_INPUT_USD_PER_MILLION`, `ASK_MAX_OUTPUT_USD_PER_MILLION`: reviewed
   upper bounds covering the selected model's applicable regional/cache premiums.
+  Each call first reserves its worst case at these rates; when the provider
+  reports token usage, the reservation is reduced to the billed cost, so the
+  daily and monthly caps track real spend. Calls with no reported usage
+  (network failure, timeout, cancellation) keep the full reservation.
+- Optional `ASK_CACHED_INPUT_USD_PER_MILLION` (0 up to the input rate): the
+  price of cached input tokens when reconciling. Unset, cached tokens bill at
+  the full input rate.
 - `ASK_ABUSE_SECRET` (at least 32 characters), `ASK_TURNSTILE_SECRET`,
   `ASK_TURNSTILE_SITE_KEY`, `ASK_TURNSTILE_HOSTNAME` (exact frontend hostname).
 - Ready shared `app.locals.redisClient`. Configure durable, non-evicting storage

@@ -2,8 +2,11 @@
 const { askError, askStage } = require('./ask-errors');
 const { createHmac, randomUUID } = require('node:crypto');
 
-// All keys share a Redis Cluster slot. Reserve the conservative maximum, never
-// refund uncertain/cancelled calls. Prices are deployment-reviewed upper bounds.
+// All keys share a Redis Cluster slot. Reserve the conservative maximum before
+// each call; once the provider reports token usage, the reservation is replaced
+// by the billed cost (RECONCILE), so the USD caps track real spend. Uncertain,
+// failed and cancelled calls report no usage and keep their full reservation.
+// Prices are deployment-reviewed upper bounds.
 // Ordinary beta traffic gets useful routing headroom without making distributed
 // cheap requests unbounded: 20/minute and 400/day/IP; 3000/hour and 20000/day/site.
 // AI work keeps 5/minute and 20/day/IP (it also spends the USD budgets). SQL runs
@@ -27,6 +30,15 @@ redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], 172800)
 redis.call('INCRBY', KEYS[3], ARGV[5]); redis.call('EXPIRE', KEYS[3], 172800)
 redis.call('INCRBY', KEYS[4], ARGV[5]); redis.call('EXPIRE', KEYS[4], 3456000)
 redis.call('ZADD', KEYS[2], ARGV[2], ARGV[4]); redis.call('EXPIRE', KEYS[2], 60)
+return 1`;
+// Refund the unused part of a reservation (ARGV[1], micro-USD) from the daily
+// and monthly totals. Never below zero, and never more than was reserved.
+const RECONCILE = `
+for i = 1, 2 do
+  local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+  local amount = math.min(tonumber(ARGV[1]), current)
+  if amount > 0 then redis.call('DECRBY', KEYS[i], amount) end
+end
 return 1`;
 const ADMIT = `
 if tonumber(redis.call('GET', KEYS[2]) or '0') >= ${REQUEST_LIMITS.day} then return -2 end
@@ -71,11 +83,15 @@ function budgetConfig(env, { authenticatedStaging = false } = {}) {
   const monthlyBudget = money(env.ASK_MONTHLY_BUDGET_USD);
   const inputRate = Number(env.ASK_MAX_INPUT_USD_PER_MILLION);
   const outputRate = Number(env.ASK_MAX_OUTPUT_USD_PER_MILLION);
+  // Optional cached-input price for reconciliation; cached tokens otherwise
+  // count at the full input rate.
+  const cachedInputRate = env.ASK_CACHED_INPUT_USD_PER_MILLION === undefined ? inputRate : Number(env.ASK_CACHED_INPUT_USD_PER_MILLION);
   if (![dailyBudget, monthlyBudget].every(value => Number.isSafeInteger(value) && value > 0 && value <= 1e9)
     || ![inputRate, outputRate].every(value => Number.isFinite(value) && value > 0 && value <= 1000)
+    || !(Number.isFinite(cachedInputRate) && cachedInputRate >= 0 && cachedInputRate <= inputRate)
     || !env.ASK_ABUSE_SECRET || env.ASK_ABUSE_SECRET.length < 32
     || !staging && (!env.ASK_TURNSTILE_SECRET || !env.ASK_TURNSTILE_HOSTNAME || !env.ASK_TURNSTILE_SITE_KEY)) return null;
-  return { dailyBudget, monthlyBudget, inputRate, outputRate, abuseSecret: env.ASK_ABUSE_SECRET, challengeSecret: staging ? null : env.ASK_TURNSTILE_SECRET, challengeHostname: staging ? null : env.ASK_TURNSTILE_HOSTNAME, siteKey: staging ? null : env.ASK_TURNSTILE_SITE_KEY, ...(staging ? { authenticatedStaging: true } : {}) };
+  return { dailyBudget, monthlyBudget, inputRate, outputRate, cachedInputRate, abuseSecret: env.ASK_ABUSE_SECRET, challengeSecret: staging ? null : env.ASK_TURNSTILE_SECRET, challengeHostname: staging ? null : env.ASK_TURNSTILE_HOSTNAME, siteKey: staging ? null : env.ASK_TURNSTILE_SITE_KEY, ...(staging ? { authenticatedStaging: true } : {}) };
 }
 // Planning calls that reason need room for reasoning tokens inside the cap.
 const MAX_OUTPUT_TOKENS = 4000;
@@ -91,13 +107,27 @@ function maximumCost(config, body) {
   // wrappers and schema handling. Output includes reasoning within token cap.
   return Math.ceil((bytes + 4096) * config.inputRate + outputTokens * config.outputRate);
 }
+// Billed cost in micro-USD from a provider response's usage (OpenAI chat
+// completions or Anthropic messages), or null when usage is absent or invalid.
+function billedCost(config, usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1e7 ? value : null;
+  const openai = usage.prompt_tokens !== undefined;
+  const input = count(openai ? usage.prompt_tokens : (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0));
+  const cached = count(openai ? usage.prompt_tokens_details?.cached_tokens ?? 0 : usage.cache_read_input_tokens ?? 0);
+  const output = count(openai ? usage.completion_tokens : usage.output_tokens);
+  if (input === null || cached === null || output === null || cached > input) return null;
+  const rate = config.cachedInputRate ?? config.inputRate;
+  return Math.ceil((input - cached) * config.inputRate + cached * rate + output * config.outputRate);
+}
 async function reserve(redis, config, body, now = Date.now()) {
   const day = new Date(now).toISOString().slice(0, 10);
   const active = 'ask:{mainnet}:active';
   const lease = randomUUID();
+  const reserved = maximumCost(config, body), usd = [`ask:{mainnet}:usd:${day}`, `ask:{mainnet}:usd:${day.slice(0, 7)}`];
   const result = await redis.eval(RESERVE, {
-    keys: [`ask:{mainnet}:calls:${day}`, active, `ask:{mainnet}:usd:${day}`, `ask:{mainnet}:usd:${day.slice(0, 7)}`],
-    arguments: [String(now), String(now + 60000), String(config.dailyCalls), lease, String(maximumCost(config, body)), String(config.dailyBudget), String(config.monthlyBudget)],
+    keys: [`ask:{mainnet}:calls:${day}`, active, ...usd],
+    arguments: [String(now), String(now + 60000), String(config.dailyCalls), lease, String(reserved), String(config.dailyBudget), String(config.monthlyBudget)],
   });
   const code = Number(Array.isArray(result) ? result[0] : result);
   if (code !== 1) {
@@ -108,7 +138,13 @@ async function reserve(redis, config, body, now = Date.now()) {
     if (code === -4 && Number.isInteger(retryAfter) && retryAfter >= 1 && retryAfter <= 60) throw quotaError('ask-ai-busy', retryAfter);
     throw askError('unavailable');
   }
-  return async () => { try { await redis.zRem(active, lease); } catch { /* lease expires */ } };
+  // The release receives the provider's parsed response when one arrived.
+  return async response => {
+    try { await redis.zRem(active, lease); } catch { /* lease expires */ }
+    const billed = billedCost(config, response?.usage);
+    if (billed === null || billed >= reserved) return;
+    try { await redis.eval(RECONCILE, { keys: usd, arguments: [String(reserved - billed)] }); } catch { /* the reservation stands */ }
+  };
 }
 async function admitWork(redis, config, req, kind, now = Date.now()) {
   if (kind !== 'ai' && kind !== 'sql') throw new TypeError('Invalid Ask work class');
@@ -150,4 +186,4 @@ async function admit(redis, config, req, fetchImpl = fetch) {
     throw askError('unavailable');
   }
 }
-module.exports = { RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork, identityFor };
+module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork, identityFor };

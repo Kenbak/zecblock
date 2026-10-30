@@ -13,7 +13,8 @@ function state(result,t=ticket){return {id:t.id,state:'succeeded',createdAt:when
 function attestation(overrides={}){return {isolated:true,provider:'openai',model:'gpt-6-luna',reasoningEffort:'none',runId:'00000000-0000-4000-8000-000000000003',revision:'29415722',sourceDigest:'c'.repeat(64),providerAttemptLimit:12,providerAttempts:0,...overrides};}
 function response(data){return {ok:true,json:async()=>data};}
 test('model profiles are explicit evaluation candidates, never a serving default',()=>{
- assert.equal(modelProfile('luna-candidate').status,'candidate');assert.equal(profiles['mini-observed'].model,'gpt-4o-mini');
+ assert.equal(modelProfile('luna-candidate').status,'candidate');
+ const terra=modelProfile('terra-candidate');assert.equal(terra.model,'gpt-6.1-terra');assert.equal(terra.reasoningEffort,'low');assert.equal(terra.minimumInputReservationRate,1);assert.equal(terra.minimumOutputReservationRate,5);assert.equal(profiles['mini-observed'].model,'gpt-4o-mini');
  for(const id of [undefined,'Luna','gpt-6-luna','__proto__','constructor'])assert.throws(()=>modelProfile(id));
  assert.throws(()=>options(['--allow-paid']));assert.equal(options([]).live,false);
 });

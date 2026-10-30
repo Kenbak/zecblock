@@ -6,6 +6,9 @@
 const profiles=Object.freeze({
  'luna-candidate':Object.freeze({id:'luna-candidate',status:'candidate',provider:'openai',model:'gpt-6-luna',reasoningEffort:'none',minimumInputReservationRate:0.25,minimumOutputReservationRate:0.75,documentation:'https://developers.openai.com/api/docs/models/gpt-6-luna'}),
  'sol-candidate':Object.freeze({id:'sol-candidate',status:'candidate',provider:'openai',model:'gpt-6-sol',reasoningEffort:'none',minimumInputReservationRate:2.5,minimumOutputReservationRate:10,documentation:'https://developers.openai.com/api/docs/models/gpt-6-sol'}),
+ // Recommended by the October 30, 2026 model comparison (PR #193): prose at
+ // low effort; planning runs at ASK_PLANNING_REASONING_EFFORT=medium.
+ 'terra-candidate':Object.freeze({id:'terra-candidate',status:'candidate',provider:'openai',model:'gpt-6.1-terra',reasoningEffort:'low',minimumInputReservationRate:1,minimumOutputReservationRate:5,documentation:'https://developers.openai.com/api/docs/models/gpt-6.1-terra'}),
  'mini-observed':Object.freeze({id:'mini-observed',status:'comparison',provider:'openai',model:'gpt-4o-mini',reasoningEffort:null,minimumInputReservationRate:0.25,minimumOutputReservationRate:0.75,documentation:'https://developers.openai.com/api/docs/models/gpt-4o-mini'}),
 });
 function modelProfile(id){if(!Object.hasOwn(profiles,id))throw Error('Explicit reviewed model profile required');return profiles[id];}

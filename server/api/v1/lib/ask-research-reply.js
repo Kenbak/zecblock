@@ -108,7 +108,9 @@ const change=(value,unit)=>signed(value,unit)+(unit==='percent'?' percentage poi
 // Date windows the SQL actually filtered on, as readable facts, so prose can
 // name "Oct 22 – Oct 28, 2026" or "7 days" without writing digits. Only
 // half-open bounds (>= start, < end) on 'YYYY-MM-DD' literals qualify.
-function windowFacts(tree,locale,through){
+// The sorted half-open date bounds a query filtered on, or null when its date
+// filters are not plain >= / < comparisons on two or three dates.
+function windowBounds(tree){
  const bounds=[];let inexact=false;
  const dates=(node,out=[])=>{if(!node||typeof node!=='object')return out;if(Array.isArray(node)){for(const item of node)dates(item,out);return out;}const text=node.A_Const?.sval?.sval;if(typeof text==='string'&&/^\d{4}-\d{2}-\d{2}$/.test(text.trim())&&validDate(text.trim()))out.push(text.trim());for(const value of Object.values(node))dates(value,out);return out;};
  const walk=node=>{
@@ -120,7 +122,11 @@ function windowFacts(tree,locale,through){
  };
  walk(tree);
  const unique=[...new Set(bounds)].sort();
- if(inexact||unique.length<2||unique.length>3)return {facts:{},notes:{}};
+ return inexact||unique.length<2||unique.length>3?null:unique;
+}
+function windowFacts(tree,locale,through){
+ const unique=windowBounds(tree);
+ if(!unique)return {facts:{},notes:{}};
  const day=86400000,at=date=>Date.parse(date+'T00:00:00Z');
  const short=t=>new Date(t).toLocaleDateString(locale,{timeZone:'UTC',day:'numeric',month:'short'}),long=t=>new Date(t).toLocaleDateString(locale,{timeZone:'UTC',day:'numeric',month:'short',year:'numeric'});
  // The start keeps its year when the window crosses one ("Oct 1, 2025 – Sep 30, 2026").
@@ -626,7 +632,7 @@ async function researchReply(raw,input,run,locale){
  const finding=tidyProse(accepted||researchTemplate(result,evidence));
  if(!accepted)console.warn(JSON.stringify({event:'ask_research_caption_fallback',reason:rejected}));
  const interpretation=checkedInterpretation(generated?.interpretation,{vocabulary,applied});
- return reply(interpretation?`${finding} ${interpretation}`:finding,chartChoice(result,evidence,generated?.chart));
+ return {...reply(interpretation?`${finding} ${interpretation}`:finding,chartChoice(result,evidence,generated?.chart)),...(accepted?{}:{template:true})};
 }
 // Facts already carry "≈" and their unit: drop a doubled marker, an
 // "approximately" in front of one, a repeated unit and a doubled full stop.
@@ -634,4 +640,4 @@ const approxWords=/\b(approximately|about|around|roughly|nearly|aproximadamente|
 function tidyProse(text){
  return text.replace(/%\s+(?:percent|per cent)\b/gi,'%').replace(/≈\s*≈/g,'≈').replace(approxWords,'$1 ').replace(/(примерно|около)\s+≈/gu,'$1 ').replace(/\b(ZEC|USD|zatoshis)\s+\1\b/g,'$1').replace(/(?<!\.)\.\.(?!\.)/g,'.').replace(/[ \t]{2,}/g,' ');
 }
-module.exports={tidyProse,researchReply,chartChoice,researchFacts,windowFacts,comparisonPairs,researchTemplate,checkedCaption,checkedInterpretation,captionTask,columnShapes,caveats};
+module.exports={tidyProse,researchReply,chartChoice,researchFacts,windowFacts,windowBounds,comparisonPairs,researchTemplate,checkedCaption,checkedInterpretation,captionTask,columnShapes,caveats};

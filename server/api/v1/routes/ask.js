@@ -5,18 +5,21 @@ const { askError, askStage, classifyFailure, failureExtra } = require('../lib/as
 const { policyFeedback } = require('../../../../lib/ask/sql-feedback');
 const { z } = require('zod');
 const { createHash, randomUUID } = require('node:crypto');
-const { RESERVE, budgetConfig, reserve, admit, admitWork, identityFor } = require('../lib/ask-budget');
+const { RESERVE, budgetConfig, reserve, admit, admitWork } = require('../lib/ask-budget');
 const { chatRequestSchema } = require('../../../../lib/ask/chat');
 const { resolveTransactionQuery } = require('../lib/ask-transactions');
 const { resolveBlockQuery } = require('../lib/ask-blocks');
 const { chat, guidedReply, blockReply, transactionReply, ziftHandoff, declineReply, clarifyReply, directSelection } = require('../lib/ask-chat');
 const { runAgent } = require('../lib/ask-agent');
 const { analysisSchema, requestSchema, resolveShortcut } = require('../../../../lib/ask/contract');
-const { sendSuccess } = require('../lib/envelope');
-const { sendProblem } = require('../lib/problem');
+const { sendSuccess, buildMeta } = require('../lib/envelope');
+const { sendProblem, buildProblem } = require('../lib/problem');
+const { turnScopeFor } = require('../lib/ask-scope');
+const { progressStages } = require('../../../../lib/ask/chat');
 const { createRateLimiter } = require('../lib/rate-limit');
 const { explainRequestSchema, explanationTaskFor, loadExplanationEvidence, renderExplanation } = require('../lib/ask-explanation');
 const { createAnalyticsClient } = require('../lib/ask-analytics-client');
+const { feedbackSchema, recordFeedback } = require('../lib/ask-feedback');
 
 const {compileResearchSQL}=require('../lib/ask-research-sql');
 const {compileResearchDraft}=require('../lib/ask-research-plan-quality');
@@ -174,6 +177,30 @@ async function agentStep(config, { instruction, user, turns, tools }, signal, fe
   return { name: tool, args };
 }
 
+// Opt-in progress for /chat (Accept: application/x-ndjson). Nothing is written
+// until the first stage, so admission, validation and quota failures keep
+// their status codes. After it, the response is 200 NDJSON: progress lines
+// carrying only a stage name, then one {type:'result'} line with the usual
+// envelope or one {type:'problem'} line with the problem document.
+function progressStream(req, res, enabled) {
+  let open = false;
+  const line = value => res.write(JSON.stringify(value) + '\n');
+  return {
+    get open() { return open; },
+    stage(stage) {
+      if (!enabled || !progressStages.includes(stage) || res.writableEnded || req.v1.abortSignal.aborted) return;
+      if (!open) {
+        open = true;
+        res.status(200); res.set('Content-Type', 'application/x-ndjson; charset=utf-8'); res.set('X-Accel-Buffering', 'no');
+        res.flushHeaders();
+      }
+      line({ type: 'progress', stage });
+    },
+    finish(data) { res.end(JSON.stringify({ type: 'result', status: 200, body: { data, meta: buildMeta({ requestId: req.v1.requestId, network: req.v1.network, indexedHeight: req.v1.indexedHeight ?? null }) } }) + '\n'); },
+    fail(type, options, retryAfter) { res.end(JSON.stringify({ type: 'problem', status: buildProblem(type, options).status, ...(retryAfter ? { retryAfter: String(retryAfter) } : {}), body: buildProblem(type, options) }) + '\n'); },
+  };
+}
+
 function createAskRouter(env = process.env, dependencies = {}) {
   const router = express.Router();
   const authenticatedStaging = env.ASK_STAGING_ENABLED === 'true' && dependencies.authenticatedStaging === true;
@@ -190,6 +217,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
   };
   const pollingLimiter=createRateLimiter({max:120,windowMs:60000,key:'ask-jobs',onLimit:localLimit('ask-sql-status-minute')});
   const limiter = createRateLimiter({ max: 20, windowMs: 60000, key: 'ask',onLimit:localLimit('ask-request-attempts') });
+  const feedbackLimiter=createRateLimiter({max:30,windowMs:60000,key:'ask-feedback',onLimit:localLimit('ask-feedback-minute')});
   router.use((req, res, next) => {
     res.set('Cache-Control', 'private, no-store');res.set('X-Robots-Tag','noindex, nofollow');
     if (authenticatedStaging && req.v1?.authenticatedStaging !== true) return sendProblem(res, 'access-denied', { status: 403, detail: 'Authenticated staging access is required.' });
@@ -205,7 +233,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
   // ASK_AGENT=true replaces the routing classifier with the tool-using agent.
   // Unset or false keeps the classifier for rollback.
   const agentEnabled = env.ASK_AGENT === 'true';
-  async function limited(req, res, operation, manual=false, { deadline = 35000 } = {}) {
+  async function limited(req, res, operation, manual=false, { deadline = 35000, stream = progressStream(req, res, false) } = {}) {
     const redis = redisFor(req);
     if (!(manual?researchConfig:config) || !redis?.isReady) return sendProblem(res, 'upstream-error', { status: 503, detail: 'Free-form AI is unavailable. Starter analyses remain available.' });
     try {
@@ -230,7 +258,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
         execute:async(...args)=>{await ensureSQL();return analytics.execute(...args);},
         // The worker caps queued+running jobs per visitor with this daily keyed hash.
         submit:async(query,options={})=>{
-          await ensureSQL();const ticket=await analytics.submit(query,{...options,owner:identityFor(manual?researchConfig:config,req,new Date().toISOString().slice(0,10))});
+          await ensureSQL();const ticket=await analytics.submit(query,options);
           if(aiAdmitted)try{
             // A server-only, ticket-bound receipt lets narration finish without
             // charging a second AI question. It is never supplied by a client.
@@ -239,16 +267,17 @@ function createAskRouter(env = process.env, dependencies = {}) {
           return ticket;
         },
       }:null;
-      const result = await operation(signal, run, requestAnalytics, step);
-      if (!req.v1.abortSignal.aborted) sendSuccess(res, { ...result, mode: result.mode || (manual?'research':'ai') });
+      const result = await operation(signal, run, requestAnalytics, step, stage => stream.stage(stage));
+      if (!req.v1.abortSignal.aborted) { const data = { ...result, mode: result.mode || (manual?'research':'ai') }; if (stream.open) stream.finish(data); else sendSuccess(res, data); }
     } catch (error) {
       // Never log questions, provider bodies, credentials or conversation state.
       if (!req.v1.abortSignal.aborted) {
         const failure = classifyFailure(error);
-        if (failure.status === 429) res.set('Retry-After', String(failure.retryAfter || 60));
+        if (failure.status === 429 && !stream.open) res.set('Retry-After', String(failure.retryAfter || 60));
         // Code-only diagnostics: no question, path, history, raw errors or provider bodies.
         console.warn(JSON.stringify({ event: 'ask_failure', code: failure.code }));
-        sendProblem(res, failure.type, { status: failure.status, detail: failure.detail, extra: failureExtra(failure) });
+        if (stream.open) stream.fail(failure.type, { status: failure.status, detail: failure.detail, extra: failureExtra(failure) }, failure.status === 429 ? failure.retryAfter || 60 : null);
+        else sendProblem(res, failure.type, { status: failure.status, detail: failure.detail, extra: failureExtra(failure) });
       }
     }
   }
@@ -295,7 +324,8 @@ function createAskRouter(env = process.env, dependencies = {}) {
         }
         return askStage('answer',()=>interpret(config,input,signal,dependencies.fetch||fetch,task,async body=>{const release=await reserve(redis,config,body);providerAttempted=true;return release;}));
       };
-      const reply={...await researchReply(status.result,{question},run,locale==='auto'?'en':locale),mode:'ai'};
+      const turnScope=await turnScopeFor({research:status.result});
+      const reply={...await researchReply(status.result,{question},run,locale==='auto'?'en':locale),mode:'ai',...(turnScope?{turnScope}:{})};
       await redis.set(base,JSON.stringify(reply),{EX:3600});sendSuccess(res,reply);
     }catch(error){
       if(locked&&!providerAttempted)try{await redis.eval(RELEASE_EXPLANATION,{keys:[base+':attempt'],arguments:[attemptOwner]});}catch{/* no unsafe retry after an uncertain claim release */}
@@ -330,14 +360,14 @@ function createAskRouter(env = process.env, dependencies = {}) {
       const transactionQuery = resolveTransactionQuery(parsed.data);
       if (blockQuery || transactionQuery) {
         try {
-          return sendSuccess(res, await (transactionQuery ? transactionReply : blockReply)(transactionQuery || blockQuery, parsed.data, dependencies.internalClient, AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(15000)])));
+          return sendSuccess(res, { ...await (transactionQuery ? transactionReply : blockReply)(transactionQuery || blockQuery, parsed.data, dependencies.internalClient, AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(15000)])), route: 'lookup' });
         } catch (error) {
           const failure = classifyFailure(error);
           return sendProblem(res, failure.type, { status: failure.status, detail: failure.detail, extra: { code: failure.code } });
         }
       }
       const guided = guidedReply(parsed.data, { zips: true });
-      if (guided) return sendSuccess(res, guided);
+      if (guided) return sendSuccess(res, { ...guided, route: 'guide' });
       return sendProblem(res, 'upstream-error', { status: 503, detail: 'Contextual AI is not connected. Reviewed page guides and starter charts remain available.' });
     }
     if(parsed.data.currentResearch){
@@ -345,28 +375,32 @@ function createAskRouter(env = process.env, dependencies = {}) {
       try{await compileResearchSQL(parsed.data.currentResearch,{extended:env.ASK_RESEARCH_EXTENDED==='true'});}catch{return sendProblem(res,'validation-error');}
     }
     const agent = agentEnabled && analytics?.researchEnabled === true;
-    return limited(req, res, async(signal, run, requestAnalytics, step) => {
+    const stream = progressStream(req, res, agent && /\bapplication\/x-ndjson\b/i.test(req.get('accept') || ''));
+    // Every reply carries the scope of what it actually ran, for the next turn.
+    const scoped = async reply => { const turnScope = await turnScopeFor(reply); return turnScope ? { ...reply, turnScope } : reply; };
+    return limited(req, res, async(signal, run, requestAnalytics, step, progress) => scoped(await (async () => {
       // Fixed public lookups and exact reviewed guide matches are cheap direct
       // answers even while AI is enabled or its paid allowance is exhausted.
       const transactionQuery=resolveTransactionQuery(parsed.data),blockQuery=resolveBlockQuery(parsed.data);
-      if(transactionQuery||blockQuery)return {...await (transactionQuery?transactionReply:blockReply)(transactionQuery||blockQuery,parsed.data,dependencies.internalClient,signal),scope:'Public API lookup · no AI'};
+      if(transactionQuery||blockQuery)return {...await (transactionQuery?transactionReply:blockReply)(transactionQuery||blockQuery,parsed.data,dependencies.internalClient,signal),scope:'Public API lookup · no AI',route:'lookup'};
       if(['auto','en'].includes(parsed.data.locale)){
         // The agent keeps only the exact suggestion chips as no-AI answers.
         const direct=guidedReply(parsed.data,{chipsOnly:agent});
         const explainMeasurements=direct?.spec&&/^explain this (?:page|view|chart)[?.!]?$/i.test(parsed.data.question.trim());
-        if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI'};
+        if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI',route:'guide'};
       }
       const cache = { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort, config.planningEffort] };
       const render = selection => chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics, selection);
       if (agent && !directSelection(parsed.data)) return runAgent(parsed.data, {
-        step, run, render, analytics: requestAnalytics, signal,
+        step, run, render, analytics: requestAnalytics, signal, progress,
         handoff: (kind, locale) => ({ answer: ziftHandoff[locale] || ziftHandoff.en, sources: [], spec: null, locale, handoff: kind }),
-        clarified: clarifyReply,
+        // Code-only diagnostics: the outcome and failed check, never the text.
+        clarified: (kind, locale, question) => clarifyReply(kind, locale, question ?? null, parsed.data, entry => console.info(JSON.stringify({ event: 'ask_clarify', ...entry }))),
         declined: (reason, locale) => declineReply(reason, parsed.data.question, locale),
         log: entry => console.info(JSON.stringify({ event: 'ask_agent', ...entry })),
       });
-      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics);
-    }, false, { deadline: agent ? 42000 : 35000 });
+      return { ...await chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics), route: 'classifier' };
+    })()), false, { deadline: agent ? 42000 : 35000, stream });
   });
   router.post('/', limiter, async (req, res) => {
     const { challenge, ...body } = req.body || {};
@@ -379,6 +413,16 @@ function createAskRouter(env = process.env, dependencies = {}) {
       return sendSuccess(res, { spec: shortcut, mode: 'guided' });
     }
     return limited(req, res, (signal, run) => run(parsed.data));
+  });
+  // Answer ratings use no AI, SQL or verification allowance. Only enums are
+  // counted; question/answer text is kept only when the visitor shares it.
+  router.post('/feedback', feedbackLimiter, async (req, res) => {
+    const parsed = feedbackSchema.safeParse(req.body);
+    if (!parsed.success) return sendProblem(res, 'validation-error', { detail: 'Send a vote with a listed reason, route, locale and page.' });
+    const redis = redisFor(req);
+    if (!redis?.isReady) return sendProblem(res, 'upstream-error', { status: 503, detail: 'Feedback is temporarily unavailable.' });
+    try { return sendSuccess(res, await recordFeedback(redis, parsed.data)); }
+    catch { console.warn(JSON.stringify({ event: 'ask_feedback_failure' })); return sendProblem(res, 'upstream-error', { status: 503, detail: 'Feedback is temporarily unavailable.' }); }
   });
   router.post('/explain', limiter, async (req, res) => {
     const parsed = explainRequestSchema.safeParse(req.body);
@@ -399,7 +443,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
       return { explanation: renderExplanation(raw, evidence.facts), evidenceKey: evidence.evidenceKey };
     });
   });
-  router.stop = () => { limiter._stop(); pollingLimiter._stop(); return analytics?.close?.(); };
+  router.stop = () => { limiter._stop(); pollingLimiter._stop(); feedbackLimiter._stop(); return analytics?.close?.(); };
   return router;
 }
 

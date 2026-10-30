@@ -83,9 +83,9 @@ test('only capability GET and exact Ask POST paths are admitted; query, origin a
     [incoming('/chat', { headers: { 'content-type': 'text/plain' } }), 415],
   ]) { const response = await proxy(request); assert.equal(response.status, status); privateResponse(response); }
   assert.equal(f.calls.length, 0);
-  for (const path of ['/chat', '/research/plan', '/research/query', '/research/jobs', '/research/jobs/status', '/research/jobs/cancel', '/research/jobs/explain']) assert.equal((await proxy(incoming(path))).status, 200);
+  for (const path of ['/chat', '/research/plan', '/research/query', '/research/jobs', '/research/jobs/status', '/research/jobs/cancel', '/research/jobs/explain', '/feedback']) assert.equal((await proxy(incoming(path))).status, 200);
   assert.equal((await proxy(incoming('', { method: 'GET' }))).status, 200);
-  assert.equal(f.calls.length, 8);
+  assert.equal(f.calls.length, 9);
 });
 
 test('mTLS and strict IP SAN checks remain enabled; upstream request and response headers use allowlists', async () => {

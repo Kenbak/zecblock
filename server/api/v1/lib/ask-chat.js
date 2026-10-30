@@ -130,8 +130,54 @@ const growthClarification = {
 };
 // The agent's clarify tool for a named-but-unspecified measure or window.
 const measureClarification = { en: 'Which measure and which periods should I compare? For example: transaction counts, shielded transaction counts, fees, pool balances or public shielding/deshielding volume, and the two date ranges to compare.' };
-function clarifyReply(kind, locale) {
-  return { answer: kind === 'growth' ? growthClarification[locale] || growthClarification.en : measureClarification[locale] || growthClarification[locale] || measureClarification.en, sources: [], spec: null, locale };
+// Choices a clarifying question may offer: what the public catalogue holds.
+const clarifyChoices = 'measures: transaction counts, shielded transaction counts, transaction or block fees, block counts, pool balances, public shielding/deshielding volume, cross-chain swap volume or counts, transparent address activity; pools: Orchard, Ironwood, Sapling, Sprout, transparent; windows: the last 7, 30 or 90 days, the past year, a named month or year, or two equal windows to compare';
+const clarifyMeasure = /\b(?:transactions?|shielded|transparent|fees?|blocks?|balances?|pools?|orchard|ironwood|sapling|sprout|shielding|deshielding|flows?|swaps?|volumes?|address(?:es)?)\b/gi;
+const clarifyWindow = /\b(?:days?|weeks?|months?|years?|periods?|windows?|baselines?|comparisons?|dates?|ranges?)\b/gi;
+const clarifyAdvice = /\b(?:buy|sell|invest(?:s|ed|ing|ment|ors?)?|prices?|bullish|bearish|moon|pump|dump|guarantee[sd]?|predict(?:s|ed|ion)?|forecasts?)\b/i;
+const clarifyIdentifier = /\b(?:t1|t3|u1|zs1)[A-Za-z0-9]{20,}\b|\b[0-9a-fA-F]{64}\b/g;
+const clarifyNames = new Set('zcash zec zecblock zift orchard ironwood sapling sprout usd utc nu'.split(' '));
+const clarifyOpeners = new Set('which what should would do did is are how for in on over by compare do or and the a i you shall'.split(' '));
+// A model-written clarifying question is shown only when it is a short,
+// on-topic question that offers catalogue choices and asserts nothing: no
+// numbers beyond the visitor's own and standard window lengths, no
+// identifiers, no invented names, links, markup or advice. Returns the text
+// or {reason} for the fixed-copy fallback.
+function checkedClarification(raw, { locale = 'en', question = '', history = [] } = {}) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const asked = [question, ...history].join(' ');
+  if (text.length < 12 || text.length > 320) return { reason: 'length' };
+  if (!/[?？؟]$/.test(text)) return { reason: 'not_a_question' };
+  if (/[{}<>|`\\]|https?:|www\./i.test(text)) return { reason: 'markup' };
+  if ((text.match(/[.!?。！？؟]+(?=\s|$)/g) || []).length > 3) return { reason: 'too_long' };
+  if (clarifyAdvice.test(text)) return { reason: 'advice' };
+  for (const [id] of text.matchAll(clarifyIdentifier)) if (!asked.includes(id)) return { reason: 'identifier' };
+  const spoken = new Set([...asked.matchAll(/\d+/g)].map(([n]) => n));
+  for (const [n] of text.matchAll(/\d+/g)) if (!spoken.has(n) && !['7', '30', '90', '365'].includes(n)) return { reason: 'number' };
+  if (locale === 'en') {
+    const vocabulary = new Set(asked.toLowerCase().split(/[^\p{L}]+/u));
+    for (const [word] of text.matchAll(/\p{Lu}[\p{L}'’-]*/gu)) {
+      const lower = word.toLowerCase().replace(/['’]s$/, '');
+      if (!clarifyNames.has(lower) && !clarifyOpeners.has(lower) && !vocabulary.has(lower)) return { reason: 'unknown_name' };
+    }
+    // Concrete options: at least two catalogue terms, one of them a measure or
+    // pool, so a question about dates alone never leaves the measure open.
+    const terms = pattern => new Set([...text.matchAll(pattern)].map(([term]) => term.toLowerCase().replace(/(?:es|s)$/, '')));
+    const measures = terms(clarifyMeasure);
+    if (!measures.size) return { reason: 'no_measure' };
+    if (measures.size + terms(clarifyWindow).size < 2) return { reason: 'no_options' };
+    // A visitor who named no time span is asked for one in so many words.
+    if (!/\b(?:periods?|windows?|dates?|days?|weeks?|months?|years?|today|yesterday|20\d\d)\b/i.test(asked) && !/\b(?:periods?|windows?|dates?)\b/i.test(text)) return { reason: 'no_period' };
+  }
+  return { text };
+}
+// written: the model's question from the clarify tool; input: the request,
+// whose question and history bound which numbers it may repeat.
+function clarifyReply(kind, locale, written = null, input = {}, report = () => {}) {
+  const fixed = kind === 'growth' ? growthClarification[locale] || growthClarification.en : measureClarification[locale] || growthClarification[locale] || measureClarification.en;
+  const checked = written === null ? { reason: 'none' } : checkedClarification(written, { locale, question: input.question, history: input.history });
+  report(checked.text ? { outcome: 'written' } : { outcome: 'fallback', reason: checked.reason });
+  return { answer: checked.text || fixed, sources: [], spec: null, locale };
 }
 // zips: only the no-AI fallback answers ZIP questions from index text;
 // with AI available they go to the model, which cites the same records.
@@ -326,4 +372,4 @@ async function transactionReply(query, input, client, signal, run, locale = 'en'
   }
   return { answer, spec: null, locale: run && evidence.status === 'found' ? locale : 'en', sources: publicSources(records), transactions: { status: evidence.status, query: evidence.query, rows: evidence.rows, retrievedAt: evidence.retrievedAt }, dataContext: evidence.dataContext, evidenceKey: evidence.evidenceKey, ...(!run ? { mode: 'guided', scope: 'Public API lookup · AI not connected' } : {}) };
 }
-module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported, ziftHandoff, declineReply, clarifyReply, directSelection, researchDraftingGuidance };
+module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported, ziftHandoff, declineReply, clarifyReply, checkedClarification, clarifyChoices, directSelection, researchDraftingGuidance };

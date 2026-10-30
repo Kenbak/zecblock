@@ -21,14 +21,15 @@ const keptSQL = ' Your query and current results are kept.';
 const keptRequest = ' Your draft and current results are kept.';
 const quotaDetails = Object.freeze({
   'ask-request-attempts': 'Too many submission or verification attempts from your connection. This limit applies to Ask and SQL.' + keptRequest,
-  'ask-request-minute': 'Your connection has reached its per-minute request limit. This limit applies to Ask and SQL.' + keptRequest,
-  'ask-request-day': 'Your connection has reached its daily request limit. This limit applies to Ask and SQL.' + keptRequest,
+  'ask-feedback-minute': 'Too many answer ratings from your connection. Try again in a minute.',
+  'ask-request-minute': 'Ask and SQL have reached their per-minute request allowance across all visitors. Try again in a minute.' + keptRequest,
+  'ask-request-day': 'Ask and SQL have reached their daily request allowance across all visitors. It resets at 00:00 UTC.' + keptRequest,
   'ask-request-global-hour': 'Ask and SQL have reached the site-wide hourly request limit.' + keptRequest,
   'ask-request-global-day': 'Ask and SQL have reached the site-wide daily request limit.' + keptRequest,
-  'ask-ai-minute': 'Your connection has reached its per-minute AI request limit.' + aiAlternatives,
-  'ask-ai-day': 'Your connection has reached its daily AI request limit.' + aiAlternatives,
-  'ask-sql-minute': 'Your connection has reached its per-minute SQL query limit.' + keptSQL,
-  'ask-sql-day': 'Your connection has reached its daily SQL query limit.' + keptSQL,
+  'ask-ai-minute': 'Zift’s AI has reached its per-minute allowance across all visitors. Try again in a minute.' + aiAlternatives,
+  'ask-ai-day': 'Zift’s AI has reached its daily allowance across all visitors. It resets at 00:00 UTC.' + aiAlternatives,
+  'ask-sql-minute': 'SQL has reached its per-minute allowance across all visitors. Try again in a minute.' + keptSQL,
+  'ask-sql-day': 'SQL has reached its daily allowance across all visitors. It resets at 00:00 UTC.' + keptSQL,
   'ask-ai-calls-day': 'AI has reached its site-wide daily call limit.' + aiAlternatives,
   'ask-ai-budget-day': 'AI has reached its site-wide daily usage allowance.' + aiAlternatives,
   'ask-ai-budget-month': 'AI has reached its site-wide monthly usage allowance.' + aiAlternatives,
@@ -41,7 +42,7 @@ const quotaDetails = Object.freeze({
 });
 function askError(kind) { const error = new Error('Ask operation failed'); error.askKind = kind; return error; }
 function classifyFailure(error) {
-  const maxRetryAfter = ['ask-request-attempts','ask-sql-status-minute'].includes(error?.quotaCode) ? 60 : 2678400;
+  const maxRetryAfter = ['ask-request-attempts','ask-sql-status-minute','ask-feedback-minute'].includes(error?.quotaCode) ? 60 : 2678400;
   if (error?.quota === true && typeof error.quotaCode === 'string' && Object.hasOwn(quotaDetails,error.quotaCode) && Number.isInteger(error.retryAfter) && error.retryAfter > 0 && error.retryAfter <= maxRetryAfter) {
     return {...failures.quota, code:error.quotaCode, retryAfter:error.retryAfter, detail:quotaDetails[error.quotaCode]};
   }

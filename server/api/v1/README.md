@@ -313,6 +313,38 @@ checks do not establish comprehensive jailbreak resistance, live Turnstile
 verification or production spending enforcement. The key was held only in the
 test process memory; the public feature and loopback preview remain provider-off.
 
+## Zift SQL over MCP
+
+The public read-only MCP endpoint (`POST /v1/mcp`) can also expose Zift's SQL
+datasets, so Claude, Codex or any MCP client can query them with its own model.
+No ZecBlock AI runs and no AI budget is spent. Mainnet only, off by default:
+
+- `ZIFT_MCP_SQL_ENABLED=true`, plus the existing `ASK_RESEARCH_ENABLED=true`,
+  `ASK_ANALYTICS_STORE=logical_public_core` and analytics worker settings.
+- Optional `ZIFT_MCP_SQL_MINUTE_LIMIT` (default 30) and
+  `ZIFT_MCP_SQL_DAILY_LIMIT` (default 2000): site-wide keyless MCP queries per
+  minute and per UTC day, so MCP cannot use up the worker's allowance that Zift
+  relies on.
+- Optional `ZIFT_MCP_SQL_KEYS`: comma-separated `label:sha256hex` entries for
+  higher-limit keys. Issue one with `node scripts/mcp-sql-key.js <label>`; only
+  the hash is stored.
+
+Tools:
+
+- `sql_catalogue` (no key): datasets, columns, units, query rules and examples.
+- `sql_query` (no key needed): one read-only SELECT, compiled
+  by the same AST policy as Zift's manual SQL and run by the read-only worker
+  with its row, time and site-wide daily limits. At most 200 rows. Rejected
+  SQL returns the policy or database message so the client can repair it.
+  Without a key, all callers share the site-wide minute and day allowances;
+  nothing identifying the client (not even a hashed IP) is stored. A
+  recognized key gets its own 10 per minute and 300 per day instead; an
+  unrecognized key is refused.
+
+The MCP request deadline rises from 15 to 25 seconds when the SQL tools are
+enabled. Turnstile does not apply to MCP; the shared site-wide quotas take its
+place.
+
 ## Verification
 
 ```sh

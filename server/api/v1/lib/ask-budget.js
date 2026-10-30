@@ -14,7 +14,7 @@ const { randomUUID } = require('node:crypto');
 // separately caps daily executions (ASK_ANALYTICS_DAILY_QUERY_LIMIT). One
 // heavy visitor can use up a shared allowance for the day; nobody is tracked.
 const REQUEST_LIMITS = Object.freeze({ globalHour: 3000, globalDay: 20000 });
-const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 30, day: 2000 }), sql: Object.freeze({ minute: 60, day: 5000 }) });
+const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 60, day: 2000 }), sql: Object.freeze({ minute: 60, day: 5000 }) });
 const RESERVE = `
 local calls = tonumber(redis.call('GET', KEYS[1]) or '0')
 local daily = tonumber(redis.call('GET', KEYS[3]) or '0')

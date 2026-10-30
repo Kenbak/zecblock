@@ -1,6 +1,7 @@
 'use client';
 import { MiningSoftwareSection } from '@/components/mining/MiningSoftwareSection';
 import { OrphanRateSection } from '@/components/mining/OrphanRateSection';
+import { ObservationLagSection } from '@/components/mining/ObservationLagSection';
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
@@ -33,6 +34,7 @@ import { SortableDataTable } from '@/components/ui/SortableDataTable';
 const SECTIONS = [
   { id: 'metrics', label: 'Network' },
   { id: 'orphans', label: 'Orphan rates' },
+  { id: 'timing', label: 'Header vs seen' },
   { id: 'distribution', label: 'Distribution' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'software', label: 'Mining software' },
@@ -746,6 +748,7 @@ export default function MiningPage() {
       </section>
 
       <OrphanRateSection />
+      <ObservationLagSection />
       <DistributionSection />
       <RankingSection />
       <MiningSoftwareSection />

@@ -1896,6 +1896,20 @@
   },
   {
     "method": "GET",
+    "path": "/v1/mining/observation-lag",
+    "description": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Lag is first ZecBlock local-node best-tip receipt (polled every second) minus the miner-provided header timestamp, in seconds. Windows use header timestamps; blocks without an observation stay in blocks but not observed. Median and p90 are null below minSample observed blocks. Negative lag means the header time is later than first observation. This is not peer-arrival or network propagation time.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/mining/hashrate-history",
     "description": "Work-based hashrate in Sol/s over full trailing 24h or 7d windows, sampled at midnight UTC. Current estimates and as-of times are shared through network/stats. Missing samples return null.",
     "category": "mining",

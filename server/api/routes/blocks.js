@@ -663,7 +663,8 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
         solution,
         total_fees,
         miner_address,
-        coinbase_hex
+        coinbase_hex,
+        (SELECT first_seen_at FROM block_observations WHERE hash = blocks.hash) as first_seen_at
       FROM blocks
       WHERE ${isHash ? 'hash = $1' : 'height = $1'}`,
       [isHash ? identifier.value : height]
@@ -810,8 +811,10 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
       nextBlockHash = nextResult.rows[0]?.hash || null;
     }
 
+    const { first_seen_at: firstSeenAt, ...blockFields } = block;
     const response = {
-      ...block,
+      ...blockFields,
+      firstSeenAt: firstSeenAt || null,
       next_block_hash: nextBlockHash,
       confirmations,
       transactions,

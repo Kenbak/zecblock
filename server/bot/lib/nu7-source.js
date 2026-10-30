@@ -26,11 +26,13 @@ async function optional(db, name, decisions, work) {
   }
 }
 
+// The mainnet API serves the combined crawl census (NODE_SOURCE=crawl); the bot's
+// own environment does not set it, so default to the same population.
 async function nodeReadiness(db) {
   const { protocol, upgrade } = referenceProtocol({ NETWORK: 'mainnet' });
   const { rows: [row] } = await db.query(`SELECT count(*)::int AS total,
       count(*) FILTER (WHERE protocol_version::bigint >= $1)::int AS ready
-    FROM ${censusTable(process.env.NODE_SOURCE || 'peer')} census
+    FROM ${censusTable(process.env.NODE_SOURCE || 'crawl')} census
     WHERE census_active = TRUE AND protocol_version IS NOT NULL`, [protocol]);
   if (!row?.total) return null;
   return { referenceUpgrade: upgrade, latestProtocol: protocol, latestCount: row.ready, totalActive: row.total,

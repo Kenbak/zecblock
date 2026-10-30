@@ -24,6 +24,7 @@ import { askChat, askErrorMessage, peekAskHandoff, clearAskHandoff, type AskCapa
 import type { AskReply, AskSource } from '@/lib/ask/chat';
 import { sqlDraft } from '@/lib/ask/composer';
 import { AskFeedback, AskFailureFeedback, useAskFeedback } from '@/components/ask/AskFeedback';
+import { AskAnswerRating } from '@/components/ask/AskAnswerRating';
 import { describeMetric } from '@/lib/ask/data';
 import { AskAnalysis } from './AskAnalysis';
 import { readAnyResearchLink, type ResearchShare } from '@/lib/ask/research-share';
@@ -42,7 +43,7 @@ const SQLEditor = dynamic(() => import('@/components/ask/SQLEditor').then(module
 const categories = ['Featured', 'Pools', 'Ironwood', 'Cross-chain', 'Network'];
 // ticket: bearer capability for a finished SQL job, kept in memory only so an
 // explanation can be requested later; never saved, shared or sent elsewhere.
-type Message = { ticket?: ResearchJobTicket; explained?: boolean; narrative?: ResearchNarrative; savedDocumentId?: string; savedSnapshot?: boolean; state?: 'pending' | 'complete' | 'failed' | 'cancelled'; sql?: string; research?: ResearchResult; analytics?: AskReply['analytics']; transactions?: AskReply['transactions']; blocks?: AskReply['blocks']; dataContext?: AskReply['dataContext']; id: number; question: string; answer: string; spec?: AnalysisSpec; viewSpec?: AnalysisSpec; sources?: AskSource[]; transfers?: AskReply['transfers']; locale?: string; scope?: string };
+type Message = { ticket?: ResearchJobTicket; explained?: boolean; narrative?: ResearchNarrative; savedDocumentId?: string; savedSnapshot?: boolean; state?: 'pending' | 'complete' | 'failed' | 'cancelled'; sql?: string; research?: ResearchResult; analytics?: AskReply['analytics']; transactions?: AskReply['transactions']; blocks?: AskReply['blocks']; dataContext?: AskReply['dataContext']; id: number; question: string; answer: string; spec?: AnalysisSpec; viewSpec?: AnalysisSpec; sources?: AskSource[]; transfers?: AskReply['transfers']; locale?: string; scope?: string; route?: string; template?: boolean };
 type Session = { transaction?: string; block?: string; id: number; title: string; messages: Message[]; spec: AnalysisSpec | null; page?: string };
 type Capability = AskCapability;
 const initialSession: Session = { id: 0, title: 'New analysis', messages: [], spec: null };
@@ -74,7 +75,7 @@ export function AskWorkspace() {
   const [handoff] = useState(peekAskHandoff);
   const [token, setToken] = useState('');
   const [challengeReset, setChallengeReset] = useState(0);
-  const [sessions, setSessions] = useState<Session[]>(() => handoff?.turns.length ? [{ id: 0, title: analysisTitle(handoff.turns[0].question), spec: handoff.spec, page: handoff.page, block: handoff.block, transaction: handoff.transaction, messages: handoff.turns.map((turn, i) => ({ id: i + 1, narrative: narrativeFor(turn), question: turn.question, answer: turn.answer, sources: turn.sources, transfers: turn.transfers, blocks: turn.blocks, transactions: turn.transactions, analytics: turn.analytics, research: turn.research, locale: turn.locale, scope: turn.scope, dataContext: turn.dataContext, spec: turn.spec || undefined })) }] : [initialSession]);
+  const [sessions, setSessions] = useState<Session[]>(() => handoff?.turns.length ? [{ id: 0, title: analysisTitle(handoff.turns[0].question), spec: handoff.spec, page: handoff.page, block: handoff.block, transaction: handoff.transaction, messages: handoff.turns.map((turn, i) => ({ id: i + 1, narrative: narrativeFor(turn), question: turn.question, answer: turn.answer, sources: turn.sources, transfers: turn.transfers, blocks: turn.blocks, transactions: turn.transactions, analytics: turn.analytics, research: turn.research, locale: turn.locale, scope: turn.scope, dataContext: turn.dataContext, spec: turn.spec || undefined, route: turn.route, template: turn.template })) }] : [initialSession]);
   const initialResearch = handoff?.turns.filter(turn => turn.research).at(-1);
   const tools = useResearchTools(initialResearch?.research, initialResearch ? analysisTitle(initialResearch.question) : undefined, initialResearch ? narrativeFor(initialResearch) : undefined);
   const [activeId, setActiveId] = useState(0);
@@ -227,9 +228,9 @@ export function AskWorkspace() {
     const timeout = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), 300000);
     const id = ++serial.current;
     setSessions(all => all.map(item => item.id === activeId ? { ...item, title: item.messages.length ? item.title : analysisTitle(trimmed), messages: [...item.messages, { id, question: trimmed, answer: '', state: 'pending' as const }].slice(-30) } : item));
-    const append = (answer: string, next?: AnalysisSpec, sources?: AskSource[], answerLocale?: string, scope?: string, transfers?: AskReply['transfers'], dataContext?: AskReply['dataContext'], blocks?: AskReply['blocks'], transactions?: AskReply['transactions'], analytics?: AskReply['analytics'], research?: ResearchResult) => setSessions(all => all.map(item => item.id === activeId ? {
+    const append = (answer: string, next?: AnalysisSpec, sources?: AskSource[], answerLocale?: string, scope?: string, transfers?: AskReply['transfers'], dataContext?: AskReply['dataContext'], blocks?: AskReply['blocks'], transactions?: AskReply['transactions'], analytics?: AskReply['analytics'], research?: ResearchResult, rated?: Pick<AskReply, 'route' | 'template'>) => setSessions(all => all.map(item => item.id === activeId ? {
       ...item, title: item.messages.length ? item.title : analysisTitle(trimmed),
-      messages: item.messages.map(message => message.id === id ? { id, state: 'complete' as const, question: trimmed, answer, narrative: narrativeFor({ question: trimmed, answer, research, locale: answerLocale }), spec: next, sources, transfers, blocks, transactions, analytics, research, dataContext, locale: answerLocale, scope } : message),
+      messages: item.messages.map(message => message.id === id ? { id, state: 'complete' as const, question: trimmed, answer, narrative: narrativeFor({ question: trimmed, answer, research, locale: answerLocale }), spec: next, sources, transfers, blocks, transactions, analytics, research, dataContext, locale: answerLocale, scope, route: rated?.route, template: rated?.template } : message),
       block: blocks?.rows[0]?.hash || item.block,
       transaction: transactions ? transactions.query.txid || transactions.rows[0]?.txid : item.transaction,
       spec: research || analytics || transfers || blocks || transactions ? null : next ?? item.spec,
@@ -254,7 +255,7 @@ export function AskWorkspace() {
         controller.signal.throwIfAborted();
         if (request.current !== controller) return;
         const shownResearch = completedResearch || (reply.research ? researchResultSchema.parse(reply.research) : undefined);
-        append(reply.answer, reply.spec ? analysisSchema.parse(reply.spec) : undefined, reply.sources, reply.locale, reply.scope, reply.transfers, reply.dataContext, reply.blocks, reply.transactions, reply.analytics, shownResearch);
+        append(reply.answer, reply.spec ? analysisSchema.parse(reply.spec) : undefined, reply.sources, reply.locale, reply.scope, reply.transfers, reply.dataContext, reply.blocks, reply.transactions, reply.analytics, shownResearch, { route: reply.route || (completedResearch ? 'run_sql' : undefined), template: reply.template });
         // Preserve any chart changes made while the explanation was being written.
         if (shownResearch) {
           const narrative = narrativeFor({ question: trimmed, answer: reply.answer, research: shownResearch, locale: reply.locale });
@@ -324,7 +325,7 @@ export function AskWorkspace() {
       const answer = `${result.rows.length} rows returned. No AI was used.`;
       const narrative = narrativeFor({ question: 'SQL query', sql: query.sql, answer, research: result });
       tools.accept(result, title, false, narrative); setNotice('');
-      setSessions(all=>all.map(item=>item.id===activeId?{...item,spec:null,messages:item.messages.map(message=>message.id===id?{...message,state:'complete' as const,answer,narrative,research:result,ticket}:message)}:item));
+      setSessions(all=>all.map(item=>item.id===activeId?{...item,spec:null,messages:item.messages.map(message=>message.id===id?{...message,state:'complete' as const,answer,narrative,research:result,ticket,route:'sql'}:message)}:item));
     }catch(error){
       if(request.current!==controller)return;
       setSQLInput(query.sql);setSQLLimit(query.limit);
@@ -550,13 +551,14 @@ export function AskWorkspace() {
               }} sources={message.sources?.length || message.dataContext ? <AskSources inline sources={message.sources || []} dataContext={message.dataContext} /> : undefined} onExplain={() => void ask('Explain this view', message.viewSpec || message.spec!)} canExplain={capability.mode === 'ai' && verified && !aiBlocked} busy={busy}/> : null}
               {message.research || message.analytics || message.blocks || message.transactions || message.transfers ? <div className={styles.replyResults} role="group" aria-label="Query results">{message.research && message.id === latestRecords?.id ? null : <div className={styles.resultActions}>{resultActions(message)}</div>}{renderRecords(message)}</div> : message.sql && message.state !== 'pending' ? <button className={styles.followup} disabled={busy} onClick={()=>editQuery(message)}>Edit query</button> : null}
               {!message.research && !message.spec ? <AskSources sources={message.sources || []} dataContext={message.dataContext} /> : null}
+              {(!message.state || message.state === 'complete') && message.answer ? <AskAnswerRating key={message.id} route={message.sql ? 'sql' : message.route} template={message.template} locale={message.locale} page={session.page || 'ask'} question={message.sql ? 'SQL query' : message.question} answer={message.answer} sql={message.sql || message.research?.query.sql}/> : null}
               </div></article>
             </div>)}
 
           </div>
           <div className={styles.conversationFooter}>
             <div className="flex flex-wrap gap-2 mb-3">{(spec ? ranking ? ['Show as a bar chart', 'Show as a table'] : ['Show 90 days', poolMetric ? spec.pool === 'ironwood' ? 'Just Orchard' : 'Just Ironwood' : 'Show as a line chart', 'Show as a table'] : transactions ? ['Show the latest 5 transactions', 'Explain this transaction'] : blocks ? ['Tell me about the latest block', 'Explain this block'] : research ? researchFollowUps(research) : starters.slice(0, 2).map(item => item.title)).map(text => <button key={text} disabled={busy} onClick={() => void ask(text)} className={styles.followup}>{text}</button>)}</div>
-            {composer}{!sqlMode ? <p className={styles.privacyNote}>{capability.mode === 'ai' ? `Questions and conversation context are sent to ${capability.provider}. Use public information only.` : 'Guided preview · No AI provider connected.'}</p> : null}
+            {composer}{!sqlMode ? <p className={styles.privacyNote}>{capability.mode === 'ai' ? `Questions and conversation context are sent to ${capability.provider}. Use public information only.` : 'Guided preview · No AI provider connected.'}</p> : null}<p className={styles.privacyNote}>Answer ratings count only the vote, reason, answer type, language and page, for 30 days. The question and answer are kept only when you tick Share on a rating. <a href="/privacy-policy" className="underline">Privacy policy</a></p>
           </div>
         </section>
 

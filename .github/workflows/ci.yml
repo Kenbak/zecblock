@@ -52,7 +52,7 @@ jobs:
       - name: Protected staging proxy regressions
         run: node --test server/tests/ask-staging-proxy.test.js server/tests/staging-data-proxy.test.js
       - name: Ask conversation and saved-result regressions
-        run: node --test server/tests/ask-conversation-results.test.js server/tests/ask-follow-ups.test.js server/tests/ask-composer.test.js server/tests/ask-feedback-limits.test.js server/tests/research-display.test.js server/tests/research-library.test.js server/tests/research-share.test.js server/tests/research-portable-narrative.test.js server/tests/ask-research-tools.test.js server/tests/ask-workspace-saved-context.test.js server/tests/ask-sql-explain.test.js
+        run: node --test server/tests/ask-conversation-results.test.js server/tests/ask-follow-ups.test.js server/tests/ask-composer.test.js server/tests/ask-feedback-limits.test.js server/tests/ask-answer-rating.test.js server/tests/research-display.test.js server/tests/research-library.test.js server/tests/research-share.test.js server/tests/research-portable-narrative.test.js server/tests/ask-research-tools.test.js server/tests/ask-workspace-saved-context.test.js server/tests/ask-sql-explain.test.js
       - name: Inbox orchestration and worker lifecycle regressions
         run: node --test server/tests/inbox-scan.test.js server/tests/scan-worker-pool.test.js
       - name: Supply-map accounting regressions

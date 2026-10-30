@@ -144,10 +144,11 @@ async function runAgent(input, { step, run, render, analytics, signal, handoff, 
       const result = !definition ? { feedback: { ok: false, stage: 'arguments', message: `Unknown tool. Use one of: ${tools.map(item => item.name).join(', ')}.` } }
         : !args.success ? { feedback: { ok: false, stage: 'arguments', message: issueText(args.error) } }
           : await execute(definition.name, { ...args.data, locale: input.locale === 'auto' ? args.data.locale : input.locale });
-      if (result.reply) { outcome = 'answered'; return result.reply; }
+      // The tool name lets an answer rating say which path it rates.
+      if (result.reply) { outcome = 'answered'; return { ...result.reply, route: definition.name }; }
       turns.push({ call: { id: `call_${index + 1}`, name: call.name, args: call.args }, result: result.feedback });
     }
-    if (empty) { outcome = 'empty'; return await empty.render(); }
+    if (empty) { outcome = 'empty'; return { ...await empty.render(), route: 'run_sql' }; }
     outcome = 'exhausted';
     throw askError('answer');
   } finally {

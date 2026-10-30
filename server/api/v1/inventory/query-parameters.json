@@ -79,6 +79,7 @@
     "window"
   ],
   "GET /v1/mining/orphan-rates": [],
+  "GET /v1/mining/observation-lag": [],
   "GET /v1/mining/hashrate-history": [
     "period",
     "window"

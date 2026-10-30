@@ -8,6 +8,7 @@ import type { CoinbaseClientEmoji, CoinbaseClientInfo } from '@/lib/coinbase-cli
 import type { BlockData } from './types';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
 import { CopyButton } from '@/components/CopyButton';
+import { BlockSeenLine } from '@/components/BlockFirstSeen';
 
 interface RewardRecipient {
   address: string | null;
@@ -182,11 +183,12 @@ export function BlockFactsCard({
             `sm:order-none` reverts *to* on desktop, which is what broke it
             last time.
           */}
-          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time; not the time ZecBlock first observed the block">
+          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time. When recorded, the second line is when ZecBlock first received this block from its node, with the gap from the header time; older blocks have no observation.">
             <span className="text-sm text-primary whitespace-nowrap">
               {formatRelativeTime(data.timestamp)}
               <span className="text-muted ml-1.5 text-xs">({formatDateUTC(data.timestamp)})</span>
             </span>
+            <BlockSeenLine firstSeenAt={data.firstSeenAt} headerTimestamp={data.timestamp} />
           </FactBox>
 
           <FactBox fit className="order-2 sm:order-none" label="Block Size" tooltip="The size of this block in kilobytes">

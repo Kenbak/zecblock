@@ -12,6 +12,7 @@ const router = express.Router();
 const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName } = require('../mining-pools');
 const { logSafeError } = require('../lib/safe-log');
 const { orphanRates } = require('../lib/orphan-rates');
+const { observationLag } = require('../lib/observation-lag');
 const { networkSchedule } = require('../lib/network-schedule');
 const minerBehavior = require('../lib/miner-behavior');
 
@@ -91,6 +92,17 @@ router.get('/api/mining/orphan-rates', async (req, res) => {
   } catch (error) {
     logSafeError('Observed orphan rates failed:', error);
     res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observed orphan rates unavailable' });
+  }
+});
+
+router.get('/api/mining/observation-lag', async (req, res) => {
+  try {
+    const data = await observationLag(req.app.locals.pool);
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (error) {
+    logSafeError('Observation lag failed:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observation lag unavailable' });
   }
 });
 

@@ -105,7 +105,7 @@ const declineCopy = {
   read_only: 'Zift is read-only: it cannot delete, write or modify data. I can query and explain the public data instead.',
   private_data: 'Zift cannot reveal private recipient addresses, decrypted memos, shielded-wallet owners or private amounts: public chain data does not contain them. I can analyze the available public Zcash data instead.',
   historical_balance: 'Historical address balances are unavailable: the address summaries contain current balances only and do not establish balances at an earlier date. I can show current balances or analyze public address activity for that period.',
-  prediction: 'I cannot predict prices or give investment advice. I can show what public Zcash data has recorded.',
+  prediction: 'I cannot make forecasts, predict prices or give investment advice. I can show what public Zcash data has recorded so far.',
 };
 function declineReply(reason, question, locale) {
   if (locale !== 'en') return { answer: (reason === 'off_topic' && offTopic[locale]) || unsupported[locale] || unsupported.en, sources: [], spec: null, locale };

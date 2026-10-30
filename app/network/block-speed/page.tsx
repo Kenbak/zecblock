@@ -6,6 +6,7 @@ import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { PageSectionNav, type PageSection } from '@/components/PageSectionNav';
 import { BlockSpeedPanel } from '@/components/network/BlockSpeedPanel';
 import { BlockTimeChart } from '@/components/network/BlockTimeChart';
+import { BlockPulse } from '@/components/network/BlockPulse';
 import { buildPageMetadata, getBaseUrl, getNetwork } from '@/lib/seo';
 import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
@@ -122,8 +123,13 @@ export default async function BlockSpeedPage() {
 
     <section id="live" className="network-section mb-10" aria-label="Live block interval detail">
       <SectionHeader label="LIVE_DETAIL" actions={<Link href="/network#network-activity" className="text-caption font-mono text-muted hover:text-primary">Network activity →</Link>} />
+      <Card className="card-static p-4 sm:p-6 mb-4">
+        <BlockPulse nu7Height={story?.activation?.height ?? null}
+          targetSeconds={story?.phase === 'active' ? NU7_TARGET_SECONDS : story?.before?.targetSeconds ?? null} />
+      </Card>
       <p className="text-sm text-muted mb-4 max-w-3xl">Rolling 120-block average · refreshed every 15s.</p>
       <BlockTimeChart />
+      <p className="text-caption text-muted mt-3 max-w-3xl">Faster blocks give competing blocks less time to propagate. <Link href={`/mining?orphans=${story?.phase === 'active' ? 'nu7' : '30d'}#orphans`} className="text-secondary underline underline-offset-4 hover:text-primary">Compare observed orphan rates before and since NU7 →</Link></p>
     </section>
 
     <Card className="network-detail-panel card-static">

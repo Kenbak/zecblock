@@ -2122,3 +2122,65 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
 /* Legal references use the same quiet link treatment as secondary navigation. */
 .legal-link { color: var(--color-text-primary); text-decoration: underline; text-decoration-color: var(--color-cipher-border); text-underline-offset: 4px; }
 .legal-link:hover { text-decoration-color: currentColor; }
+
+/* Daily speed bars grow from the baseline, left to right, when a view is shown. */
+.speed-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  --bar-index: 0;
+  animation: speed-bar-grow 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--bar-index) * 14ms);
+}
+@keyframes speed-bar-grow { from { transform: scaleY(0); } }
+
+/* Live block pulse: blocks drift left along a 20-minute axis; gaps are block intervals. */
+.block-pulse-track {
+  position: relative;
+  height: 3.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--glass-3);
+  overflow: hidden;
+}
+.block-pulse-tick {
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
+  transform: translateX(-50%);
+  transition: left 1s linear;
+}
+.block-pulse-tick-nu7 { background: var(--color-cipher-gold); }
+.block-pulse-tick-new::after {
+  content: '';
+  position: absolute;
+  inset: -0.5rem -0.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--color-text-primary);
+  animation: block-pulse-ring 1.4s ease-out 2;
+  opacity: 0;
+}
+.block-pulse-tick-nu7.block-pulse-tick-new::after { color: var(--color-cipher-gold); }
+.block-pulse-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 0.25rem;
+  border-left: 1px dashed var(--color-cipher-gold);
+  color: var(--color-cipher-gold);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  transition: left 1s linear;
+}
+@keyframes block-pulse-ring {
+  from { opacity: 0.9; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(1.8); }
+}
+
+/* Countdown digits slide up when they change. */
+.countdown-digit { display: inline-block; animation: countdown-tick 320ms ease-out; }
+@keyframes countdown-tick { from { opacity: 0.2; transform: translateY(-0.25em); } }

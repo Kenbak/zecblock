@@ -16,6 +16,8 @@ function candidate(type, key, content, evidence, score = 0) {
 }
 
 function eventTime(story) {
+  // Stories with their own observed instant (NU7) carry it explicitly.
+  if (story.evidence?.eventAt) return Date.parse(story.evidence.eventAt);
   if (story.type.startsWith('flow_') || story.type === 'migration') return Number(story.evidence.block_time) * 1000;
   if (story.type === 'swap') return Date.parse(story.evidence.swap_created_at);
   if (story.type === 'reorg') return Date.parse(story.evidence.detected_at);
@@ -383,6 +385,58 @@ function milestoneStories(rows, target) {
   return stories;
 }
 
+// Legacy pools draining toward Ironwood. A level posts on the first daily close
+// below it after at least 30 closes at or above it; dedup makes each level
+// one-time. The comparison names the last day the pool was this low.
+const DRAIN_LEVELS = [500000, 400000, 300000, 250000, 200000, 150000, 100000, 75000, 50000, 25000, 10000, 5000, 1000];
+const DRAIN_POOLS = { sapling: ['sapling_pool_size', 'Sapling', 'sapling'], orchard: ['orchard_pool_size', 'Orchard', 'orchard'], sprout: ['sprout_pool_size', 'Sprout', 'gold'] };
+
+function poolDrainStories(rows, target) {
+  const today = rows.at(-1);
+  if (!today || today.date !== target || rows.length < 31) return [];
+  const stories = [];
+  const shielded = balance(today.pool_size), ironwood = balance(today.ironwood_pool_size);
+  const ironwoodLine = shielded && ironwood ? ` Ironwood now holds ${f.zecShort(ironwood)} ZEC, ${Math.floor(100 * ironwood / shielded)}% of all shielded ZEC.` : '';
+  for (const [id, [column, name, tone]] of Object.entries(DRAIN_POOLS)) {
+    const value = r => (r[column] == null || !Number.isFinite(Number(r[column])) ? null : Number(r[column]) / 1e8);
+    const now = value(today), recent = rows.slice(-31, -1).map(value);
+    if (now === null || recent.some(v => v === null)) continue;
+    // The lowest level crossed today, with every one of the prior 30 closes at or above it.
+    const level = DRAIN_LEVELS.filter(l => now < l && Math.min(...recent) >= l).at(-1);
+    if (!level) continue;
+    const lastLower = [...rows.slice(0, -31)].reverse().find(r => value(r) !== null && value(r) <= now);
+    const since = lastLower ? `its lowest since ${f.dayYear(lastLower.date)}` : 'its lowest on record';
+    const content = `${MARK} Milestone: the ${name} pool fell below ${f.levelText(level)} ZEC.\n\n`
+      + `It held ${f.zecShort(now)} ZEC at the end of ${f.dayText(target)}, ${since}.${ironwoodLine}\n\n${BASE}/pools`;
+    const series = rows.slice(-365);
+    const card = { kicker: `Pools · ${name}`, title: `${name} fell below ${f.levelText(level)} ZEC.`, hero: f.zecShort(now), unit: 'ZEC', tone,
+      line: `left in the ${name} pool.`, qualifier: `${since[0].toUpperCase()}${since.slice(1)}.`, source: 'zecblock.com/pools', date: f.dayYear(target),
+      visual: { kind: 'series', values: series.map(value), reference: level, referenceLabel: 'milestone',
+        label: `${name} pool balance`, unit: 'ZEC', start: series[0].date, end: target } };
+    stories.push(candidate('milestone', `milestone:${id}_below:${level}`, content,
+      { metric: `${id}_below`, level, value: now, target, lastLower: lastLower?.date ?? null, card,
+        editorial: { topic: 'milestone:pool_drain', lens: 'record_low', significance: level <= 100000 ? 76 : 70 } }, 3));
+  }
+  // Ironwood's share of shielded ZEC, first close at each whole percent from 85%.
+  const share = r => (balance(r.pool_size) && balance(r.ironwood_pool_size) ? 100 * balance(r.ironwood_pool_size) / balance(r.pool_size) : null);
+  const value = share(today), prior = rows.slice(0, -1).map(share).filter(v => v !== null);
+  if (value !== null && prior.length >= 30) {
+    const level = Math.floor(value);
+    if (level >= 85 && Math.max(...prior) < level) {
+      const content = `${MARK} Milestone: ${level}% of shielded ZEC is now in Ironwood.\n\n`
+        + `${f.zecShort(ironwood)} of ${f.zecShort(shielded)} shielded ZEC sat in Ironwood at the end of ${f.dayText(target)}, the highest share on record.\n\n${BASE}/ironwood`;
+      const series = rows.slice(-90);
+      const card = { kicker: 'Milestone · Ironwood share', title: `${level}% of shielded ZEC is now in Ironwood.`, hero: `${level}%`, unit: null, tone: 'ironwood',
+        line: 'of shielded ZEC is in Ironwood.', qualifier: `${f.zecShort(ironwood)} of ${f.zecShort(shielded)} ZEC.`, source: 'zecblock.com/ironwood', date: f.dayYear(target),
+        visual: { kind: 'series', values: series.map(share), reference: level, referenceLabel: 'milestone', label: 'Ironwood share of shielded ZEC', unit: '%',
+          start: series[0].date, end: target, scale: { min: 0, max: 100 } } };
+      stories.push(candidate('milestone', `milestone:ironwood_share:${level}`, content,
+        { metric: 'ironwood_share', level, value, target, card, editorial: { topic: 'milestone:ironwood_share', lens: 'record_high', significance: 74 } }, 3));
+    }
+  }
+  return stories;
+}
+
 const DAY = 86400000;
 const clamp = (value, min = 0, max = 100) => Number.isFinite(value) ? Math.max(min, Math.min(max, value)) : min;
 const evidenceOf = story => story.evidence || story.metadata || {};
@@ -448,7 +502,8 @@ function editorialRank(story, history, now) {
       : e.lead ? 72 : 60;
   } else significance = { activity_daily: 45, network_briefing: 60, pool_trend: 60, crosschain_daily: 30, migration: 35 }[type] || 0;
   significance = clamp(significance);
-  const protectedLane = type === 'reorg' ? 1000 : type === 'swap' && e.exceptional ? 900 : exceptionalFlow(story) ? 800 : 0;
+  const protectedLane = type === 'reorg' ? 1000 : type === 'nu7' && e.nu7Kind === 'activation' ? 950
+    : type === 'swap' && e.exceptional ? 900 : exceptionalFlow(story) ? 800 : type === 'nu7' && e.nu7Kind === 'countdown' ? 700 : 0;
   const topic = editorialTopic(story);
   const recent = history.filter(p => isEditorialHistory(p) && ['posted', 'posting', 'uncertain'].includes(p.status)
     && Number.isFinite(Date.parse(p.created_at)) && now - new Date(p.created_at) >= 0 && now - new Date(p.created_at) < 3 * DAY);
@@ -508,7 +563,7 @@ function select(candidates, history, now) {
         && typeof c.evidence.editorial.lens === 'string' && c.evidence.editorial.lens.length > 0;
       if (!comparativeStats && !comparativeLens) reason = 'routine-summary-without-comparison';
     }
-    if (!reason && ['migration','crosschain_daily','milestone','network_briefing','pool_trend'].includes(c.type) && dayPosts.length) reason = 'daily-cap';
+    if (!reason && ['migration','crosschain_daily','milestone','network_briefing','pool_trend','halving'].includes(c.type) && dayPosts.length) reason = 'daily-cap';
     if (!reason && c.type === 'pool_trend') {
       const latest = same.filter(p => editorialTopic(p) === rank.topic && p.metadata?.editorial?.lens === c.evidence.editorial?.lens
         && now - new Date(p.created_at) >= 0 && now - new Date(p.created_at) < 3 * DAY)
@@ -516,6 +571,9 @@ function select(candidates, history, now) {
       if (latest && !materialTrendChange(c.evidence, latest.metadata)) reason = 'three-day-trend-cooldown';
     }
     if (!reason && c.type === 'network_signal' && dayPosts.length >= 1) reason = 'signal-daily-cap';
+    // One-time NU7 moments are deduplicated by key; routine NU7 milestones share two slots a day.
+    if (!reason && c.type === 'nu7' && !['activation', 'countdown'].includes(c.evidence.nu7Kind)
+      && dayPosts.filter(p => !['activation', 'countdown'].includes(p.metadata?.nu7Kind)).length >= 2) reason = 'nu7-daily-cap';
     if (reason) { skipped.push({ key: c.key, reason }); continue; }
     c.evidence.editorialSelection = rank;
     selected.push(c); used.add(c.key);
@@ -525,4 +583,4 @@ function select(candidates, history, now) {
 }
 
 module.exports = { candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory,
-  migrationStory, reorgStory, crosschainStory, hashStory, signalStory, milestoneStories, select, editorialRank, eventTime, isNew };
+  migrationStory, reorgStory, crosschainStory, hashStory, signalStory, milestoneStories, poolDrainStories, select, editorialRank, eventTime, isNew };

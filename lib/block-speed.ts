@@ -66,6 +66,8 @@ export function readBlockSpeed(value: unknown, expected: 'main' | 'test'): Block
 export type SpeedPoint = {
   key: string; date: string; nu7: boolean; kind: 'measured' | 'projected' | 'irregular';
   averageSeconds: number; targetSeconds: number | null; lastHeight: number | null;
+  /** Blocks with header times in this UTC day; projected days use the target pace. */
+  blocks: number;
 };
 export type SpeedActivation = { height: number; date: string | null; status: 'active' | 'scheduled' | 'announced' };
 export type SpeedStory = {
@@ -96,6 +98,7 @@ function measuredPoints(days: SpeedDay[], network: SpeedStory['network'], limit:
   return days.filter(day => day.complete && day.averageSeconds != null).slice(-limit).map(day => ({
     key: `${day.date}-${day.nu7 ? 'nu7' : 'pre'}`, date: day.date, nu7: day.nu7, averageSeconds: day.averageSeconds!, targetSeconds: day.targetSeconds,
     kind: network === 'testnet' && !day.nu7 ? 'irregular' : 'measured', lastHeight: day.lastHeight,
+    blocks: day.lastHeight - day.firstHeight + 1,
   }));
 }
 
@@ -111,7 +114,7 @@ function upcomingActivation(host: BlockSpeedPayload, preTarget: number | null): 
 function projectedPoints(from: string, activationDate: string | null, preTarget: number | null): SpeedPoint[] {
   if (!activationDate) return [];
   const point = (date: string, nu7: boolean, target: number): SpeedPoint =>
-    ({ key: `${date}-projected`, date, nu7, kind: 'projected', averageSeconds: target, targetSeconds: target, lastHeight: null });
+    ({ key: `${date}-projected`, date, nu7, kind: 'projected', averageSeconds: target, targetSeconds: target, lastHeight: null, blocks: Math.round(DAY / target) });
   const points: SpeedPoint[] = [];
   if (preTarget != null) {
     for (let date = from; date < activationDate && points.length < MAX_PROJECTED_DAYS; date = addDays(date, 1)) points.push(point(date, false, preTarget));

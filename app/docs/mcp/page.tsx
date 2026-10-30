@@ -54,7 +54,7 @@ export default function McpPage() {
         <li><code>sql_catalogue</code> — datasets, columns, units, query rules and worked examples. No key needed. Read it first.</li>
         <li><code>sql_query</code> — runs one read-only <code>SELECT</code> (CTEs, joins and window functions allowed) and returns up to 200 rows with units, coverage and a result fingerprint. Rejected SQL returns the reason, so your assistant can fix it.</li>
       </ul>
-      <p>No key is needed: the setup commands above are enough. Each client can run 10 queries per minute and 100 per UTC day, and all MCP queries share a site-wide daily allowance so Zift stays available. Queries are read-only and limited to 200 rows.</p>
+      <p>No key is needed: the setup commands above are enough. All MCP queries share a site-wide allowance per minute and per UTC day, so Zift stays available; nothing that identifies you or your IP address is stored. Queries are read-only and limited to 200 rows.</p>
       <p>Need more? ZecBlock can issue an API key with higher limits. Send it as <code>Authorization: Bearer &lt;key&gt;</code>; in Claude Code add <code>--header &quot;Authorization: Bearer &lt;key&gt;&quot;</code> to the command above, and in Codex set <code>bearer_token_env_var</code> in <code>~/.codex/config.toml</code> so the key stays in an environment variable.</p>
       <p>Try asking “Using sql_query, how did the Orchard pool balance change over the last 30 days?” or “Which miners found the most blocks this week?”.</p>
     </section>}

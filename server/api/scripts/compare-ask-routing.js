@@ -10,8 +10,13 @@
 // Without it, SQL is compiled and reviewed but not executed ("offline data"):
 // research cases are then graded on routing and a compiled query only.
 //
+// --routing-only forces the offline data path even when a worker is set.
+// --estimate prints the case count and a worst-case cost, then exits
+// without calling the model.
+//
 // Usage: node scripts/compare-ask-routing.js [--modes=classifier,agent]
 //   [--sets=eval,probes] [--ids=a,b] [--max-usd=3] [--out=file.json]
+//   [--routing-only] [--estimate]
 const express = require('express');
 const fs = require('node:fs');
 const { once } = require('node:events');
@@ -33,6 +38,7 @@ function options(args) {
   return {
     modes: get('modes', 'classifier,agent').split(','), sets: get('sets', 'eval,probes').split(','),
     ids: get('ids', '') ? get('ids', '').split(',') : null, maxUSD: Number(get('max-usd', '3')), out: get('out', null),
+    routingOnly: args.includes('--routing-only'), estimate: args.includes('--estimate'),
   };
 }
 
@@ -72,11 +78,22 @@ function offlineAnalytics() {
   };
 }
 
-async function main() {
-  const config = options(process.argv.slice(2));
+// Worst case per question: the agent's 3 steps plus a caption, the classifier's
+// route, one repair and a caption; each call at about 6K input and the full
+// 4K output cap.
+const WORST_CALLS = { agent: 4, classifier: 3 };
+const WORST_CALL_USD = (6000 * PRICE.input + 4000 * PRICE.output) / 1e6;
+function estimate(config, cases) {
+  const worst = config.modes.reduce((sum, mode) => sum + cases.length * (WORST_CALLS[mode] || 4) * WORST_CALL_USD, 0);
+  return { kind: 'ask-routing-estimate', questions: cases.length * config.modes.length, worstCaseUSD: Number(worst.toFixed(2)), capUSD: config.maxUSD };
+}
+
+async function main(args = process.argv.slice(2), { providerFetch = fetch, log = line => console.error(line) } = {}) {
+  const config = options(args);
+  if (config.estimate) { const result = estimate(config, casesFor(config)); console.log(JSON.stringify(result)); return result; }
   const key = fs.readFileSync(process.env.ASK_API_KEY_FILE, 'utf8').trim();
   if (!/^sk-/.test(key)) throw Error('ASK_API_KEY_FILE does not hold an OpenAI key');
-  const live = createAnalyticsClient({ ...process.env, ASK_RESEARCH_JOBS_ENABLED: 'false' });
+  const live = config.routingOnly ? null : createAnalyticsClient({ ...process.env, ASK_RESEARCH_JOBS_ENABLED: 'false' });
   const analytics = live ? Object.assign(live, { jobsEnabled: false }) : offlineAnalytics();
   const dataMode = live ? 'live-worker' : 'offline';
   const cases = casesFor(config);
@@ -88,7 +105,7 @@ async function main() {
     let offlineSQL = null;
     const fetchImpl = async (url, init) => {
       const request = JSON.parse(init.body);
-      const response = await fetch(url, init);
+      const response = await providerFetch(url, init);
       const text = await response.text();
       let data = null; try { data = JSON.parse(text); } catch { /* counted below */ }
       const usage = data?.usage || {};
@@ -149,10 +166,10 @@ async function main() {
       answer: typeof reply?.answer === 'string' ? reply.answer.slice(0, 240) : null,
     };
     records.push(record);
-    console.error(`${mode.padEnd(10)} ${record.passed ? 'PASS' : 'FAIL'} ${item.id.padEnd(40)} route=${route} ${status}${record.code ? ' ' + record.code : ''} ${latencyMs}ms $${record.costUSD}`);
+    log(`${mode.padEnd(10)} ${record.passed ? 'PASS' : 'FAIL'} ${item.id.padEnd(40)} route=${route} ${status}${record.code ? ' ' + record.code : ''} ${latencyMs}ms $${record.costUSD}`);
   }
   await analytics.close?.();
-  const summary = { kind: 'ask-routing-comparison', dataMode, model: baseEnv('agent', '').ASK_MODEL, planningEffort: baseEnv('agent', '').ASK_PLANNING_REASONING_EFFORT, spentUSD: Number(spent.toFixed(4)), modes: {} };
+  const summary = { kind: 'ask-routing-comparison', dataMode, grading: live ? 'routes, verified results and narration' : 'routes, compiled and reviewed SQL, clarify/decline copy; research results not executed', model: baseEnv('agent', '').ASK_MODEL, planningEffort: baseEnv('agent', '').ASK_PLANNING_REASONING_EFFORT, spentUSD: Number(spent.toFixed(4)), modes: {} };
   for (const mode of config.modes) {
     const rows = records.filter(record => record.mode === mode && !record.skipped);
     const offTopic = rows.filter(record => cases.find(item => item.id === record.id)?.offTopic);
@@ -173,7 +190,8 @@ async function main() {
   const output = { summary, records };
   if (config.out) fs.writeFileSync(config.out, JSON.stringify(output, null, 2));
   console.log(JSON.stringify(summary, null, 2));
+  return output;
 }
 
 if (require.main === module) main().catch(error => { console.error('Comparison failed:', error.message); process.exitCode = 1; });
-module.exports = { casesFor, options };
+module.exports = { casesFor, options, estimate, main };

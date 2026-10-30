@@ -60,6 +60,20 @@ function fromPublished(row) {
   return null;
 }
 
+// Illustrative legacy-pool drain: a year of daily closes ending in a crossing.
+function poolDrainFixtures() {
+  const target = '2026-12-02', zat = zec => String(Math.round(zec * 1e8));
+  const rows = Array.from({ length: 400 }, (_, i) => {
+    const sapling = i === 399 ? 398760 : 560000 - i * 380 + (i % 9) * 900, ironwood = 3.2e6 + i * 2600;
+    return { date: addDays(target, i - 399), sapling_pool_size: zat(Math.max(sapling, 400200)), orchard_pool_size: zat(352000 - i * 20),
+      sprout_pool_size: zat(22200), ironwood_pool_size: zat(ironwood), pool_size: zat(ironwood + Math.max(sapling, 400200) + 352000 - i * 20 + 22200) };
+  });
+  rows[399].sapling_pool_size = zat(398760); rows[30].sapling_pool_size = zat(396000);
+  const share = rows.map(r => ({ ...r, ironwood_pool_size: r === rows[399] ? zat(4.3e6) : r.ironwood_pool_size }));
+  const pick = (list, prefix) => p.poolDrainStories(list, target).find(story => story.key.startsWith(prefix));
+  return [['Sapling pool drain milestone', pick(rows, 'milestone:sapling_below')], ['Ironwood share milestone', pick(share, 'milestone:ironwood_share')]];
+}
+
 // Illustrative NU7 stories at mainnet's scheduled height. Times, pools and
 // amounts are synthetic; the gates and copy are the production builders.
 function nu7Fixtures() {
@@ -82,8 +96,11 @@ function nu7Fixtures() {
       crossing: { height: H + 9999, timestamp: T + 250600 }, now: at(T + 251000) })],
     ['NSM reserve milestone', nu7.nsmMilestoneStory({ nu7Height: H, now: at(T + 9 * 86400),
       baseline: { height: H - 1, nsmZat: '0' }, current: { height: H + 30500, nsmZat: '1012345678' },
-      crossing: { height: H + 30100, timestamp: T + 8.8 * 86400, nsmZat: '1000081234' },
+      crossing: { height: H + 30100, timestamp: T + 8.8 * 86400, nsmZat: '1000081234' }, quote: { usd: 1247.5 },
       daily: Array.from({ length: 9 }, (_, i) => ({ date: addDays('2026-11-06', i), nsmZat: i === 8 ? '1012345678' : String(Math.round((i + 1) * 111000000)) })) })],
+    ['NSM reserve dollar milestone', nu7.nsmUsdMilestoneStory({ nu7Height: H, now: at(T + 40 * 86400), quote: { usd: 1302.4 },
+      baseline: { height: H - 1, nsmZat: '0' }, current: { height: H + 138000, nsmZat: '8013377001' } })],
+    ...poolDrainFixtures(),
     ['Halving countdown', nu7.halvingCountdownStory({ schedule: plan, tip: { height: lo, timestamp: T + 390 * 86400 }, ...schedule })],
   ];
 }

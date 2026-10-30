@@ -73,11 +73,31 @@ test('NSM milestones use exact signed zatoshi and the first crossing', () => {
     daily: [{ date: '2026-11-06', nsmZat: '400000005' }, { date: '2026-11-07', nsmZat: '800000005' }, { date: '2026-11-08', nsmZat: '1000000005' }] });
   assert.equal(story.key, 'nu7:nsm:10');
   assert.equal(story.evidence.growthZat, '1000000000');
-  assert.match(story.content, /grew by 10 ZEC/);
-  assert.match(story.content, /60% of transaction fees go to the Network Sustainability Mechanism/);
+  assert.match(story.content, /has grown 10 ZEC since NU7/);
+  assert.match(story.content, /60% of transaction fees now go to the Network Sustainability Mechanism/);
   assert.equal(story.evidence.card.visual.kind, 'series');
   assert.equal(s.nsmMilestoneStory({ nu7Height: H, now: at(T), baseline: { nsmZat: '5' }, current: { height: H, nsmZat: '99999999' }, crossing: { timestamp: T, nsmZat: '99999999' } }), null, 'below 1 ZEC');
   assert.equal(s.nsmMilestoneStory({ nu7Height: H, now: at(T), baseline: { nsmZat: null }, current: { height: H, nsmZat: '1000000000' }, crossing: { timestamp: T, nsmZat: '1000000000' } }), null, 'no baseline');
+});
+
+test('NSM dollar milestones use the requested ladder and the detection-time spot price', () => {
+  assert.deepEqual(s.NSM_LEVELS_USD.slice(0, 8), [10_000, 100_000, 500_000, 1e6, 5e6, 10e6, 50e6, 100e6]);
+  const ctx = { nu7Height: H, now: at(T), baseline: { nsmZat: '0' }, current: { height: H + 5000, nsmZat: '1000000000' } };
+  const story = s.nsmUsdMilestoneStory({ ...ctx, quote: { usd: 1247.5 } });
+  assert.equal(story.key, 'nu7:nsm_usd:10000', '10 ZEC × $1,247.50 = $12,475 passes $10K only');
+  assert.match(story.content, /now worth over \$10,000\.\n\n10 ZEC has gone into the NSM since activation, at \$1,247\.50 per ZEC/);
+  assert.ok(story.content.length <= 280);
+  assert.equal(s.nsmUsdMilestoneStory({ ...ctx, quote: { usd: 900 } }), null, '$9,000 is below the first level');
+  assert.equal(s.nsmUsdMilestoneStory({ ...ctx, quote: null }), null, 'no quote, no dollar claim');
+  const big = s.nsmUsdMilestoneStory({ ...ctx, current: { height: H, nsmZat: String(5000n * 100_000_000n) }, quote: { usd: 1200 } });
+  assert.equal(big.key, 'nu7:nsm_usd:5000000');
+  assert.match(big.content, /over \$5 million/);
+  // ZEC milestones show USD when priced and still post without a quote.
+  const zec = { ...ctx, crossing: { height: H + 4000, timestamp: T - 60, nsmZat: '1000000000' } };
+  assert.match(s.nsmMilestoneStory({ ...zec, quote: { usd: 1247.5 } }).content, /up 10 ZEC \(about \$12K\) as of/);
+  // Longest realistic copy still fits: top ZEC level, $B value, 7-digit height.
+  assert.ok(s.nsmMilestoneStory({ ...zec, current: { height: 9999999, nsmZat: '10000000000000' }, crossing: { height: 9999999, timestamp: T - 60, nsmZat: '10000000000000' }, quote: { usd: 999999 } }).content.length <= 280);
+  assert.doesNotMatch(s.nsmMilestoneStory(zec).content, /\$/);
 });
 
 test('halving countdown fires within a day of each threshold with exact subsidy', () => {
@@ -159,10 +179,44 @@ test('NU7 reader: node schedule, canonical joins, exact NSM and countdown readin
   await fill(h + 4, '50000000');
   const tipTime = t0 + 1200 * 75 + 4 * 25;
   result = await nu7Candidates(db, at(tipTime + 30));
-  const keys = result.candidates.map(c => c.key);
-  assert.ok(keys.includes(`nu7:activation:${h}`));
-  assert.ok(keys.includes('nu7:nsm:1'), 'five blocks × 0.5 ZEC crosses 1 ZEC');
-  const nsm = result.candidates.find(c => c.key === 'nu7:nsm:1');
+  assert.ok(result.candidates.some(c => c.key === `nu7:activation:${h}`));
+  // NSM stories are priced after the snapshot; the reader returns their context.
+  assert.equal(result.nsm.crossing.height, h + 1, 'five blocks × 0.5 ZEC first crosses 1 ZEC at the second block');
+  const nsm = s.nsmMilestoneStory({ ...result.nsm, quote: { usd: 1250 } });
+  assert.equal(nsm.key, 'nu7:nsm:1');
   assert.equal(nsm.evidence.growthZat, '250000000');
-  assert.equal(nsm.evidence.crossing.height, h + 1);
+  assert.match(nsm.content, /2\.50 ZEC \(about \$3K\)/);
+});
+
+test('legacy pool drain milestones name the last comparable low and ignore oscillation', () => {
+  const { poolDrainStories } = require('../bot/lib/editorial-policy');
+  const { addDays } = require('../lib/transaction-activity');
+  const target = '2026-11-10', zat = zec => String(Math.round(zec * 1e8));
+  const rows = (sapling, ironwood = () => 4.1e6) => Array.from({ length: 400 }, (_, i) => ({ date: addDays(target, i - 399),
+    sapling_pool_size: zat(sapling(i)), orchard_pool_size: zat(343000), sprout_pool_size: zat(22000),
+    ironwood_pool_size: zat(ironwood(i)), pool_size: zat(ironwood(i) + sapling(i) + 343000 + 22000) }));
+  // Below 399K a year ago, above 400K for the last month, 399.5K today.
+  const stories = poolDrainStories(rows(i => (i === 10 ? 390000 : i === 399 ? 399500 : 420000)), target);
+  const sapling = stories.find(s => s.key === 'milestone:sapling_below:400000');
+  assert.match(sapling.content, /Sapling pool fell below 400K ZEC\.\n\nIt held 399\.5K ZEC at the end of Nov 10, its lowest since Oct 17, 2025\. Ironwood now holds 4\.10M ZEC, 84% of all shielded ZEC\./);
+  assert.ok(sapling.content.length <= 280);
+  assert.equal(sapling.evidence.card.tone, 'sapling');
+  assert.ok(!stories.some(s => s.key.startsWith('milestone:orchard_below')), 'no crossing for a flat pool');
+  // A dip below the level within the last 30 days means today is not a fresh crossing.
+  assert.ok(!poolDrainStories(rows(i => (i === 380 || i === 399 ? 399500 : 420000)), target).some(s => s.key.includes('sapling')));
+  // Crossing several levels at once reports the lowest crossed.
+  assert.ok(poolDrainStories(rows(i => (i === 399 ? 240000 : 420000)), target).some(s => s.key === 'milestone:sapling_below:250000'));
+});
+
+test('Ironwood share milestones start at 85% and post each whole percent once', () => {
+  const { poolDrainStories } = require('../bot/lib/editorial-policy');
+  const { addDays } = require('../lib/transaction-activity');
+  const target = '2026-11-10', zat = zec => String(Math.round(zec * 1e8));
+  const rows = share => Array.from({ length: 60 }, (_, i) => ({ date: addDays(target, i - 59), sapling_pool_size: zat(400000),
+    orchard_pool_size: zat(300000), sprout_pool_size: zat(20000), ironwood_pool_size: zat(share(i) * 1e6), pool_size: zat(1e6) }));
+  const story = poolDrainStories(rows(i => (i === 59 ? 0.853 : 0.84)), target).find(s => s.evidence.metric === 'ironwood_share');
+  assert.equal(story.key, 'milestone:ironwood_share:85');
+  assert.match(story.content, /85% of shielded ZEC is now in Ironwood/);
+  assert.equal(poolDrainStories(rows(i => (i === 59 ? 0.84 : 0.83)), target).filter(s => s.evidence.metric === 'ironwood_share').length, 0, 'below 85%');
+  assert.equal(poolDrainStories(rows(i => (i === 59 ? 0.855 : i === 30 ? 0.851 : 0.84)), target).filter(s => s.evidence.metric === 'ironwood_share').length, 0, 'not a new high');
 });

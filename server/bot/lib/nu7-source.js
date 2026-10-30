@@ -97,12 +97,12 @@ async function nu7Candidates(db, now) {
     if (milestone) candidates.push(milestone);
   }
 
-  const nsm = await optional(db, 'nsm', decisions, () => nsmStory(db, nu7Height, now));
-  if (nsm) candidates.push(nsm);
-  return { candidates, decisions };
+  // NSM stories need a spot quote, fetched after the snapshot is released.
+  const nsm = await optional(db, 'nsm', decisions, () => nsmContext(db, nu7Height, now));
+  return { candidates, decisions, nsm };
 }
 
-async function nsmStory(db, nu7Height, now) {
+async function nsmContext(db, nu7Height, now) {
   const { rows: [baseline] } = await db.query(`SELECT a.height, a.nsm_balance_zat::text AS nsm FROM ${CANONICAL_OBSERVATIONS}
     AND a.height < $1 AND a.nsm_balance_zat IS NOT NULL ORDER BY a.height DESC LIMIT 1`, [nu7Height]);
   const { rows: [current] } = await db.query(`SELECT a.height, a.nsm_balance_zat::text AS nsm FROM ${CANONICAL_OBSERVATIONS}
@@ -110,19 +110,18 @@ async function nsmStory(db, nu7Height, now) {
   if (!baseline || !current) return null;
   const growth = BigInt(current.nsm) - BigInt(baseline.nsm);
   const level = [...s.NSM_LEVELS_ZEC].reverse().find(l => growth >= BigInt(l) * 100_000_000n);
-  if (!level) return null;
-  const { rows: [crossing] } = await db.query(`SELECT a.height, b.timestamp, a.nsm_balance_zat::text AS nsm FROM ${CANONICAL_OBSERVATIONS}
+  const { rows: [crossing] } = !level ? { rows: [] } : await db.query(`SELECT a.height, b.timestamp, a.nsm_balance_zat::text AS nsm FROM ${CANONICAL_OBSERVATIONS}
     AND a.height >= $1 AND a.nsm_balance_zat - $2::bigint >= $3::bigint ORDER BY a.height LIMIT 1`,
-  [nu7Height, baseline.nsm, (BigInt(level) * 100_000_000n).toString()]);
+  [nu7Height, baseline.nsm, (BigInt(level || 0) * 100_000_000n).toString()]);
   const { rows: daily } = await db.query(`SELECT DISTINCT ON (day) day::text AS date, nsm FROM (
       SELECT (to_timestamp(b.timestamp) AT TIME ZONE 'UTC')::date AS day, a.height, a.nsm_balance_zat::text AS nsm
       FROM ${CANONICAL_OBSERVATIONS} AND a.height >= $1 AND a.nsm_balance_zat IS NOT NULL) d
     ORDER BY day, height DESC`, [nu7Height]);
-  return s.nsmMilestoneStory({ nu7Height, now,
+  return { nu7Height, now,
     baseline: { height: Number(baseline.height), nsmZat: baseline.nsm },
     current: { height: Number(current.height), nsmZat: current.nsm },
     crossing: crossing ? { height: Number(crossing.height), timestamp: Number(crossing.timestamp), nsmZat: crossing.nsm } : null,
-    daily: daily.map(d => ({ date: d.date, nsmZat: d.nsm })) });
+    daily: daily.map(d => ({ date: d.date, nsmZat: d.nsm })) };
 }
 
 module.exports = { nu7Candidates, nodeReadiness };

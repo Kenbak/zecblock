@@ -9,6 +9,7 @@ const { readPoolActivity } = require('./pool-activity-source');
 const { poolMilestoneStories } = require('./pool-activity-milestones');
 const { insightCandidates } = require('./editorial-insights');
 const nu7Source = require('./nu7-source');
+const nu7Stories = require('./nu7-stories');
 
 // Flows already represent net movement across pools. Never subtract an
 // unrelated Orchard withdrawal from an Ironwood deposit as a "migration".
@@ -229,21 +230,33 @@ async function milestoneCandidates(pool, now) {
   return snapshot(pool, async db => {
     await assertMainnetFresh(db, now);
     const target = addDays(now.toISOString().slice(0, 10), -1);
+    // Per-pool columns are optional on older schemas; absent ones read as null.
+    const { rows: columns } = await db.query(`SELECT column_name FROM information_schema.columns
+      WHERE table_name='privacy_trends_daily' AND column_name IN ('sapling_pool_size','orchard_pool_size','sprout_pool_size')`);
+    const pools = ['sapling_pool_size', 'orchard_pool_size', 'sprout_pool_size']
+      .map(c => columns.some(r => r.column_name === c) ? `t.${c}::text` : `NULL::text AS ${c}`).join(', ');
     const { rows } = await db.query(`SELECT t.date::text AS date, t.pool_size::text, t.chain_supply::text,
-        t.ironwood_pool_size::text, p.price_usd::float8 AS price_usd
+        t.ironwood_pool_size::text, ${pools}, p.price_usd::float8 AS price_usd
       FROM privacy_trends_daily t LEFT JOIN zec_price_daily p ON p.date=t.date
       WHERE t.date <= $1::date ORDER BY t.date`, [target]);
-    return policy.milestoneStories(rows, target);
+    return [...policy.milestoneStories(rows, target), ...policy.poolDrainStories(rows, target)];
   });
 }
 
 // NU7 countdown, activation and post-activation milestones. Each builder gates
 // on its own freshness, so this runs on every tick like other live events.
-async function nu7Candidates(pool, now) {
-  return snapshot(pool, async db => {
+async function nu7Candidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
+  const result = await snapshot(pool, async db => {
     await assertMainnetFresh(db, now);
     return nu7Source.nu7Candidates(db, now);
   });
+  const { nsm, ...rest } = result;
+  if (!nsm) return rest;
+  // ZEC milestones post without USD if the quote fails; USD milestones need it.
+  const { quote, unavailable } = await fetchPrice();
+  if (unavailable) rest.decisions.push({ key: 'nu7:nsm-price', reason: 'price-unavailable', detail: unavailable });
+  rest.candidates.push(...[nu7Stories.nsmMilestoneStory({ ...nsm, quote }), quote && nu7Stories.nsmUsdMilestoneStory({ ...nsm, quote })].filter(Boolean));
+  return rest;
 }
 
 async function poolActivityCandidates(pool, now, options) {

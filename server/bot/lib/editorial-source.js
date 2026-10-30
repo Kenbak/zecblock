@@ -35,13 +35,15 @@ function scope(story) {
   if (type === 'migration') return 'Pool migration, not new shielding.';
   if (type === 'pool_trend') return 'Net public Sapling/Orchard/Ironwood flows; Sprout and migrations excluded.';
   if (type === 'hashrate') return 'Estimated mining power; seven-day windows.';
+  if (type === 'milestone' && /_below$|ironwood_share/.test(e.metric || '')) return 'Daily UTC closes of node-reported pool balances.';
   if (type === 'halving') return 'Estimated from consensus target spacing; actual timing follows block production.';
   if (type === 'nu7') return ({
     countdown: 'Serving-node NU7 schedule. Node protocol versions are self-reported.',
     activation: 'Serving-node NU7 schedule; canonical block data.',
     first_day: 'Canonical block-header times, not arrival times.',
     blocks: 'Canonical block-header times, not arrival times.',
-    nsm: 'Node-reported NSM reserve change since activation, in exact zatoshi.',
+    nsm: 'Node-reported NSM reserve change since activation, in exact zatoshi. USD at the spot price when posted.',
+    nsm_usd: 'Node-reported NSM reserve change since activation, valued at the CoinGecko spot price when posted.',
   })[e.nu7Kind] || '';
   if (e.metric === 'mvrv') return 'Modeled cost basis; not holder profit or a price forecast.';
   if (e.metric === 'exchange_deposit_zat') return 'Tracked transparent exchange deposits; not necessarily sales.';

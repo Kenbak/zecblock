@@ -24,6 +24,7 @@ const ACTIVATION_CONFIRMATIONS = 3;
 // NSM growth keeps going, since the reserve keeps accumulating.
 const SPEED_STORY_WINDOW = 30 * DAY;
 const BLOCK_LEVELS = [10_000, 25_000, 50_000, 100_000];
+const NSM_LEVELS_USD = [10_000, 100_000, 500_000, 1e6, 5e6, 10e6, 50e6, 100e6, 500e6, 1e9];
 const NSM_LEVELS_ZEC = [1, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 
 const iso = seconds => new Date(seconds * 1000).toISOString();
@@ -165,7 +166,7 @@ ${BASE}/network#issuance`;
 const zatBig = value => (/^-?\d+$/.test(String(value)) ? BigInt(value) : null);
 
 /** NSM reserve growth since activation, at round ZEC levels, from exact node counters. */
-function nsmMilestoneStory({ nu7Height, baseline, current, crossing, daily, now }) {
+function nsmMilestoneStory({ nu7Height, baseline, current, crossing, daily, now, quote = null }) {
   const base = zatBig(baseline?.nsmZat), cur = zatBig(current?.nsmZat);
   if (base === null || cur === null || !crossing) return null;
   const growth = cur - base;
@@ -173,18 +174,47 @@ function nsmMilestoneStory({ nu7Height, baseline, current, crossing, daily, now 
   if (!level || zatBig(crossing.nsmZat) === null || zatBig(crossing.nsmZat) - base < BigInt(level) * 100_000_000n) return null;
   if (now.getTime() / 1000 - crossing.timestamp > MILESTONE_MAX_AGE) return null;
   const growthText = f.zecText(growth.toString());
-  const content = `${MARK} Milestone: the NU7 sustainability reserve grew by ${f.number(level)} ZEC.\n\n`
-    + `Since NU7, 60% of transaction fees go to the Network Sustainability Mechanism (NSM) instead of miners. `
-    + `The reserve is ${growthText} ZEC above its pre-NU7 balance as of block #${f.number(current.height)}.\n\n${BASE}/network`;
+  const usd = usdValue(growth, quote);
+  const usdText = usd === null ? '' : ` (about ${f.usdShort(usd)})`;
+  const content = `${MARK} Milestone: Zcash's NSM reserve has grown ${f.number(level)} ZEC since NU7.\n\n`
+    + `60% of transaction fees now go to the Network Sustainability Mechanism instead of miners. `
+    + `It's up ${growthText} ZEC${usdText} as of block #${f.number(current.height)}.\n\n${BASE}/network`;
   const series = (daily || []).map(d => zatBig(d.nsmZat)).filter(v => v !== null).map(v => Number(v - base) / 1e8);
   const card = { kicker: 'NU7 · NSM reserve', title: `NSM reserve: +${f.number(level)} ZEC since NU7.`, hero: `+${f.number(level)}`, unit: 'ZEC', tone: 'gold',
-    line: 'added to the NSM reserve since NU7.', qualifier: `${growthText} ZEC at block #${f.number(current.height)}.`,
+    line: 'added to the NSM reserve since NU7.', qualifier: `${growthText} ZEC${usdText} at block #${f.number(current.height)}.`,
     source: 'zecblock.com/network', date: f.timeText(crossing.timestamp),
     visual: series.length >= 3 ? { kind: 'series', values: series, reference: level, referenceLabel: 'milestone',
       label: 'NSM reserve growth since NU7', unit: 'ZEC', start: daily[0].date, end: daily.at(-1).date } : null };
   return story('nsm', `nu7:nsm:${level}`, content,
-    { nu7Height, level, growthZat: growth.toString(), baseline, current, crossing, card }, { significance: 78, eventAt: iso(crossing.timestamp) });
+    { nu7Height, level, growthZat: growth.toString(), baseline, current, crossing, price_usd: quote?.usd ?? null, price_quote: quote, card },
+    { significance: 78, eventAt: iso(crossing.timestamp) });
 }
 
-module.exports = { halvingCountdownStory, countdownStory, activationStory, firstDayStory, blockMilestoneStory, nsmMilestoneStory, duration,
+const price = usd => usd.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+// Spot value at detection, never a historical price at the crossing block.
+function usdValue(zat, quote) {
+  return quote && Number.isFinite(quote.usd) && quote.usd > 0 ? Number(zat) / 1e8 * quote.usd : null;
+}
+
+/** First time NSM growth since NU7 is worth a round dollar amount, at the detection-time spot price. */
+function nsmUsdMilestoneStory({ nu7Height, baseline, current, quote, now }) {
+  const base = zatBig(baseline?.nsmZat), cur = zatBig(current?.nsmZat);
+  if (base === null || cur === null) return null;
+  const growth = cur - base, usd = usdValue(growth, quote);
+  const level = usd === null ? null : [...NSM_LEVELS_USD].reverse().find(l => usd >= l);
+  if (!level) return null;
+  const levelText = level >= 1e6 ? `$${f.number(level / 1e6)} million` : `$${f.number(level)}`;
+  const content = `${MARK} Milestone: what NU7 added to Zcash's sustainability reserve is now worth over ${levelText}.\n\n`
+    + `${f.zecText(growth.toString())} ZEC has gone into the NSM since activation, at $${price(quote.usd)} per ZEC. `
+    + `60% of transaction fees go there instead of to miners.\n\n${BASE}/network`;
+  const card = { kicker: 'NU7 · NSM reserve', title: `NSM reserve growth passed ${levelText}.`, hero: `${f.usdShort(level).replace(/\.00(?=[MB])/, '')}+`, unit: null, tone: 'gold',
+    line: 'added to the NSM reserve since NU7.', qualifier: `${f.zecText(growth.toString())} ZEC at $${price(quote.usd)}.`,
+    source: 'zecblock.com/network', date: f.timeText(now.getTime() / 1000), visual: null };
+  return story('nsm_usd', `nu7:nsm_usd:${level}`, content,
+    { nu7Height, level, usd, growthZat: growth.toString(), baseline, current, price_usd: quote.usd, price_quote: quote, card },
+    { significance: 80, eventAt: now.toISOString() });
+}
+
+module.exports = { nsmUsdMilestoneStory, NSM_LEVELS_USD, halvingCountdownStory, countdownStory, activationStory, firstDayStory, blockMilestoneStory, nsmMilestoneStory, duration,
   BLOCK_LEVELS, NSM_LEVELS_ZEC, COUNTDOWN_BLOCKS, SPEED_STORY_WINDOW };

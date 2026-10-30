@@ -19,7 +19,7 @@ const C = {
   gold: '#F8BC21', ironwood: '#E8CF78', orchard: '#B6A0E0', sapling: '#91AC90',
   in: '#65C79A', out: '#E8776A',
 };
-const TONES = { in: C.in, out: C.out, gold: C.gold, ironwood: C.ironwood, text: C.text, muted: C.faint };
+const TONES = { in: C.in, out: C.out, gold: C.gold, ironwood: C.ironwood, sapling: C.sapling, orchard: C.orchard, text: C.text, muted: C.faint };
 const NODE_FILL = { ironwood: C.ironwood, orchard: C.orchard, sapling: C.sapling, gold: C.gold };
 const CHAIN_ICONS = { trx: 'tron', bnb: 'bsc', matic: 'pol' };
 

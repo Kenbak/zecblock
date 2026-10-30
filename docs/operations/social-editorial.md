@@ -239,6 +239,9 @@ The NU7 height comes from the serving node's upgrade schedule stored on the late
 | First 24 hours (`nu7`, `nu7:first_day:<h>`) | 24–48 h after activation | blocks and average header interval in the 24 h after vs before activation |
 | Block milestones (`nu7`, `nu7:blocks:<n>`) | 10k/25k/50k/100k blocks since activation, within 24 h of the crossing block and no later than 30 days after activation | measured header-time span vs `n × 75 s` |
 | NSM milestones (`nu7`, `nu7:nsm:<zec>`) | reserve growth since the last pre-activation observation crosses 1/10/25/… ZEC, within 24 h of the first crossing | node NSM counter, exact zatoshi (BigInt); growth includes every reserve inflow |
+| NSM dollar milestones (`nu7`, `nu7:nsm_usd:<usd>`) | growth since NU7 × CoinGecko spot (detection time, ≤5 min old) passes $10K/100K/500K/1M/5M/10M/50M/100M/500M/1B | same NSM growth; never posted without a fresh quote. ZEC milestones add "(about $X)" when a quote is available |
+| Legacy pool drain (`milestone`, `milestone:<sapling\|orchard\|sprout>_below:<zec>`) | first daily close below 500K/400K/…/1K ZEC after 30 closes at or above it | `privacy_trends_daily` per-pool closes (optional columns; absent reads as null); names the last earlier day at or below today's balance |
+| Ironwood share (`milestone`, `milestone:ironwood_share:<pct>`) | first close at each whole percent from 85% | Ironwood ÷ shielded pool size, daily closes |
 | Halving countdown (`halving`, `halving:<height>:<n>d`) | estimated days to the next halving within a day of 730/365/180/100/30/7/1 | consensus eras; subsidy `floor(12.5 ZEC × spacing / 150) >> halvings` |
 
 Block-speed stories (first 24 hours, block milestones) are launch news and stop 30 days after activation; NSM milestones continue indefinitely.

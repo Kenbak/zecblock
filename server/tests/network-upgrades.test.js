@@ -270,7 +270,8 @@ test('future activation server HTML has one meaningful H1, full height and seede
   assert.equal((html.match(/<h1/g) || []).length, 1);
   assert.match(html, /NU7 Activation.*4,465,026/);
   assert.match(html, /NU7 ACTIVATION/);
-  assert.match(html, /About 15 minutes/);
+  // NU7 ticks toward the estimate on the client; server HTML holds stable placeholders.
+  assert.match(html, /role="timer"/);
   assert.match(html, /recent block times/);
   assert.match(html, /100<\/span> blocks/);
   assert.match(html, /<time dateTime="2026-11-05T00:14:30.000Z"/i);
@@ -296,9 +297,16 @@ test('chain progress uses the last verified height for announced, scheduled and 
       const html = renderComponent(file, 'FutureBlockView', {
         targetHeight, currentHeight: 1,
       }, data, error, 'mainnet');
-      assert.match(html, />Chain progress</);
-      assert.match(html, /99\.9971%/);
-      assert.match(html, /role="progressbar" aria-label="Chain progress" aria-valuemin="0"/);
+      if (targetHeight === announcedHeight) {
+        // NU7 progress spans the NU6.3 → NU7 epoch rather than all of chain history.
+        assert.match(html, />NU6\.3 → NU7</);
+        assert.match(html, />99\.91%</);
+        assert.match(html, /role="progressbar" aria-label="Progress from NU6\.3 to NU7" aria-valuemin="3428143"/);
+      } else {
+        assert.match(html, />Chain progress</);
+        assert.match(html, /99\.9971%/);
+        assert.match(html, /role="progressbar" aria-label="Chain progress" aria-valuemin="0"/);
+      }
       assert.match(html, new RegExp(`aria-valuemax="${targetHeight}" aria-valuenow="3543305"`));
       assert.match(html, new RegExp(`aria-valuetext="Block 3,543,305 of ${targetHeight.toLocaleString('en-US')}; ${remaining} blocks remaining"`));
       if (error) assert.match(html, /time estimate is paused/);
@@ -326,8 +334,8 @@ test('chain progress reserves displayed completion for reaching the target and c
   const almost = renderComponent(file, 'FutureBlockView', {
     targetHeight: announcedHeight, currentHeight: announcedHeight - 1,
   }, null, 'Offline', 'mainnet');
-  assert.match(almost, /99\.9999%/);
-  assert.doesNotMatch(almost, />100\.0000%</);
+  assert.match(almost, />99\.99%</);
+  assert.doesNotMatch(almost, />100\.00%</);
   const reached = renderComponent(file, 'FutureBlockView', {
     targetHeight: 200, currentHeight: 201,
   }, null, 'Offline');

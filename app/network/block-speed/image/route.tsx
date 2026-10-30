@@ -35,8 +35,9 @@ export async function GET() {
   const colors = getChartColors('dark');
   const points = story.points;
   const before = story.network === 'mainnet' ? story.before?.averageSeconds ?? null : null;
-  const title = 'Zcash confirmation times';
   const wait = (seconds: number | null) => formatWait(confirmationSeconds(seconds, SPENDABLE_CONFIRMATIONS));
+  // Lead with the one comparison people share; the chart and description carry the detail.
+  const title = before != null ? `With NU7, received funds spendable in ${wait(after)}, not ${wait(before)}` : `With NU7, received funds spendable in ${wait(after)}`;
   const peak = Math.max(...points.map(point => minutes(point.averageSeconds)), ...points.map(point => minutes(point.targetSeconds ?? 0)));
   const step = [1, 2, 5, 10, 15, 20].find(s => peak / s <= 4) ?? Math.ceil(peak / 40) * 10;
   const max = Math.ceil(peak * 1.08 / step) * step;

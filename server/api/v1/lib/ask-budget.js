@@ -1,19 +1,20 @@
 'use strict';
 const { askError, askStage } = require('./ask-errors');
-const { createHmac, randomUUID } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 
 // All keys share a Redis Cluster slot. Reserve the conservative maximum before
 // each call; once the provider reports token usage, the reservation is replaced
 // by the billed cost (RECONCILE), so the USD caps track real spend. Uncertain,
 // failed and cancelled calls report no usage and keep their full reservation.
 // Prices are deployment-reviewed upper bounds.
-// Ordinary beta traffic gets useful routing headroom without making distributed
-// cheap requests unbounded: 20/minute and 400/day/IP; 3000/hour and 20000/day/site.
-// AI work keeps 5/minute and 20/day/IP (it also spends the USD budgets). SQL runs
-// on our own database and gets 10/minute and 100/day/IP; the worker separately
-// caps site-wide daily executions (ASK_ANALYTICS_DAILY_QUERY_LIMIT).
-const REQUEST_LIMITS = Object.freeze({ minute: 20, day: 400, globalHour: 3000, globalDay: 20000 });
-const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 5, day: 20 }), sql: Object.freeze({ minute: 10, day: 100 }) });
+// Privacy: no IP address or IP-derived identifier is stored. Every submission
+// passes Turnstile, and allowances are counted site-wide only: 3000/hour and
+// 20000/day requests; AI work 30/minute and 2000/day (it also spends the USD
+// budgets and call caps); SQL work 60/minute and 5000/day, while the worker
+// separately caps daily executions (ASK_ANALYTICS_DAILY_QUERY_LIMIT). One
+// heavy visitor can use up a shared allowance for the day; nobody is tracked.
+const REQUEST_LIMITS = Object.freeze({ globalHour: 3000, globalDay: 20000 });
+const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 30, day: 2000 }), sql: Object.freeze({ minute: 60, day: 5000 }) });
 const RESERVE = `
 local calls = tonumber(redis.call('GET', KEYS[1]) or '0')
 local daily = tonumber(redis.call('GET', KEYS[3]) or '0')
@@ -41,14 +42,10 @@ for i = 1, 2 do
 end
 return 1`;
 const ADMIT = `
-if tonumber(redis.call('GET', KEYS[2]) or '0') >= ${REQUEST_LIMITS.day} then return -2 end
-if tonumber(redis.call('GET', KEYS[1]) or '0') >= ${REQUEST_LIMITS.minute} then return -1 end
-if tonumber(redis.call('GET', KEYS[4]) or '0') >= ${REQUEST_LIMITS.globalDay} then return -4 end
-if tonumber(redis.call('GET', KEYS[3]) or '0') >= ${REQUEST_LIMITS.globalHour} then return -3 end
-redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], 120)
+if tonumber(redis.call('GET', KEYS[2]) or '0') >= ${REQUEST_LIMITS.globalDay} then return -4 end
+if tonumber(redis.call('GET', KEYS[1]) or '0') >= ${REQUEST_LIMITS.globalHour} then return -3 end
+redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], 7200)
 redis.call('INCR', KEYS[2]); redis.call('EXPIRE', KEYS[2], 172800)
-redis.call('INCR', KEYS[3]); redis.call('EXPIRE', KEYS[3], 7200)
-redis.call('INCR', KEYS[4]); redis.call('EXPIRE', KEYS[4], 172800)
 return 1`;
 const ADMIT_WORK = `
 local minute = math.max(tonumber(redis.call('GET', KEYS[1]) or '0'), tonumber(redis.call('GET', KEYS[3]) or '0'))
@@ -70,9 +67,6 @@ function quotaError(quotaCode, retryAfter) {
   const error = new Error('Ask allowance reached');
   error.quota = true; error.quotaCode = quotaCode; error.retryAfter = retryAfter;
   return error;
-}
-function identityFor(config, req, day) {
-  return createHmac('sha256', config.abuseSecret).update(`${day}:${req.ip || req.socket?.remoteAddress || 'unknown'}`).digest('hex');
 }
 function money(value) { return /^\d+(\.\d{1,6})?$/.test(value || '') ? Math.round(Number(value) * 1e6) : NaN; }
 function budgetConfig(env, { authenticatedStaging = false } = {}) {
@@ -148,11 +142,11 @@ async function reserve(redis, config, body, now = Date.now()) {
 }
 async function admitWork(redis, config, req, kind, now = Date.now()) {
   if (kind !== 'ai' && kind !== 'sql') throw new TypeError('Invalid Ask work class');
-  const day = new Date(now).toISOString().slice(0, 10), identity = identityFor(config, req, day);
-  const prefix = `ask:{mainnet}:work:${kind}:${identity}`, legacy = `ask:{mainnet}:ip:${identity}`;
-  const minute = Math.floor(now / 60000);
+  // Site-wide work counters only; nothing identifies the visitor.
+  const day = new Date(now).toISOString().slice(0, 10), minute = Math.floor(now / 60000);
+  const prefix = `ask:{mainnet}:work:${kind}:all:${day}`;
   const result = Number(await redis.eval(ADMIT_WORK, {
-    keys: [`${prefix}:${minute}`, `${prefix}:day`, `${legacy}:${minute}`, `${legacy}:day`], arguments: [String(WORK_LIMITS[kind].minute), String(WORK_LIMITS[kind].day)],
+    keys: [`${prefix}:${minute}`, `${prefix}:day`, `${prefix}:${minute}`, `${prefix}:day`], arguments: [String(WORK_LIMITS[kind].minute), String(WORK_LIMITS[kind].day)],
   }));
   if (result === -1) throw quotaError(`ask-${kind}-minute`, windowRetry(now, 60000));
   if (result === -2) throw quotaError(`ask-${kind}-day`, windowRetry(now, 86400000));
@@ -176,14 +170,13 @@ async function admit(redis, config, req, fetchImpl = fetch) {
   // Compute the charged UTC windows after verification, which may cross a reset.
   const now = Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
-  const identity = identityFor(config, req, day), prefix = `ask:{mainnet}:requests:ip:${identity}`;
   const admission = Number(await redis.eval(ADMIT, {
-    keys: [`${prefix}:${Math.floor(now / 60000)}`, `${prefix}:day`, `ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], arguments: [],
+    keys: [`ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], arguments: [],
   }));
   if (admission !== 1) {
-    const failure = { '-1': ['ask-request-minute', 60000], '-2': ['ask-request-day', 86400000], '-3': ['ask-request-global-hour', 3600000], '-4': ['ask-request-global-day', 86400000] }[admission];
+    const failure = { '-3': ['ask-request-global-hour', 3600000], '-4': ['ask-request-global-day', 86400000] }[admission];
     if (failure) throw quotaError(failure[0], windowRetry(now, failure[1]));
     throw askError('unavailable');
   }
 }
-module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork, identityFor };
+module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork };

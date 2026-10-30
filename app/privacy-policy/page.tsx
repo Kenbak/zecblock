@@ -10,7 +10,7 @@ export const metadata = buildPageMetadata({
 });
 
 export default function PrivacyPolicyPage() {
-  const updated = 'October 8, 2026';
+  const updated = 'October 30, 2026';
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-16">
@@ -52,7 +52,7 @@ export default function PrivacyPolicyPage() {
           <p className="mb-3">We integrate with third-party services that have their own privacy policies:</p>
           <ul className="list-disc pl-5 space-y-1.5">
             <li><strong className="text-primary">Hosting and analytics:</strong> Vercel hosts the frontend. We use Vercel Web Analytics for aggregate visits to selected public landing pages. Our analytics filter removes query strings and fragments and excludes individual address, transaction and block pages, Ask, and sensitive tools. See <a href="https://vercel.com/docs/analytics/privacy-policy" target="_blank" rel="noopener noreferrer" className="legal-link">Vercel’s analytics privacy documentation</a>.</li>
-            <li><strong className="text-primary">Zift (formerly Ask):</strong> Free-form questions, recent conversation context and relevant public data are sent to our API and, when AI is enabled, its configured provider (OpenAI or Anthropic). The OpenAI integration disables optional response storage; this does not guarantee zero provider retention. Public-data explanations may be cached briefly. Cloudflare Turnstile can process browser and connection information for abuse prevention. Do not submit confidential or personal information to Ask.</li>
+            <li><strong className="text-primary">Zift (formerly Ask):</strong> Free-form questions, recent conversation context and relevant public data are sent to our API and, when AI is enabled, its configured provider (OpenAI or Anthropic). The OpenAI integration disables optional response storage; this does not guarantee zero provider retention. Public-data explanations may be cached briefly. Zift and its MCP server store no IP addresses or identifiers derived from them, hashed or otherwise: their usage limits are site-wide counters shared by all visitors. A short-lived in-memory limiter uses your IP address only to count requests in the past minute and keeps nothing after that. Cloudflare Turnstile can process browser and connection information for abuse prevention. Do not submit confidential or personal information to Ask.</li>
             <li><strong className="text-primary">NEAR Intents (1-Click Swap):</strong> Cross-chain swap quotes and execution. When you initiate a swap, your transaction data is shared with NEAR Intents to facilitate the exchange.</li>
             <li><strong className="text-primary">Fiat on-ramp providers:</strong> If you purchase cryptocurrency with a credit card through an embedded widget, you interact directly with the provider (e.g. MoonPay). They may require identity verification (KYC). We do not receive or store your payment information.</li>
           </ul>

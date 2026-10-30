@@ -152,14 +152,18 @@ async function agentStep(config, { instruction, user, turns, tools }, signal, fe
     response_format: { type: 'json_schema', json_schema: { name: 'agent_step', strict: true, schema: agentCallSchema(tools) } },
   };
   const result = await providerRequest(config, body, signal, fetchImpl, beforeRequest);
+  // A model's own safety refusal is a decline, not a provider failure; the
+  // runner applies the selected locale.
+  const refused = { name: 'decline', args: { reason: 'unavailable', locale: 'en' } };
+  if (anthropic ? result.stop_reason === 'refusal' : result.choices?.[0]?.message?.refusal) return refused;
   if (anthropic) {
     const call = result.content?.find(part => part.type === 'tool_use');
     if (result.stop_reason !== 'tool_use' || !call || typeof call.name !== 'string') throw new Error('Invalid provider result');
     return { name: call.name, args: call.input ?? null };
   }
   const choice = result.choices?.[0];
-  // A truncated or refused step, or one without a call, is never shown.
-  if (choice?.finish_reason !== 'stop' || choice.message?.refusal) throw new Error('Invalid provider result');
+  // A truncated step, or one without a call, is never shown.
+  if (choice?.finish_reason !== 'stop') throw new Error('Invalid provider result');
   let call = null;
   try { call = JSON.parse(choice.message.content)?.call; } catch { /* invalid below */ }
   if (!call || typeof call.tool !== 'string') throw new Error('Invalid provider result');

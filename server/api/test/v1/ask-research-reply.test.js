@@ -182,12 +182,15 @@ test('findings reject literal numbers, calendar names, tables and invented place
  const result=research('SELECT date,shielded_transactions FROM activity_daily ORDER BY date',[['date','text'],['shielded_transactions','number']],[['2025-09-01','17451'],['2025-10-01','53175']]);
  const template=researchTemplate(result,researchFacts(result,[],'en'));
  assert.equal(template,'Across 2 returned periods from Sep 1, 2025 to Oct 1, 2025, shielded transactions increased from 17,451 to 53,175 (+35,724, +204.7%).');
- for(const summary of ['October had the most shielded transactions at {{max_b}}.','Shielded transactions grew by 35,724.','Date | Count\n{{row_a_a}} | {{row_a_b}}','The peak was {{row_z_b}}.','The peak was {{max_b}}','No figure is cited here.']){
+ for(const summary of ['March had the most shielded transactions at {{max_b}}.','Shielded transactions grew by 35,724.','The leader was t{{row_a_a}} at {{max_b}}.','The peak was in Q three of two thousand twenty-five at {{max_b}}.','The peak was {{max_b}} on Oct ₂₉.','Date | Count\n{{row_a_a}} | {{row_a_b}}','The peak was {{row_z_b}}.','The peak was {{max_b}}','No figure is cited here.']){
   let calls=0;
   const reply=await researchReply(result,{question:'Explain'},async()=>{calls++;return {finding:summary};},'en');
   assert.equal(calls,1);assert.equal(reply.answer,template,summary);
  }
  assert.equal((await researchReply(result,{},caption('The peak of {{max_b}} came on {{max_b_at}}.'),'en')).answer,'The peak of 53,175 came on Oct 1, 2025.');
+ // A month the result itself contains may be named; its day and year still come from facts.
+ assert.equal((await researchReply(result,{},caption('October had the most shielded transactions at {{max_b}}.'),'en')).answer,'October had the most shielded transactions at 53,175.');
+ assert.equal((await researchReply(result,{},caption('Shielded transactions reached ≈≈{{max_b}}, approximately ≈{{max_b}} in October.'),'en')).answer,'Shielded transactions reached ≈53,175, approximately 53,175 in October.');
 });
 
 test('template covers single rows, unlabelled numeric results and truncation',()=>{

@@ -165,7 +165,7 @@ test('a unit attached to a research value must match its column conversion',asyn
   assert.deepEqual(reply.research,result);assert.equal(reply.evidenceKey,result.fingerprint);return reply.answer;
  };
  const zatoshiFallback='The result has average fee per block 225,510.4 zatoshis.';
- const zecFallback='The result has average fee zec 0.002255104 ZEC.';
+ const zecFallback='The result has average fee 0.002255104 ZEC.';
  // Observed live: a zatoshi average was published as 225,510.4 ZEC.
  const wrongZEC=await answer(zatoshis,'The average fee per block is {{row_a_a}} ZEC.');
  assert.equal(wrongZEC,zatoshiFallback);assert.doesNotMatch(wrongZEC,/225,510\.4 ZEC|average fee per block is/i);

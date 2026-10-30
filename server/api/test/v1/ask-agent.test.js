@@ -244,8 +244,9 @@ test('a clarifying question that fails a check falls back to the fixed copy', as
     ['Compare transaction counts or fees.', 'not_a_question'],
     ['Do you mean Coinbase balances or transaction counts?', 'unknown_name'],
     ['Should I tell you when to buy ZEC, or compare fees?', 'advice'],
-    ['Which one do you mean?', 'no_options'],
+    ['Which fees do you mean?', 'no_options'],
     ['Which fees, see https://example.test for the pools?', 'markup'],
+    ['Which change or date should anchor the comparison, and should the periods on each side be 7, 30 or 90 days?', 'no_measure'],
   ];
   const { state, post } = await fixture(t, { script: rejected.map(([question]) => call('clarify', { kind: 'growth', question })) });
   for (const [question] of rejected) {
@@ -255,6 +256,15 @@ test('a clarifying question that fails a check falls back to the fixed copy', as
     assert.notEqual(reply.body.data.answer, question);
   }
   assert.deepEqual(state.clarify.map(entry => entry.reason), rejected.map(([, reason]) => reason));
+});
+
+test('a visitor who named no time span is asked for the period explicitly', async t => {
+  const vague = 'Which measure: pool balances or public shielding volume, compared with the preceding 30 days?';
+  const explicit = 'Which measure: pool balances or public shielding volume, and which period: the last 30 or 90 days?';
+  const { state, post } = await fixture(t, { script: [call('clarify', { kind: 'measure_or_window', question: vague }), call('clarify', { kind: 'measure_or_window', question: explicit })] });
+  assert.match((await post({ ...body, question: 'Which pool grew the fastest?' })).body.data.answer, /^Which measure and which periods should I compare/);
+  assert.equal((await post({ ...body, question: 'Which pool grew the fastest?' })).body.data.answer, explicit);
+  assert.deepEqual(state.clarify.map(entry => entry.reason ?? entry.outcome), ['no_period', 'written']);
 });
 
 test('numbers and identifiers the visitor wrote may be repeated in a clarifying question', async t => {

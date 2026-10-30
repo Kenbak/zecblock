@@ -132,7 +132,8 @@ const growthClarification = {
 const measureClarification = { en: 'Which measure and which periods should I compare? For example: transaction counts, shielded transaction counts, fees, pool balances or public shielding/deshielding volume, and the two date ranges to compare.' };
 // Choices a clarifying question may offer: what the public catalogue holds.
 const clarifyChoices = 'measures: transaction counts, shielded transaction counts, transaction or block fees, block counts, pool balances, public shielding/deshielding volume, cross-chain swap volume or counts, transparent address activity; pools: Orchard, Ironwood, Sapling, Sprout, transparent; windows: the last 7, 30 or 90 days, the past year, a named month or year, or two equal windows to compare';
-const clarifyTerm = /\b(?:transactions?|shielded|transparent|fees?|blocks?|balances?|pools?|orchard|ironwood|sapling|sprout|shielding|deshielding|flows?|swaps?|volumes?|address(?:es)?|days?|weeks?|months?|years?|periods?|windows?|baselines?|comparisons?|dates?|ranges?)\b/gi;
+const clarifyMeasure = /\b(?:transactions?|shielded|transparent|fees?|blocks?|balances?|pools?|orchard|ironwood|sapling|sprout|shielding|deshielding|flows?|swaps?|volumes?|address(?:es)?)\b/gi;
+const clarifyWindow = /\b(?:days?|weeks?|months?|years?|periods?|windows?|baselines?|comparisons?|dates?|ranges?)\b/gi;
 const clarifyAdvice = /\b(?:buy|sell|invest(?:s|ed|ing|ment|ors?)?|prices?|bullish|bearish|moon|pump|dump|guarantee[sd]?|predict(?:s|ed|ion)?|forecasts?)\b/i;
 const clarifyIdentifier = /\b(?:t1|t3|u1|zs1)[A-Za-z0-9]{20,}\b|\b[0-9a-fA-F]{64}\b/g;
 const clarifyNames = new Set('zcash zec zecblock zift orchard ironwood sapling sprout usd utc nu'.split(' '));
@@ -159,8 +160,14 @@ function checkedClarification(raw, { locale = 'en', question = '', history = [] 
       const lower = word.toLowerCase().replace(/['’]s$/, '');
       if (!clarifyNames.has(lower) && !clarifyOpeners.has(lower) && !vocabulary.has(lower)) return { reason: 'unknown_name' };
     }
-    // Concrete options: at least two catalogue terms (a measure, pool or window).
-    if (new Set([...text.matchAll(clarifyTerm)].map(([term]) => term.toLowerCase().replace(/(?:es|s)$/, ''))).size < 2) return { reason: 'no_options' };
+    // Concrete options: at least two catalogue terms, one of them a measure or
+    // pool, so a question about dates alone never leaves the measure open.
+    const terms = pattern => new Set([...text.matchAll(pattern)].map(([term]) => term.toLowerCase().replace(/(?:es|s)$/, '')));
+    const measures = terms(clarifyMeasure);
+    if (!measures.size) return { reason: 'no_measure' };
+    if (measures.size + terms(clarifyWindow).size < 2) return { reason: 'no_options' };
+    // A visitor who named no time span is asked for one in so many words.
+    if (!/\b(?:periods?|windows?|dates?|days?|weeks?|months?|years?|today|yesterday|20\d\d)\b/i.test(asked) && !/\b(?:periods?|windows?|dates?)\b/i.test(text)) return { reason: 'no_period' };
   }
   return { text };
 }

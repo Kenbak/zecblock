@@ -168,7 +168,7 @@ export function BlockFactsCard({
           five short facts fill the same width five boxes would take instead
           of two. `order` resets to source order at sm+ via `sm:order-none`.
         */}
-        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-start">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-stretch">
           <FactBox fit className="order-1 sm:order-none fact-box-hash" label="Block Hash" tooltip="Unique cryptographic identifier for this block">
             <CopyableHash value={data.hash} colorClass="text-primary" />
           </FactBox>

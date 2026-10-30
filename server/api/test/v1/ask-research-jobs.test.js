@@ -250,15 +250,15 @@ test('cached SQL still checks current admission and consumes query allowance; st
  ready=true;checkpoint.tip_hash='b'.repeat(64);await service.execute(query,{redis});assert.equal(rawQueries,2);assert.equal(admissions,4);await service.close();
 });
 
-test('real Redis work admission retains 5/minute and 20/day without incrementing denied or historical counters',async t=>{
+test('real Redis work admission enforces explicit minute/day limits without incrementing denied or historical counters',async t=>{
  const redis=await fixture(t),{ADMIT_WORK}=require('../../v1/lib/ask-budget');
  const keys=['ask:{fixture}:work:ai:minute','ask:{fixture}:work:ai:day','ask:{fixture}:legacy:minute','ask:{fixture}:legacy:day'];
  await redis.set(keys[2],'0');await redis.set(keys[3],'0');
- for(let i=0;i<5;i++)assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:[]})),1);
- assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:[]})),-1);
+ for(let i=0;i<5;i++)assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:['5','20']})),1);
+ assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:['5','20']})),-1);
  assert.equal(await redis.get(keys[0]),'5');assert.equal(await redis.get(keys[1]),'5');
  await redis.set(keys[1],'20');
- assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:[]})),-2);
+ assert.equal(Number(await redis.eval(ADMIT_WORK,{keys,arguments:['5','20']})),-2);
  assert.equal(await redis.get(keys[0]),'5');assert.equal(await redis.get(keys[1]),'20');
  assert.deepEqual(await redis.mGet(keys.slice(2)),['0','0']);
 });

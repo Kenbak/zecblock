@@ -234,7 +234,7 @@ The NU7 height comes from the serving node's upgrade schedule stored on the late
 
 | Story (`type`, key) | When it qualifies | Data |
 |---|---|---|
-| Countdown (`nu7`, `nu7:countdown:<h>`) | 864–1,152 blocks remain (about a day at 75 s) | tip height; NU7 node readiness from the node census (protocol 170190+, self-reported; line omitted if unavailable) |
+| Countdown (`nu7`, `nu7:countdown:<h>`) | 864–1,152 blocks remain (about a day at 75 s) | tip height; NU7 node readiness from the node census (protocol 170190+, self-reported; line omitted if unavailable). Census source is `NODE_SOURCE`, defaulting to `crawl` like the mainnet API |
 | NU7 is live (`nu7`, `nu7:activation:<h>`) | activation block has 3 confirmations and is under 12 h old | activation block, pool attribution, last 20 min of header times (pulse card) |
 | First 24 hours (`nu7`, `nu7:first_day:<h>`) | 24–48 h after activation | blocks and average header interval in the 24 h after vs before activation |
 | Block milestones (`nu7`, `nu7:blocks:<n>`) | 10k/25k/50k/100k blocks since activation, within 24 h of the crossing block and no later than 30 days after activation | measured header-time span vs `n × 75 s` |

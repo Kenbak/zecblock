@@ -148,6 +148,7 @@ test('NU7 reader: node schedule, canonical joins, exact NSM and countdown readin
 }, async t => {
   const { Client } = require('pg');
   const { nu7Candidates } = require('../bot/lib/nu7-source');
+  process.env.NODE_SOURCE = 'peer'; // fixture nodes use the peer census
   const db = new Client(process.env.TEST_ACTIVITY_DATABASE_URL ? { connectionString: process.env.TEST_ACTIVITY_DATABASE_URL } : { host: '/tmp', database: 'postgres' });
   await db.connect();
   t.after(async () => { await db.query('ROLLBACK'); await db.end(); });

@@ -77,13 +77,15 @@ function budgetConfig(env, { authenticatedStaging = false } = {}) {
     || !staging && (!env.ASK_TURNSTILE_SECRET || !env.ASK_TURNSTILE_HOSTNAME || !env.ASK_TURNSTILE_SITE_KEY)) return null;
   return { dailyBudget, monthlyBudget, inputRate, outputRate, abuseSecret: env.ASK_ABUSE_SECRET, challengeSecret: staging ? null : env.ASK_TURNSTILE_SECRET, challengeHostname: staging ? null : env.ASK_TURNSTILE_HOSTNAME, siteKey: staging ? null : env.ASK_TURNSTILE_SITE_KEY, ...(staging ? { authenticatedStaging: true } : {}) };
 }
+// Planning calls that reason need room for reasoning tokens inside the cap.
+const MAX_OUTPUT_TOKENS = 4000;
 function maximumCost(config, body) {
   const bytes = Buffer.byteLength(body, 'utf8');
   if (bytes > 48000) throw new Error('Context too large');
   let request;
   try { request = JSON.parse(body); } catch { /* Legacy text callers reserve the default cap. */ }
   const caps = [request?.max_completion_tokens, request?.max_tokens].filter(value => value !== undefined);
-  if (caps.some(value => !Number.isInteger(value) || value < 1 || value > 1500)) throw new Error('Invalid provider output allowance');
+  if (caps.some(value => !Number.isInteger(value) || value < 1 || value > MAX_OUTPUT_TOKENS)) throw new Error('Invalid provider output allowance');
   const outputTokens = Math.max(500, ...caps);
   // UTF-8 bytes conservatively bound text tokens; overhead covers provider
   // wrappers and schema handling. Output includes reasoning within token cap.

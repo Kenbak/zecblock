@@ -36,21 +36,34 @@ function providerConfig(env, options) {
   const budget = budgetConfig(env, options);
   const dailyCalls = Number(env.ASK_DAILY_CALL_LIMIT);
   const reasoningEffort = env.ASK_REASONING_EFFORT || null;
+  // Routing and SQL drafting reason a little by default; prose stays at the
+  // base effort. ASK_PLANNING_REASONING_EFFORT=none turns it off.
+  const planningEffort = env.ASK_PLANNING_REASONING_EFFORT || (reasoningEffort ? 'low' : null);
+  const efforts = ['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'];
   if (!budget || env.ASK_ENABLED !== 'true' || !['openai', 'anthropic'].includes(env.ASK_PROVIDER)
     || !env.ASK_API_KEY || !env.ASK_MODEL || !Number.isInteger(dailyCalls) || dailyCalls < 1 || dailyCalls > 10000
-    || reasoningEffort && (env.ASK_PROVIDER !== 'openai' || !['none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max'].includes(reasoningEffort))) return null;
-  return { provider: env.ASK_PROVIDER, key: env.ASK_API_KEY, model: env.ASK_MODEL, dailyCalls, reasoningEffort, ...budget };
+    || [reasoningEffort, planningEffort].some(effort => effort && (env.ASK_PROVIDER !== 'openai' || !efforts.includes(effort)))) return null;
+  return { provider: env.ASK_PROVIDER, key: env.ASK_API_KEY, model: env.ASK_MODEL, dailyCalls, reasoningEffort, planningEffort, ...budget };
 }
 
-function outputTokenLimit(task) {
-  return task?.name === 'research_sql' || task?.name === 'contextual_intent' && task.schema?.properties?.sql ? 1500 : 500;
+// Planning tasks choose what to run: the route and any SQL. They may reason.
+const PLANNING_TASKS = new Set(['select_analysis', 'contextual_intent', 'research_sql']);
+function effortFor(config, task) {
+  return PLANNING_TASKS.has(task?.name) ? config?.planningEffort ?? config?.reasoningEffort ?? null : config?.reasoningEffort ?? null;
+}
+function outputTokenLimit(task, config) {
+  const sql = task?.name === 'research_sql' || task?.name === 'contextual_intent' && task.schema?.properties?.sql;
+  // Reasoning tokens count inside the cap, so reasoning calls get more room.
+  const reasoning = !['none', null].includes(effortFor(config, task));
+  return sql ? reasoning ? 4000 : 1500 : reasoning ? 2500 : 500;
 }
 
 async function interpret(config, input, signal, fetchImpl = fetch, task = { name: 'select_analysis', schema: jsonSchema, instruction, validator: outputSchema }, beforeRequest) {
   const anthropic = config.provider === 'anthropic';
   // SQL drafts need room for bounded CTEs, comparisons and result metadata.
   // Only server-selected SQL tasks receive this allowance; prose stays compact.
-  const outputTokens = outputTokenLimit(task);
+  const outputTokens = outputTokenLimit(task, config);
+  const effort = effortFor(config, task);
   const body = anthropic ? {
     model: config.model, max_tokens: outputTokens, system: task.instruction,
     messages: [{ role: 'user', content: JSON.stringify(input) }],
@@ -58,7 +71,7 @@ async function interpret(config, input, signal, fetchImpl = fetch, task = { name
     tool_choice: { type: 'tool', name: task.name, disable_parallel_tool_use: true },
   } : {
     model: config.model, max_completion_tokens: outputTokens, store: false, service_tier: 'default',
-    ...(config.reasoningEffort ? { reasoning_effort: config.reasoningEffort } : {}),
+    ...(effort ? { reasoning_effort: effort } : {}),
     messages: [{ role: 'system', content: task.instruction }, { role: 'user', content: JSON.stringify(input) }],
     response_format: { type: 'json_schema', json_schema: { name: task.name, strict: true, schema: task.schema } },
   };
@@ -136,7 +149,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
       const ensureSQL=async()=>{sqlWork ||= admitWork(redis,manual?researchConfig:config,req,'sql');await sqlWork;};
       const run = async (input, task) => {
         await ensureAI();
-        return askStage('answer', () => interpret(config, input, AbortSignal.any([signal, AbortSignal.timeout(outputTokenLimit(task) > 500 ? 30000 : 15000)]), dependencies.fetch || fetch, task, body => askStage('unavailable', () => reserve(redis, config, body))));
+        return askStage('answer', () => interpret(config, input, AbortSignal.any([signal, AbortSignal.timeout(outputTokenLimit(task, config) > 1500 ? 45000 : outputTokenLimit(task, config) > 500 ? 30000 : 15000)]), dependencies.fetch || fetch, task, body => askStage('unavailable', () => reserve(redis, config, body))));
       };
       const requestAnalytics=analytics?{...analytics,
         execute:async(...args)=>{await ensureSQL();return analytics.execute(...args);},
@@ -266,7 +279,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
         const explainMeasurements=direct?.spec&&/^explain this (?:page|view|chart)[?.!]?$/i.test(parsed.data.question.trim());
         if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI'};
       }
-      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort] }, requestAnalytics);
+      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort, config.planningEffort] }, requestAnalytics);
     });
   });
   router.post('/', limiter, async (req, res) => {

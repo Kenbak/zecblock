@@ -39,7 +39,7 @@ test('the comparison runs both modes routing-only and grades routes, steps and c
   assert.equal(find('agent', 'offtopic_pasta').route, 'decline'); assert.equal(find('agent', 'offtopic_pasta').passed, true);
   assert.equal(summary.modes.agent.offTopicDeclined, '1/1'); assert.equal(summary.modes.agent.avgAgentSteps, 1);
   assert.equal(summary.modes.classifier.wrongRefusals, 0);
-  assert.equal(find('agent', 'offtopic_pasta').costUSD, (6000 * 0.25 + 400 * 0.75) / 1e6);
+  assert.equal(find('agent', 'offtopic_pasta').costUSD, (6000 * 0.10 + 400 * 0.50) / 1e6);
   assert.ok(summary.spentUSD > 0);
   const written = fs.readFileSync(out, 'utf8');
   assert.ok(!written.includes('sk-fixture') && !printed.join('\n').includes('sk-fixture'), 'the key never reaches output');

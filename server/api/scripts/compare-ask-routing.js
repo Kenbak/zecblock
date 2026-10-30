@@ -30,7 +30,15 @@ const { createAnalyticsClient } = require('../v1/lib/ask-analytics-client');
 const { coreCatalogue } = require('../v1/lib/ask-core-catalogue');
 const { compileResearchSQL } = require('../v1/lib/ask-research-sql');
 
-const PRICE = { input: 0.25, output: 0.75 }; // USD per million tokens, gpt-6-luna standard tier
+// Standard-tier USD per million tokens (input, cached input, output), from
+// OpenAI's pricing page on 2026-10-30. Cached input is billed separately.
+const PRICES = {
+  'gpt-6-luna': [0.10, 0.01, 0.50], 'gpt-6.1-terra': [1.00, 0.05, 5.00], 'gpt-6-sol': [2.00, 0.20, 10.00],
+  'gpt-6.1-sol': [2.00, 0.10, 10.00], 'gpt-6-astra': [10.00, 1.00, 50.00],
+};
+const priceOf = model => PRICES[model] || (() => { throw Error(`No price for ${model}`); })();
+// "omit" sends no reasoning_effort (models that reject "none").
+const effortEnv = (value, fallback) => value === 'omit' ? undefined : value || fallback;
 const intentRoutes = { research: 'sql', analytics: 'sql', analysis: 'chart', knowledge: 'knowledge', blocks: 'block', transactions: 'transaction', transfers: 'transfers', clarify_growth: 'clarify', unsupported: 'decline', needs_query: 'handoff' };
 const toolRoutes = { run_sql: 'sql', open_chart: 'chart', explain_topic: 'knowledge', get_block: 'block', get_transaction: 'transaction', clarify: 'clarify', decline: 'decline', needs_query: 'handoff' };
 const OFFLINE = 'offline-sql-reached-execution';
@@ -61,9 +69,9 @@ function casesFor({ sets, ids }) {
 function baseEnv(mode, key) {
   return {
     ASK_ENABLED: 'true', ASK_PROVIDER: 'openai', ASK_MODEL: process.env.ASK_MODEL || 'gpt-6-luna',
-    ASK_REASONING_EFFORT: process.env.ASK_REASONING_EFFORT || 'none', ASK_PLANNING_REASONING_EFFORT: process.env.ASK_PLANNING_REASONING_EFFORT || 'low',
+    ASK_REASONING_EFFORT: effortEnv(process.env.ASK_REASONING_EFFORT, 'none'), ASK_PLANNING_REASONING_EFFORT: effortEnv(process.env.ASK_PLANNING_REASONING_EFFORT, 'low'),
     ASK_DAILY_CALL_LIMIT: '3000', ASK_DAILY_BUDGET_USD: '25', ASK_MONTHLY_BUDGET_USD: '400',
-    ASK_MAX_INPUT_USD_PER_MILLION: '0.25', ASK_MAX_OUTPUT_USD_PER_MILLION: '0.75',
+    ASK_MAX_INPUT_USD_PER_MILLION: String(Math.max(0.25, priceOf(process.env.ASK_MODEL || 'gpt-6-luna')[0])), ASK_MAX_OUTPUT_USD_PER_MILLION: String(Math.max(0.75, priceOf(process.env.ASK_MODEL || 'gpt-6-luna')[2])),
     ASK_API_KEY: key, ASK_ABUSE_SECRET: 'e'.repeat(32),
     ASK_TURNSTILE_SECRET: 'eval-only', ASK_TURNSTILE_HOSTNAME: 'eval.invalid', ASK_TURNSTILE_SITE_KEY: 'eval-only',
     ASK_RESEARCH_ENABLED: 'true', ASK_RESEARCH_EXTENDED: 'true', ASK_RESEARCH_JOBS_ENABLED: 'false', ASK_ANALYTICS_STORE: 'logical_public_core',
@@ -88,7 +96,7 @@ function offlineAnalytics() {
 // route, one repair and a caption; each call at about 6K input and the full
 // 4K output cap.
 const WORST_CALLS = { agent: 4, classifier: 3 };
-const WORST_CALL_USD = (6000 * PRICE.input + 4000 * PRICE.output) / 1e6;
+const WORST_CALL_USD = (6000 * PRICES['gpt-6-luna'][0] + 4000 * PRICES['gpt-6-luna'][2]) / 1e6;
 function estimate(config, cases) {
   const worst = config.modes.reduce((sum, mode) => sum + cases.length * (WORST_CALLS[mode] || 4) * WORST_CALL_USD, 0);
   return { kind: 'ask-routing-estimate', questions: cases.length * config.modes.length, worstCaseUSD: Number(worst.toFixed(2)), capUSD: config.maxUSD };
@@ -120,7 +128,9 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
       const text = await response.text();
       let data = null; try { data = JSON.parse(text); } catch { /* counted below */ }
       const usage = data?.usage || {};
-      const cost = ((usage.prompt_tokens || 0) * PRICE.input + (usage.completion_tokens || 0) * PRICE.output) / 1e6;
+      const [inputPrice, cachedPrice, outputPrice] = priceOf(request.model);
+      const cachedTokens = usage.prompt_tokens_details?.cached_tokens || 0;
+      const cost = (((usage.prompt_tokens || 0) - cachedTokens) * inputPrice + cachedTokens * cachedPrice + (usage.completion_tokens || 0) * outputPrice) / 1e6;
       spent += cost;
       const agentStep = request.response_format?.json_schema?.name === 'agent_step';
       const task = agentStep ? 'agent_step' : request.response_format?.json_schema?.name;
@@ -191,7 +201,7 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
     log(`${mode.padEnd(10)} ${record.passed ? 'PASS' : 'FAIL'} ${item.id.padEnd(40)} route=${route} ${status}${record.code ? ' ' + record.code : ''} ${latencyMs}ms $${record.costUSD}`);
   }
   await analytics.close?.();
-  const summary = { kind: 'ask-routing-comparison', dataMode, grading: live ? 'routes, verified results and narration' : 'routes, compiled and reviewed SQL, clarify/decline copy; research results not executed', model: baseEnv('agent', '').ASK_MODEL, planningEffort: baseEnv('agent', '').ASK_PLANNING_REASONING_EFFORT, spentUSD: Number(spent.toFixed(4)), modes: {} };
+  const summary = { kind: 'ask-routing-comparison', dataMode, grading: live ? 'routes, verified results and narration' : 'routes, compiled and reviewed SQL, clarify/decline copy; research results not executed', model: baseEnv('agent', '').ASK_MODEL, planningEffort: baseEnv('agent', '').ASK_PLANNING_REASONING_EFFORT ?? 'omitted', proseEffort: baseEnv('agent', '').ASK_REASONING_EFFORT ?? 'omitted', prices: priceOf(baseEnv('agent', '').ASK_MODEL), spentUSD: Number(spent.toFixed(4)), modes: {} };
   for (const mode of config.modes) {
     const rows = records.filter(record => record.mode === mode && !record.skipped);
     const offTopic = rows.filter(record => cases.find(item => item.id === record.id)?.offTopic);
@@ -211,6 +221,7 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
       errors: rows.filter(record => record.status !== 200 && !(record.code === 'ask-source' && dataMode === 'offline')).length,
       avgAgentSteps: Number(mean(rows.map(record => record.steps)).toFixed(2)), avgModelCalls: Number(mean(rows.map(record => record.calls)).toFixed(2)),
       avgLatencyMs: Math.round(mean(rows.map(record => record.latencyMs))), medianLatencyMs: rows.map(record => record.latencyMs).sort((a, b) => a - b)[Math.floor(rows.length / 2)] || 0,
+      p95LatencyMs: rows.map(record => record.latencyMs).sort((a, b) => a - b)[Math.min(rows.length - 1, Math.floor(rows.length * 0.95))] || 0,
       costPerQuestionUSD: Number(mean(rows.map(record => record.costUSD)).toFixed(5)), costUSD: Number(rows.reduce((sum, record) => sum + record.costUSD, 0).toFixed(4)),
     };
   }

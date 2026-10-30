@@ -57,6 +57,12 @@ test('block milestones compare the measured time with the old target', () => {
   assert.equal(story.key, 'nu7:blocks:10000');
   assert.match(story.content, /It took 2 days 21 hours\. At the old 75-second target, 10,000 blocks would have taken 8 days 16 hours\./);
   assert.equal(s.blockMilestoneStory({ nu7Height: H, tip: { height: H + 9998, timestamp: T }, start: { timestamp: T }, crossing, now: at(T) }), null);
+  // Launch news only: a crossing more than 30 days after activation is not posted.
+  const late = { height: H + 99999, timestamp: T + 31 * 86400 };
+  assert.equal(s.blockMilestoneStory({ nu7Height: H, tip: { height: H + 100000, timestamp: late.timestamp }, start: { height: H - 1, timestamp: T - 75 },
+    crossing: late, now: at(late.timestamp + 60) }), null);
+  assert.equal(s.blockMilestoneStory({ nu7Height: H, tip: { height: H + 300000, timestamp: T + 90 * 86400 }, start: { height: H - 1, timestamp: T - 75 },
+    crossing: { height: H + 249999, timestamp: T + 89 * 86400 }, now: at(T + 89 * 86400) }), null, 'no level beyond the launch month');
   assert.equal(s.blockMilestoneStory({ nu7Height: H, tip: { height: H + 10050, timestamp: T }, start: { height: H - 1, timestamp: T - 80 }, crossing, now: at(T + 250000 + 90000) }), null, 'stale');
 });
 

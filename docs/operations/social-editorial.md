@@ -237,10 +237,11 @@ The NU7 height comes from the serving node's upgrade schedule stored on the late
 | Countdown (`nu7`, `nu7:countdown:<h>`) | 864–1,152 blocks remain (about a day at 75 s) | tip height; NU7 node readiness from the node census (protocol 170190+, self-reported; line omitted if unavailable) |
 | NU7 is live (`nu7`, `nu7:activation:<h>`) | activation block has 3 confirmations and is under 12 h old | activation block, pool attribution, last 20 min of header times (pulse card) |
 | First 24 hours (`nu7`, `nu7:first_day:<h>`) | 24–48 h after activation | blocks and average header interval in the 24 h after vs before activation |
-| Block milestones (`nu7`, `nu7:blocks:<n>`) | 10k/25k/50k/100k/250k/500k/1M blocks since activation, within 24 h of the crossing block | measured header-time span vs `n × 75 s` |
+| Block milestones (`nu7`, `nu7:blocks:<n>`) | 10k/25k/50k/100k blocks since activation, within 24 h of the crossing block and no later than 30 days after activation | measured header-time span vs `n × 75 s` |
 | NSM milestones (`nu7`, `nu7:nsm:<zec>`) | reserve growth since the last pre-activation observation crosses 1/10/25/… ZEC, within 24 h of the first crossing | node NSM counter, exact zatoshi (BigInt); growth includes every reserve inflow |
 | Halving countdown (`halving`, `halving:<height>:<n>d`) | estimated days to the next halving within a day of 730/365/180/100/30/7/1 | consensus eras; subsidy `floor(12.5 ZEC × spacing / 150) >> halvings` |
 
+Block-speed stories (first 24 hours, block milestones) are launch news and stop 30 days after activation; NSM milestones continue indefinitely.
 Selection: "NU7 is live" uses protected lane 950 and is collected even while pacing; the countdown uses lane 700.
 Other NU7 stories share two slots per UTC day (`nu7-daily-cap`); halving uses the per-type daily cap. Every story
 carries `evidence.eventAt`, which `eventTime` uses for the activation watermark. Source replies scope each claim

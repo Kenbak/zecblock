@@ -20,7 +20,10 @@ const COUNTDOWN_BLOCKS = { min: 864, max: 1152 };
 const ACTIVATION_MAX_AGE = 12 * HOUR;
 const MILESTONE_MAX_AGE = DAY;
 const ACTIVATION_CONFIRMATIONS = 3;
-const BLOCK_LEVELS = [10_000, 25_000, 50_000, 100_000, 250_000, 500_000, 1_000_000];
+// Block-speed stories are launch news: they stop a month after activation.
+// NSM growth keeps going, since the reserve keeps accumulating.
+const SPEED_STORY_WINDOW = 30 * DAY;
+const BLOCK_LEVELS = [10_000, 25_000, 50_000, 100_000];
 const NSM_LEVELS_ZEC = [1, 10, 25, 50, 100, 250, 500, 1_000, 2_500, 5_000, 10_000, 25_000, 50_000, 100_000];
 
 const iso = seconds => new Date(seconds * 1000).toISOString();
@@ -109,7 +112,7 @@ function blockMilestoneStory({ nu7Height, tip, start, crossing, now }) {
   if (!level || !crossing || crossing.height !== nu7Height + level - 1) return null;
   if (now.getTime() / 1000 - crossing.timestamp > MILESTONE_MAX_AGE) return null;
   const elapsed = crossing.timestamp - start.timestamp;
-  if (!(elapsed > 0)) return null;
+  if (!(elapsed > 0) || elapsed > SPEED_STORY_WINDOW) return null;
   const old = level * OLD_TARGET;
   const content = `${MARK} Zcash has mined ${f.number(level)} blocks since NU7 activated.\n\nIt took ${duration(elapsed)}. `
     + `At the old ${OLD_TARGET}-second target, ${f.number(level)} blocks would have taken ${duration(old)}.\n\n${BASE}/network/block-speed`;
@@ -184,4 +187,4 @@ function nsmMilestoneStory({ nu7Height, baseline, current, crossing, daily, now 
 }
 
 module.exports = { halvingCountdownStory, countdownStory, activationStory, firstDayStory, blockMilestoneStory, nsmMilestoneStory, duration,
-  BLOCK_LEVELS, NSM_LEVELS_ZEC, COUNTDOWN_BLOCKS };
+  BLOCK_LEVELS, NSM_LEVELS_ZEC, COUNTDOWN_BLOCKS, SPEED_STORY_WINDOW };

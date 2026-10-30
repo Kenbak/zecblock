@@ -56,13 +56,14 @@ async function run(args,env,{request=fetch,worker=null,emit=record=>console.log(
   if(!client){client=require('../v1/lib/ask-analytics-client').createAnalyticsClient(env);ownedClient=true;}
   if(!client?.jobsEnabled)throw Error('Private verification worker required');
   for(const item of config.cases){
-   const started=now(),maximumProviderAttempts=item.kind==='research'?4:3;let ticket=null,checks=[],passed=false,before=null,fatal=false,diagnostics=null,dimensions={result:item.kind==='research'?'not-checked':'not-applicable',narrative:'not-checked',expectedOutcome:item.kind==='research'?'not-applicable':'not-checked'};
+   const started=now(),maximumProviderAttempts=item.kind==='research'?5:3;let ticket=null,checks=[],passed=false,before=null,fatal=false,diagnostics=null,dimensions={result:item.kind==='research'?'not-checked':'not-applicable',narrative:'not-checked',expectedOutcome:item.kind==='research'?'not-applicable':'not-checked'};
    try{
     await attest();before=identity.providerAttempts;
     // /chat selection includes the SQL draft and at most one SQL repair.
     // Research explanation can also need its one budgeted format repair.
     // Reserve the whole possible path inside the unchanged 12-attempt cap.
     // Wrongly routed nonresearch jobs are cancelled.
+    // A research caption may be restated once after a failed number check.
     // With ASK_AGENT=true a decline or clarification can follow two repaired
     // steps, so nonresearch cases allow three; research stays at three steps
     // plus the caption.

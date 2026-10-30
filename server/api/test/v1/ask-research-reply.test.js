@@ -16,20 +16,21 @@ const payoutTemplate='The first of 4 returned rows is t1MKn34KBa8Xh4g8qU8psibBXv
 
 test('payout share regression: a failed caption falls back to a readable fact template, never a bare receipt',async()=>{
  const before=structuredClone(payout);let calls=0;
- for(const summary of ['The leading payout address found 285 blocks.','The leader holds {{row_a_c}} of {{total_blocks}} blocks.','{{row_a_b}} {{row_a_c}} blocks.','The leader holds {{row_a_b}} ZEC.']){
+ for(const summary of ['The leading payout address found 999 blocks.','The leader holds {{row_a_c}} of {{total_blocks}} blocks.','{{row_a_b}} {{row_a_c}} blocks.','The leader holds {{row_a_b}} ZEC.']){
   const reply=await researchReply(payout,{question:'Who received the most payouts in the last 1,000 blocks?'},async()=>{calls++;return {finding:summary};},'en');
   assert.equal(reply.answer,payoutTemplate,summary);assert.doesNotMatch(reply.answer,/Your query returned|table below/);
   assert.deepEqual(reply.research,before);assert.equal(reply.evidenceKey,before.fingerprint);assert.ok(reply.sources.length);
  }
- // Exactly one provider call per reply: there is no paid repair retry.
- assert.equal(calls,4);assert.deepEqual(payout,before);
+ // One restatement per reply (the fixture repeats itself), then the template.
+ assert.equal(calls,8);assert.deepEqual(payout,before);
 });
 
 test('payout share regression: a valid caption uses only checked facts and the column-label unit',async()=>{
  let seen;
  const reply=await researchReply(payout,{question:'Who received the most payouts?',history:[]},async(input,task)=>{
   seen=input;assert.equal(task.name,'research_caption');
-  assert.equal(task.validator.safeParse({finding:'The leader found 285 blocks.'}).success,false);
+  // Literal numbers are allowed by the schema and verified after writing.
+  assert.equal(task.validator.safeParse({finding:'The leader found 285 blocks.'}).success,true);
   assert.equal(task.validator.safeParse({finding:'Ok.',observations:[]}).success,false);
   assert.equal(task.validator.safeParse({finding:'{{row_a_b}} blocks.',interpretation:'Top {{row_a_a}} may dominate.'}).success,false,'no placeholders in interpretation');
   return task.validator.parse({finding:'{{row_a_a}} leads with {{row_a_b}} blocks, {{ratio_b}} the runner-up, and the top three addresses produced {{top_three_share_c}} of all blocks in the window.',interpretation:'Payouts look concentrated in a handful of addresses, though payout addresses are not proven pool identities, so this may overstate or understate real pool concentration.'});
@@ -69,7 +70,7 @@ test('payout share regression: a rejected interpretation is dropped while the ch
   assert.equal(reply.answer,expected,interpretation);
  }
  // A failed finding falls back to the template; a valid interpretation is kept.
- const fallback=await researchReply(payout,{question:'Who received the most payouts?'},async()=>({finding:'The leader found 285 blocks.',interpretation:'Payouts look concentrated, though payout addresses are not proven pool identities.'}),'en');
+ const fallback=await researchReply(payout,{question:'Who received the most payouts?'},async()=>({finding:'The leader found 999 blocks.',interpretation:'Payouts look concentrated, though payout addresses are not proven pool identities.'}),'en');
  assert.equal(fallback.answer,payoutTemplate+' Payouts look concentrated, though payout addresses are not proven pool identities.');
 });
 
@@ -132,7 +133,9 @@ test('monthly fees time series: exact first-to-last change, percent change and l
  assert.equal(seen.facts.change_b,'+40,319,700 zatoshis');assert.equal(seen.facts.step_b_from,'June 2026');
  assert.match(seen.notes.change_pct_b,/rounded/);assert.equal(seen.facts.ratio_b,undefined,'a time series is not a ranking');
  assert.deepEqual(seen.caveats,['Shielded component flags show which pools a transaction touches, not private amounts.']);
- const fallback=await researchReply(result,{},async()=>({finding:'Fees rose 65.8%.'}),'en');
+ // 65.8% is the change fact, so a literal copy is verified; an invented figure is not.
+ assert.equal((await researchReply(result,{},async()=>({finding:'Fees rose 65.8%.'}),'en')).answer,'Fees rose 65.8%.');
+ const fallback=await researchReply(result,{},async()=>({finding:'Fees rose 71.2%.'}),'en');
  assert.equal(fallback.answer,'Across 6 returned periods from April 2026 to September 2026, fees increased from 61,234,500 zatoshis to 101,554,200 zatoshis (+40,319,700 zatoshis, +65.8%). The largest single step was +28,755,035 zatoshis, from June 2026 to July 2026.');
  // Descending order reads chronologically; exact decimals do not drift.
  const drift=research('SELECT day,rate_pct',[['day','text'],['rate_pct','number']],[['2026-01-03','0.3'],['2026-01-02','0.2'],['2026-01-01','0.1']]);
@@ -178,14 +181,14 @@ test('dates: strict UTC-midnight wires become readable; a month-labelled first-d
  assert.match(researchFacts({...monthly,columns:[{key:'c0',label:'day',type:'text'},monthly.columns[1]]},[],'en').facts.row_a_a,/Sep 1, 2025/);
 });
 
-test('findings reject literal numbers, calendar names, tables and invented placeholders without a second call',async()=>{
+test('findings reject unsupported numbers, calendar names, tables and invented placeholders after one restatement',async()=>{
  const result=research('SELECT date,shielded_transactions FROM activity_daily ORDER BY date',[['date','text'],['shielded_transactions','number']],[['2025-09-01','17451'],['2025-10-01','53175']]);
  const template=researchTemplate(result,researchFacts(result,[],'en'));
  assert.equal(template,'Across 2 returned periods from Sep 1, 2025 to Oct 1, 2025, shielded transactions increased from 17,451 to 53,175 (+35,724, +204.7%).');
- for(const summary of ['March had the most shielded transactions at {{max_b}}.','Shielded transactions grew by 35,724.','The leader was t{{row_a_a}} at {{max_b}}.','The peak was in Q three of two thousand twenty-five at {{max_b}}.','The peak was {{max_b}} on Oct ₂₉.','The peak was {{max_b}} in October October.','The peak was {{max_b}} in October , early on.','The peak 以 was {{max_b}}.','Date | Count\n{{row_a_a}} | {{row_a_b}}','The peak was {{row_z_b}}.','The peak was {{max_b}}','No figure is cited here.']){
+ for(const summary of ['March had the most shielded transactions at {{max_b}}.','Shielded transactions grew by 36,000.','Shielded transactions grew by 35,724 ZEC.','The leader was t{{row_a_a}} at {{max_b}}.','The peak was in Q three of two thousand twenty-five at {{max_b}}.','The peak was {{max_b}} on Oct ₂₉.','The peak was {{max_b}} in October October.','The peak was {{max_b}} in October , early on.','The peak 以 was {{max_b}}.','Date | Count\n{{row_a_a}} | {{row_a_b}}','The peak was {{row_z_b}}.','The peak was {{max_b}}','No figure is cited here.']){
   let calls=0;
   const reply=await researchReply(result,{question:'Explain'},async()=>{calls++;return {finding:summary};},'en');
-  assert.equal(calls,1);assert.equal(reply.answer,template,summary);
+  assert.equal(calls,2);assert.equal(reply.answer,template,summary);
  }
  assert.equal((await researchReply(result,{},caption('The peak of {{max_b}} came on {{max_b_at}}.'),'en')).answer,'The peak of 53,175 came on Oct 1, 2025.');
  assert.equal((await researchReply(result,{},caption('The peak came in Oct {{max_b_at}} at {{max_b}}.'),'en')).answer,template,'a word doubled by its fact');
@@ -329,4 +332,23 @@ test('coverage that ends exactly at midnight ends on the day before',async()=>{
  assert.equal(researchFacts(monthly,[],'en').facts.partial_through,'Oct 28, 2026');
  assert.equal(windowFacts(await parse(sql),'en','2026-10-29T00:00:00Z').facts.window,'Nov 1, 2025 – Oct 28, 2026 (to date)');
  assert.equal(windowFacts(await parse(sql),'en','2026-10-29T22:55:02Z').facts.window,'Nov 1, 2025 – Oct 29, 2026 (to date)');
+});
+
+test('free-written findings: every number is verified against the evidence after writing',async()=>{
+ const result=research('SELECT miner,count(*) AS blocks,round(sum(fees)::numeric/100000000,8) AS fees_zec FROM blocks GROUP BY 1 ORDER BY 2 DESC',[['miner','text'],['blocks','number'],['fees_zec','number']],[['t1MKn34KBa8Xh4g8qU8psibBXvURafphVn7','285','0.00026773555385216982'],['t1SqwRAAdSig6dE4EBPLonAait219VmkUjP','172','0.0003']]);
+ const ok=async summary=>(await researchReply(result,{question:'Who mined the most blocks in the last 1,000 blocks?'},caption(summary),'en')).answer;
+ // Copied values, display rounding, identifiers from the result and numbers from the question pass.
+ assert.equal(await ok('t1MKn34KBa8Xh4g8qU8psibBXvURafphVn7 mined 285 blocks, ahead of 172.'),'t1MKn34KBa8Xh4g8qU8psibBXvURafphVn7 mined 285 blocks, ahead of 172.');
+ assert.equal(await ok('The leader mined 285 of the last 1,000 blocks.'),'The leader mined 285 of the last 1,000 blocks.');
+ assert.equal(await ok('The leader mined 285 blocks, {{ratio_b}} the runner-up.'),'The leader mined 285 blocks, 1.66× the runner-up.');
+ // 113 is the server's gap fact (285 - 172), so it is verified too.
+ assert.equal(await ok('The leader mined 113 more blocks than the runner-up.'),'The leader mined 113 more blocks than the runner-up.');
+ // An invented figure, a self-computed difference or an unseen identifier does not.
+ for(const summary of ['The leader mined 300 blocks.','Together the top two mined 457 blocks.','t1Fake00000000000000000000000000000 mined 285 blocks.','The leader mined 285 blocks worth 285 ZEC.'])
+  assert.match(await ok(summary),/^The first of 2 returned rows is t1MKn34K/,summary);
+ // A failed finding is restated once with the reason and the figure; a corrected one is used.
+ const seen=[];
+ const reply=await researchReply(result,{question:'Who mined the most?'},async input=>{seen.push(input.rejectedFinding||null);return {finding:seen.length===1?'The leader mined 300 blocks.':'The leader mined 285 blocks.'};},'en');
+ assert.equal(reply.answer,'The leader mined 285 blocks.');
+ assert.deepEqual(seen[1],{text:'The leader mined 300 blocks.',reason:'unsupported_number',unsupportedFigure:'300'});
 });

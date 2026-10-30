@@ -16,7 +16,7 @@
 // without calling the model.
 //
 // Usage: node scripts/compare-ask-routing.js [--modes=classifier,agent]
-//   [--sets=eval,probes] [--ids=a,b] [--max-usd=3] [--out=file.json]
+//   [--sets=eval,probes] [--ids=a,b] [--max-usd=25] [--out=file.json]
 //   [--routing-only] [--estimate]
 const express = require('express');
 const fs = require('node:fs');
@@ -43,7 +43,7 @@ function options(args) {
   const get = (name, fallback) => args.find(arg => arg.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
   return {
     modes: get('modes', 'classifier,agent').split(','), sets: get('sets', 'eval,probes').split(','),
-    ids: get('ids', '') ? get('ids', '').split(',') : null, maxUSD: Number(get('max-usd', '3')), out: get('out', null),
+    ids: get('ids', '') ? get('ids', '').split(',') : null, maxUSD: Number(get('max-usd', '25')), out: get('out', null),
     routingOnly: args.includes('--routing-only'), estimate: args.includes('--estimate'),
   };
 }

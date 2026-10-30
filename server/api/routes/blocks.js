@@ -6,6 +6,7 @@ const { parseBlockFilters, filteredBlocks, SoftwareQueryError } = require('../li
 
 const express = require('express');
 const { networkName } = require('../lib/network-features');
+const { firstSeenSql } = require('../lib/first-seen');
 const router = express.Router();
 const { getPoolName, getPoolInfo } = require('../mining-pools');
 const { decodeCoinbaseText } = require('../coinbase-data');
@@ -462,7 +463,7 @@ function parseBlockIdentifier(param) {
 async function fetchCanonicalBlockSummary(blockHeight) {
   const result = await pool.query(
     `SELECT height, hash, timestamp, transaction_count, size, miner_address, coinbase_hex,
-            (SELECT first_seen_at FROM block_observations WHERE hash = blocks.hash) as first_seen_at
+            ${firstSeenSql('blocks.hash')} as first_seen_at
      FROM blocks WHERE height = $1`,
     [blockHeight]
   );
@@ -663,7 +664,8 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
         solution,
         total_fees,
         miner_address,
-        coinbase_hex
+        coinbase_hex,
+        ${firstSeenSql('blocks.hash')} as first_seen_at
       FROM blocks
       WHERE ${isHash ? 'hash = $1' : 'height = $1'}`,
       [isHash ? identifier.value : height]
@@ -676,7 +678,7 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
                 miner_address, previous_block_hash, source, detected_at,
                 coinbase_hex, final_sapling_root, final_orchard_root, final_ironwood_root,
                 first_indexed_at, block_metadata, (raw_hex IS NOT NULL) as raw_block_available,
-                (SELECT first_seen_at FROM block_observations WHERE hash = orphaned_blocks.hash) as first_seen_at
+                ${firstSeenSql('orphaned_blocks.hash')} as first_seen_at
          FROM orphaned_blocks WHERE hash = $1`,
         [identifier.value]
       );
@@ -810,8 +812,10 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
       nextBlockHash = nextResult.rows[0]?.hash || null;
     }
 
+    const { first_seen_at: firstSeenAt, ...blockFields } = block;
     const response = {
-      ...block,
+      ...blockFields,
+      firstSeenAt: firstSeenAt || null,
       next_block_hash: nextBlockHash,
       confirmations,
       transactions,

@@ -13,10 +13,10 @@ const usage = { prompt_tokens: 6000, completion_tokens: 400, prompt_tokens_detai
 // the classifier always picks the preset pool chart.
 async function provider(_url, init) {
   const body = JSON.parse(init.body);
-  if (body.tools) {
+  if (body.response_format.json_schema.name === 'agent_step') {
     const question = JSON.parse(body.messages[1].content).question;
-    const decline = /pasta/.test(question);
-    return Response.json({ usage, choices: [{ finish_reason: 'tool_calls', message: { tool_calls: [{ id: 'a', type: 'function', function: { name: decline ? 'decline' : 'run_sql', arguments: JSON.stringify(decline ? { reason: 'off_topic', locale: 'en' } : { sql: orchardSQL, locale: 'en' }) } }] } }] });
+    const call = /pasta/.test(question) ? { tool: 'decline', reason: 'off_topic', locale: 'en' } : { tool: 'run_sql', sql: orchardSQL, locale: 'en' };
+    return Response.json({ usage, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ call }) } }] });
   }
   const spec = { version: 1, metric: 'balances', period: '30d', pool: 'orchard', view: 'line', start: null, end: null };
   return Response.json({ usage, choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ intent: 'analysis', spec, sql: null, blockQuery: null, transactionQuery: null, flowQuery: null, topics: [], locale: 'en' }) } }] });

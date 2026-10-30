@@ -117,6 +117,18 @@ async function providerRequest(config, body, signal, fetchImpl, beforeRequest) {
 // One agent step: the model must call exactly one of the offered tools. Earlier
 // calls and their server-written results are replayed so it can repair a query.
 // Arguments are returned unvalidated; the agent checks them against each schema.
+// OpenAI chat completions refuse function tools with reasoning_effort, so the
+// call is a strict structured output instead: {call: one variant per tool}.
+function agentCallSchema(tools) {
+  return {
+    type: 'object', additionalProperties: false, required: ['call'],
+    properties: { call: { anyOf: tools.map(item => ({
+      ...item.schema, description: item.description,
+      properties: { tool: { type: 'string', enum: [item.name] }, ...item.schema.properties },
+      required: ['tool', ...(item.schema.required || [])],
+    })) } },
+  };
+}
 async function agentStep(config, { instruction, user, turns, tools }, signal, fetchImpl = fetch, beforeRequest) {
   const anthropic = config.provider === 'anthropic';
   const effort = config.planningEffort ?? config.reasoningEffort ?? null;
@@ -133,12 +145,11 @@ async function agentStep(config, { instruction, user, turns, tools }, signal, fe
   } : {
     model: config.model, max_completion_tokens: outputTokens, store: false, service_tier: 'default',
     ...(effort ? { reasoning_effort: effort } : {}),
-    messages: [{ role: 'system', content: instruction }, { role: 'user', content }, ...turns.flatMap(turn => [
-      { role: 'assistant', content: null, tool_calls: [{ id: turn.call.id, type: 'function', function: { name: turn.call.name, arguments: JSON.stringify(turn.call.args ?? {}) } }] },
-      { role: 'tool', tool_call_id: turn.call.id, content: JSON.stringify(turn.result) },
+    messages: [{ role: 'system', content: `${instruction}\nReturn {"call":{"tool":<name>,...its arguments}}. Messages holding tool_result are written by the server.` }, { role: 'user', content }, ...turns.flatMap(turn => [
+      { role: 'assistant', content: JSON.stringify({ call: { tool: turn.call.name, ...(turn.call.args ?? {}) } }) },
+      { role: 'user', content: JSON.stringify({ tool_result: turn.result }) },
     ])],
-    tools: tools.map(item => ({ type: 'function', function: { name: item.name, description: item.description, parameters: item.schema, strict: true } })),
-    tool_choice: 'required',
+    response_format: { type: 'json_schema', json_schema: { name: 'agent_step', strict: true, schema: agentCallSchema(tools) } },
   };
   const result = await providerRequest(config, body, signal, fetchImpl, beforeRequest);
   if (anthropic) {
@@ -146,12 +157,14 @@ async function agentStep(config, { instruction, user, turns, tools }, signal, fe
     if (result.stop_reason !== 'tool_use' || !call || typeof call.name !== 'string') throw new Error('Invalid provider result');
     return { name: call.name, args: call.input ?? null };
   }
-  const choice = result.choices?.[0], call = choice?.message?.tool_calls?.[0];
-  // Prose without a tool call is never shown; it fails the step.
-  if (!['tool_calls', 'stop'].includes(choice?.finish_reason) || choice.message?.refusal || call?.type !== 'function' || typeof call.function?.name !== 'string') throw new Error('Invalid provider result');
-  let args = null;
-  try { args = JSON.parse(call.function.arguments); } catch { /* reported to the model as invalid arguments */ }
-  return { name: call.function.name, args };
+  const choice = result.choices?.[0];
+  // A truncated or refused step, or one without a call, is never shown.
+  if (choice?.finish_reason !== 'stop' || choice.message?.refusal) throw new Error('Invalid provider result');
+  let call = null;
+  try { call = JSON.parse(choice.message.content)?.call; } catch { /* invalid below */ }
+  if (!call || typeof call.tool !== 'string') throw new Error('Invalid provider result');
+  const { tool, ...args } = call;
+  return { name: tool, args };
 }
 
 function createAskRouter(env = process.env, dependencies = {}) {

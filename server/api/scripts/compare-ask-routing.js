@@ -21,6 +21,7 @@ const express = require('express');
 const fs = require('node:fs');
 const { once } = require('node:events');
 const { createAskRouter } = require('../v1/routes/ask');
+const { directSelection } = require('../v1/lib/ask-chat');
 const { cases: evalCases } = require('../v1/lib/ask-research-eval-cases');
 const { probes } = require('../v1/lib/ask-routing-probe-cases');
 const { comparisonQuery, gradeReply } = require('../v1/lib/ask-research-eval');
@@ -111,11 +112,11 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
       const usage = data?.usage || {};
       const cost = ((usage.prompt_tokens || 0) * PRICE.input + (usage.completion_tokens || 0) * PRICE.output) / 1e6;
       spent += cost;
-      const agentStep = !!(request.tools && request.tool_choice);
+      const agentStep = request.response_format?.json_schema?.name === 'agent_step';
       const task = agentStep ? 'agent_step' : request.response_format?.json_schema?.name;
       let route = null;
       try {
-        if (agentStep) route = toolRoutes[data.choices[0].message.tool_calls[0].function.name] || 'unknown-tool';
+        if (agentStep) route = toolRoutes[JSON.parse(data.choices[0].message.content).call.tool] || 'unknown-tool';
         else if (task === 'contextual_intent') route = intentRoutes[JSON.parse(data.choices[0].message.content).intent] || 'unknown-intent';
       } catch { route = route || (agentStep || task === 'contextual_intent' ? 'invalid' : null); }
       calls.push({ task, route, status: response.status, input: usage.prompt_tokens || 0, cached: usage.prompt_tokens_details?.cached_tokens || 0, reasoning: usage.completion_tokens_details?.reasoning_tokens || 0, output: usage.completion_tokens || 0, cost });
@@ -144,7 +145,8 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
     const routes = calls.map(entry => entry.route).filter(Boolean);
     const reply = body?.data;
     // Final route: the last routing decision, or the no-AI path that answered.
-    const route = routes.at(-1) || (reply?.blocks ? 'block' : reply?.transactions ? 'transaction' : reply?.spec ? 'chart' : reply ? 'knowledge' : 'none');
+    const direct = directSelection({ question: item.question, page: item.page, context: null, history: item.history, locale: 'auto' });
+    const route = routes.at(-1) || (direct ? intentRoutes[direct.intent] : null) || (reply?.blocks ? 'block' : reply?.transactions ? 'transaction' : reply?.spec ? 'chart' : reply ? 'knowledge' : 'none');
     // Offline, a data route counts once its query compiled (SQL) or its loader
     // was reached (blocks, transactions, charts read the public API).
     const reached = status === 200 || (!live && body?.code === 'ask-source' && (route === 'sql' ? !!offlineSQL : ['block', 'transaction', 'chart'].includes(route)));

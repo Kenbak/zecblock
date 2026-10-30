@@ -64,12 +64,12 @@ async function fixture(t, { script = [], jobsEnabled = false, envOverrides = {},
   async function provider(options) {
       state.provider++;
       const input = JSON.parse(options.body);
-      if (input.tools && input.tool_choice) {
+      if (input.response_format.json_schema.name === 'agent_step') {
         state.steps.push(input);
         const next = script[state.steps.length - 1];
         if (!next) throw Error('Fixture script exhausted');
         if (next.prose) return Response.json({ choices: [{ finish_reason: 'stop', message: { content: next.prose } }] });
-        return Response.json({ choices: [{ finish_reason: 'tool_calls', message: { content: null, tool_calls: [{ id: 'x', type: 'function', function: { name: next.name, arguments: JSON.stringify(next.args) } }] } }] });
+        return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ call: { tool: next.name, ...next.args } }) } }] });
       }
       const task = input.response_format.json_schema.name;
       state.tasks.push(task);
@@ -92,7 +92,8 @@ async function fixture(t, { script = [], jobsEnabled = false, envOverrides = {},
   }
   return { state, post };
 }
-const toolMessages = step => step.messages.filter(message => message.role === 'tool').map(message => JSON.parse(message.content));
+const toolMessages = step => step.messages.slice(2).filter(message => message.role === 'user').map(message => JSON.parse(message.content).tool_result);
+const offeredTools = step => step.response_format.json_schema.schema.properties.call.anyOf.map(variant => variant.properties.tool.enum[0]);
 
 test('run_sql answers a data question through the research path with one admission and a reservation per call', async t => {
   const { state, post } = await fixture(t, { script: [call('run_sql', { sql: goodSQL })] });
@@ -102,9 +103,11 @@ test('run_sql answers a data question through the research path with one admissi
   assert.ok(reply.body.data.answer);
   assert.equal(state.steps.length, 1); assert.equal(state.executed, 1);
   const [step] = state.steps;
-  assert.equal(step.tool_choice, 'required');
-  assert.deepEqual(step.tools.map(item => item.function.name), ['run_sql', 'get_block', 'get_transaction', 'explain_topic', 'open_chart', 'clarify', 'decline']);
-  assert.ok(step.tools.every(item => item.function.strict === true && item.function.parameters.additionalProperties === false));
+  // Function tools are refused with reasoning_effort on chat completions, so
+  // the call is a strict structured output with one variant per tool.
+  assert.equal(step.response_format.json_schema.strict, true); assert.equal(step.tools, undefined);
+  assert.deepEqual(offeredTools(step), ['run_sql', 'get_block', 'get_transaction', 'explain_topic', 'open_chart', 'clarify', 'decline']);
+  assert.ok(step.response_format.json_schema.schema.properties.call.anyOf.every(variant => variant.additionalProperties === false && variant.required.includes('tool')));
   assert.ok(!state.tasks.includes('contextual_intent'), 'the classifier is not called');
   // The question is data in the user message, never in the instruction.
   assert.ok(!step.messages[0].content.includes(body.question));
@@ -130,7 +133,7 @@ test('self-repair: a policy rejection is shown to the model, which fixes the que
   const [feedback] = toolMessages(state.steps[1]);
   assert.equal(feedback.ok, false); assert.match(feedback.message, /SELECT/i);
   const replay = state.steps[1].messages.find(message => message.role === 'assistant');
-  assert.equal(replay.tool_calls[0].function.name, 'run_sql');
+  assert.equal(JSON.parse(replay.content).call.tool, 'run_sql');
   assert.equal(state.reserved, 3, 'two agent steps and the caption each reserve'); assert.equal(state.provider, 3); assert.deepEqual(state.admitted, { ai: 1, sql: 1 });
 });
 
@@ -257,8 +260,8 @@ test('page widgets never run SQL; a data question is handed to Zift', async t =>
   const { state, post } = await fixture(t, { script: [call('needs_query', {})] });
   const reply = await post({ ...body, page: 'pools', question: 'How did the Orchard balance change in September?' });
   assert.equal(reply.status, 200); assert.equal(reply.body.data.handoff, 'zift');
-  assert.deepEqual(state.steps[0].tools.map(item => item.function.name), toolsFor(true).map(item => item.name));
-  assert.ok(!state.steps[0].tools.some(item => item.function.name === 'run_sql'));
+  assert.deepEqual(offeredTools(state.steps[0]), toolsFor(true).map(item => item.name));
+  assert.ok(!offeredTools(state.steps[0]).includes('run_sql'));
   assert.equal(state.executed + state.submitted, 0);
   assert.equal(state.admitted.sql, 0);
 });

@@ -321,20 +321,29 @@ No ZecBlock AI runs and no AI budget is spent. Mainnet only, off by default:
 
 - `ZIFT_MCP_SQL_ENABLED=true`, plus the existing `ASK_RESEARCH_ENABLED=true`,
   `ASK_ANALYTICS_STORE=logical_public_core` and analytics worker settings.
-- `ZIFT_MCP_SQL_KEYS`: comma-separated `label:sha256hex` entries. Issue a key
-  with `node scripts/mcp-sql-key.js <label>`; only the hash is stored.
+- `ASK_ABUSE_SECRET` (already set for Zift): hashes client IPs for the
+  per-client limits; the SQL tools stay off without it.
+- Optional `ZIFT_MCP_SQL_DAILY_LIMIT` (default 2000): site-wide MCP queries per
+  UTC day, so MCP cannot use up the worker's allowance that Zift relies on.
+- Optional `ZIFT_MCP_SQL_KEYS`: comma-separated `label:sha256hex` entries for
+  higher-limit keys. Issue one with `node scripts/mcp-sql-key.js <label>`; only
+  the hash is stored.
 
 Tools:
 
 - `sql_catalogue` (no key): datasets, columns, units, query rules and examples.
-- `sql_query` (`Authorization: Bearer <key>`): one read-only SELECT, compiled
+- `sql_query` (no key needed): one read-only SELECT, compiled
   by the same AST policy as Zift's manual SQL and run by the read-only worker
   with its row, time and site-wide daily limits. At most 200 rows. Rejected
   SQL returns the policy or database message so the client can repair it.
-  Each key allows 10 queries per minute and 300 per UTC day.
+  Without a key, each client IP (as a daily HMAC, never stored raw) gets 10
+  queries per minute and 100 per UTC day, inside the site-wide MCP cap. A
+  recognized key gets 10 per minute and 300 per day instead; an unrecognized
+  key is refused.
 
 The MCP request deadline rises from 15 to 25 seconds when the SQL tools are
-enabled. Turnstile does not apply to MCP; the key and its quotas take its place.
+enabled. Turnstile does not apply to MCP; per-client and site-wide quotas take
+its place.
 
 ## Verification
 

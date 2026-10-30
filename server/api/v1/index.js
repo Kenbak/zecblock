@@ -66,7 +66,7 @@ function createV1Router(envOverrides = {}) {
   router.use(createRequestContext(config, internalClient));
   // MCP shares the public gate/context and existing adapter authority. Mount
   // before the general JSON parser so its smaller request bound is enforced.
-  const mcpRouter = createMcpRouter(config);
+  const mcpRouter = createMcpRouter(config, { env });
   router.use('/mcp', mcpRouter);
   // Ask accepts only a short question and a small recipe, never file uploads.
   // Apply before the general parser on standalone hosts; also check decoded

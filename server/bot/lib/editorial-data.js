@@ -8,6 +8,7 @@ const { fetchSpotPrice } = require('./spot-price');
 const { readPoolActivity } = require('./pool-activity-source');
 const { poolMilestoneStories } = require('./pool-activity-milestones');
 const { insightCandidates } = require('./editorial-insights');
+const nu7Source = require('./nu7-source');
 
 // Flows already represent net movement across pools. Never subtract an
 // unrelated Orchard withdrawal from an Ironwood deposit as a "migration".
@@ -236,9 +237,18 @@ async function milestoneCandidates(pool, now) {
   });
 }
 
+// NU7 countdown, activation and post-activation milestones. Each builder gates
+// on its own freshness, so this runs on every tick like other live events.
+async function nu7Candidates(pool, now) {
+  return snapshot(pool, async db => {
+    await assertMainnetFresh(db, now);
+    return nu7Source.nu7Candidates(db, now);
+  });
+}
+
 async function poolActivityCandidates(pool, now, options) {
   const target = addDays(now.toISOString().slice(0, 10), -1);
   return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
 }
 
-module.exports = { VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, eventContext };
+module.exports = { VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

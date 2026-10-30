@@ -16,6 +16,8 @@ function candidate(type, key, content, evidence, score = 0) {
 }
 
 function eventTime(story) {
+  // Stories with their own observed instant (NU7) carry it explicitly.
+  if (story.evidence?.eventAt) return Date.parse(story.evidence.eventAt);
   if (story.type.startsWith('flow_') || story.type === 'migration') return Number(story.evidence.block_time) * 1000;
   if (story.type === 'swap') return Date.parse(story.evidence.swap_created_at);
   if (story.type === 'reorg') return Date.parse(story.evidence.detected_at);
@@ -448,7 +450,8 @@ function editorialRank(story, history, now) {
       : e.lead ? 72 : 60;
   } else significance = { activity_daily: 45, network_briefing: 60, pool_trend: 60, crosschain_daily: 30, migration: 35 }[type] || 0;
   significance = clamp(significance);
-  const protectedLane = type === 'reorg' ? 1000 : type === 'swap' && e.exceptional ? 900 : exceptionalFlow(story) ? 800 : 0;
+  const protectedLane = type === 'reorg' ? 1000 : type === 'nu7' && e.nu7Kind === 'activation' ? 950
+    : type === 'swap' && e.exceptional ? 900 : exceptionalFlow(story) ? 800 : type === 'nu7' && e.nu7Kind === 'countdown' ? 700 : 0;
   const topic = editorialTopic(story);
   const recent = history.filter(p => isEditorialHistory(p) && ['posted', 'posting', 'uncertain'].includes(p.status)
     && Number.isFinite(Date.parse(p.created_at)) && now - new Date(p.created_at) >= 0 && now - new Date(p.created_at) < 3 * DAY);
@@ -508,7 +511,7 @@ function select(candidates, history, now) {
         && typeof c.evidence.editorial.lens === 'string' && c.evidence.editorial.lens.length > 0;
       if (!comparativeStats && !comparativeLens) reason = 'routine-summary-without-comparison';
     }
-    if (!reason && ['migration','crosschain_daily','milestone','network_briefing','pool_trend'].includes(c.type) && dayPosts.length) reason = 'daily-cap';
+    if (!reason && ['migration','crosschain_daily','milestone','network_briefing','pool_trend','halving'].includes(c.type) && dayPosts.length) reason = 'daily-cap';
     if (!reason && c.type === 'pool_trend') {
       const latest = same.filter(p => editorialTopic(p) === rank.topic && p.metadata?.editorial?.lens === c.evidence.editorial?.lens
         && now - new Date(p.created_at) >= 0 && now - new Date(p.created_at) < 3 * DAY)
@@ -516,6 +519,9 @@ function select(candidates, history, now) {
       if (latest && !materialTrendChange(c.evidence, latest.metadata)) reason = 'three-day-trend-cooldown';
     }
     if (!reason && c.type === 'network_signal' && dayPosts.length >= 1) reason = 'signal-daily-cap';
+    // One-time NU7 moments are deduplicated by key; routine NU7 milestones share two slots a day.
+    if (!reason && c.type === 'nu7' && !['activation', 'countdown'].includes(c.evidence.nu7Kind)
+      && dayPosts.filter(p => !['activation', 'countdown'].includes(p.metadata?.nu7Kind)).length >= 2) reason = 'nu7-daily-cap';
     if (reason) { skipped.push({ key: c.key, reason }); continue; }
     c.evidence.editorialSelection = rank;
     selected.push(c); used.add(c.key);

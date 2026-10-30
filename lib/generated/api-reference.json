@@ -1902,7 +1902,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Lag is first ZecBlock local-node best-tip receipt (polled every second) minus the miner-provided header timestamp, in seconds. Windows use header timestamps; blocks without an observation stay in blocks but not observed. Median and p90 are null below minSample observed blocks. Negative lag means the header time is later than first observation. This is not peer-arrival or network propagation time.",
+    "note": "Lag is the earliest ZecBlock receipt from its local node (block stream or 1s best-tip poll) minus the miner-provided header timestamp, in seconds. Windows use header timestamps; blocks without an observation stay in blocks but not observed. Median and p90 are null below minSample observed blocks. Negative lag means the header time is later than first observation. This is not peer-arrival or network propagation time.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

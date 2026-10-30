@@ -10,7 +10,7 @@ export function BlockFirstSeen({ value }: { value?: string | null }) {
   );
 }
 
-export const BLOCK_FIRST_SEEN_EXPLANATION = 'First seen records when ZecBlock received our local node’s tip response, polled every second. RPC latency, outages and missed tips can delay or prevent observation; this is not the node’s peer-arrival time. Older blocks may have no observation.';
+export const BLOCK_FIRST_SEEN_EXPLANATION = 'First seen is the earliest time ZecBlock received the block from our local node, either from its block stream or from a once-a-second tip check. Outages can delay or prevent observation; this is not the node’s peer-arrival time. Older blocks may have no observation.';
 
 /** Signed first-seen minus header time, e.g. "+12s", "+1m 38s", "−4s". Header time has whole-second precision. */
 export function formatObservationLag(seconds: number): string {

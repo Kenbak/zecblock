@@ -183,7 +183,7 @@ export function BlockFactsCard({
             `sm:order-none` reverts *to* on desktop, which is what broke it
             last time.
           */}
-          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time. When recorded, the second line is when ZecBlock's node first reported this block as its tip, with the gap from the header time; older blocks have no observation.">
+          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time. When recorded, the second line is when ZecBlock first received this block from its node, with the gap from the header time; older blocks have no observation.">
             <span className="text-sm text-primary whitespace-nowrap">
               {formatRelativeTime(data.timestamp)}
               <span className="text-muted ml-1.5 text-xs">({formatDateUTC(data.timestamp)})</span>

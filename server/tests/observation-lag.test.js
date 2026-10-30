@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
 const { formatObservationLag, observationLag, MIN_SAMPLE } = require('../api/lib/observation-lag');
+const { firstSeenSql, firstSeenLateralSql } = require('../api/lib/first-seen');
 
 function fixture(patch = {}) {
   return ['24h', '7d', '30d'].flatMap(period => [
@@ -66,12 +67,18 @@ test('real PostgreSQL: per-pool percentiles, negative lag, unobserved blocks and
   const viaBTC = 't1MKn34KBa8Xh4g8qU8psibBXvURafphVn7';
   await db.query(`BEGIN;
     CREATE TEMP TABLE blocks(height bigint, hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text);
-    CREATE TEMP TABLE block_observations(hash text PRIMARY KEY, first_seen_at timestamptz NOT NULL);
+    CREATE TEMP TABLE block_observations(hash text PRIMARY KEY, first_seen_at timestamptz NOT NULL, source text NOT NULL DEFAULT 'local-node-rpc', poll_interval_ms integer DEFAULT 1000);
+    CREATE TEMP TABLE captured_blocks(hash text PRIMARY KEY, first_seen_at timestamptz NOT NULL);
     -- 20 ViaBTC blocks in the last hour with lags 1..20s, one header 5s ahead.
     INSERT INTO blocks SELECT i, 'v'||i, floor(extract(epoch FROM now()))::bigint - 3600 + i*60, '${viaBTC}', NULL FROM generate_series(1,20) i;
     INSERT INTO block_observations SELECT 'v'||i, to_timestamp(floor(extract(epoch FROM now())) - 3600 + i*60 + i) FROM generate_series(1,20) i;
     INSERT INTO blocks VALUES (21, 'ahead', floor(extract(epoch FROM now()))::bigint - 600, '${viaBTC}', NULL);
     INSERT INTO block_observations VALUES ('ahead', to_timestamp(floor(extract(epoch FROM now())) - 605));
+    -- Stream receipt earlier than the tip poll wins (v20: 20s poll, 2s stream).
+    INSERT INTO captured_blocks VALUES ('v20', to_timestamp(floor(extract(epoch FROM now())) - 3600 + 20*60 + 2));
+    -- Reorg replacement seen only by the stream: 7s.
+    INSERT INTO blocks VALUES (24, 'stream-only', floor(extract(epoch FROM now()))::bigint - 900, '${viaBTC}', NULL);
+    INSERT INTO captured_blocks VALUES ('stream-only', to_timestamp(floor(extract(epoch FROM now())) - 893));
     -- Unattributed and unobserved.
     INSERT INTO blocks VALUES (22, 'u1', floor(extract(epoch FROM now()))::bigint - 300, NULL, NULL);
     -- Outside 24h, inside 7d.
@@ -79,12 +86,20 @@ test('real PostgreSQL: per-pool percentiles, negative lag, unobserved blocks and
     INSERT INTO block_observations VALUES ('old', to_timestamp(floor(extract(epoch FROM now())) - 3*86400 + 500));`);
   const data = await observationLag(db);
   const day = data.periods.find(p => p.period === '24h');
-  assert.deepEqual([day.blocks, day.observed, day.headerAfterSeen], [22, 21, 1]);
+  assert.deepEqual([day.blocks, day.observed, day.headerAfterSeen], [23, 22, 1]);
   const via = day.pools.find(p => p.name === 'ViaBTC');
-  assert.deepEqual([via.blocks, via.observed], [21, 21]);
-  assert.equal(via.medianSeconds, 10);
+  assert.deepEqual([via.blocks, via.observed], [22, 22]);
+  // Lags 1..19, 2 (stream beat the 20s poll), 7 (stream only) and -5: median of 22 = (8+9)/2.
+  assert.equal(via.medianSeconds, 8.5);
   assert.equal(day.pools.find(p => p.name === 'Unknown').observed, 0);
   const week = data.periods.find(p => p.period === '7d');
-  assert.deepEqual([week.blocks, week.observed], [23, 22]);
+  assert.deepEqual([week.blocks, week.observed], [24, 23]);
   assert.ok(data.collectionStart);
+  // Block and reorg APIs: earliest receipt, its source, and NULL when neither collector saw the block.
+  const rows = (await db.query(`SELECT b.hash, extract(epoch FROM ${firstSeenSql('b.hash')}) - b.timestamp AS lag,
+      f.source, f.poll_interval_ms FROM blocks b LEFT JOIN ${firstSeenLateralSql('b.hash')} f ON true
+      WHERE b.hash IN ('v19','v20','stream-only','u1') ORDER BY b.hash`)).rows;
+  assert.deepEqual(rows.map(r => [r.hash, r.lag == null ? null : Number(r.lag), r.source ?? null]),
+    [['stream-only', 7, 'node-block-stream'], ['u1', null, null], ['v19', 19, 'local-node-rpc'], ['v20', 2, 'node-block-stream']]);
+  assert.throws(() => firstSeenSql('hash; DROP TABLE blocks'));
 });

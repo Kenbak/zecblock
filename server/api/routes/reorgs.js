@@ -6,6 +6,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getPoolName, getPoolInfo } = require('../mining-pools');
+const { firstSeenLateralSql } = require('../lib/first-seen');
 const { parseSafeListPagination, offsetExceededError } = require('../lib/pagination');
 const { logSafeError } = require('../lib/safe-log');
 const router = express.Router();
@@ -56,8 +57,8 @@ router.get('/api/uncles', async (req, res) => {
                 b.miner_address as canonical_miner_address
          FROM orphaned_blocks ob
          LEFT JOIN blocks b ON b.height = ob.height
-         LEFT JOIN block_observations oo ON oo.hash = ob.hash
-         LEFT JOIN block_observations co ON co.hash = b.hash
+         LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
+         LEFT JOIN ${firstSeenLateralSql('b.hash')} co ON true
          ORDER BY ob.height DESC, ob.detected_at DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset]
@@ -134,8 +135,8 @@ router.get('/api/uncles/forks', async (req, res) => {
                 b.miner_address as canonical_miner_address
          FROM orphaned_blocks ob
          LEFT JOIN blocks b ON b.height = ob.height
-         LEFT JOIN block_observations oo ON oo.hash = ob.hash
-         LEFT JOIN block_observations co ON co.hash = b.hash
+         LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
+         LEFT JOIN ${firstSeenLateralSql('b.hash')} co ON true
          WHERE ob.fork_event_id = ANY($1::int[])
          ORDER BY ob.height ASC`,
         [forkIds]
@@ -188,7 +189,7 @@ router.get('/api/uncle/:hash', async (req, res) => {
               oo.first_seen_at, oo.source as observation_source, oo.poll_interval_ms
        FROM orphaned_blocks ob
        LEFT JOIN fork_events fe ON ob.fork_event_id = fe.id
-       LEFT JOIN block_observations oo ON oo.hash = ob.hash
+       LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
        WHERE ob.hash = $1`,
       [hash]
     );

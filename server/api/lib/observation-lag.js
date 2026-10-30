@@ -4,9 +4,10 @@ const PERIODS = ['24h', '7d', '30d'];
 // Percentiles from a handful of blocks would read as a pool characteristic.
 const MIN_SAMPLE = 10;
 
-// Lag = first local-node tip receipt − miner header timestamp. Windows use the
-// header clock, like orphan rates, so the denominator is every canonical block
-// in the window; blocks the 1s tip poll never saw stay counted but unobserved.
+// Lag = earliest ZecBlock receipt (1s tip poll or node block stream, see
+// first-seen.js) − miner header timestamp. Windows use the header clock, like
+// orphan rates, so the denominator is every canonical block in the window;
+// blocks neither collector saw stay counted but unobserved.
 // Pool names are resolved in SQL so percentiles are computed per pool rather
 // than merged across addresses.
 const OBSERVATION_LAG_SQL = `
@@ -20,11 +21,12 @@ WITH clock AS (
 ), lags AS (
   SELECT w.period,
          coalesce(n.by_address->>b.miner_address, n.by_tag->>(${getPoolTagSql('b.coinbase_hex')}), 'Unknown') AS pool,
-         extract(epoch FROM o.first_seen_at) * 1000 - b.timestamp * 1000 AS lag_ms
+         extract(epoch FROM LEAST(o.first_seen_at, c.first_seen_at)) * 1000 - b.timestamp * 1000 AS lag_ms
   FROM windows w
   JOIN blocks b ON b.timestamp >= w.window_start AND b.timestamp < w.window_end
   CROSS JOIN names n
   LEFT JOIN block_observations o ON o.hash = b.hash
+  LEFT JOIN captured_blocks c ON c.hash = b.hash
 ), grouped AS (
   SELECT period, pool, GROUPING(pool) AS is_total, count(*)::bigint AS blocks, count(lag_ms)::bigint AS observed,
          percentile_cont(0.5) WITHIN GROUP (ORDER BY lag_ms) AS median_ms,
@@ -34,7 +36,8 @@ WITH clock AS (
 )
 SELECT w.period, w.window_start, w.window_end, g.pool, g.is_total, g.blocks, g.observed,
        g.median_ms, g.p90_ms, g.header_after_seen,
-       (SELECT min(first_seen_at) FROM block_observations) AS collection_start
+       LEAST((SELECT min(first_seen_at) FROM block_observations),
+             (SELECT min(first_seen_at) FROM captured_blocks)) AS collection_start
 FROM windows w LEFT JOIN grouped g ON g.period = w.period
 `;
 
@@ -88,7 +91,7 @@ function formatObservationLag(rows) {
   return {
     success: true,
     asOf: new Date(Number(first.window_end) * 1000).toISOString(),
-    method: 'local-node-tip-receipt-v1',
+    method: 'zecblock-first-receipt-v1',
     timeBasis: 'block-header',
     minSample: MIN_SAMPLE,
     collectionStart: first.collection_start == null ? null : new Date(first.collection_start).toISOString(),

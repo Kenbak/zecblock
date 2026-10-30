@@ -48,7 +48,7 @@ function utc(value: string) {
 export function ObservationLagSection() {
   const [period, setPeriod] = useUrlState<Period>('lag', '7d', ['24h', '7d', '30d']);
   const { data, loading, error } = useApiQuery<ObservationLag>('/v1/mining/observation-lag', undefined, { refreshInterval: 60_000 });
-  const supported = data?.method === 'local-node-tip-receipt-v1';
+  const supported = data?.method === 'zecblock-first-receipt-v1';
   const selected = supported ? data.periods.find(window => window.period === period) : null;
 
   return (
@@ -56,12 +56,12 @@ export function ObservationLagSection() {
       <Card><CardBody>
         <SectionHeader label="HEADER_TIME_VS_FIRST_SEEN" />
         <p className="text-sm text-muted mb-2">
-          How long after a block&apos;s miner-provided header timestamp ZecBlock&apos;s node first reported it as the chain tip.
+          How long after a block&apos;s miner-provided header timestamp ZecBlock first received it from our node.
         </p>
         <p className="text-caption text-muted mb-5">
           Pools usually set the header time when they hand out mining work, so the gap includes solving time as well as propagation; it is not a network propagation delay.
           A negative gap means the header time is later than our first observation, usually a miner clock running ahead.
-          The tip is polled every second, so blocks replaced within a second or missed during outages have no observation.
+          First seen is the earlier of the node&apos;s block stream and a once-a-second tip check; blocks missed by both during outages have no observation.
         </p>
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading header-time gaps…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Header-time gaps are temporarily unavailable.</p>
@@ -91,7 +91,7 @@ export function ObservationLagSection() {
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
-            Gap = first local-node tip receipt − header timestamp; header times have one-second precision. Median and p90 need at least {data.minSample} observed blocks.
+            Gap = first ZecBlock receipt − header timestamp; header times have one-second precision. Median and p90 need at least {data.minSample} observed blocks.
             Pool labels use public coinbase data; Unknown remains included.{' '}
             {data.collectionStart ? `Observations began ${utc(data.collectionStart)} UTC; earlier blocks are unobserved.` : 'No observations have been recorded yet.'}
             {' '}Snapshot {utc(data.asOf)} UTC.

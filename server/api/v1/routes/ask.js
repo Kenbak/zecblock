@@ -19,6 +19,7 @@ const { progressStages } = require('../../../../lib/ask/chat');
 const { createRateLimiter } = require('../lib/rate-limit');
 const { explainRequestSchema, explanationTaskFor, loadExplanationEvidence, renderExplanation } = require('../lib/ask-explanation');
 const { createAnalyticsClient } = require('../lib/ask-analytics-client');
+const { feedbackSchema, recordFeedback } = require('../lib/ask-feedback');
 
 const {compileResearchSQL}=require('../lib/ask-research-sql');
 const {compileResearchDraft}=require('../lib/ask-research-plan-quality');
@@ -216,6 +217,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
   };
   const pollingLimiter=createRateLimiter({max:120,windowMs:60000,key:'ask-jobs',onLimit:localLimit('ask-sql-status-minute')});
   const limiter = createRateLimiter({ max: 20, windowMs: 60000, key: 'ask',onLimit:localLimit('ask-request-attempts') });
+  const feedbackLimiter=createRateLimiter({max:30,windowMs:60000,key:'ask-feedback',onLimit:localLimit('ask-feedback-minute')});
   router.use((req, res, next) => {
     res.set('Cache-Control', 'private, no-store');res.set('X-Robots-Tag','noindex, nofollow');
     if (authenticatedStaging && req.v1?.authenticatedStaging !== true) return sendProblem(res, 'access-denied', { status: 403, detail: 'Authenticated staging access is required.' });
@@ -358,14 +360,14 @@ function createAskRouter(env = process.env, dependencies = {}) {
       const transactionQuery = resolveTransactionQuery(parsed.data);
       if (blockQuery || transactionQuery) {
         try {
-          return sendSuccess(res, await (transactionQuery ? transactionReply : blockReply)(transactionQuery || blockQuery, parsed.data, dependencies.internalClient, AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(15000)])));
+          return sendSuccess(res, { ...await (transactionQuery ? transactionReply : blockReply)(transactionQuery || blockQuery, parsed.data, dependencies.internalClient, AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(15000)])), route: 'lookup' });
         } catch (error) {
           const failure = classifyFailure(error);
           return sendProblem(res, failure.type, { status: failure.status, detail: failure.detail, extra: { code: failure.code } });
         }
       }
       const guided = guidedReply(parsed.data, { zips: true });
-      if (guided) return sendSuccess(res, guided);
+      if (guided) return sendSuccess(res, { ...guided, route: 'guide' });
       return sendProblem(res, 'upstream-error', { status: 503, detail: 'Contextual AI is not connected. Reviewed page guides and starter charts remain available.' });
     }
     if(parsed.data.currentResearch){
@@ -380,12 +382,12 @@ function createAskRouter(env = process.env, dependencies = {}) {
       // Fixed public lookups and exact reviewed guide matches are cheap direct
       // answers even while AI is enabled or its paid allowance is exhausted.
       const transactionQuery=resolveTransactionQuery(parsed.data),blockQuery=resolveBlockQuery(parsed.data);
-      if(transactionQuery||blockQuery)return {...await (transactionQuery?transactionReply:blockReply)(transactionQuery||blockQuery,parsed.data,dependencies.internalClient,signal),scope:'Public API lookup · no AI'};
+      if(transactionQuery||blockQuery)return {...await (transactionQuery?transactionReply:blockReply)(transactionQuery||blockQuery,parsed.data,dependencies.internalClient,signal),scope:'Public API lookup · no AI',route:'lookup'};
       if(['auto','en'].includes(parsed.data.locale)){
         // The agent keeps only the exact suggestion chips as no-AI answers.
         const direct=guidedReply(parsed.data,{chipsOnly:agent});
         const explainMeasurements=direct?.spec&&/^explain this (?:page|view|chart)[?.!]?$/i.test(parsed.data.question.trim());
-        if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI'};
+        if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI',route:'guide'};
       }
       const cache = { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort, config.planningEffort] };
       const render = selection => chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics, selection);
@@ -397,7 +399,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
         declined: (reason, locale) => declineReply(reason, parsed.data.question, locale),
         log: entry => console.info(JSON.stringify({ event: 'ask_agent', ...entry })),
       });
-      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics);
+      return { ...await chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics), route: 'classifier' };
     })()), false, { deadline: agent ? 42000 : 35000, stream });
   });
   router.post('/', limiter, async (req, res) => {
@@ -411,6 +413,16 @@ function createAskRouter(env = process.env, dependencies = {}) {
       return sendSuccess(res, { spec: shortcut, mode: 'guided' });
     }
     return limited(req, res, (signal, run) => run(parsed.data));
+  });
+  // Answer ratings use no AI, SQL or verification allowance. Only enums are
+  // counted; question/answer text is kept only when the visitor shares it.
+  router.post('/feedback', feedbackLimiter, async (req, res) => {
+    const parsed = feedbackSchema.safeParse(req.body);
+    if (!parsed.success) return sendProblem(res, 'validation-error', { detail: 'Send a vote with a listed reason, route, locale and page.' });
+    const redis = redisFor(req);
+    if (!redis?.isReady) return sendProblem(res, 'upstream-error', { status: 503, detail: 'Feedback is temporarily unavailable.' });
+    try { return sendSuccess(res, await recordFeedback(redis, parsed.data)); }
+    catch { console.warn(JSON.stringify({ event: 'ask_feedback_failure' })); return sendProblem(res, 'upstream-error', { status: 503, detail: 'Feedback is temporarily unavailable.' }); }
   });
   router.post('/explain', limiter, async (req, res) => {
     const parsed = explainRequestSchema.safeParse(req.body);
@@ -431,7 +443,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
       return { explanation: renderExplanation(raw, evidence.facts), evidenceKey: evidence.evidenceKey };
     });
   });
-  router.stop = () => { limiter._stop(); pollingLimiter._stop(); return analytics?.close?.(); };
+  router.stop = () => { limiter._stop(); pollingLimiter._stop(); feedbackLimiter._stop(); return analytics?.close?.(); };
   return router;
 }
 

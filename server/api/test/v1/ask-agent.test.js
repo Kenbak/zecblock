@@ -360,12 +360,15 @@ test('the selected locale overrides the locale the model reports', async t => {
   const { post } = await fixture(t, { script: [call('decline', { reason: 'off_topic', locale: 'en' })] });
   const reply = await post({ ...body, locale: 'fr', question: 'Quelle sauce pour les pâtes ?' });
   assert.equal(reply.body.data.locale, 'fr');
+  // Answer ratings report the tool that produced the reply, never its arguments.
+  assert.equal(reply.body.data.route, 'decline');
 });
 
 test('page widgets never run SQL; a data question is handed to Zift', async t => {
   const { state, post } = await fixture(t, { script: [call('needs_query', {})] });
   const reply = await post({ ...body, page: 'pools', question: 'How did the Orchard balance change in September?' });
   assert.equal(reply.status, 200); assert.equal(reply.body.data.handoff, 'zift');
+  assert.equal(reply.body.data.route, 'needs_query');
   assert.deepEqual(offeredTools(state.steps[0]), toolsFor(true).map(item => item.name));
   assert.ok(!offeredTools(state.steps[0]).includes('run_sql'));
   assert.equal(state.executed + state.submitted, 0);

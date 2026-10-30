@@ -632,7 +632,7 @@ async function researchReply(raw,input,run,locale){
  const finding=tidyProse(accepted||researchTemplate(result,evidence));
  if(!accepted)console.warn(JSON.stringify({event:'ask_research_caption_fallback',reason:rejected}));
  const interpretation=checkedInterpretation(generated?.interpretation,{vocabulary,applied});
- return reply(interpretation?`${finding} ${interpretation}`:finding,chartChoice(result,evidence,generated?.chart));
+ return {...reply(interpretation?`${finding} ${interpretation}`:finding,chartChoice(result,evidence,generated?.chart)),...(accepted?{}:{template:true})};
 }
 // Facts already carry "≈" and their unit: drop a doubled marker, an
 // "approximately" in front of one, a repeated unit and a doubled full stop.

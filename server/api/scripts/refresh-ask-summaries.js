@@ -70,16 +70,16 @@ async function refreshAddressDaily(pool,{limit=7}={}){
    await c.query(`WITH block_days AS (
     SELECT DISTINCT (to_timestamp(b.timestamp) AT TIME ZONE 'UTC')::date AS date
     FROM public.blocks b CROSS JOIN analytics_public.coverage core WHERE core.ready AND b.height BETWEEN $4::bigint AND $5::bigint AND b.timestamp>=$2 AND b.timestamp<$3
-   ),day_addresses AS (
+   ),day_addresses AS MATERIALIZED (
     SELECT (to_timestamp(a.block_time) AT TIME ZONE 'UTC')::date AS date,a.address,min(a.block_height) AS first_height,
      bool_or(a.is_input IS TRUE) AS sent,bool_or(a.is_output IS TRUE) AS received,count(*) AS incidences,
      count(*) FILTER(WHERE a.is_input IS TRUE) AS input_incidences,count(*) FILTER(WHERE a.is_output IS TRUE) AS output_incidences
     FROM public.address_transactions a JOIN public.transactions t ON t.txid=a.txid AND t.block_height=a.block_height AND t.block_time=a.block_time
     JOIN public.blocks b ON b.height=t.block_height AND b.hash=t.block_hash CROSS JOIN analytics_public.coverage core
-    WHERE core.ready AND a.block_height BETWEEN $4::bigint AND $5::bigint AND a.block_height BETWEEN core.covered_from AND core.covered_through AND a.block_time>=$2 AND a.block_time<$3
+    WHERE core.ready AND a.block_height BETWEEN $4::bigint AND $5::bigint AND t.block_height BETWEEN $4::bigint AND $5::bigint AND b.height BETWEEN $4::bigint AND $5::bigint AND a.block_height BETWEEN core.covered_from AND core.covered_through AND a.block_time>=$2 AND a.block_time<$3
      AND (to_timestamp(a.block_time) AT TIME ZONE 'UTC')::date=ANY($1::date[])
     GROUP BY 1,2
-   ),address_days AS (
+   ),address_days AS MATERIALIZED (
     SELECT d.date,count(*) AS active_addresses,count(*) FILTER(WHERE d.sent) AS sending_addresses,count(*) FILTER(WHERE d.received) AS receiving_addresses,
      count(*) FILTER(WHERE NOT EXISTS(SELECT FROM public.address_transactions p JOIN public.transactions pt ON pt.txid=p.txid AND pt.block_height=p.block_height AND pt.block_time=p.block_time JOIN public.blocks pb ON pb.height=pt.block_height AND pb.hash=pt.block_hash CROSS JOIN analytics_public.coverage core WHERE core.ready AND p.address=d.address AND p.block_height<d.first_height AND p.block_height>=core.covered_from)) AS new_addresses,
      sum(d.incidences) AS incidences,sum(d.input_incidences) AS input_incidences,sum(d.output_incidences) AS output_incidences
@@ -93,6 +93,12 @@ async function refreshAddressDaily(pool,{limit=7}={}){
   await c.query('COMMIT');return {state:remaining?'warming':'ready',refreshed_days:days.length,remaining_days:remaining};
  }catch(e){try{await c.query('ROLLBACK');}catch{broken=true;}if(['40001','55P03'].includes(e.code))return {state:'retry'};throw e;}finally{c.release(broken);}
 }
-async function main(){if(process.getuid?.()===0)throw Error('Run as trusted postgres operator');const pool=new Pool({host:'/var/run/postgresql',user:'postgres',database:'ask_analytics',max:1,connectionTimeoutMillis:2000});pool.on('error',()=>{});try{const summaries=await refreshSummaries(pool);console.log(JSON.stringify({...summaries,address_daily:await refreshAddressDaily(pool)}));}finally{await pool.end();}}
+// A dense week can exceed the batch's temp-file or time limit; retry that run
+// one day at a time rather than failing the timer on the same batch forever.
+async function refreshAddressDailyOrDay(pool){
+ try{return await refreshAddressDaily(pool);}
+ catch(e){if(!['53400','57014'].includes(e?.code))throw e;return {...await refreshAddressDaily(pool,{limit:1}),narrowed:true};}
+}
+async function main(){if(process.getuid?.()===0)throw Error('Run as trusted postgres operator');const pool=new Pool({host:'/var/run/postgresql',user:'postgres',database:'ask_analytics',max:1,connectionTimeoutMillis:2000});pool.on('error',()=>{});try{const summaries=await refreshSummaries(pool);console.log(JSON.stringify({...summaries,address_daily:await refreshAddressDailyOrDay(pool)}));}finally{await pool.end();}}
 if(require.main===module)main().catch(e=>{console.error(JSON.stringify({state:'refresh-failed',code:/^[0-9A-Z]{5}$/.test(e?.code)?e.code:'unknown'}));process.exitCode=1;});
-module.exports={refreshSummaries,refreshAddressDaily};
+module.exports={refreshSummaries,refreshAddressDaily,refreshAddressDailyOrDay};

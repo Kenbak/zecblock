@@ -9,7 +9,8 @@ const { RESERVE, budgetConfig, reserve, admit, admitWork, identityFor } = requir
 const { chatRequestSchema } = require('../../../../lib/ask/chat');
 const { resolveTransactionQuery } = require('../lib/ask-transactions');
 const { resolveBlockQuery } = require('../lib/ask-blocks');
-const { chat, guidedReply, blockReply, transactionReply } = require('../lib/ask-chat');
+const { chat, guidedReply, blockReply, transactionReply, ziftHandoff, declineReply, clarifyReply, directSelection } = require('../lib/ask-chat');
+const { runAgent } = require('../lib/ask-agent');
 const { analysisSchema, requestSchema, resolveShortcut } = require('../../../../lib/ask/contract');
 const { sendSuccess } = require('../lib/envelope');
 const { sendProblem } = require('../lib/problem');
@@ -75,6 +76,19 @@ async function interpret(config, input, signal, fetchImpl = fetch, task = { name
     messages: [{ role: 'system', content: task.instruction }, { role: 'user', content: JSON.stringify(input) }],
     response_format: { type: 'json_schema', json_schema: { name: task.name, strict: true, schema: task.schema } },
   };
+  const result = await providerRequest(config, body, signal, fetchImpl, beforeRequest);
+  if (anthropic) {
+    const tools = result.content?.filter(part => part.type === 'tool_use');
+    if (result.stop_reason !== 'tool_use' || tools?.length !== 1 || tools[0].name !== task.name) throw new Error('Invalid provider result');
+    return task.validator.parse(tools[0].input);
+  }
+  const choice = result.choices?.[0];
+  if (choice?.finish_reason !== 'stop' || choice.message?.refusal) throw new Error('Invalid provider result');
+  return task.validator.parse(JSON.parse(choice.message.content));
+}
+
+async function providerRequest(config, body, signal, fetchImpl, beforeRequest) {
+  const anthropic = config.provider === 'anthropic';
   const serialized = JSON.stringify(body);
   const release = beforeRequest ? await beforeRequest(serialized) : null;
   try {
@@ -96,16 +110,48 @@ async function interpret(config, input, signal, fetchImpl = fetch, task = { name
         chunks.push(Buffer.from(value));
       }
     } finally { await reader.cancel(); }
-    const result = JSON.parse(Buffer.concat(chunks).toString('utf8'));
-    if (anthropic) {
-      const tools = result.content?.filter(part => part.type === 'tool_use');
-      if (result.stop_reason !== 'tool_use' || tools?.length !== 1 || tools[0].name !== task.name) throw new Error('Invalid provider result');
-      return task.validator.parse(tools[0].input);
-    }
-    const choice = result.choices?.[0];
-    if (choice?.finish_reason !== 'stop' || choice.message?.refusal) throw new Error('Invalid provider result');
-    return task.validator.parse(JSON.parse(choice.message.content));
+    return JSON.parse(Buffer.concat(chunks).toString('utf8'));
   } finally { await release?.(); }
+}
+
+// One agent step: the model must call exactly one of the offered tools. Earlier
+// calls and their server-written results are replayed so it can repair a query.
+// Arguments are returned unvalidated; the agent checks them against each schema.
+async function agentStep(config, { instruction, user, turns, tools }, signal, fetchImpl = fetch, beforeRequest) {
+  const anthropic = config.provider === 'anthropic';
+  const effort = config.planningEffort ?? config.reasoningEffort ?? null;
+  const outputTokens = outputTokenLimit({ name: 'research_sql' }, config);
+  const content = JSON.stringify(user);
+  const body = anthropic ? {
+    model: config.model, max_tokens: outputTokens, system: instruction,
+    messages: [{ role: 'user', content }, ...turns.flatMap(turn => [
+      { role: 'assistant', content: [{ type: 'tool_use', id: turn.call.id, name: turn.call.name, input: turn.call.args ?? {} }] },
+      { role: 'user', content: [{ type: 'tool_result', tool_use_id: turn.call.id, content: JSON.stringify(turn.result) }] },
+    ])],
+    tools: tools.map(item => ({ name: item.name, description: item.description, input_schema: item.schema })),
+    tool_choice: { type: 'any', disable_parallel_tool_use: true },
+  } : {
+    model: config.model, max_completion_tokens: outputTokens, store: false, service_tier: 'default',
+    ...(effort ? { reasoning_effort: effort } : {}),
+    messages: [{ role: 'system', content: instruction }, { role: 'user', content }, ...turns.flatMap(turn => [
+      { role: 'assistant', content: null, tool_calls: [{ id: turn.call.id, type: 'function', function: { name: turn.call.name, arguments: JSON.stringify(turn.call.args ?? {}) } }] },
+      { role: 'tool', tool_call_id: turn.call.id, content: JSON.stringify(turn.result) },
+    ])],
+    tools: tools.map(item => ({ type: 'function', function: { name: item.name, description: item.description, parameters: item.schema, strict: true } })),
+    tool_choice: 'required',
+  };
+  const result = await providerRequest(config, body, signal, fetchImpl, beforeRequest);
+  if (anthropic) {
+    const call = result.content?.find(part => part.type === 'tool_use');
+    if (result.stop_reason !== 'tool_use' || !call || typeof call.name !== 'string') throw new Error('Invalid provider result');
+    return { name: call.name, args: call.input ?? null };
+  }
+  const choice = result.choices?.[0], call = choice?.message?.tool_calls?.[0];
+  // Prose without a tool call is never shown; it fails the step.
+  if (!['tool_calls', 'stop'].includes(choice?.finish_reason) || choice.message?.refusal || call?.type !== 'function' || typeof call.function?.name !== 'string') throw new Error('Invalid provider result');
+  let args = null;
+  try { args = JSON.parse(call.function.arguments); } catch { /* reported to the model as invalid arguments */ }
+  return { name: call.function.name, args };
 }
 
 function createAskRouter(env = process.env, dependencies = {}) {
@@ -136,12 +182,15 @@ function createAskRouter(env = process.env, dependencies = {}) {
     const ready = config && redisFor(req)?.isReady;
     sendSuccess(res, { mode: ready ? 'ai' : 'guided', provider: ready ? config.provider === 'anthropic' ? 'Anthropic' : 'OpenAI' : null, siteKey: ready ? config.siteKey : researchConfig?.siteKey || null, researchEnabled:!!(researchConfig&&redisFor(req)?.isReady), researchExtended:!!(researchConfig&&env.ASK_RESEARCH_EXTENDED==='true'), ...(analytics?.jobsEnabled&&researchConfig&&redisFor(req)?.isReady?{jobsEnabled:true}:{}), ...(authenticatedStaging?{authenticatedStaging:true}:{}) });
   });
-  async function limited(req, res, operation, manual=false) {
+  // ASK_AGENT=true replaces the routing classifier with the tool-using agent.
+  // Unset or false keeps the classifier for rollback.
+  const agentEnabled = env.ASK_AGENT === 'true';
+  async function limited(req, res, operation, manual=false, { deadline = 35000 } = {}) {
     const redis = redisFor(req);
     if (!(manual?researchConfig:config) || !redis?.isReady) return sendProblem(res, 'upstream-error', { status: 503, detail: 'Free-form AI is unavailable. Starter analyses remain available.' });
     try {
       await admit(redis, manual?researchConfig:config, req, dependencies.challengeFetch || fetch);
-      const signal = AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(35000)]);
+      const signal = AbortSignal.any([req.v1.abortSignal, AbortSignal.timeout(deadline)]);
       // Work is admitted only when it is actually needed, once per request.
       // A cached/direct reply therefore consumes neither AI nor SQL allowance.
       let aiWork,sqlWork,aiAdmitted=false;
@@ -150,6 +199,12 @@ function createAskRouter(env = process.env, dependencies = {}) {
       const run = async (input, task) => {
         await ensureAI();
         return askStage('answer', () => interpret(config, input, AbortSignal.any([signal, AbortSignal.timeout(outputTokenLimit(task, config) > 1500 ? 45000 : outputTokenLimit(task, config) > 500 ? 30000 : 15000)]), dependencies.fetch || fetch, task, body => askStage('unavailable', () => reserve(redis, config, body))));
+      };
+      // Agent steps share the same per-question AI admission and reserve the
+      // budget for every provider call, exactly like run().
+      const step = async request => {
+        await ensureAI();
+        return askStage('answer', () => agentStep(config, request, AbortSignal.any([signal, AbortSignal.timeout(outputTokenLimit({ name: 'research_sql' }, config) > 1500 ? 45000 : 30000)]), dependencies.fetch || fetch, body => askStage('unavailable', () => reserve(redis, config, body))));
       };
       const requestAnalytics=analytics?{...analytics,
         execute:async(...args)=>{await ensureSQL();return analytics.execute(...args);},
@@ -164,7 +219,7 @@ function createAskRouter(env = process.env, dependencies = {}) {
           return ticket;
         },
       }:null;
-      const result = await operation(signal, run, requestAnalytics);
+      const result = await operation(signal, run, requestAnalytics, step);
       if (!req.v1.abortSignal.aborted) sendSuccess(res, { ...result, mode: result.mode || (manual?'research':'ai') });
     } catch (error) {
       // Never log questions, provider bodies, credentials or conversation state.
@@ -269,18 +324,29 @@ function createAskRouter(env = process.env, dependencies = {}) {
       if(!analytics?.researchEnabled||parsed.data.page!=='ask')return sendProblem(res,'validation-error');
       try{await compileResearchSQL(parsed.data.currentResearch,{extended:env.ASK_RESEARCH_EXTENDED==='true'});}catch{return sendProblem(res,'validation-error');}
     }
-    return limited(req, res, async(signal, run, requestAnalytics) => {
+    const agent = agentEnabled && analytics?.researchEnabled === true;
+    return limited(req, res, async(signal, run, requestAnalytics, step) => {
       // Fixed public lookups and exact reviewed guide matches are cheap direct
       // answers even while AI is enabled or its paid allowance is exhausted.
       const transactionQuery=resolveTransactionQuery(parsed.data),blockQuery=resolveBlockQuery(parsed.data);
       if(transactionQuery||blockQuery)return {...await (transactionQuery?transactionReply:blockReply)(transactionQuery||blockQuery,parsed.data,dependencies.internalClient,signal),scope:'Public API lookup · no AI'};
       if(['auto','en'].includes(parsed.data.locale)){
-        const direct=guidedReply(parsed.data);
+        // The agent keeps only the exact suggestion chips as no-AI answers.
+        const direct=guidedReply(parsed.data,{chipsOnly:agent});
         const explainMeasurements=direct?.spec&&/^explain this (?:page|view|chart)[?.!]?$/i.test(parsed.data.question.trim());
         if(direct&&!explainMeasurements)return {...direct,scope:direct.spec?'Indexed starter chart · no AI':'Reviewed guide · no AI'};
       }
-      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort, config.planningEffort] }, requestAnalytics);
-    });
+      const cache = { redis:redisFor(req), model: [config.provider, config.model, config.reasoningEffort, config.planningEffort] };
+      const render = selection => chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics, selection);
+      if (agent && !directSelection(parsed.data)) return runAgent(parsed.data, {
+        step, run, render, analytics: requestAnalytics, signal,
+        handoff: (kind, locale) => ({ answer: ziftHandoff[locale] || ziftHandoff.en, sources: [], spec: null, locale, handoff: kind }),
+        clarified: clarifyReply,
+        declined: (reason, locale) => declineReply(reason, parsed.data.question, locale),
+        log: entry => console.info(JSON.stringify({ event: 'ask_agent', ...entry })),
+      });
+      return chat(parsed.data, run, dependencies.internalClient, signal, instruction, cache, requestAnalytics);
+    }, false, { deadline: agent ? 42000 : 35000 });
   });
   router.post('/', limiter, async (req, res) => {
     const { challenge, ...body } = req.body || {};
@@ -317,4 +383,4 @@ function createAskRouter(env = process.env, dependencies = {}) {
   return router;
 }
 
-module.exports = { createAskRouter, interpret, providerConfig, RESERVE, RELEASE_EXPLANATION };
+module.exports = { createAskRouter, interpret, agentStep, providerConfig, RESERVE, RELEASE_EXPLANATION };

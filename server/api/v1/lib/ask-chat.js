@@ -95,6 +95,12 @@ function unsupportedAnswer(question,locale){
   if(historicalAddressBalance)return 'The available address summaries contain current balances. They do not establish exact balances at an earlier date. I can show current balances or analyze public address activity for that period.';
   return unsupported.en;
 }
+// The agent's decline tool. Off-topic questions get one fixed line; private or
+// unavailable requests keep the more specific copy above.
+const offTopic = { en: 'I only answer questions about Zcash and ZecBlock’s public data.' };
+function declineReply(reason, question, locale) {
+  return { answer: reason === 'off_topic' ? offTopic[locale] || unsupported[locale] || unsupported.en : unsupportedAnswer(question, locale), sources: [], spec: null, locale };
+}
 // A capability question needs a useful clarification, not an out-of-scope reply.
 // Server-owned copy prevents ungrounded numerical claims or model-provided SQL
 // from reaching the user before the measures and comparison are defined.
@@ -110,9 +116,16 @@ const growthClarification = {
   ar: 'ما المقاييس التي تريد مقارنتها: عدد المعاملات، المعاملات المحمية، الرسوم، أم أحجام الحماية وإلغاء الحماية العامة؟ للسنة الماضية، أقترح مقارنة أول وآخر فترتين كاملتين مدة كل منهما ثلاثون يوماً وترتيب التغيرات المئوية. اختر المقاييس أو طريقة مقارنة أخرى.',
   ru: 'Какие показатели сравнить: число транзакций, защищённых транзакций, комиссии или публичный объём shielding/deshielding? За прошедший год предлагаю сравнить первые и последние полные тридцатидневные периоды и ранжировать процентные изменения. Выберите показатели или другой способ сравнения.',
 };
+// The agent's clarify tool for a named-but-unspecified measure or window.
+const measureClarification = { en: 'Which measure and which periods should I compare? For example: transaction counts, shielded transaction counts, fees, pool balances or public shielding/deshielding volume, and the two date ranges to compare.' };
+function clarifyReply(kind, locale) {
+  return { answer: kind === 'growth' ? growthClarification[locale] || growthClarification.en : measureClarification[locale] || growthClarification[locale] || measureClarification.en, sources: [], spec: null, locale };
+}
 // zips: only the no-AI fallback answers ZIP questions from index text;
 // with AI available they go to the model, which cites the same records.
-function guidedReply(input, { zips: includeZips = false } = {}) {
+// chipsOnly: answer only exact page-guide questions and starter charts (the
+// suggestion chips); everything else goes to the agent.
+function guidedReply(input, { zips: includeZips = false, chipsOnly = false } = {}) {
   const page = pageById(input.page);
   const question = input.question.trim().toLowerCase().replace(/[?.!]+$/, '');
   const spec = resolveShortcut(input.question, input.context);
@@ -120,6 +133,7 @@ function guidedReply(input, { zips: includeZips = false } = {}) {
   const pageGuide = getKnowledge([page.topic])[0];
   const guideQuestion = Object.keys(pageGuide?.questions || {}).find(text => text.toLowerCase().replace(/[?.!]+$/, '') === question);
   if (guideQuestion) return { answer: pageGuide.questions[guideQuestion], sources: publicSources([pageGuide]), spec: null, locale: 'en', mode: 'guided', scope: 'Page guide · no live data' };
+  if (chipsOnly) return spec ? { answer: 'This analysis uses indexed public observations. Open its chart to inspect the data and methodology.', sources: [], spec, locale: 'en', mode: 'guided', scope: 'Reviewed guide · AI not connected' } : null;
   const pageExplanation = ['explain this page', 'explain this view', 'explain this chart'].includes(question);
   if (pageExplanation) topics = [input.context ? input.context.metric === 'migration_share' ? 'ironwood' : /^(swap_|chain_)/.test(input.context.metric) ? 'crosschain' : input.context.metric === 'pulse' ? 'pulse' : input.context.metric === 'transactions' ? 'transactions' : 'pools' : page.topic];
   if (input.page === 'home' && /^(?:can i (?:customi[sz]e|personali[sz]e) (?:it|this page|the homepage)|how (?:do|can) i customi[sz]e (?:it|this page|the homepage))$/.test(question)) topics = ['home'];
@@ -132,7 +146,9 @@ function guidedReply(input, { zips: includeZips = false } = {}) {
   const records = [...getKnowledge(topics), ...zipRecords(zips).records];
   return { answer: records.length ? records.map(item => item.text).join('\n\n') : 'This analysis uses indexed public observations. Open its chart to inspect the data and methodology.', sources: publicSources(records), spec: spec || (pageExplanation ? input.context || page.spec || null : null), locale: 'en', mode: 'guided', scope: 'Reviewed guide · AI not connected' };
 }
-async function chat(input, run, internalClient, signal, analysisInstructions, cache, analytics) {
+// Exact chips, explicit identifiers and current-chart follow-ups are chosen
+// without a routing call.
+function directSelection(input) {
   const page = pageById(input.page);
   const publicExplain = !input.history.length && /^explain this (page|view|chart)[?.!]?$/i.test(input.question.trim());
   const contextualFollowUp = Boolean(input.context && analysisFollowUps(input.context).includes(input.question.trim()));
@@ -141,7 +157,15 @@ async function chat(input, run, internalClient, signal, analysisInstructions, ca
   const guideQuestion = Object.keys(getKnowledge([page.topic])[0]?.questions || {}).some(text => text.toLowerCase().replace(/[?.!]+$/, '') === input.question.trim().toLowerCase().replace(/[?.!]+$/, ''));
   const transactionShortcut = resolveTransactionQuery(input);
   const blockShortcut = resolveBlockQuery(input);
-  const selection = transactionShortcut ? { intent: 'transactions', transactionQuery: transactionShortcut, locale: input.locale === 'auto' ? 'en' : input.locale } : blockShortcut ? { intent: 'blocks', blockQuery: blockShortcut, locale: input.locale === 'auto' ? 'en' : input.locale } : guideQuestion ? { intent: 'knowledge', spec: null, topics: [pageTopic], locale: input.locale === 'auto' ? 'en' : input.locale } : publicExplain || contextualFollowUp || shortcut ? { intent: shortcut || input.context || page.spec ? 'analysis' : 'knowledge', spec: shortcut || input.context || page.spec || null, topics: [pageTopic], locale: input.locale === 'auto' ? 'en' : input.locale } : await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { analyticsCatalogue: analytics.catalogue, utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
+  const locale = input.locale === 'auto' ? 'en' : input.locale;
+  return transactionShortcut ? { intent: 'transactions', transactionQuery: transactionShortcut, locale } : blockShortcut ? { intent: 'blocks', blockQuery: blockShortcut, locale } : guideQuestion ? { intent: 'knowledge', spec: null, topics: [pageTopic], locale } : publicExplain || contextualFollowUp || shortcut ? { intent: shortcut || input.context || page.spec ? 'analysis' : 'knowledge', spec: shortcut || input.context || page.spec || null, topics: [pageTopic], locale } : null;
+}
+// preselected: a selection made by the agent's tool call. It skips the routing
+// call and renders through the same checked paths.
+async function chat(input, run, internalClient, signal, analysisInstructions, cache, analytics, preselected = null) {
+  const page = pageById(input.page);
+  const publicExplain = !input.history.length && /^explain this (page|view|chart)[?.!]?$/i.test(input.question.trim());
+  const selection = preselected ? { topics: [], ...preselected } : directSelection(input) || await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { analyticsCatalogue: analytics.catalogue, utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
   const locale = input.locale === 'auto' ? selection.locale : input.locale;
   // The page widget has no SQL research route. A question that needs one is
   // offered to Zift instead of refused (no SQL is compiled or run here); an
@@ -290,4 +314,4 @@ async function transactionReply(query, input, client, signal, run, locale = 'en'
   }
   return { answer, spec: null, locale: run && evidence.status === 'found' ? locale : 'en', sources: publicSources(records), transactions: { status: evidence.status, query: evidence.query, rows: evidence.rows, retrievedAt: evidence.retrievedAt }, dataContext: evidence.dataContext, evidenceKey: evidence.evidenceKey, ...(!run ? { mode: 'guided', scope: 'Public API lookup · AI not connected' } : {}) };
 }
-module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported };
+module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported, ziftHandoff, declineReply, clarifyReply, directSelection };

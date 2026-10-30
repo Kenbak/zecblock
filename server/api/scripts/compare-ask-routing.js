@@ -188,6 +188,8 @@ async function main(args = process.argv.slice(2), { providerFetch = fetch, log =
       questions: rows.length, passed: rows.filter(record => record.passed).length,
       passRate: Number((rows.filter(record => record.passed).length / Math.max(rows.length, 1)).toFixed(3)),
       bySet: Object.fromEntries(['eval', 'probes'].map(set => [set, `${rows.filter(record => record.set === set && record.passed).length}/${rows.filter(record => record.set === set).length}`])),
+      // Research cases whose query result matched the reference, whatever the caption said.
+      resultCorrect: `${rows.filter(record => record.set === 'eval' && record.expect[0] === 'sql' && record.status === 200 && record.grade && !record.grade.checks.some(check => ['measures-or-window-mismatch', 'result-not-verified', 'ai-path-required'].includes(check))).length}/${rows.filter(record => record.set === 'eval' && record.expect[0] === 'sql').length}`,
       wrongRefusals: onTopic.filter(record => record.route === 'decline').length,
       offTopicDeclined: `${offTopic.filter(record => record.route === 'decline' && record.status === 200).length}/${offTopic.length}`,
       errors: rows.filter(record => record.status !== 200 && !(record.code === 'ask-source' && dataMode === 'offline')).length,

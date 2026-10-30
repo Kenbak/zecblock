@@ -21,7 +21,7 @@ import { AskTransfers } from '@/components/ask/AskTransfers';
 import { AskSources } from '@/components/ask/AskSources';
 import { AskAnalytics } from '@/components/ask/AskAnalytics';
 import { askChat, askErrorMessage, peekAskHandoff, clearAskHandoff, type AskCapability } from '@/lib/ask/client';
-import type { AskReply, AskSource } from '@/lib/ask/chat';
+import type { AskProgressStage, AskReply, AskSource, AskTurnScope } from '@/lib/ask/chat';
 import { sqlDraft } from '@/lib/ask/composer';
 import { AskFeedback, AskFailureFeedback, useAskFeedback } from '@/components/ask/AskFeedback';
 import { AskAnswerRating } from '@/components/ask/AskAnswerRating';
@@ -43,7 +43,9 @@ const SQLEditor = dynamic(() => import('@/components/ask/SQLEditor').then(module
 const categories = ['Featured', 'Pools', 'Ironwood', 'Cross-chain', 'Network'];
 // ticket: bearer capability for a finished SQL job, kept in memory only so an
 // explanation can be requested later; never saved, shared or sent elsewhere.
-type Message = { ticket?: ResearchJobTicket; explained?: boolean; narrative?: ResearchNarrative; savedDocumentId?: string; savedSnapshot?: boolean; state?: 'pending' | 'complete' | 'failed' | 'cancelled'; sql?: string; research?: ResearchResult; analytics?: AskReply['analytics']; transactions?: AskReply['transactions']; blocks?: AskReply['blocks']; dataContext?: AskReply['dataContext']; id: number; question: string; answer: string; spec?: AnalysisSpec; viewSpec?: AnalysisSpec; sources?: AskSource[]; transfers?: AskReply['transfers']; locale?: string; scope?: string; route?: string; template?: boolean };
+// Stages streamed by /v1/ask/chat while the agent works.
+const progressTitles: Record<AskProgressStage, string> = { planning: 'Choosing an approach…', checking: 'Checking the SQL…', running: 'Running the query…', repairing: 'Fixing the query…', explaining: 'Explaining the results…', looking_up: 'Looking it up…', reading: 'Reading the guides…' };
+type Message = { turnScope?: AskTurnScope; ticket?: ResearchJobTicket; explained?: boolean; narrative?: ResearchNarrative; savedDocumentId?: string; savedSnapshot?: boolean; state?: 'pending' | 'complete' | 'failed' | 'cancelled'; sql?: string; research?: ResearchResult; analytics?: AskReply['analytics']; transactions?: AskReply['transactions']; blocks?: AskReply['blocks']; dataContext?: AskReply['dataContext']; id: number; question: string; answer: string; spec?: AnalysisSpec; viewSpec?: AnalysisSpec; sources?: AskSource[]; transfers?: AskReply['transfers']; locale?: string; scope?: string; route?: string; template?: boolean };
 type Session = { transaction?: string; block?: string; id: number; title: string; messages: Message[]; spec: AnalysisSpec | null; page?: string };
 type Capability = AskCapability;
 const initialSession: Session = { id: 0, title: 'New analysis', messages: [], spec: null };
@@ -96,6 +98,7 @@ export function AskWorkspace() {
   const sqlBlocked = feedback.blockedFor('sql');
   const [busy, setBusy] = useState(false);
   const [jobStatus,setJobStatus]=useState<ResearchJobStatus|null>(null);
+  const [progress, setProgress] = useState<AskProgressStage | null>(null);
   const [capability, setCapability] = useState<Capability>({ mode: 'guided', provider: null });
   const authenticatedStaging = isAuthenticatedAskStaging(capability);
   const verified = authenticatedStaging || !!token;
@@ -222,15 +225,15 @@ export function AskWorkspace() {
     if (detected) { selectSQL(detected); return; }
     const next = resolveShortcut(trimmed, context);
     if (!trimmed || trimmed.length > 1000 || feedback.requestBlocked || busy || request.current || !capabilityReady && !next || capability.mode === 'ai' && !verified && !next) return;
-    setInputMode('ask'); setQuestion(''); setBusy(true); setPhase('thinking'); setNotice(''); feedback.clear('ask'); setChatError('');
+    setInputMode('ask'); setQuestion(''); setBusy(true); setPhase('thinking'); setProgress(null); setNotice(''); feedback.clear('ask'); setChatError('');
     const controller = new AbortController();
     request.current = controller;
     const timeout = setTimeout(() => controller.abort(new DOMException('Request timed out', 'TimeoutError')), 300000);
     const id = ++serial.current;
     setSessions(all => all.map(item => item.id === activeId ? { ...item, title: item.messages.length ? item.title : analysisTitle(trimmed), messages: [...item.messages, { id, question: trimmed, answer: '', state: 'pending' as const }].slice(-30) } : item));
-    const append = (answer: string, next?: AnalysisSpec, sources?: AskSource[], answerLocale?: string, scope?: string, transfers?: AskReply['transfers'], dataContext?: AskReply['dataContext'], blocks?: AskReply['blocks'], transactions?: AskReply['transactions'], analytics?: AskReply['analytics'], research?: ResearchResult, rated?: Pick<AskReply, 'route' | 'template'>) => setSessions(all => all.map(item => item.id === activeId ? {
+    const append = (answer: string, next?: AnalysisSpec, sources?: AskSource[], answerLocale?: string, scope?: string, transfers?: AskReply['transfers'], dataContext?: AskReply['dataContext'], blocks?: AskReply['blocks'], transactions?: AskReply['transactions'], analytics?: AskReply['analytics'], research?: ResearchResult, turnScope?: AskTurnScope, rated?: Pick<AskReply, 'route' | 'template'>) => setSessions(all => all.map(item => item.id === activeId ? {
       ...item, title: item.messages.length ? item.title : analysisTitle(trimmed),
-      messages: item.messages.map(message => message.id === id ? { id, state: 'complete' as const, question: trimmed, answer, narrative: narrativeFor({ question: trimmed, answer, research, locale: answerLocale }), spec: next, sources, transfers, blocks, transactions, analytics, research, dataContext, locale: answerLocale, scope, route: rated?.route, template: rated?.template } : message),
+      messages: item.messages.map(message => message.id === id ? { id, state: 'complete' as const, question: trimmed, answer, narrative: narrativeFor({ question: trimmed, answer, research, locale: answerLocale }), spec: next, sources, transfers, blocks, transactions, analytics, research, dataContext, locale: answerLocale, scope, turnScope, route: rated?.route, template: rated?.template } : message),
       block: blocks?.rows[0]?.hash || item.block,
       transaction: transactions ? transactions.query.txid || transactions.rows[0]?.txid : item.transaction,
       spec: research || analytics || transfers || blocks || transactions ? null : next ?? item.spec,
@@ -238,7 +241,10 @@ export function AskWorkspace() {
     let completedResearch: ResearchResult | undefined;
     try {
       if (!next || capability.mode === 'ai' && verified && !aiBlocked) {
-        let reply = await askChat(trimmed, session.page || 'ask', context, 'auto', session.messages.filter(message => !message.sql && (!message.state || message.state === 'complete')).map(message => message.question), token, controller.signal, context ? undefined : session.block, context ? undefined : session.transaction, !context && analytics?.plan.version === 2 ? analytics.plan : undefined, !context && capability.researchEnabled ? research?.query : undefined);
+        // The server's scope of the latest answer that ran something, for follow-ups.
+        const turnScope = session.messages.findLast(message => message.state === 'complete' && message.turnScope)?.turnScope;
+        let reply = await askChat(trimmed, session.page || 'ask', context, 'auto', session.messages.filter(message => !message.sql && (!message.state || message.state === 'complete')).map(message => message.question), token, controller.signal, context ? undefined : session.block, context ? undefined : session.transaction, !context && analytics?.plan.version === 2 ? analytics.plan : undefined, !context && capability.researchEnabled ? research?.query : undefined, { turnScope, onProgress: stage => { if (request.current === controller) setProgress(stage); } });
+        const queuedScope = reply.turnScope;
         if(reply.job){
           const ticket=jobTicketSchema.parse(reply.job);
           const result=await waitResearch(ticket,controller.signal,setJobStatus);
@@ -255,7 +261,7 @@ export function AskWorkspace() {
         controller.signal.throwIfAborted();
         if (request.current !== controller) return;
         const shownResearch = completedResearch || (reply.research ? researchResultSchema.parse(reply.research) : undefined);
-        append(reply.answer, reply.spec ? analysisSchema.parse(reply.spec) : undefined, reply.sources, reply.locale, reply.scope, reply.transfers, reply.dataContext, reply.blocks, reply.transactions, reply.analytics, shownResearch, { route: reply.route || (completedResearch ? 'run_sql' : undefined), template: reply.template });
+        append(reply.answer, reply.spec ? analysisSchema.parse(reply.spec) : undefined, reply.sources, reply.locale, reply.scope, reply.transfers, reply.dataContext, reply.blocks, reply.transactions, reply.analytics, shownResearch, reply.turnScope || queuedScope, { route: reply.route || (completedResearch ? 'run_sql' : undefined), template: reply.template });
         // Preserve any chart changes made while the explanation was being written.
         if (shownResearch) {
           const narrative = narrativeFor({ question: trimmed, answer: reply.answer, research: shownResearch, locale: reply.locale });
@@ -283,7 +289,7 @@ export function AskWorkspace() {
       }
     } finally {
       clearTimeout(timeout);
-      if (request.current === controller) { request.current = null; setBusy(false); setToken(''); setChallengeReset(value => value + 1); setJobStatus(null); }
+      if (request.current === controller) { request.current = null; setBusy(false); setToken(''); setChallengeReset(value => value + 1); setJobStatus(null); setProgress(null); }
     }
   }
 
@@ -483,8 +489,8 @@ export function AskWorkspace() {
   const insertSQL = (text: string) => { if (!sqlInsert.current?.(text)) setSQLInput(value => value + text); };
   const canSend = sqlMode ? capabilityReady && verified && !!sqlInput.trim() && !tools.importing && !sqlBlocked : !!question.trim() && !feedback.requestBlocked && ((capabilityReady && (capability.mode !== 'ai' || verified)) || !!resolveShortcut(question, spec));
   const submit = () => sqlMode ? void runSQL() : void ask(question);
-  const statusTitle = jobStatus?.state === 'queued' ? 'Waiting to start…' : jobStatus?.state === 'running' ? 'Running your query…' : phase === 'explaining' ? 'Explaining the results…' : phase === 'submitting' ? 'Checking your query…' : 'Thinking…';
-  const statusDetail = jobStatus?.state === 'queued' ? 'Waiting for an available query slot.' : undefined;
+  const statusTitle = jobStatus?.state === 'queued' ? 'Waiting to start…' : jobStatus?.state === 'running' ? 'Running your query…' : phase === 'explaining' ? 'Explaining the results…' : phase === 'submitting' ? 'Checking your query…' : progress ? progressTitles[progress] : 'Thinking…';
+  const statusDetail = jobStatus?.state === 'queued' ? 'Waiting for an available query slot.' : !jobStatus && phase === 'thinking' && progress === 'repairing' ? 'The first query did not run cleanly, so Zift is correcting it.' : undefined;
   const composer = <div className={styles.composerGroup}><form onSubmit={event => { event.preventDefault(); submit(); }} className={styles.composer} aria-busy={busy}>
     {sqlMode ? <SQLEditor value={sqlInput} onChange={setSQLInput} onRun={() => { if (!busy && canSend) submit(); }} datasets={datasets} errorAt={sqlErrorLine} disabled={busy} autoFocus onInsertReady={insert => { sqlInsert.current = insert; }} /> : <>
     <label htmlFor="ask-question" className="sr-only">Ask a question about Zcash</label>
@@ -524,6 +530,7 @@ export function AskWorkspace() {
           <Link href="/privacy" className={styles.sourceLink}>Privacy score <span>↗</span></Link>
           <Link href="/charts" className={styles.sourceLink}>Chart library <span>↗</span></Link>
         </details>
+        <Link href="/docs/mcp" className={styles.mcpLink}><span>Use in Claude or Codex <span aria-hidden="true">↗</span></span><small>Via the ZecBlock MCP server</small></Link>
       </div>
       <p className={styles.sessionNote}>Your library stays on this device.</p>
     </aside>

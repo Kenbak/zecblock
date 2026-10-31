@@ -23,7 +23,7 @@ def healthy():
             'worker_guard_configured': True,
             'db': {'database': 'ask_analytics', 'version': 160015, 'system_identifier': IDENTITY,
                    'in_recovery': False, 'shared_buffers': 16 * GIB, 'postmaster_started': 'pinned',
-                   'ready': True, 'datasets_ready': 6, 'subscriptions_ok': True, 'apply_active': True,
+                   'ready': True, 'datasets_ready': True, 'subscriptions_ok': True, 'apply_active': True,
                    'errors_acknowledged': True, 'reader_active': 2}}
 
 
@@ -46,7 +46,7 @@ class Policy(unittest.TestCase):
         self.assertIn('restart_policy', module.rejection(no_restart, IDENTITY))
         for field, value in [('system_identifier', 'wrong'), ('database', 'writer'),
                              ('in_recovery', True), ('version', 170000), ('ready', False),
-                             ('datasets_ready', 5), ('subscriptions_ok', False), ('apply_active', False),
+                             ('datasets_ready', False), ('datasets_ready', 6), ('subscriptions_ok', False), ('apply_active', False),
                              ('errors_acknowledged', False), ('reader_active', 3)]:
             with self.subTest(field=field):
                 sample = healthy()
@@ -88,6 +88,15 @@ class Policy(unittest.TestCase):
         sample = module.public_sample(healthy())
         self.assertNotIn('main_pid', sample)
         self.assertNotIn('system_identifier', sample['database'])
+
+
+class RequiredDatasets(unittest.TestCase):
+    def test_named_set_matches_availability_alert(self):
+        spec = importlib.util.spec_from_file_location('availability', pathlib.Path(__file__).with_name('analytics-availability.py'))
+        alerts = importlib.util.module_from_spec(spec); spec.loader.exec_module(alerts)
+        self.assertEqual(module.REQUIRED_DATASETS, alerts.REQUIRED_DATASETS)
+        self.assertIn("dataset IN('activity_daily','address_activity','addresses','daily','flow_daily','swaps')", module.SQL)
+        self.assertIn('count(*)=6', module.SQL)
 
 
 if __name__ == '__main__':

@@ -3,6 +3,7 @@
 // never rewritten. Only provable/locally resolved mistakes are diagnosed.
 const {parse}=require('pgsql-parser');
 const {poolLabelDiagnostics}=require('./ask-research-pool-labels');
+const {stockSumDiagnostics}=require('./ask-research-stock-sum');
 const {poolQuestionDiagnostics,futureWindowDiagnostics,columnDiagnostics}=require('./ask-research-question-scope');
 const {z}=require('zod');
 const {compileResearchSQL,instructionsFor}=require('./ask-research-sql');
@@ -16,12 +17,12 @@ const string=n=>n?.TypeCast?string(n.TypeCast.arg):n?.A_Const?.sval?.sval;
 const integer=n=>n?.A_Const?.ival?.ival;
 const column=n=>n?.ColumnRef?.fields?.map(x=>x.String?.sval);
 const andTerms=n=>n?.BoolExpr?.boolop==='AND_EXPR'?n.BoolExpr.args.flatMap(andTerms):[n];
-const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
+const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',address_daily_query:'address_daily',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
 // Unit lineage is deliberately separate from SQL acceptance. Unknown expressions
 // remain queryable; they cannot substantiate a monetary unit in generated prose.
 const {researchCatalogue}=require('../../../../lib/ask/research-catalogue');
 const monetaryFields={blocks:['fees'],transactions:['fees'],flows:['amount'],daily:['orchard','ironwood','sapling','sprout'],addresses:['balance','received','sent'],address_activity:['received','sent'],activity_daily:['fees'],flow_daily:['amount'],swaps:['usd']};
-const countFields=new Set('height transactions shielded_transactions transparent_transactions unclassified_transactions blocks tx_index records missing_fees missing_bytes missing_amounts'.split(' '));
+const countFields=new Set('height transactions shielded_transactions transparent_transactions unclassified_transactions blocks tx_index records missing_fees missing_bytes missing_amounts active_addresses sending_addresses receiving_addresses new_addresses incidences input_incidences output_incidences'.split(' '));
 const booleanFields=new Set('shielded orchard ironwood sapling is_input is_output'.split(' '));
 const unit=value=>({unit:value});
 const unknown=()=>unit('unknown');
@@ -223,7 +224,7 @@ function containsUnboundLocalCount(node,alias){
  return Object.values(node).some(value=>containsUnboundLocalCount(value,alias));
 }
 async function draftDiagnostics(sql,{extended=false,question}={}){
- const tree=await parse(sql),issues=new Set([...poolLabelDiagnostics(tree),...poolQuestionDiagnostics(tree,question),...futureWindowDiagnostics(tree,question),...columnDiagnostics(tree),...nullRankingDiagnostics(tree),...projectionDiagnostics(tree),...(extended?addressDistinctDiagnostics(tree):[]),...(extended?periodGrainDiagnostics(tree,{question}):[]),...(extended?shareDenominatorDiagnostics(tree,{question}):[])]);
+ const tree=await parse(sql),issues=new Set([...poolLabelDiagnostics(tree),...stockSumDiagnostics(tree),...poolQuestionDiagnostics(tree,question),...futureWindowDiagnostics(tree,question),...columnDiagnostics(tree),...nullRankingDiagnostics(tree),...projectionDiagnostics(tree),...(extended?addressDistinctDiagnostics(tree):[]),...(extended?periodGrainDiagnostics(tree,{question}):[]),...(extended?shareDenominatorDiagnostics(tree,{question}):[])]);
  // Only proven raw monetary values trigger a draft repair. Aliases mentioning
  // an asset, counts, USD, and unresolved expressions never imply zatoshis.
  for(const target of unitsFromTree(tree,issues,{question}).targets)if(/(?:^|_)zec(?:_|$)/i.test(target.name||'')&&target.unit==='zatoshi')issues.add('A column labelled ZEC must convert zatoshis in its own expression by dividing by 100000000, for example sum(fees)::numeric/100000000 AS fees_zec. Otherwise keep a zatoshi label.');

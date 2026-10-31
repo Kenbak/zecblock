@@ -537,7 +537,7 @@
     "/v1/ask/chat": {
       "post": {
         "operationId": "post_ask_Chat",
-        "summary": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
+        "summary": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies carry a server-written turnScope that the client may send back, schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress lines before one result or problem line holding the usual body.",
         "tags": [
           "ask"
         ],
@@ -999,6 +999,168 @@
                     ],
                     "additionalProperties": false
                   },
+                  "turnScope": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "sql",
+                          "chart",
+                          "block",
+                          "transaction"
+                        ]
+                      },
+                      "datasets": {
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "blocks",
+                            "transactions",
+                            "flows",
+                            "daily",
+                            "swaps",
+                            "addresses",
+                            "address_activity",
+                            "activity_daily",
+                            "address_daily",
+                            "flow_daily",
+                            "labels"
+                          ]
+                        }
+                      },
+                      "measures": {
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,47}$"
+                        }
+                      },
+                      "pools": {
+                        "maxItems": 5,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "orchard",
+                            "ironwood",
+                            "sapling",
+                            "sprout",
+                            "transparent"
+                          ]
+                        }
+                      },
+                      "window": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "start": {
+                                "type": "string",
+                                "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                              },
+                              "end": {
+                                "type": "string",
+                                "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                              }
+                            },
+                            "required": [
+                              "start",
+                              "end"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "period": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "30d",
+                              "90d",
+                              "1y"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "grain": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "day",
+                              "week",
+                              "month",
+                              "year"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "metric": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "balances",
+                              "flows",
+                              "activity",
+                              "swap_volume",
+                              "swap_count",
+                              "transactions",
+                              "pulse",
+                              "migration_share",
+                              "chain_inflows",
+                              "chain_outflows"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "subject": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{0,47}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "kind",
+                      "datasets",
+                      "measures",
+                      "pools",
+                      "window",
+                      "period",
+                      "grain",
+                      "metric",
+                      "subject"
+                    ],
+                    "additionalProperties": false
+                  },
                   "challenge": {
                     "type": "string",
                     "maxLength": 2048
@@ -1022,7 +1184,7 @@
         "x-cipherscan-v1-status": "native",
         "responses": {
           "200": {
-            "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
+            "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies carry a server-written turnScope that the client may send back, schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress lines before one result or problem line holding the usual body.",
             "content": {
               "application/json": {
                 "schema": {

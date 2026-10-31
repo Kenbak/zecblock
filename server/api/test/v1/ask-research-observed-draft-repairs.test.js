@@ -14,7 +14,7 @@ const badAddress=fixture('ask-fixed-address-distinct.sql');
 const flowCase=cases.find(item=>item.id==='flow_pool_direction_totals');
 const addressCase=cases.find(item=>item.id==='daily_address_incidences');
 const repairedFlow=badFlow.replace(/pool,\s+direction,\s+amount\s+FROM analytics_public\.flow_daily_query/,'pool,\n  direction,\n  amount,\n  records,\n  missing_amounts\nFROM analytics_public.flow_daily_query');
-const repairedAddress=addressCase.referenceSQL;
+const repairedAddress=require('../../v1/lib/ask-research-benchmarks').benchmarks.find(item=>item.id==='address_incidence').sql;
 const flowSignal=/not projected by its fully resolved CTE source/;
 const addressSignal=/month-wide DISTINCT\/address sort/;
 const options={extended:true};

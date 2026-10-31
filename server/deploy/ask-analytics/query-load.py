@@ -23,6 +23,9 @@ CGROUP = '/system.slice/system-postgresql.slice/postgresql@16-main.service'
 MEMORY_ROOT = pathlib.Path('/sys/fs/cgroup' + CGROUP)
 GIB = 1024 ** 3
 ENV_FILE = pathlib.Path('/etc/zecblock/ask-analytics.env')
+# Same named set as analytics-availability.py: added, warming datasets must not
+# fail the load gate, and a missing required one must.
+REQUIRED_DATASETS = ('activity_daily', 'address_activity', 'addresses', 'daily', 'flow_daily', 'swaps')
 SQL = """BEGIN READ ONLY; SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='200ms';
 SELECT json_build_object(
  'database',current_database(),'version',current_setting('server_version_num')::integer,
@@ -30,12 +33,13 @@ SELECT json_build_object(
  'postmaster_started',pg_postmaster_start_time(),'in_recovery',pg_is_in_recovery(),
  'shared_buffers',pg_size_bytes(current_setting('shared_buffers')),
  'ready',(SELECT ready FROM analytics_public.coverage),
- 'datasets_ready',(SELECT count(*) FROM analytics_public.dataset_coverage WHERE ready),
+ 'datasets_ready',(SELECT count(*)=__REQUIRED_COUNT__ FROM analytics_public.dataset_coverage WHERE ready IS TRUE AND dataset IN(__REQUIRED__)),
  'subscriptions_ok',(SELECT count(*)=1 AND bool_and(subname='ask_public_core_v1' AND subenabled AND subdisableonerr AND NOT subrunasowner) FROM pg_subscription),
  'apply_active',(SELECT count(*)=1 FROM pg_stat_subscription WHERE relid IS NULL AND pid IS NOT NULL),
  'errors_acknowledged',analytics_meta.replication_errors_acknowledged(),
  'reader_active',(SELECT count(*) FROM pg_stat_activity WHERE usename='ask_public_reader' AND state='active'),
- 'pids',(SELECT json_agg(pid) FROM pg_stat_activity WHERE pid<>pg_backend_pid())); ROLLBACK;"""
+ 'pids',(SELECT json_agg(pid) FROM pg_stat_activity WHERE pid<>pg_backend_pid())); ROLLBACK;""".replace(
+    '__REQUIRED_COUNT__', str(len(REQUIRED_DATASETS))).replace('__REQUIRED__', ','.join("'" + name + "'" for name in REQUIRED_DATASETS))
 
 
 def command(arguments, timeout=8):
@@ -145,7 +149,7 @@ def rejection(sample, expected_identifier, baseline=None):
         'psi': sample['psi_avg10'] < 5,
         'database_identity': db['database'] == 'ask_analytics' and 160000 <= db['version'] < 170000
                              and db['system_identifier'] == expected_identifier and not db['in_recovery'],
-        'data_ready': db['ready'] is True and db['datasets_ready'] == 6
+        'data_ready': db['ready'] is True and db['datasets_ready'] is True
                       and db['subscriptions_ok'] is True and db['apply_active'] is True
                       and db['errors_acknowledged'] is True,
         'bounded_reader_slots': db['reader_active'] <= 2,

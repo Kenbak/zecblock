@@ -1,16 +1,20 @@
 'use strict';
 const { askError, askStage } = require('./ask-errors');
-const { createHmac, randomUUID } = require('node:crypto');
+const { randomUUID } = require('node:crypto');
 
-// All keys share a Redis Cluster slot. Reserve the conservative maximum, never
-// refund uncertain/cancelled calls. Prices are deployment-reviewed upper bounds.
-// Ordinary beta traffic gets useful routing headroom without making distributed
-// cheap requests unbounded: 20/minute and 400/day/IP; 3000/hour and 20000/day/site.
-// AI work keeps 5/minute and 20/day/IP (it also spends the USD budgets). SQL runs
-// on our own database and gets 10/minute and 100/day/IP; the worker separately
-// caps site-wide daily executions (ASK_ANALYTICS_DAILY_QUERY_LIMIT).
-const REQUEST_LIMITS = Object.freeze({ minute: 20, day: 400, globalHour: 3000, globalDay: 20000 });
-const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 5, day: 20 }), sql: Object.freeze({ minute: 10, day: 100 }) });
+// All keys share a Redis Cluster slot. Reserve the conservative maximum before
+// each call; once the provider reports token usage, the reservation is replaced
+// by the billed cost (RECONCILE), so the USD caps track real spend. Uncertain,
+// failed and cancelled calls report no usage and keep their full reservation.
+// Prices are deployment-reviewed upper bounds.
+// Privacy: no IP address or IP-derived identifier is stored. Every submission
+// passes Turnstile, and allowances are counted site-wide only: 3000/hour and
+// 20000/day requests; AI work 30/minute and 2000/day (it also spends the USD
+// budgets and call caps); SQL work 60/minute and 5000/day, while the worker
+// separately caps daily executions (ASK_ANALYTICS_DAILY_QUERY_LIMIT). One
+// heavy visitor can use up a shared allowance for the day; nobody is tracked.
+const REQUEST_LIMITS = Object.freeze({ globalHour: 3000, globalDay: 20000 });
+const WORK_LIMITS = Object.freeze({ ai: Object.freeze({ minute: 60, day: 2000 }), sql: Object.freeze({ minute: 60, day: 5000 }) });
 const RESERVE = `
 local calls = tonumber(redis.call('GET', KEYS[1]) or '0')
 local daily = tonumber(redis.call('GET', KEYS[3]) or '0')
@@ -28,15 +32,20 @@ redis.call('INCRBY', KEYS[3], ARGV[5]); redis.call('EXPIRE', KEYS[3], 172800)
 redis.call('INCRBY', KEYS[4], ARGV[5]); redis.call('EXPIRE', KEYS[4], 3456000)
 redis.call('ZADD', KEYS[2], ARGV[2], ARGV[4]); redis.call('EXPIRE', KEYS[2], 60)
 return 1`;
+// Refund the unused part of a reservation (ARGV[1], micro-USD) from the daily
+// and monthly totals. Never below zero, and never more than was reserved.
+const RECONCILE = `
+for i = 1, 2 do
+  local current = tonumber(redis.call('GET', KEYS[i]) or '0')
+  local amount = math.min(tonumber(ARGV[1]), current)
+  if amount > 0 then redis.call('DECRBY', KEYS[i], amount) end
+end
+return 1`;
 const ADMIT = `
-if tonumber(redis.call('GET', KEYS[2]) or '0') >= ${REQUEST_LIMITS.day} then return -2 end
-if tonumber(redis.call('GET', KEYS[1]) or '0') >= ${REQUEST_LIMITS.minute} then return -1 end
-if tonumber(redis.call('GET', KEYS[4]) or '0') >= ${REQUEST_LIMITS.globalDay} then return -4 end
-if tonumber(redis.call('GET', KEYS[3]) or '0') >= ${REQUEST_LIMITS.globalHour} then return -3 end
-redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], 120)
+if tonumber(redis.call('GET', KEYS[2]) or '0') >= ${REQUEST_LIMITS.globalDay} then return -4 end
+if tonumber(redis.call('GET', KEYS[1]) or '0') >= ${REQUEST_LIMITS.globalHour} then return -3 end
+redis.call('INCR', KEYS[1]); redis.call('EXPIRE', KEYS[1], 7200)
 redis.call('INCR', KEYS[2]); redis.call('EXPIRE', KEYS[2], 172800)
-redis.call('INCR', KEYS[3]); redis.call('EXPIRE', KEYS[3], 7200)
-redis.call('INCR', KEYS[4]); redis.call('EXPIRE', KEYS[4], 172800)
 return 1`;
 const ADMIT_WORK = `
 local minute = math.max(tonumber(redis.call('GET', KEYS[1]) or '0'), tonumber(redis.call('GET', KEYS[3]) or '0'))
@@ -59,9 +68,6 @@ function quotaError(quotaCode, retryAfter) {
   error.quota = true; error.quotaCode = quotaCode; error.retryAfter = retryAfter;
   return error;
 }
-function identityFor(config, req, day) {
-  return createHmac('sha256', config.abuseSecret).update(`${day}:${req.ip || req.socket?.remoteAddress || 'unknown'}`).digest('hex');
-}
 function money(value) { return /^\d+(\.\d{1,6})?$/.test(value || '') ? Math.round(Number(value) * 1e6) : NaN; }
 function budgetConfig(env, { authenticatedStaging = false } = {}) {
   // Constructor-only opt-in, coupled to a separate staging entrypoint flag.
@@ -71,11 +77,15 @@ function budgetConfig(env, { authenticatedStaging = false } = {}) {
   const monthlyBudget = money(env.ASK_MONTHLY_BUDGET_USD);
   const inputRate = Number(env.ASK_MAX_INPUT_USD_PER_MILLION);
   const outputRate = Number(env.ASK_MAX_OUTPUT_USD_PER_MILLION);
+  // Optional cached-input price for reconciliation; cached tokens otherwise
+  // count at the full input rate.
+  const cachedInputRate = env.ASK_CACHED_INPUT_USD_PER_MILLION === undefined ? inputRate : Number(env.ASK_CACHED_INPUT_USD_PER_MILLION);
   if (![dailyBudget, monthlyBudget].every(value => Number.isSafeInteger(value) && value > 0 && value <= 1e9)
     || ![inputRate, outputRate].every(value => Number.isFinite(value) && value > 0 && value <= 1000)
+    || !(Number.isFinite(cachedInputRate) && cachedInputRate >= 0 && cachedInputRate <= inputRate)
     || !env.ASK_ABUSE_SECRET || env.ASK_ABUSE_SECRET.length < 32
     || !staging && (!env.ASK_TURNSTILE_SECRET || !env.ASK_TURNSTILE_HOSTNAME || !env.ASK_TURNSTILE_SITE_KEY)) return null;
-  return { dailyBudget, monthlyBudget, inputRate, outputRate, abuseSecret: env.ASK_ABUSE_SECRET, challengeSecret: staging ? null : env.ASK_TURNSTILE_SECRET, challengeHostname: staging ? null : env.ASK_TURNSTILE_HOSTNAME, siteKey: staging ? null : env.ASK_TURNSTILE_SITE_KEY, ...(staging ? { authenticatedStaging: true } : {}) };
+  return { dailyBudget, monthlyBudget, inputRate, outputRate, cachedInputRate, abuseSecret: env.ASK_ABUSE_SECRET, challengeSecret: staging ? null : env.ASK_TURNSTILE_SECRET, challengeHostname: staging ? null : env.ASK_TURNSTILE_HOSTNAME, siteKey: staging ? null : env.ASK_TURNSTILE_SITE_KEY, ...(staging ? { authenticatedStaging: true } : {}) };
 }
 // Planning calls that reason need room for reasoning tokens inside the cap.
 const MAX_OUTPUT_TOKENS = 4000;
@@ -91,13 +101,27 @@ function maximumCost(config, body) {
   // wrappers and schema handling. Output includes reasoning within token cap.
   return Math.ceil((bytes + 4096) * config.inputRate + outputTokens * config.outputRate);
 }
+// Billed cost in micro-USD from a provider response's usage (OpenAI chat
+// completions or Anthropic messages), or null when usage is absent or invalid.
+function billedCost(config, usage) {
+  if (!usage || typeof usage !== 'object') return null;
+  const count = value => Number.isSafeInteger(value) && value >= 0 && value <= 1e7 ? value : null;
+  const openai = usage.prompt_tokens !== undefined;
+  const input = count(openai ? usage.prompt_tokens : (usage.input_tokens ?? 0) + (usage.cache_read_input_tokens ?? 0) + (usage.cache_creation_input_tokens ?? 0));
+  const cached = count(openai ? usage.prompt_tokens_details?.cached_tokens ?? 0 : usage.cache_read_input_tokens ?? 0);
+  const output = count(openai ? usage.completion_tokens : usage.output_tokens);
+  if (input === null || cached === null || output === null || cached > input) return null;
+  const rate = config.cachedInputRate ?? config.inputRate;
+  return Math.ceil((input - cached) * config.inputRate + cached * rate + output * config.outputRate);
+}
 async function reserve(redis, config, body, now = Date.now()) {
   const day = new Date(now).toISOString().slice(0, 10);
   const active = 'ask:{mainnet}:active';
   const lease = randomUUID();
+  const reserved = maximumCost(config, body), usd = [`ask:{mainnet}:usd:${day}`, `ask:{mainnet}:usd:${day.slice(0, 7)}`];
   const result = await redis.eval(RESERVE, {
-    keys: [`ask:{mainnet}:calls:${day}`, active, `ask:{mainnet}:usd:${day}`, `ask:{mainnet}:usd:${day.slice(0, 7)}`],
-    arguments: [String(now), String(now + 60000), String(config.dailyCalls), lease, String(maximumCost(config, body)), String(config.dailyBudget), String(config.monthlyBudget)],
+    keys: [`ask:{mainnet}:calls:${day}`, active, ...usd],
+    arguments: [String(now), String(now + 60000), String(config.dailyCalls), lease, String(reserved), String(config.dailyBudget), String(config.monthlyBudget)],
   });
   const code = Number(Array.isArray(result) ? result[0] : result);
   if (code !== 1) {
@@ -108,15 +132,21 @@ async function reserve(redis, config, body, now = Date.now()) {
     if (code === -4 && Number.isInteger(retryAfter) && retryAfter >= 1 && retryAfter <= 60) throw quotaError('ask-ai-busy', retryAfter);
     throw askError('unavailable');
   }
-  return async () => { try { await redis.zRem(active, lease); } catch { /* lease expires */ } };
+  // The release receives the provider's parsed response when one arrived.
+  return async response => {
+    try { await redis.zRem(active, lease); } catch { /* lease expires */ }
+    const billed = billedCost(config, response?.usage);
+    if (billed === null || billed >= reserved) return;
+    try { await redis.eval(RECONCILE, { keys: usd, arguments: [String(reserved - billed)] }); } catch { /* the reservation stands */ }
+  };
 }
 async function admitWork(redis, config, req, kind, now = Date.now()) {
   if (kind !== 'ai' && kind !== 'sql') throw new TypeError('Invalid Ask work class');
-  const day = new Date(now).toISOString().slice(0, 10), identity = identityFor(config, req, day);
-  const prefix = `ask:{mainnet}:work:${kind}:${identity}`, legacy = `ask:{mainnet}:ip:${identity}`;
-  const minute = Math.floor(now / 60000);
+  // Site-wide work counters only; nothing identifies the visitor.
+  const day = new Date(now).toISOString().slice(0, 10), minute = Math.floor(now / 60000);
+  const prefix = `ask:{mainnet}:work:${kind}:all:${day}`;
   const result = Number(await redis.eval(ADMIT_WORK, {
-    keys: [`${prefix}:${minute}`, `${prefix}:day`, `${legacy}:${minute}`, `${legacy}:day`], arguments: [String(WORK_LIMITS[kind].minute), String(WORK_LIMITS[kind].day)],
+    keys: [`${prefix}:${minute}`, `${prefix}:day`, `${prefix}:${minute}`, `${prefix}:day`], arguments: [String(WORK_LIMITS[kind].minute), String(WORK_LIMITS[kind].day)],
   }));
   if (result === -1) throw quotaError(`ask-${kind}-minute`, windowRetry(now, 60000));
   if (result === -2) throw quotaError(`ask-${kind}-day`, windowRetry(now, 86400000));
@@ -140,14 +170,13 @@ async function admit(redis, config, req, fetchImpl = fetch) {
   // Compute the charged UTC windows after verification, which may cross a reset.
   const now = Date.now();
   const day = new Date(now).toISOString().slice(0, 10);
-  const identity = identityFor(config, req, day), prefix = `ask:{mainnet}:requests:ip:${identity}`;
   const admission = Number(await redis.eval(ADMIT, {
-    keys: [`${prefix}:${Math.floor(now / 60000)}`, `${prefix}:day`, `ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], arguments: [],
+    keys: [`ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], arguments: [],
   }));
   if (admission !== 1) {
-    const failure = { '-1': ['ask-request-minute', 60000], '-2': ['ask-request-day', 86400000], '-3': ['ask-request-global-hour', 3600000], '-4': ['ask-request-global-day', 86400000] }[admission];
+    const failure = { '-3': ['ask-request-global-hour', 3600000], '-4': ['ask-request-global-day', 86400000] }[admission];
     if (failure) throw quotaError(failure[0], windowRetry(now, failure[1]));
     throw askError('unavailable');
   }
 }
-module.exports = { RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork, identityFor };
+module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork };

@@ -1,0 +1,19 @@
+.rating { margin-top:12px; font-size:12px; line-height:1.5; color:var(--color-text-muted); }
+.row { display:flex; flex-wrap:wrap; align-items:center; gap:6px; }
+.prompt { margin-right:4px; }
+.vote { display:inline-flex; align-items:center; justify-content:center; width:32px; height:32px; border:1px solid var(--color-border); border-radius:6px; color:var(--color-text-secondary); background:transparent; cursor:pointer; }
+.vote:hover { color:var(--color-text-primary); background:var(--color-hover); }
+.vote[aria-pressed="true"] { color:var(--color-gold); border-color:var(--color-gold-muted); background:var(--color-hover); }
+.vote svg { width:15px; height:15px; }
+.reasons { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; padding:0; border:0; }
+.reasons legend { width:100%; margin-bottom:6px; padding:0; }
+.reason { padding:5px 9px; border:1px solid var(--color-border); border-radius:5px; color:var(--color-text-secondary); text-align:left; cursor:pointer; }
+.reason:hover { color:var(--color-text-primary); background:var(--color-hover); }
+.reason[aria-pressed="true"] { color:var(--color-text-primary); border-color:var(--color-gold-muted); background:var(--color-hover); }
+.share { display:flex; align-items:flex-start; gap:8px; margin-top:10px; max-width:42rem; cursor:pointer; }
+.share input { flex-shrink:0; margin-top:3px; accent-color:var(--color-gold); }
+.status { margin-top:6px; min-height:18px; }
+.error { color:var(--color-warning); }
+.vote:focus-visible, .reason:focus-visible, .share input:focus-visible { outline:2px solid var(--color-gold); outline-offset:2px; }
+.vote:disabled, .reason:disabled, .share input:disabled { cursor:wait; opacity:.6; }
+.down { transform:rotate(180deg); }

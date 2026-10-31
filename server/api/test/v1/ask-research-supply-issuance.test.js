@@ -47,6 +47,14 @@ test('supply_daily and issuance are published extended datasets with guidance',a
  for(const id of ['total_supply_current','supply_year_end_closing','issuance_split_2025','net_supply_vs_subsidy'])assert.ok(cases.some(c=>c.id===id),id);
 });
 
+test('issuance examples and guidance bound the scan by timestamp',async()=>{
+ const {sqlExamples}=require('../../../../lib/ask/sql-examples');
+ for(const example of sqlExamples.filter(example=>(example.datasets||[]).includes('issuance'))){
+  assert.match(example.sql,/WHERE timestamp >= EXTRACT\(EPOCH FROM [^\n]+\)::bigint/,example.id);
+  assert.deepEqual((await compileResearchSQL({version:3,sql:example.sql,limit:10},{extended:true})).datasets,["issuance"],example.id);
+ }
+ assert.match(instructionsFor(true),/Always bound issuance by a bigint Unix timestamp window/);
+});
 test('catalogue columns are exactly the published view columns',()=>{
  for(const id of ['supply_daily','issuance']){
   const entry=researchCatalogue.find(d=>d.id===id);

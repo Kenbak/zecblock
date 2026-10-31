@@ -147,7 +147,12 @@ jobs:
         env:
           ASK_EVAL_TEST_POSTGRES: "1"
           ASK_LOGICAL_PG_BIN: /usr/lib/postgresql/16/bin
-        run: node --test --test-timeout=45000 test/v1/ask-research-eval-postgres.test.js
+        run: node --test --test-timeout=45000 test/v1/ask-research-eval-postgres.test.js test/v1/ask-research-supply-issuance.test.js
+      - name: Replicate the Ask catalogue between disposable PostgreSQL 16 clusters
+        env:
+          ASK_LOGICAL_TEST_POSTGRES: "1"
+          ASK_LOGICAL_PG_BIN: /usr/lib/postgresql/16/bin
+        run: node --test --test-timeout=240000 test/v1/ask-logical-sync.test.js
       - name: Route/lib regression tests
         # These live under server/tests/ (not server/api/test/) but exercise
         # server/api/routes/* and server/lib/* directly with mocked pools —

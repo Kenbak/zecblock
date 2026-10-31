@@ -555,6 +555,8 @@
                   "activity_daily",
                   "address_daily",
                   "flow_daily",
+                  "supply_daily",
+                  "issuance",
                   "labels"
                 ]
               }

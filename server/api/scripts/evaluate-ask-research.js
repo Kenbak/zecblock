@@ -1,7 +1,9 @@
 'use strict';
 // Operator-only fixed cases. LIVE requires an isolated serving wrapper which
 // counts and caps actual outbound attempts BEFORE contacting the provider.
-const {cases:catalogue,selectedCases}=require('../v1/lib/ask-research-eval-cases');
+const {cases:published,pendingCases,selectedCases}=require('../v1/lib/ask-research-eval-cases');
+// --all validation also compiles pending cases (unpublished datasets) in preview.
+const catalogue=[...published,...pendingCases];
 const {modelProfile,attestRuntime}=require('../v1/lib/ask-model-profile');
 const {comparisonQuery,gradeReply}=require('../v1/lib/ask-research-eval');
 const {compileResearchSQL}=require('../v1/lib/ask-research-sql');
@@ -20,7 +22,7 @@ function options(args,env={}){
  return {live,all,profile,limit,cases,url};
 }
 async function validateCases(cases){
- for(const item of cases){if(item.kind!=='research')continue;const query=(await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true})).request;
+ for(const item of cases){if(item.kind!=='research')continue;const query=(await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true,preview:pendingCases.includes(item)})).request;
   await comparisonQuery(item,{query,columns:item.roles.map((role,i)=>({key:`c${i}`,label:`role_${i}`,type:['date','month'].includes(role)?'text':'number'})),rows:[],truncated:false,datasets:['activity_daily'],fingerprint:'a'.repeat(64),retrievedAt:'2026-10-16T00:00:00Z',indexedThrough:'2026-10-16T00:00:00Z',coverage:'validation only',units:'validation only'});
  }
 }

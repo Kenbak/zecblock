@@ -17,11 +17,11 @@ const string=n=>n?.TypeCast?string(n.TypeCast.arg):n?.A_Const?.sval?.sval;
 const integer=n=>n?.A_Const?.ival?.ival;
 const column=n=>n?.ColumnRef?.fields?.map(x=>x.String?.sval);
 const andTerms=n=>n?.BoolExpr?.boolop==='AND_EXPR'?n.BoolExpr.args.flatMap(andTerms):[n];
-const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',address_daily_query:'address_daily',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
+const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',address_daily_query:'address_daily',supply_daily_query:'supply_daily',issuance_query:'issuance',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
 // Unit lineage is deliberately separate from SQL acceptance. Unknown expressions
 // remain queryable; they cannot substantiate a monetary unit in generated prose.
 const {researchCatalogue}=require('../../../../lib/ask/research-catalogue');
-const monetaryFields={blocks:['fees'],transactions:['fees'],flows:['amount'],daily:['orchard','ironwood','sapling','sprout'],addresses:['balance','received','sent'],address_activity:['received','sent'],activity_daily:['fees'],flow_daily:['amount'],swaps:['usd']};
+const monetaryFields={blocks:['fees'],transactions:['fees'],flows:['amount'],daily:['orchard','ironwood','sapling','sprout'],addresses:['balance','received','sent'],address_activity:['received','sent'],activity_daily:['fees'],flow_daily:['amount'],swaps:['usd'],supply_daily:['chain_supply','lockbox','circulating_supply','net_change'],issuance:['subsidy','miner_subsidy','founders','funding_streams','lockbox','lockbox_disbursed','fees']};
 const countFields=new Set('height transactions shielded_transactions transparent_transactions unclassified_transactions blocks tx_index records missing_fees missing_bytes missing_amounts active_addresses sending_addresses receiving_addresses new_addresses incidences input_incidences output_incidences'.split(' '));
 const booleanFields=new Set('shielded orchard ironwood sapling is_input is_output'.split(' '));
 const unit=value=>({unit:value});

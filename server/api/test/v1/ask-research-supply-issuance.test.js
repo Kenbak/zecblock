@@ -43,7 +43,7 @@ test('supply_daily and issuance are published extended datasets with guidance',a
  assert.match(instructionsFor(true),/never SUM chain_supply, lockbox or circulating_supply across dates/);
  assert.match(instructionsFor(true),/aggregate issuance/);
  assert.doesNotMatch(instructionsFor(false),/supply_daily|issuance\(/);
- assert.deepEqual(pendingCases.map(c=>c.id),[]);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).some(id=>['supply_daily','issuance'].includes(id))));
  for(const id of ['total_supply_current','supply_year_end_closing','issuance_split_2025','net_supply_vs_subsidy'])assert.ok(cases.some(c=>c.id===id),id);
 });
 
@@ -93,7 +93,7 @@ test('migrations are guarded, additive and ordered destination before source',()
  assert.match(rollback,/EXISTS\(SELECT FROM pg_subscription_rel WHERE srrelid='public\.chain_supply_daily'::regclass\)/);
  assert.match(rollback,/DROP VIEW analytics_public\.supply_daily_query,analytics_public\.issuance_query;/);
  const admission=fs.readFileSync(path.join(__dirname,'../../scripts/ask-core-admission.js'),'utf8');
- assert.match(admission,/WHEN 'supply_daily' THEN 'public\.chain_supply_daily'/);assert.match(admission,/'address_activity','supply_daily'\)/);
+ assert.match(admission,/WHEN 'supply_daily' THEN ARRAY\['public\.chain_supply_daily'\]/);assert.match(admission,/'address_activity','supply_daily'[,)]/);
 });
 
 // Executes the migration's own view text against node-verified vectors. Opt-in

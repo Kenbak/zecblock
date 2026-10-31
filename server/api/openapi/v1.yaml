@@ -758,6 +758,10 @@ paths:
                           - flow_daily
                           - supply_daily
                           - issuance
+                          - mining_daily
+                          - software_daily
+                          - block_timing
+                          - issuance_daily
                           - labels
                     measures:
                       maxItems: 6

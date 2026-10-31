@@ -30,8 +30,8 @@ test('starter queries pass the research policy for their catalogue',async()=>{
   assert.ok(examplesFor(false).length>=4);assert.ok(examplesFor(false).every(example=>!example.extended));
   assert.equal(new Set(sqlExamples.map(example=>example.id)).size,sqlExamples.length);
   // Examples for unpublished datasets are hidden until the dataset is published.
-  assert.ok(!examplesFor(true).some(example=>['supply-now','issuance-split'].includes(example.id)));
-  assert.ok(examplesFor(true,{preview:true}).some(example=>example.id==='supply-now'));
+  assert.ok(examplesFor(true).some(example=>example.id==='supply-now')&&examplesFor(true).some(example=>example.id==='issuance-split'));
+  assert.ok(!examplesFor(false).some(example=>example.id==='supply-now'));
   for(const example of sqlExamples){
     const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:100},{extended:example.extended,preview:Boolean(example.datasets)});
     assert.ok(compiled.datasets.length>=1,example.id);

@@ -1,7 +1,7 @@
 import importlib.util,pathlib,unittest,json,types
 spec=importlib.util.spec_from_file_location('analytics_alerts',pathlib.Path(__file__).with_name('analytics-availability.py'));a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
 class Probe(unittest.TestCase):
- READY={'activity_daily':True,'address_activity':True,'addresses':True,'daily':True,'flow_daily':True,'swaps':True}
+ READY={'activity_daily':True,'address_activity':True,'addresses':True,'daily':True,'flow_daily':True,'supply_daily':True,'swaps':True}
  def runner(self,healthy=True,datasets=None,worker=True):
   datasets=dict(self.READY) if datasets is None else datasets
   def run(args,**kwargs):
@@ -16,7 +16,7 @@ class Probe(unittest.TestCase):
   for args,code in [({'healthy':False},'analytics_health_failed'),({'datasets':dict(self.READY,swaps=False)},'datasets_unavailable'),({'worker':False},'query_worker_unavailable')]:self.assertIn(code,a.probe(self.runner(**args))[0])
  def test_added_dataset_rows_never_block_research(self):
   # The 2026-10-31 incident: a seventh, warming row tripped count(*)=6.
-  errors,_,warming=a.probe(self.runner(datasets=dict(self.READY,address_daily=False,supply_daily=True)))
+  errors,_,warming=a.probe(self.runner(datasets=dict(self.READY,address_daily=False,future_daily=True)))
   self.assertEqual(errors,[]);self.assertEqual(warming,['address_daily'])
  def test_missing_or_malformed_required_dataset_alerts(self):
   for datasets in [{k:v for k,v in self.READY.items() if k!='daily'},{},None,[],dict(self.READY,daily='t'),dict(self.READY,flow_daily=None)]:
@@ -24,7 +24,9 @@ class Probe(unittest.TestCase):
  def test_required_set_matches_published_catalogue(self):
   catalogue=(pathlib.Path(__file__).parents[3]/'lib/ask/research-catalogue.js').read_text()
   import re
-  published=set(re.findall(r"\{id:'([a-z_]+)',(?!published:false)",catalogue))-{'blocks','transactions','flows','labels'}
+  # Core-gated datasets (blocks, transactions, flows, labels, issuance) have no dataset_coverage row.
+  core=set(re.findall(r"'([a-z_]+)'",re.search(r"coreGatedIds=Object\.freeze\(\[\.\.\.coreIds,([^\]]*)\]",catalogue).group(1)))|{'blocks','transactions','flows'}
+  published=set(re.findall(r"\{id:'([a-z_]+)',(?!published:false)",catalogue))-core
   self.assertEqual(set(a.REQUIRED_DATASETS),published)
  def test_analytics_alone_reports_research_data_readiness(self):
   text=a.notification_text('recovery','')

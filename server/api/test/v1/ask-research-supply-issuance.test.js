@@ -31,15 +31,20 @@ const nodeSubsidy=[
  [3428143,156250000,0,12500000,18750000,125000000],[3543404,156250000,0,12500000,18750000,125000000],
 ];
 
-test('supply_daily and issuance stay unpublished until their host rollout is verified',async()=>{
+// Published 2026-10-31 after the host rollout was verified (supply-issuance.md).
+test('supply_daily and issuance are published extended datasets with guidance',async()=>{
+ const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
  for(const id of ['supply_daily','issuance']){
-  assert.equal(isPublished(id),false,id);assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
-  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true}),/not admitted/);
+  assert.equal(isPublished(id),true,id);assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1}),/not admitted/);
+  assert.deepEqual((await compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true})).datasets,[id]);
  }
- assert.doesNotMatch(instructionsFor(true).replace(/supply_daily, issuance and their/,''),/supply_daily|issuance\(/);
- assert.match(instructionsFor(true,preview),/read supply_daily: a current figure is the latest row/);
- assert.match(instructionsFor(true,preview),/never SUM chain_supply, lockbox or circulating_supply across dates/);
- assert.match(instructionsFor(true,preview),/aggregate issuance/);
+ assert.match(instructionsFor(true),/read supply_daily: a current figure is the latest row/);
+ assert.match(instructionsFor(true),/never SUM chain_supply, lockbox or circulating_supply across dates/);
+ assert.match(instructionsFor(true),/aggregate issuance/);
+ assert.doesNotMatch(instructionsFor(false),/supply_daily|issuance\(/);
+ assert.deepEqual(pendingCases.map(c=>c.id),[]);
+ for(const id of ['total_supply_current','supply_year_end_closing','issuance_split_2025','net_supply_vs_subsidy'])assert.ok(cases.some(c=>c.id===id),id);
 });
 
 test('catalogue columns are exactly the published view columns',()=>{

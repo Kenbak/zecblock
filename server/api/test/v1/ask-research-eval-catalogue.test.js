@@ -13,9 +13,9 @@ const byId=id=>{const item=cases.find(entry=>entry.id===id);assert.ok(item,id);r
 function walk(value,visit){if(!value||typeof value!=='object')return;visit(value);for(const child of Object.values(value))walk(child,visit);}
 
 test('operator catalogue expands coverage while preserving the five-case live default',()=>{
- assert.equal(cases.length,45);assert.deepEqual(cases.slice(0,5).map(item=>item.id),firstFive);
+ assert.equal(cases.length,49);assert.deepEqual(cases.slice(0,5).map(item=>item.id),firstFive);
  assert.deepEqual(defaultCaseIds,firstFive);assert.deepEqual(selectedCases().map(item=>item.id),firstFive);
- assert.equal(liveCaseLimit,6);assert.equal(cases.filter(item=>item.kind==='research').length,38);
+ assert.equal(liveCaseLimit,6);assert.equal(cases.filter(item=>item.kind==='research').length,42);
  assert.equal(cases.filter(item=>item.fixtureOnly).length,5);
  assert.deepEqual(new Set(cases.map(item=>item.kind)),new Set(['research','clarify','unavailable']));
  assert.equal(new Set(cases.map(item=>item.id)).size,cases.length);

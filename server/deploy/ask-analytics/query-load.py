@@ -25,7 +25,7 @@ GIB = 1024 ** 3
 ENV_FILE = pathlib.Path('/etc/zecblock/ask-analytics.env')
 # Same named set as analytics-availability.py: added, warming datasets must not
 # fail the load gate, and a missing required one must.
-REQUIRED_DATASETS = ('activity_daily', 'address_activity', 'addresses', 'daily', 'flow_daily', 'supply_daily', 'swaps')
+REQUIRED_DATASETS = ('activity_daily', 'address_activity', 'addresses', 'block_timing', 'daily', 'flow_daily', 'issuance_daily', 'mining_daily', 'software_daily', 'supply_daily', 'swaps')
 SQL = """BEGIN READ ONLY; SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='200ms';
 SELECT json_build_object(
  'database',current_database(),'version',current_setting('server_version_num')::integer,

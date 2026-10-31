@@ -399,6 +399,41 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    // SQL publication text names no provider secrets/payload/address labels.
    assert.doesNotMatch(sourceMigration,/deposit_address|senders|recipient|raw_origin_asset/);
   });
+  await admission.test('supply archive replicates after its destination migration; issuance derives from canonical blocks',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   await target.query(read('supply-issuance-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='supply_daily'")).rows[0].ready,false);
+   await source.query("CREATE TABLE chain_supply_daily(date date PRIMARY KEY,block_height bigint NOT NULL,block_hash text NOT NULL,block_time bigint NOT NULL,chain_supply_zat bigint NOT NULL,source text NOT NULL DEFAULT 'node-getblock-chain-supply-v1',computed_at timestamptz NOT NULL DEFAULT now())");
+   const [first,second]=(await source.query('SELECT height::int,hash,timestamp::text FROM blocks ORDER BY height LIMIT 2')).rows;
+   // Two consecutive canonical dates plus a later row whose hash is not canonical.
+   await source.query("INSERT INTO chain_supply_daily(date,block_height,block_hash,block_time,chain_supply_zat,source) VALUES('2023-11-14',$1,$2,$3,62500,'secret'),('2023-11-15',$4,$5,$6,187500,'secret'),('2023-11-16',$4,$7,$6,999,'secret')",[first.height,first.hash,first.timestamp,second.height,second.hash,second.timestamp,'f'.repeat(64)]);
+   const before=(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   await source.query(read('supply-issuance-source-v1.sql').replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n===before+1);
+   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+   assert.equal((await refreshAdmission(target)).state,'verified');
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='supply_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query('SELECT date::text,height::text,chain_supply::text,lockbox::text,circulating_supply::text,net_change::text FROM analytics_public.supply_daily_query ORDER BY date')).rows,[
+    {date:'2023-11-14',height:String(first.height),chain_supply:'62500',lockbox:'0',circulating_supply:'62500',net_change:null},
+    {date:'2023-11-15',height:String(second.height),chain_supply:'187500',lockbox:'0',circulating_supply:'187500',net_change:'125000'}]);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.chain_supply_daily'::regclass AND attnum>0 ORDER BY attnum")).rows.map(r=>r.attname),['date','block_height','block_hash','block_time','chain_supply_zat']);
+   // Fixture heights are in the slow start: 62500 zat per height, founders 20%.
+   assert.deepEqual((await reader.query('SELECT height::int,subsidy::text,miner_subsidy::text,founders::text,funding_streams::text,lockbox::text,lockbox_disbursed::text FROM analytics_public.issuance_query ORDER BY height LIMIT 2')).rows,[
+    {height:first.height,subsidy:String(62500*first.height),miner_subsidy:String(50000*first.height),founders:String(12500*first.height),funding_streams:'0',lockbox:'0',lockbox_disbursed:'0'},
+    {height:second.height,subsidy:String(62500*second.height),miner_subsidy:String(50000*second.height),founders:String(12500*second.height),funding_streams:'0',lockbox:'0',lockbox_disbursed:'0'}]);
+   for(const sql of ['SELECT * FROM public.chain_supply_daily','DELETE FROM public.chain_supply_daily','SELECT source FROM analytics_public.supply_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   // Rollback order: source publication first, then subscription refresh, then destination.
+   await assert.rejects(target.query(read('supply-issuance-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(read('supply-issuance-source-v1-rollback.sql').replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.chain_supply_daily') IS NULL AND to_regclass('analytics_public.issuance_query') IS NULL AS gone")).rows[0].gone,true);
+   await source.query("INSERT INTO chain_supply_daily(date,block_height,block_hash,block_time,chain_supply_zat) VALUES('2023-11-17',1,'x',1,1)");
+   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+   assert.equal((await refreshAdmission(target)).state,'verified');
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');

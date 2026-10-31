@@ -1,6 +1,6 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
-const {cases,selectedCases}=require('../../v1/lib/ask-research-eval-cases');
+const {cases,pendingCases,selectedCases}=require('../../v1/lib/ask-research-eval-cases');
 const {decimal,dateKey,comparisonQuery,gradeReply,matchRoles}=require('../../v1/lib/ask-research-eval');
 const {profiles,modelProfile,attestRuntime}=require('../../v1/lib/ask-model-profile');
 const {options,run}=require('../../scripts/evaluate-ask-research');
@@ -45,10 +45,12 @@ test('offline entrypoint compiles all reference and same-snapshot verification q
  assert.equal(summary.mode,'validation-only');assert.equal(summary.referenceQueries,3);assert.equal(summary.providerAttempts,0);assert.equal(emitted.length,1);
 });
 test('all-case validation cannot accidentally become a paid or unbounded live run',async()=>{
- assert.equal(options(['--all']).cases.length,cases.length);
+ // --all validates pending (unpublished-dataset) cases offline too; they never run live.
+ assert.equal(options(['--all']).cases.length,cases.length+pendingCases.length);
+ for(const item of pendingCases)assert.throws(()=>options(['--allow-paid','--profile=luna-candidate',item.id]));
  for(const args of [['--all','--allow-paid','--profile=luna-candidate'],['--allow-paid','--profile=luna-candidate','--all'],['--all','fee_units']])assert.throws(()=>options(args));
  const emitted=[];const summary=await run(['--all'],{}, {request:async()=>assert.fail('all-case validation must not call a provider or API'),emit:record=>emitted.push(record)});
- assert.equal(summary.cases,cases.length);assert.equal(summary.providerAttempts,0);assert.equal(summary.mode,'validation-only');assert.equal(emitted.length,1);
+ assert.equal(summary.cases,cases.length+pendingCases.length);assert.equal(summary.providerAttempts,0);assert.equal(summary.mode,'validation-only');assert.equal(emitted.length,1);
 });
 test('verification is one admitted SELECT and supports model aliases and reordered columns',async()=>{
  const reordered=result([['0.003937370','2026-09-01 00:00:00+00','0','120']], 'SELECT fees::numeric/100000000 AS whatever,date AS datum,missing_fees AS x,transactions AS y FROM activity_daily', ['whatever','datum','x','y']);

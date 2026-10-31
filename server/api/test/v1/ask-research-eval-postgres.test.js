@@ -2,7 +2,9 @@
 // Opt-in local PG16 capability/transport fixture only. No serving database,
 // provider, Redis, copied production data, readiness or historical-coverage claim.
 const test=require('node:test'),assert=require('node:assert/strict');
-const {cases}=require('../../v1/lib/ask-research-eval-cases');
+const {cases:published,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
+// Pending cases need unpublished datasets; the fixture executes them in preview.
+const cases=[...published,...pendingCases],preview={preview:true};
 const {compileResearchSQL,researchEvidence}=require('../../v1/lib/ask-research-sql');
 const {comparisonQuery,splitComparison,matchRoles}=require('../../v1/lib/ask-research-eval');
 const when='2026-10-28T00:00:00Z';
@@ -36,6 +38,8 @@ CREATE TABLE fixture_private.addresses(address text PRIMARY KEY,balance bigint,r
 CREATE TABLE fixture_private.address_activity(address text,txid text,height integer,timestamp bigint,tx_index integer,is_input boolean,is_output boolean,received bigint,sent bigint);
 CREATE TABLE fixture_private.activity_daily(date date PRIMARY KEY,blocks bigint,transactions bigint,shielded_transactions bigint,transparent_transactions bigint,unclassified_transactions bigint,bytes numeric,fees numeric,missing_fees bigint,missing_bytes bigint);
 CREATE TABLE fixture_private.address_daily(date date PRIMARY KEY,active_addresses bigint,sending_addresses bigint,receiving_addresses bigint,new_addresses bigint,incidences bigint,input_incidences bigint,output_incidences bigint);
+CREATE TABLE fixture_private.supply_daily(date date PRIMARY KEY,height bigint,hash text,timestamp bigint,chain_supply bigint,lockbox bigint,circulating_supply bigint,net_change bigint);
+CREATE TABLE fixture_private.issuance(height bigint PRIMARY KEY,hash text,timestamp bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint,fees bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
 CREATE VIEW analytics_public.blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.blocks;
 CREATE VIEW analytics_public.transactions_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.transactions;
@@ -47,6 +51,8 @@ CREATE VIEW analytics_public.address_activity_query WITH(security_barrier=true) 
 CREATE VIEW analytics_public.activity_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.activity_daily;
 CREATE VIEW analytics_public.flow_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.flow_daily;
 CREATE VIEW analytics_public.address_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_daily;
+CREATE VIEW analytics_public.supply_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.supply_daily;
+CREATE VIEW analytics_public.issuance_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -63,6 +69,10 @@ INSERT INTO fixture_private.addresses VALUES('fixture_address_a',1000000000,2000
 INSERT INTO fixture_private.address_activity VALUES('fixture_address_a','fixture_tx_0',3500000,1788220800,0,true,true,100,50),('fixture_address_b','fixture_tx_0',3500000,1788220800,0,false,true,50,0),('fixture_address_a','fixture_tx_1',3500001,1788220875,1,true,false,0,50);
 -- The same three September 1 incidences, summarized; other September dates have blocks but no incidences.
 INSERT INTO fixture_private.address_daily SELECT DATE '2026-09-01'+i,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 1 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 3 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END FROM generate_series(0,29) i;
+-- Year-end and September 2026 supply dates (2016-12-31 through 2026-10-28) with steady 1150-block days.
+INSERT INTO fixture_private.supply_daily SELECT d,3000000+i,'fixture_hash',extract(epoch FROM d)::bigint+86000,1500000000000000+i*179687500000,7000000000000,1500000000000000+i*179687500000-7000000000000,CASE WHEN i>0 THEN 179687500000 END FROM generate_series(DATE '2016-12-31',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT (n-1)::bigint AS i) x;
+-- Daily blocks in 2025 and September 2026 at the post-2726400 split, one per hour.
+INSERT INTO fixture_private.issuance SELECT 2900000+n,'fixture_hash',extract(epoch FROM t)::bigint,156250000,125000000,0,12500000,18750000,0,1000 FROM generate_series(TIMESTAMP '2025-01-01',TIMESTAMP '2026-10-28','1 hour') WITH ORDINALITY g(t,n);
 RESET ROLE;`;
 
 // Independent, fixed mathematical oracles; these do not trust case.fixtureRows.
@@ -125,9 +135,9 @@ test('disposable PG16 catalogue SQL and exact wire transport',{skip:process.env.
  });
 
  for(const item of cases.filter(entry=>entry.kind==='research'))await t.test('native syntax/comparison capability: '+item.id,async()=>{
-  const compiled=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true}),candidate=await read(compiled);
+  const compiled=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true,...preview}),candidate=await read(compiled);
   assert.equal(candidate.truncated,false);assert.equal(candidate.columns.length,item.roles.length);
-  const combined=await comparisonQuery(item,candidate),verification=await read(await compileResearchSQL(combined,{extended:true}));
+  const combined=await comparisonQuery(item,candidate),verification=await read(await compileResearchSQL(combined,{extended:true,...preview}));
   const pair=splitComparison(item,candidate,verification);
   const mapping=matchRoles(item,pair.reference,pair.observed,candidate.columns);
   assert.ok(mapping,'native typed rows retain an equivalent role mapping');assert.equal(new Set(mapping).size,item.roles.length);

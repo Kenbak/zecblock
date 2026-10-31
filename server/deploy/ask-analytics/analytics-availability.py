@@ -6,7 +6,7 @@ spec=importlib.util.spec_from_file_location('alerts',pathlib.Path(__file__).with
 # migrated dataset adds a dataset_coverage row and stays unready while it
 # backfills, which must not block research. Add a dataset here only once its
 # rollout is verified and it is published in lib/ask/research-catalogue.js.
-REQUIRED_DATASETS=('activity_daily','address_activity','addresses','daily','flow_daily','supply_daily','swaps')
+REQUIRED_DATASETS=('activity_daily','address_activity','addresses','block_timing','daily','flow_daily','issuance_daily','mining_daily','software_daily','supply_daily','swaps')
 SQL="""BEGIN READ ONLY; SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='200ms';
 SELECT json_build_object('verified_at',(SELECT verified_at::text FROM analytics_public.coverage),
  'datasets',(SELECT coalesce(json_object_agg(dataset,ready IS TRUE),'{}'::json) FROM analytics_public.dataset_coverage)); ROLLBACK;"""

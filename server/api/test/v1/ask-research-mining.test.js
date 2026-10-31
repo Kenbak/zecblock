@@ -22,24 +22,24 @@ function viewColumns(sql){
  return parts.map(p=>{p=p.trim();const alias=/\bAS\s+([a-z_]+)$/i.exec(p);return alias?alias[1]:p.split('.').pop();});
 }
 
-test('mining datasets stay unpublished until the host rollout is verified',async()=>{
+// Published 2026-10-31 after the host rollout was verified (mining.md).
+test('mining datasets are published extended datasets with guidance',async()=>{
  const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
  for(const id of ids){
-  assert.equal(isPublished(id),false,id);assert.equal(isPublished(id,preview),true,id);
-  assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
-  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true}),/not admitted/);
-  assert.deepEqual((await compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true,...preview})).datasets,[id]);
+  assert.equal(isPublished(id),true,id);
+  assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1}),/not admitted/);
+  assert.deepEqual((await compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true})).datasets,[id]);
   assert.ok(!coreGatedIds.includes(id),id);
  }
- assert.doesNotMatch(instructionsFor(true),/mining_daily:|software_daily the same way|read issuance_daily instead|read block_timing/);
- assert.match(instructionsFor(true),/For net supply growth over longer spans sum supply_daily\.net_change instead/);
- assert.match(instructionsFor(true,preview),/read mining_daily: sum blocks per pool/);
- assert.match(instructionsFor(true,preview),/read issuance_daily instead/);
- assert.match(instructionsFor(true,preview),/markers are self-reported, and unknown is not proof of zcashd/);
- assert.match(instructionsFor(true,preview),/read block_timing bounded by timestamp or height/);
- assert.match(instructionsFor(true,preview),/never call it pure propagation delay/);
- assert.deepEqual(pendingCases.map(c=>c.id).sort(),['issuance_since_launch','pool_concentration_30d','timestamp_lag_by_miner_2026_10','zebra_share_2026_09']);
- assert.ok(!cases.some(c=>(c.requires||[]).some(id=>ids.includes(id))));
+ assert.match(instructionsFor(true),/read mining_daily: sum blocks per pool/);
+ assert.match(instructionsFor(true),/read issuance_daily instead/);
+ assert.match(instructionsFor(true),/markers are self-reported, and unknown is not proof of zcashd/);
+ assert.match(instructionsFor(true),/read block_timing bounded by timestamp or height/);
+ assert.match(instructionsFor(true),/never call it pure propagation delay/);
+ assert.doesNotMatch(instructionsFor(false),/mining_daily:|read block_timing|read issuance_daily/);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).some(id=>ids.includes(id))));
+ for(const id of ['issuance_since_launch','pool_concentration_30d','timestamp_lag_by_miner_2026_10','zebra_share_2026_09'])assert.ok(cases.some(c=>c.id===id),id);
 });
 
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
@@ -59,7 +59,7 @@ test('examples compile in preview and the issuance history example reads issuanc
  const examples=sqlExamples.filter(e=>(e.datasets||[]).some(id=>ids.includes(id)));
  assert.deepEqual(examples.map(e=>e.id),['pool-share-30d','software-share-monthly','timestamp-vs-first-seen','issuance-history']);
  for(const example of examples){
-  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true,...preview});
+  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true});
   assert.deepEqual(compiled.datasets,example.datasets,example.id);
   assert.equal(displaySQL(compiled.request.sql).includes('analytics_public'),false);
  }

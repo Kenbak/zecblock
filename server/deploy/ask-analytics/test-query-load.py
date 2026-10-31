@@ -95,8 +95,8 @@ class RequiredDatasets(unittest.TestCase):
         spec = importlib.util.spec_from_file_location('availability', pathlib.Path(__file__).with_name('analytics-availability.py'))
         alerts = importlib.util.module_from_spec(spec); spec.loader.exec_module(alerts)
         self.assertEqual(module.REQUIRED_DATASETS, alerts.REQUIRED_DATASETS)
-        self.assertIn("dataset IN('activity_daily','address_activity','addresses','daily','flow_daily','supply_daily','swaps')", module.SQL)
-        self.assertIn('count(*)=7', module.SQL)
+        self.assertIn("dataset IN('activity_daily','address_activity','addresses','block_timing','daily','flow_daily','issuance_daily','mining_daily','software_daily','supply_daily','swaps')", module.SQL)
+        self.assertIn('count(*)=11', module.SQL)
 
 
 if __name__ == '__main__':

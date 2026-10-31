@@ -1,7 +1,7 @@
 import importlib.util,pathlib,unittest,json,types
 spec=importlib.util.spec_from_file_location('analytics_alerts',pathlib.Path(__file__).with_name('analytics-availability.py'));a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
 class Probe(unittest.TestCase):
- READY={'activity_daily':True,'address_activity':True,'addresses':True,'daily':True,'flow_daily':True,'supply_daily':True,'swaps':True}
+ READY={'activity_daily':True,'address_activity':True,'addresses':True,'block_timing':True,'daily':True,'flow_daily':True,'issuance_daily':True,'mining_daily':True,'software_daily':True,'supply_daily':True,'swaps':True}
  def runner(self,healthy=True,datasets=None,worker=True):
   datasets=dict(self.READY) if datasets is None else datasets
   def run(args,**kwargs):

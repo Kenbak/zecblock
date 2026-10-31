@@ -40,6 +40,10 @@ CREATE TABLE fixture_private.activity_daily(date date PRIMARY KEY,blocks bigint,
 CREATE TABLE fixture_private.address_daily(date date PRIMARY KEY,active_addresses bigint,sending_addresses bigint,receiving_addresses bigint,new_addresses bigint,incidences bigint,input_incidences bigint,output_incidences bigint);
 CREATE TABLE fixture_private.supply_daily(date date PRIMARY KEY,height bigint,hash text,timestamp bigint,chain_supply bigint,lockbox bigint,circulating_supply bigint,net_change bigint);
 CREATE TABLE fixture_private.issuance(height bigint PRIMARY KEY,hash text,timestamp bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint,fees bigint);
+CREATE TABLE fixture_private.mining_daily(date date,pool text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,pool));
+CREATE TABLE fixture_private.software_daily(date date,software text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,software));
+CREATE TABLE fixture_private.block_timing(height bigint PRIMARY KEY,hash text,timestamp bigint,miner text,first_seen numeric,lag_seconds numeric,observed_by text);
+CREATE TABLE fixture_private.issuance_daily(date date PRIMARY KEY,first_height bigint,last_height bigint,blocks bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
 CREATE VIEW analytics_public.blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.blocks;
 CREATE VIEW analytics_public.transactions_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.transactions;
@@ -53,6 +57,10 @@ CREATE VIEW analytics_public.flow_daily_query WITH(security_barrier=true) AS SEL
 CREATE VIEW analytics_public.address_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_daily;
 CREATE VIEW analytics_public.supply_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.supply_daily;
 CREATE VIEW analytics_public.issuance_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance;
+CREATE VIEW analytics_public.mining_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.mining_daily;
+CREATE VIEW analytics_public.software_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.software_daily;
+CREATE VIEW analytics_public.block_timing_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.block_timing;
+CREATE VIEW analytics_public.issuance_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance_daily;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -73,6 +81,12 @@ INSERT INTO fixture_private.address_daily SELECT DATE '2026-09-01'+i,CASE WHEN i
 INSERT INTO fixture_private.supply_daily SELECT d,3000000+i,'fixture_hash',extract(epoch FROM d)::bigint+86000,1500000000000000+i*179687500000,7000000000000,1500000000000000+i*179687500000-7000000000000,CASE WHEN i>0 THEN 179687500000 END FROM generate_series(DATE '2016-12-31',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT (n-1)::bigint AS i) x;
 -- Daily blocks in 2025 and September 2026 at the post-2726400 split, one per hour.
 INSERT INTO fixture_private.issuance SELECT 2900000+n,'fixture_hash',extract(epoch FROM t)::bigint,156250000,125000000,0,12500000,18750000,0,1000 FROM generate_series(TIMESTAMP '2025-01-01',TIMESTAMP '2026-10-28','1 hour') WITH ORDINALITY g(t,n);
+-- Pools over the 40 completed days before today: 1,150 blocks a day.
+INSERT INTO fixture_private.mining_daily SELECT d,p,b,1150 FROM generate_series(CURRENT_DATE-40,CURRENT_DATE-1,'1 day') d CROSS JOIN (VALUES('ViaBTC',400),('F2Pool',250),('Foundry USA',200),('AntPool',100),('Unknown',200)) v(p,b);
+INSERT INTO fixture_private.software_daily SELECT d,s,b,1150 FROM generate_series(DATE '2026-08-25',DATE '2026-10-05','1 day') d CROSS JOIN (VALUES('zebra',300),('zakura',150),('unknown',700),('missing',0)) v(s,b);
+-- Three payout addresses with distinct clock offsets, one block every 10 minutes.
+INSERT INTO fixture_private.block_timing SELECT 3530000+n,'fixture_hash',extract(epoch FROM t)::bigint,m,extract(epoch FROM t)::bigint+o,o,'node-block-stream' FROM generate_series(TIMESTAMP '2026-10-18',TIMESTAMP '2026-10-29','10 minutes') WITH ORDINALITY g(t,n) CROSS JOIN LATERAL (SELECT CASE n%3 WHEN 0 THEN 't1fast' WHEN 1 THEN 't1slow' ELSE 't1ahead' END AS m,CASE n%3 WHEN 0 THEN 0.5 WHEN 1 THEN 4.25 ELSE -2.75 END AS o) x;
+INSERT INTO fixture_private.issuance_daily SELECT d,1000*i+1,1000*(i+1),1000,156250000000,125000000000,0,12500000000,18750000000,0 FROM generate_series(DATE '2024-12-01',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT n::bigint AS i) x;
 RESET ROLE;`;
 
 // Independent, fixed mathematical oracles; these do not trust case.fixtureRows.

@@ -85,7 +85,7 @@ test('one model-only repair carries transactions through full rolling windows; d
 });
 
 test('existing reference catalogue remains free of denominator diagnostics',async()=>{
- let checked=0;for(const entry of cases.filter(c=>c.kind==='research')){checked++;assert.deepEqual(await diagnose(entry.referenceSQL,entry.question),[],entry.id);}assert.equal(checked,33);
+ let checked=0;for(const entry of cases.filter(c=>c.kind==='research')){checked++;assert.deepEqual(await diagnose(entry.referenceSQL,entry.question),[],entry.id);}assert.equal(checked,34);
 });
 
 for(const q of [

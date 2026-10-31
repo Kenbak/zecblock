@@ -28,6 +28,7 @@ function normalized(value,role){
  const result=decimal(value,role==='percent'||role==='average'?2:role==='zec'?8:undefined);
  return result!==undefined&&(role==='height'&&!/^\d+:0$/.test(result)||role==='count'&&!/^-?\d+:0$/.test(result))?undefined:result;
 }
+const pending=item=>Boolean(item.requires?.some(id=>!require('../../../../lib/ask/research-catalogue').isPublished(id)));
 async function comparisonQuery(item,candidate){
  if(item.kind!=='research')throw Error('Research case required');
  const draft=researchResultSchema.parse(candidate),width=Math.max(draft.columns.length,item.roles.length);
@@ -37,7 +38,8 @@ async function comparisonQuery(item,candidate){
  // nested SELECTs. No compiler policy or SQL limits are changed for an eval.
  const side=(sql,name,count)=>`SELECT '${name}' AS evaluation_side,${Array.from({length:width},(_,i)=>i<count?`${name}_cell_${i}::text AS evaluation_cell_${i}`:`NULL::text AS evaluation_cell_${i}`).join(',')} FROM (${sql}) AS ${name}_rows(${Array.from({length:count},(_,i)=>`${name}_cell_${i}`).join(',')})`;
  const query={version:3,sql:side(item.referenceSQL,'reference',item.roles.length)+' UNION ALL '+side(draft.query.sql,'candidate',draft.columns.length),limit:200};
- return (await compileResearchSQL(query,{extended:true})).request;
+ // A pending case (unpublished dataset) is offline-only; preview admits its dataset.
+ return (await compileResearchSQL(query,{extended:true,preview:pending(item)})).request;
 }
 function verificationFailure(stage,counts={}){return Object.assign(Error('Evaluation verification failed'),{verificationDiagnostic:{stage,...counts}});}
 function splitComparison(item,candidate,raw){

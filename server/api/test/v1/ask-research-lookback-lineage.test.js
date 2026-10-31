@@ -63,7 +63,7 @@ test('ordinary nonnumeric comparisons on forwarded dates are not counter require
 });
 
 test('all reviewed reference queries remain free of the impossible-baseline hint',async()=>{
- let checked=0;for(const entry of cases.filter(c=>c.kind==='research')){checked++;assert.deepEqual((await draftDiagnostics(entry.referenceSQL,{extended:true,question:entry.question})).filter(hint=>signal.test(hint)),[],entry.id);}assert.equal(checked,33);
+ let checked=0;for(const entry of cases.filter(c=>c.kind==='research')){checked++;assert.deepEqual((await draftDiagnostics(entry.referenceSQL,{extended:true,question:entry.question})).filter(hint=>signal.test(hint)),[],entry.id);}assert.equal(checked,34);
 });
 
 test('original complex handwritten SQL remains compiler-admitted despite model quality diagnosis',async()=>{

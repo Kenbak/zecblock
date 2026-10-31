@@ -43,6 +43,8 @@ CREATE TABLE fixture_private.issuance(height bigint PRIMARY KEY,hash text,timest
 CREATE TABLE fixture_private.mining_daily(date date,pool text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,pool));
 CREATE TABLE fixture_private.software_daily(date date,software text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,software));
 CREATE TABLE fixture_private.block_timing(height bigint PRIMARY KEY,hash text,timestamp bigint,miner text,first_seen numeric,lag_seconds numeric,observed_by text);
+CREATE TABLE fixture_private.reorgs(reorg_id integer PRIMARY KEY,fork_height bigint,depth integer,reported_orphans integer,orphans bigint,detected_at bigint);
+CREATE TABLE fixture_private.orphaned_blocks(height bigint,hash text PRIMARY KEY,canonical_hash text,timestamp bigint,miner text,transactions integer,bytes integer,reorg_id integer,detected_at bigint,canonical_now boolean);
 CREATE TABLE fixture_private.issuance_daily(date date PRIMARY KEY,first_height bigint,last_height bigint,blocks bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
 CREATE VIEW analytics_public.blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.blocks;
@@ -61,6 +63,8 @@ CREATE VIEW analytics_public.mining_daily_query WITH(security_barrier=true) AS S
 CREATE VIEW analytics_public.software_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.software_daily;
 CREATE VIEW analytics_public.block_timing_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.block_timing;
 CREATE VIEW analytics_public.issuance_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance_daily;
+CREATE VIEW analytics_public.reorgs_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.reorgs;
+CREATE VIEW analytics_public.orphaned_blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.orphaned_blocks;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -87,6 +91,9 @@ INSERT INTO fixture_private.software_daily SELECT d,s,b,1150 FROM generate_serie
 -- Three payout addresses with distinct clock offsets, one block every 10 minutes.
 INSERT INTO fixture_private.block_timing SELECT 3530000+n,'fixture_hash',extract(epoch FROM t)::bigint,m,extract(epoch FROM t)::bigint+o,o,'node-block-stream' FROM generate_series(TIMESTAMP '2026-10-18',TIMESTAMP '2026-10-29','10 minutes') WITH ORDINALITY g(t,n) CROSS JOIN LATERAL (SELECT CASE n%3 WHEN 0 THEN 't1fast' WHEN 1 THEN 't1slow' ELSE 't1ahead' END AS m,CASE n%3 WHEN 0 THEN 0.5 WHEN 1 THEN 4.25 ELSE -2.75 END AS o) x;
 INSERT INTO fixture_private.issuance_daily SELECT d,1000*i+1,1000*(i+1),1000,156250000000,125000000000,0,12500000000,18750000000,0 FROM generate_series(DATE '2024-12-01',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT n::bigint AS i) x;
+-- One depth-1 reorg every 2.5 days in September-November 2026, one depth-2; each orphan replaced by fixture_block_0's miner.
+INSERT INTO fixture_private.reorgs SELECT n,3510000+n*100,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint FROM generate_series(1,36) n;
+INSERT INTO fixture_private.orphaned_blocks SELECT 3510000+n*100,'fixture_orphan_'||n,'fixture_block_0',extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint-60,CASE n%3 WHEN 0 THEN 't1orphanA' WHEN 1 THEN 't1orphanB' ELSE 'fixture_miner' END,2,500,n,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint,n=7 FROM generate_series(1,36) n;
 RESET ROLE;`;
 
 // Independent, fixed mathematical oracles; these do not trust case.fixtureRows.

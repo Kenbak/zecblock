@@ -3,7 +3,8 @@ const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),path=require('node:path');
 const {parse}=require('pgsql-parser');
 const {compileResearchSQL,instructionsFor}=require('../../v1/lib/ask-research-sql');
-const {catalogueFor,researchCatalogue}=require('../../../../lib/ask/research-catalogue');
+const {catalogueFor,researchCatalogue,isPublished,publishedIds}=require('../../../../lib/ask/research-catalogue');
+const preview={preview:true};
 const {coreViews}=require('../../v1/lib/ask-core-catalogue');
 const {addressDistinctDiagnostics}=require('../../v1/lib/ask-research-address-performance');
 const {displaySQL}=require('../../../../lib/ask/sql-display');
@@ -13,15 +14,30 @@ const migration=deploy('address-daily-v1.sql'),rollback=deploy('address-daily-v1
 const columns='date, active_addresses, sending_addresses, receiving_addresses, new_addresses, incidences, input_incidences, output_incidences';
 const coverageView=sql=>/CREATE (?:OR REPLACE )?VIEW analytics_public\.dataset_coverage[\s\S]*?;\n/.exec(sql)[0].replace('CREATE OR REPLACE VIEW','CREATE VIEW');
 
-test('address_daily is an extended-only published summary with the migrated columns',async()=>{
+// address-daily-v1.sql was rolled back on the analytics store (2026-10-31), so the
+// dataset stays unpublished: hidden from the catalogue, guidance and admission.
+test('unpublished address_daily is hidden from the catalogue, guidance and SQL admission',async()=>{
+ assert.equal(isPublished('address_daily'),false);assert.ok(!publishedIds.includes('address_daily'));
+ assert.ok(!catalogueFor(true).some(d=>d.id==='address_daily'));
+ assert.doesNotMatch(instructionsFor(true).replace('avoid address_activity, activity_daily, address_daily, flow_daily',''),/address_daily/);
+ assert.match(instructionsFor(true),/correlated per-day count subqueries against address_activity/);
+ await assert.rejects(compileResearchSQL({version:3,sql:'SELECT date FROM address_daily',limit:1},{extended:true}),/not admitted/);
+ const {cases}=require('../../v1/lib/ask-research-eval-cases');
+ assert.deepEqual((await compileResearchSQL({version:3,sql:cases.find(c=>c.id==='daily_address_incidences').referenceSQL,limit:100},{extended:true})).datasets,['activity_daily','address_activity']);
+ const sql="SELECT to_char(to_timestamp(timestamp),'YYYY-MM-DD') AS day,count(DISTINCT address),count(*) FROM address_activity WHERE timestamp>=1788220800 AND timestamp<1790812800 GROUP BY 1";
+ const [hint]=addressDistinctDiagnostics(await parse((await compileResearchSQL({version:3,sql,limit:100},{extended:true})).request.sql));
+ assert.doesNotMatch(hint,/address_daily/);assert.match(hint,/Drive from activity_daily/);
+});
+
+test('address_daily is an extended-only preview summary with the migrated columns',async()=>{
  const entry=researchCatalogue.find(d=>d.id==='address_daily');
- assert.equal(entry.columns,columns);assert.ok(catalogueFor(true).includes(entry));assert.ok(!catalogueFor(false).includes(entry));
+ assert.equal(entry.columns,columns);assert.ok(catalogueFor(true,preview).includes(entry));assert.ok(!catalogueFor(false,preview).includes(entry));
  const table=/CREATE TABLE analytics_meta\.address_daily\((.*?)\);/.exec(migration)[1].split(',').map(c=>c.trim().split(' ')[0]).filter(c=>c!=='PRIMARY');
  assert.deepEqual(table,columns.split(', '));
  assert.match(entry.description,/not additive/);assert.match(entry.description,/coinbase/);assert.match(entry.description,/not people/);
  const q={version:3,sql:"SELECT date,active_addresses,incidences FROM address_daily WHERE date>=DATE '2026-09-01' AND date<DATE '2026-10-01' ORDER BY date",limit:31};
- await assert.rejects(compileResearchSQL(q),/not admitted/);
- const c=await compileResearchSQL(q,{extended:true});
+ await assert.rejects(compileResearchSQL(q,preview),/not admitted/);
+ const c=await compileResearchSQL(q,{extended:true,...preview});
  assert.deepEqual(c.datasets,['address_daily']);assert.match(c.text,/analytics_public\.address_daily_query/);assert.deepEqual(c.shape,{features:[],span:'month'});
  assert.equal(displaySQL(c.request.sql).includes('analytics_public'),false);
  assert.ok(coreViews.includes('address_daily_query'));
@@ -29,7 +45,7 @@ test('address_daily is an extended-only published summary with the migrated colu
 });
 
 test('guidance prefers address_daily for per-day address counts and forbids summing distinct counts',()=>{
- const text=instructionsFor(true);
+ const text=instructionsFor(true,preview);
  assert.match(text,/read address_daily directly instead of scanning address_activity/);
  assert.match(text,/Never SUM daily address counts to report the distinct addresses of a week, month or year/);
  assert.match(text,/address_daily for daily transparent address counts/);
@@ -38,10 +54,11 @@ test('guidance prefers address_daily for per-day address counts and forbids summ
  assert.doesNotMatch(instructionsFor(false),/address_daily/);
 });
 
-test('the daily address eval case is answered from the summary with unchanged measures',async()=>{
+test('the daily address eval case keeps measures the summary can answer once published',async()=>{
  const {cases}=require('../../v1/lib/ask-research-eval-cases'),{benchmarks}=require('../../v1/lib/ask-research-benchmarks');
  const item=cases.find(c=>c.id==='daily_address_incidences');
- const c=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true});
+ const summarySQL="SELECT date,active_addresses,incidences AS address_transaction_incidences FROM address_daily WHERE date>=DATE '2026-09-01' AND date<DATE '2026-10-01' ORDER BY date";
+ const c=await compileResearchSQL({version:3,sql:summarySQL,limit:100},{extended:true,...preview});
  assert.deepEqual(c.datasets,['address_daily']);assert.deepEqual(item.roles,['date','count','count']);
  assert.equal(item.minRows,30);assert.equal(item.answerCheck.valueColumn,2);assert.match(item.question,/distinct active transparent addresses/);
  assert.deepEqual(addressDistinctDiagnostics(await parse(c.request.sql)),[]);
@@ -50,11 +67,11 @@ test('the daily address eval case is answered from the summary with unchanged me
  assert.match(raw,/count\(DISTINCT a\.address\)/);assert.match(raw,/count\(\*\) FROM address_activity/);
 });
 
-test('the month-wide distinct hint points to address_daily first and keeps the raw repair',async()=>{
+test('the month-wide distinct hint keeps the raw repair while address_daily is unpublished',async()=>{
  const sql="SELECT to_char(to_timestamp(timestamp),'YYYY-MM-DD') AS day,count(DISTINCT address),count(*) FROM address_activity WHERE timestamp>=1788220800 AND timestamp<1790812800 GROUP BY 1";
  const c=await compileResearchSQL({version:3,sql,limit:100},{extended:true});
  const [hint]=addressDistinctDiagnostics(await parse(c.request.sql));
- assert.match(hint,/read address_daily for the same dates instead/);assert.match(hint,/Otherwise drive from activity_daily/);
+ assert.equal(hint.includes('address_daily'),isPublished('address_daily'));assert.match(hint,/rive from activity_daily/);
 });
 
 test('migration is additive, guarded and grants only the published view',()=>{

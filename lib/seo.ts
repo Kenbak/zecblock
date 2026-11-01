@@ -308,7 +308,7 @@ export interface TxMeta {
   orchardActions: number;
   saplingSpendCount: number;
   saplingOutputCount: number;
-  fee: number;
+  fee: number | null;
 }
 
 export type TxResolution =
@@ -343,7 +343,7 @@ export const getTxResolution = cache(async (txid: string): Promise<TxResolution>
         orchardActions: data.orchardActions || 0,
         saplingSpendCount: data.saplingSpendCount || 0,
         saplingOutputCount: data.saplingOutputCount || 0,
-        fee: data.fee || 0,
+        fee: data.fee ?? null,
       };
 
       if (indexedStatus === 'confirmed') return { state: 'found', meta: indexedMeta };

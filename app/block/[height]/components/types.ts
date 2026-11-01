@@ -32,7 +32,7 @@ export interface BlockData {
   bits?: string;
   nonce?: string;
   solution?: string;
-  totalFees?: number;
+  totalFees?: number | null;
   minerAddress?: string;
   minerPool?: string | null;
   minerPoolUrl?: string | null;

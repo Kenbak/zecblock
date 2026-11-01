@@ -21,21 +21,22 @@ function viewColumns(sql){
  return parts.map(p=>{p=p.trim();const alias=/\bAS\s+([a-z_]+)$/i.exec(p);return alias?alias[1]:p.split('.').pop();});
 }
 
-test('reorg datasets stay unpublished until the host rollout is verified',async()=>{
+// Published 2026-11-01 after the host rollout was verified (reorgs.md).
+test('reorg datasets are published extended datasets with guidance',async()=>{
  const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
  for(const id of ids){
-  assert.equal(isPublished(id),false,id);assert.equal(isPublished(id,preview),true,id);
-  assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
-  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true}),/not admitted/);
-  assert.deepEqual((await compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true,...preview})).datasets,[id]);
+  assert.equal(isPublished(id),true,id);
+  assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+  await assert.rejects(compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1}),/not admitted/);
+  assert.deepEqual((await compileResearchSQL({version:3,sql:`SELECT * FROM ${id}`,limit:1},{extended:true})).datasets,[id]);
   assert.ok(!coreGatedIds.includes(id),id);
  }
- assert.doesNotMatch(instructionsFor(true),/read reorgs|read orphaned_blocks/);
- assert.match(instructionsFor(true,preview),/read reorgs \(one row per detected reorg/);
- assert.match(instructionsFor(true,preview),/never report earlier absence as zero/);
- assert.match(instructionsFor(true,preview),/exclude canonical_now rows/);
- assert.deepEqual(pendingCases.map(c=>c.id).sort(),['orphan_rate_by_miner_2026_10','reorgs_2026_10']);
- assert.ok(!cases.some(c=>(c.requires||[]).some(id=>ids.includes(id))));
+ assert.match(instructionsFor(true),/read reorgs \(one row per detected reorg/);
+ assert.match(instructionsFor(true),/never report earlier absence as zero/);
+ assert.match(instructionsFor(true),/exclude canonical_now rows/);
+ assert.doesNotMatch(instructionsFor(false),/read reorgs|read orphaned_blocks/);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).some(id=>ids.includes(id))));
+ for(const id of ['reorgs_2026_10','orphan_rate_by_miner_2026_10'])assert.ok(cases.some(c=>c.id===id),id);
 });
 
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
@@ -53,7 +54,7 @@ test('examples compile in preview; orphan rates exclude restored blocks',async()
  const examples=sqlExamples.filter(e=>(e.datasets||[]).some(id=>ids.includes(id)));
  assert.deepEqual(examples.map(e=>e.id),['reorgs-weekly','orphan-rate-by-miner']);
  for(const example of examples){
-  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true,...preview});
+  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true});
   assert.deepEqual(compiled.datasets.slice().sort(),example.datasets.slice().sort(),example.id);
   assert.equal(displaySQL(compiled.request.sql).includes('analytics_public'),false);
  }

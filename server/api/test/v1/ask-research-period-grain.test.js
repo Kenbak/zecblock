@@ -103,7 +103,7 @@ test('original manual daily SQL remains compiler-admitted and unchanged by the m
 test('all existing research references avoid the wrong-grain hint',async()=>{
  let checked=0;
  for(const reference of cases.filter(entry=>entry.kind==='research')){checked++;assert.deepEqual(await diagnose(reference.referenceSQL,reference.question),[],reference.id);}
- assert.equal(checked,42);
+ assert.equal(checked,44);
 });
 
 test('the existing model draft repair gets one chance to aggregate the entire requested month',async()=>{

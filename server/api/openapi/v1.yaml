@@ -762,6 +762,8 @@ paths:
                           - software_daily
                           - block_timing
                           - issuance_daily
+                          - reorgs
+                          - orphaned_blocks
                           - labels
                     measures:
                       maxItems: 6

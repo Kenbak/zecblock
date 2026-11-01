@@ -493,6 +493,42 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    await refreshed();
    assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
   });
+  await admission.test('reorg tables replicate only reviewed columns, convert Berlin detection times and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   // The reorg migration builds on the mining catalogue; its destination views are enough here.
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));
+   const [,second]=(await source.query('SELECT height::int,hash,timestamp::bigint AS timestamp FROM blocks ORDER BY height LIMIT 2')).rows;
+   await source.query("SET TIME ZONE 'Europe/Berlin'");
+   await source.query(`CREATE TABLE fork_events(id serial PRIMARY KEY,fork_height bigint,depth integer,canonical_tip bigint,orphaned_count integer,source text,description text,detected_at timestamp DEFAULT now(),resolved_at timestamp);
+    CREATE TABLE orphaned_blocks(id serial PRIMARY KEY,height bigint,hash text UNIQUE,canonical_hash text,timestamp bigint,transaction_count integer,size integer,difficulty text,miner_address text,fork_event_id integer REFERENCES fork_events(id) ON DELETE SET NULL,source text,reported_by text,detected_at timestamp DEFAULT now(),coinbase_hex text,raw_hex text,block_metadata jsonb)`);
+   await source.query("INSERT INTO fork_events(fork_height,depth,canonical_tip,orphaned_count,source,description,detected_at) VALUES($1,1,$1,1,'indexer','secret text','2026-10-31 08:01:40')",[second.height]);
+   await source.query("INSERT INTO orphaned_blocks(height,hash,canonical_hash,timestamp,transaction_count,size,miner_address,fork_event_id,source,reported_by,detected_at,coinbase_hex,raw_hex) VALUES($1,$2,$3,$4,2,700,'t1orphan',1,'indexer','node-a','2026-10-31 08:01:40','deadbeef','00'),($1,'f'||repeat('0',63),$2,$4,1,300,'t1other',1,'indexer','node-a','2026-10-31 08:01:40','beef','00')",[second.height,second.hash,'e'.repeat(64),second.timestamp]);
+   await source.query('RESET TIME ZONE');
+   const before=await subscribed();
+   // Production runs under the server zone; the source step refuses any other.
+   await source.query(fixtureSource('reorgs-source-v1.sql').replace('BEGIN;',"BEGIN;SET LOCAL TimeZone='Europe/Berlin';"));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+2);
+   await refreshed();
+   assert.deepEqual((await reader.query("SELECT dataset,ready FROM analytics_public.dataset_coverage WHERE dataset IN('reorgs','orphaned_blocks') ORDER BY dataset")).rows,[{dataset:'orphaned_blocks',ready:true},{dataset:'reorgs',ready:true}]);
+   for(const [table,columns] of [['fork_events',['id','fork_height','depth','orphaned_count','detected_at']],['orphaned_blocks',['id','height','hash','canonical_hash','timestamp','transaction_count','size','miner_address','fork_event_id','detected_at']]])
+    assert.deepEqual((await target.query(`SELECT attname FROM pg_attribute WHERE attrelid='public.${table}'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum`)).rows.map(r=>r.attname),columns,table);
+   assert.deepEqual((await reader.query('SELECT reorg_id,depth,reported_orphans,orphans::int,detected_at::text FROM analytics_public.reorgs_query')).rows,[{reorg_id:1,depth:1,reported_orphans:1,orphans:2,detected_at:'1793430100'}]);
+   // The first orphan row records the hash that is canonical in the fixture chain.
+   assert.deepEqual((await reader.query('SELECT miner,canonical_now FROM analytics_public.orphaned_blocks_query ORDER BY miner')).rows,[{miner:'t1orphan',canonical_now:true},{miner:'t1other',canonical_now:false}]);
+   for(const sql of ['SELECT * FROM public.fork_events','SELECT raw_hex FROM analytics_public.orphaned_blocks_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('reorgs-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('reorgs-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.fork_events') IS NULL AND to_regclass('analytics_public.supply_daily_query') IS NULL AS gone")).rows[0].gone,true);
+   await source.query("INSERT INTO fork_events(fork_height,depth,orphaned_count) VALUES(1,1,0)");
+   await refreshed();
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');

@@ -92,7 +92,7 @@ test('migrations are guarded, additive and ordered destination before source',()
   assert.match(admission,new RegExp(`WHEN '${id}' THEN ARRAY\\['public\\.${tables}'\\]`),id);
  // Every listed table must be ready; a dataset outside the map is never ready.
  assert.match(admission,/ready=coalesce\(\(SELECT bool_and\(EXISTS\([^`]*r\.srrelid=to_regclass\(t\)\)\) FROM unnest\(CASE d\.dataset /);
- assert.match(admission,/'supply_daily','mining_daily','software_daily','issuance_daily','block_timing'\)/);
+ assert.match(admission,/'supply_daily','mining_daily','software_daily','issuance_daily','block_timing'[,)]/);
 });
 
 // Executes the migrations' own view text. Opt-in like the other disposable-cluster

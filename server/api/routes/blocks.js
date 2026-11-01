@@ -548,7 +548,7 @@ async function buildOrphanedBlockResponse(orphanRow) {
       tx_index: tx.tx_index,
       version: tx.version,
       size: tx.size,
-      fee: tx.fee ? parseInt(tx.fee) : 0,
+      fee: tx.fee == null ? null : parseInt(tx.fee),
       is_coinbase: tx.is_coinbase,
       timestamp: tx.timestamp ? parseInt(tx.timestamp) : null,
       expiry_height: tx.expiry_height,

@@ -79,7 +79,7 @@ router.get('/api/seo/tx/:txid', validate('txById'), async (req, res) => {
       orchardActions: parseInt(tx.orchard_actions) || 0,
       saplingSpendCount: parseInt(tx.sapling_spend_count) || 0,
       saplingOutputCount: parseInt(tx.sapling_output_count) || 0,
-      fee: tx.fee ? Number(tx.fee) / 100000000 : 0,
+      fee: tx.fee == null ? null : Number(tx.fee) / 100000000,
       feeZat: tx.fee == null ? null : String(tx.fee),
       size: tx.size == null ? null : Number(tx.size),
       vinCount: tx.vin_count == null ? null : Number(tx.vin_count),
@@ -132,6 +132,8 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
           t.value_balance_sapling,
           t.value_balance_orchard,
           t.value_balance_ironwood,
+          -- Migration 041; absent on databases without it (NULL = unknown).
+          (to_jsonb(t)->>'value_balance_sprout')::bigint AS value_balance_sprout,
           t.has_sapling,
           t.has_orchard,
           t.has_ironwood,
@@ -225,6 +227,7 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
     const valueBalanceSapling = tx.value_balance_sapling == null ? null : Number(tx.value_balance_sapling) / 100000000;
     const valueBalanceOrchard = tx.value_balance_orchard == null ? null : Number(tx.value_balance_orchard) / 100000000;
     const valueBalanceIronwood = tx.value_balance_ironwood == null ? null : Number(tx.value_balance_ironwood) / 100000000;
+    const valueBalanceSprout = tx.value_balance_sprout == null ? null : Number(tx.value_balance_sprout) / 100000000;
     const totalValueBalance = tx.value_balance == null ? null : Number(tx.value_balance) / 100000000;
 
     // Fee from DB (in zatoshis, convert to ZEC)
@@ -430,6 +433,9 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
       valueBalanceOrchardZat: tx.value_balance_orchard == null ? null : String(tx.value_balance_orchard),
       valueBalanceIronwood,
       valueBalanceIronwoodZat: tx.value_balance_ironwood == null ? null : String(tx.value_balance_ironwood),
+      // Sprout JoinSplit sum(vpub_new) - sum(vpub_old); positive leaves Sprout.
+      valueBalanceSprout,
+      valueBalanceSproutZat: tx.value_balance_sprout == null ? null : String(tx.value_balance_sprout),
       fee,
       feeZat: tx.fee == null ? null : String(tx.fee),
       totalInput,

@@ -561,7 +561,7 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    for(const row of (await source.query('SELECT id,source_amount,dest_amount FROM cross_chain_swaps ORDER BY id')).rows)await target.query('INSERT INTO swap_amount_backfill VALUES($1,$2,$3)',[row.id,row.source_amount,row.dest_amount]);
    await target.query('UPDATE public.cross_chain_swaps s SET source_amount=b.source_amount,dest_amount=b.dest_amount FROM swap_amount_backfill b WHERE s.id=b.id AND s.id BETWEEN 1 AND 100000 AND s.source_amount IS NULL AND s.dest_amount IS NULL');
    assert.deepEqual((await reader.query("SELECT sum(missing_zec)::int AS missing FROM analytics_public.swap_daily_query")).rows,[{missing:0}]);
-   assert.deepEqual((await reader.query('SELECT usd::text FROM analytics_public.swaps_query ORDER BY direction,usd::numeric')).rows,[{usd:'40'},{usd:'125.75'},{usd:null}]);
+   assert.deepEqual((await reader.query('SELECT direction,usd::text FROM analytics_public.swaps_query')).rows.map(r=>r.direction+':'+r.usd).sort(),['inflow:125.75','inflow:40','outflow:null']);
    for(const sql of ['SELECT * FROM public.crosschain_venue_actions','SELECT source_amount FROM public.cross_chain_swaps','SELECT deposit_address FROM analytics_public.swap_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
    await assert.rejects(target.query(read('swaps-v1-rollback.sql')),/removed from the subscription/);
    await source.query(fixtureSource('swaps-source-v1-rollback.sql'));

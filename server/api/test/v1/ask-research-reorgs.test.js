@@ -83,7 +83,7 @@ test('migrations are guarded, additive and ordered destination before source',()
  assert.match(rollback,/EXISTS\(SELECT FROM pg_subscription_rel WHERE srrelid IN\('public\.fork_events'::regclass,'public\.orphaned_blocks'::regclass\)\)/);
  const admission=fs.readFileSync(path.join(__dirname,'../../scripts/ask-core-admission.js'),'utf8');
  assert.match(admission,/WHEN 'reorgs' THEN ARRAY\['public\.fork_events'\] WHEN 'orphaned_blocks' THEN ARRAY\['public\.orphaned_blocks'\]/);
- assert.match(admission,/'block_timing','reorgs','orphaned_blocks'\)/);
+ assert.match(admission,/'block_timing','reorgs','orphaned_blocks'[,)]/);
 });
 
 test('reorg views: Berlin detection times, stored orphan counts and restored hashes',{skip:process.env.ASK_EVAL_TEST_POSTGRES!=='1',timeout:60000},async t=>{

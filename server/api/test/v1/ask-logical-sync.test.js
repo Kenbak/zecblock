@@ -529,6 +529,52 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    await refreshed();
    assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
   });
+  await admission.test('swap detail re-publishes cross_chain_swaps in place, backfills amounts and rolls back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));await target.query(read('swaps-v1.sql'));
+   // Amounts written before the source step are not replicated: the backfill copies them.
+   await source.query("ALTER TABLE cross_chain_swaps ADD COLUMN source_amount numeric,ADD COLUMN dest_amount numeric,ADD COLUMN deposit_address text");
+   await source.query("UPDATE cross_chain_swaps SET source_amount=id*0.5,dest_amount=id*2.25,deposit_address='secret'");
+   await source.query(`CREATE TABLE crosschain_venue_actions(venue text,id text,action_type text,status text,swap_created_at timestamptz,source_chain text,source_token text,source_asset text,dest_chain text,dest_token text,dest_asset text,source_amount numeric,dest_amount numeric,zec_amount_zat numeric,source_amount_usd numeric,dest_amount_usd numeric,source_tx_hashes text[],dest_tx_hashes text[],payload jsonb,PRIMARY KEY(venue,id))`);
+   await source.query("INSERT INTO crosschain_venue_actions SELECT 'maya','m'||n,'swap','SUCCESS','2023-11-14T12:00Z','btc','BTC','BTC.BTC','zec','ZEC','ZEC.ZEC',0.01,1,100000000,700,690,ARRAY['secrethash'],ARRAY['secrettxid'],'{\"sourceAddress\":\"secret\"}' FROM generate_series(1,5) n");
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('swaps-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+1);
+   // Dropped and re-added in one transaction: not re-copied, so no duplicate-key apply error.
+   await source.query("INSERT INTO cross_chain_swaps(id,status,source_chain,source_token,source_amount_usd,dest_chain,dest_token,dest_amount_usd,swap_created_at,private_marker,source_amount,dest_amount,deposit_address) VALUES(4,'SUCCESS','eth','eth',40,'zec','zec',39,'2023-11-14T13:00Z','secret',0.01,3.5,'secret')");
+   await wait(async()=>(await target.query('SELECT dest_amount::text FROM public.cross_chain_swaps WHERE id=4')).rows[0]?.dest_amount==='3.5');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+   assert.deepEqual((await target.query('SELECT id,dest_amount::text FROM public.cross_chain_swaps ORDER BY id')).rows,[{id:1,dest_amount:null},{id:2,dest_amount:null},{id:3,dest_amount:null},{id:4,dest_amount:'3.5'}]);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.crosschain_venue_actions'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['venue','id','action_type','status','swap_created_at','source_chain','source_token','dest_chain','dest_token','zec_amount_zat','source_amount_usd','dest_amount_usd']);
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='swap_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query("SELECT venue,direction,swaps::int,zec::text,missing_zec::int FROM analytics_public.swap_daily_query ORDER BY venue,direction")).rows,[
+    {venue:'maya',direction:'inflow',swaps:5,zec:'5',missing_zec:0},{venue:'near-intents',direction:'inflow',swaps:2,zec:null,missing_zec:1},{venue:'near-intents',direction:'outflow',swaps:1,zec:null,missing_zec:1}]);
+   // swaps.md backfill, by id range, only rows still missing both amounts.
+   await target.query("CREATE TEMP TABLE swap_amount_backfill(id integer PRIMARY KEY,source_amount numeric,dest_amount numeric)");
+   for(const row of (await source.query('SELECT id,source_amount,dest_amount FROM cross_chain_swaps ORDER BY id')).rows)await target.query('INSERT INTO swap_amount_backfill VALUES($1,$2,$3)',[row.id,row.source_amount,row.dest_amount]);
+   await target.query('UPDATE public.cross_chain_swaps s SET source_amount=b.source_amount,dest_amount=b.dest_amount FROM swap_amount_backfill b WHERE s.id=b.id AND s.id BETWEEN 1 AND 100000 AND s.source_amount IS NULL AND s.dest_amount IS NULL');
+   assert.deepEqual((await reader.query("SELECT sum(missing_zec)::int AS missing FROM analytics_public.swap_daily_query")).rows,[{missing:0}]);
+   assert.deepEqual((await reader.query('SELECT usd::text FROM analytics_public.swaps_query ORDER BY direction,usd')).rows,[{usd:'40'},{usd:'125.75'},{usd:null}]);
+   for(const sql of ['SELECT * FROM public.crosschain_venue_actions','SELECT source_amount FROM public.cross_chain_swaps','SELECT deposit_address FROM analytics_public.swap_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('swaps-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('swaps-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('swaps-v1-rollback.sql'));await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.crosschain_venue_actions') IS NULL AND NOT EXISTS(SELECT FROM pg_attribute WHERE attrelid='public.cross_chain_swaps'::regclass AND attname='source_amount' AND NOT attisdropped) AS gone")).rows[0].gone,true);
+   // After rollback the original nine columns keep replicating.
+   await source.query("UPDATE cross_chain_swaps SET source_amount_usd=41,source_amount=9 WHERE id=4");
+   await wait(async()=>(await target.query('SELECT source_amount_usd::text FROM public.cross_chain_swaps WHERE id=4')).rows[0].source_amount_usd==='41');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');

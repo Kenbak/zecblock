@@ -169,6 +169,39 @@ For a reviewed deployment:
    monitors and the current dataset gates. Installing/enabling a unit is not a
    recovery proof. Do not restart the publisher to test this production rollout.
 
+## Adding a replicated table: reviewed repin
+
+`expected_relations` must list exactly the tables of `ask_public_core_v1`. A
+dataset rollout that adds a table to the subscription leaves recovery `blocked`
+with `copy_incomplete` until the config is updated, and the saved origin floor
+pins the old list, so the update is a repin. `analytics-availability.py` alerts
+`recovery_relations_drift` while the two differ. Apply this right after the
+`REFRESH PUBLICATION` step of the dataset runbook, with the feed enabled and
+healthy. Rollback is written first.
+
+**Rollback:** `systemctl stop zecblock-ask-feed-recovery.timer`, restore
+`config.json` and `state.json` from the `.bak-<stamp>` copies made in step 1
+(`install -o postgres -g postgres -m 600`), then start the timer. Recovery
+returns to its previous `blocked` state; the subscription is never touched.
+
+1. `systemctl stop zecblock-ask-feed-recovery.timer`, wait for no active
+   oneshot, and copy `/etc/zecblock-ask-recovery/config.json` and
+   `/var/lib/zecblock-ask-recovery/state.json` to `.bak-<stamp>` with `cp -p`.
+2. Confirm the feed: subscription enabled, every relation in state `r`, exactly
+   one apply worker, error counters unchanged since the last acknowledgement.
+   Record the saved floor LSN and the current `pg_replication_origin_status`
+   LSN for the same origin; the current one must not be lower.
+3. Replace `expected_relations` with the sorted subscribed list
+   (`schema.table` for each `pg_subscription_rel` row) and write it atomically,
+   owner `postgres`, mode 600. Change no other key.
+4. In `state.json`, remove `healthy_origin` and set `armed` to `false`; keep
+   every other key. Never delete the file.
+5. `systemctl start zecblock-ask-feed-recovery.service`. The journal must show
+   `healthy`/`admission_verified`, and `state.json` must again hold
+   `armed: true` with a new `pins_sha256`. Anything else: run the rollback.
+6. Start the timer and confirm the next alert run has no
+   `recovery_relations_drift`.
+
 ## Operator pause, review and rollback
 
 To pause both automation and the existing subscription through the reviewed CLI:

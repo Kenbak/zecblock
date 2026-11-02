@@ -43,6 +43,7 @@ export type TxCategory =
   | 'orchard'
   | 'orchard_sapling'
   | 'sapling'
+  | 'sprout'
   | 'shielded'
   | 'shielding'
   | 'unshielding'
@@ -56,6 +57,8 @@ export const TX_CATEGORY_CONFIG: Record<TxCategory, { label: string; color: Badg
   orchard: { label: 'ORCHARD', color: 'purple', icon: <ShieldedIcon size={ICON_SIZE} /> },
   orchard_sapling: { label: 'ORCHARD+SAPLING', color: 'purple', icon: <ShieldedIcon size={ICON_SIZE} /> },
   sapling: { label: 'SAPLING', color: 'green', icon: <ShieldedIcon size={ICON_SIZE} /> },
+  // Legacy pool, closed to deposits — muted, matching SHIELDED_POOLS in lib/shielded-pools.ts.
+  sprout: { label: 'SPROUT', color: 'muted', icon: <ShieldedIcon size={ICON_SIZE} /> },
   // Generic "fully shielded, pool unknown/unspecified" — used where per-pool
   // detail isn't available or isn't the point (e.g. a mempool row before
   // it's clear which pool dominates). Gold identifies the aggregate privacy

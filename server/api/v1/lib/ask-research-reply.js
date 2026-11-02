@@ -589,7 +589,7 @@ function chartChoice(result,evidence,raw){
  return fitResearchChart(result,{view,x:labelColumn(result),y:index(value),series:extra.slice(0,3).map(index),stacked,highlight:highlight==='none'?undefined:highlight},evidence.units)||fallback;
 }
 
-const datasetKnowledge={blocks:'block',transactions:'transactions',flows:'pools',daily:'pools',swaps:'crosschain',addresses:'addresses',address_activity:'address',activity_daily:'transactions',address_daily:'address',flow_daily:'pools',supply_daily:'protocol',issuance:'protocol',mining_daily:'blocks',software_daily:'blocks',block_timing:'blocks',reorgs:'blocks',orphaned_blocks:'blocks',issuance_daily:'protocol'};
+const datasetKnowledge={blocks:'block',transactions:'transactions',flows:'pools',daily:'pools',swaps:'crosschain',addresses:'addresses',address_activity:'address',activity_daily:'transactions',address_daily:'address',flow_daily:'pools',supply_daily:'protocol',issuance:'protocol',mining_daily:'blocks',software_daily:'blocks',block_timing:'blocks',reorgs:'blocks',orphaned_blocks:'blocks',swap_daily:'crosschain',issuance_daily:'protocol'};
 async function researchReply(raw,input,run,locale){
  const result=researchResultSchema.parse(raw);
  const question=String(input.question||'');

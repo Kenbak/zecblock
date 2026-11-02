@@ -14,10 +14,10 @@ The target's existing `MemoryMax=infinity`, `OOMPolicy=stop`, `Restart=no`
 left database memory uncontained and an OOM service stop without automatic
 service restart. API/Node worker cgroups do not contain their PostgreSQL backends.
 
-`postgres-memory.conf.example` proposes `MemoryHigh=24G`, `MemoryMax=32G`, and
-`MemorySwapMax=1G` for this whole PostgreSQL service. The soft threshold leaves
-8GiB above configured shared buffers for backends, replication, maintenance and
-cache charges. The hard threshold leaves substantial host headroom, subject to
+`postgres-memory.conf.example` sets `MemoryHigh=40G`, `MemoryMax=48G`, and
+`MemorySwapMax=1G` for this whole PostgreSQL service (raised 2026-11-02 from the
+24G/32G candidate; see "Limit review"). The soft threshold leaves 24GiB above
+configured shared buffers for backends, replication, maintenance and cache charges. The hard threshold leaves substantial host headroom, subject to
 review of the other services on this particular 125.7GiB host. These values
 require a representative load observation before beta acceptance. They are not
 a per-query allocator bound: sort/hash work may multiply `work_mem`, other
@@ -49,8 +49,8 @@ The path is fixed in code to the intended PG unit. No visitor-supplied path,
 threshold or SQL is accepted. The worker reads only five cgroup v2 files, caches
 the result for at most 200ms, and requires finite ordered high/max values. New
 quick queries, new job tickets, and queued queries at execution time are refused
-with the existing resource error if memory reaches 85% of High (20.4GiB with
-this candidate), PSI some/full avg10 reaches 5%, or a high/max/OOM counter changes.
+with the existing resource error if memory reaches 85% of High (34GiB with
+the current limit), PSI some/full avg10 reaches 5%, or a high/max/OOM counter changes.
 An event or event counter rewind holds admission closed for at least 30 seconds
 before a healthy sample can reopen it. Invalid/unreadable configured data fails
 closed. Unconfigured legacy previews retain their previous behavior and do not
@@ -196,6 +196,29 @@ fixed private sample; long-job/public-capacity and backup/restore claims remain
 separate. Owner deferred off-host backup for beta. The private API later moved
 to `57f39c8f` without changing the worker/SQL budgets or serving model. Sanitized
 evidence lives in the private wiki at assets/ask-beta-foundations-2026-10-16/.
+
+## Limit review (2026-11-02)
+
+The 24G/32G candidate proved too tight in steady state:
+- **Charged memory:** shared buffers are charged to the cgroup as `shmem`
+  (16.7GiB, not reclaimable), and the kernel kept trimming file cache at
+  `memory.high`.
+- **Counters:** the `high` counter reached 4,523, and memory excluding inactive
+  file cache sat at about 19.9GiB, against the 20.4GiB admission threshold.
+- **Effect:** inactive file cache was about 18% of High, below the 25% cache-reclaim
+  floor. So each `high` event closed admission for 30 seconds, and visitors saw
+  intermittent resource errors with no real memory shortage.
+- **Host:** 128GiB RAM, about 19GiB used across all services.
+
+**Change:** `MemoryHigh=40G` and `MemoryMax=48G` were applied live by editing
+`60-ask-memory.conf` and running `systemctl daemon-reload`. PostgreSQL was not
+restarted.
+- **Result:** the admission threshold became 34GiB, with about 15GiB of headroom
+  at the same load, and the `high` counter stopped rising.
+- **Rollback:** restore `/root/60-ask-memory.conf.bak-20261102` on the analytics
+  host, or set 24G/32G, then run `systemctl daemon-reload`.
+- **Not re-run:** the disposable crash proof and the bounded-load acceptance
+  below. The hard cap still bounds the whole service.
 
 Authoritative behavior references:
 [systemd resource controls](https://www.freedesktop.org/software/systemd/man/latest/systemd.resource-control.html),

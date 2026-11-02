@@ -7,9 +7,14 @@ spec=importlib.util.spec_from_file_location('alerts',pathlib.Path(__file__).with
 # backfills, which must not block research. Add a dataset here only once its
 # rollout is verified and it is published in lib/ask/research-catalogue.js.
 REQUIRED_DATASETS=('activity_daily','address_activity','addresses','block_timing','daily','flow_daily','issuance_daily','mining_daily','orphaned_blocks','reorgs','software_daily','supply_daily','swaps')
+# feed-recovery.py blocks with copy_incomplete unless its reviewed relation list
+# equals the subscribed tables; a dataset rollout that adds a table must update
+# both (2026-10-31 to 11-01: recovery silently blocked after batch 1).
+RECOVERY_CONFIG=pathlib.Path('/etc/zecblock-ask-recovery/config.json')
 SQL="""BEGIN READ ONLY; SET LOCAL statement_timeout='2s'; SET LOCAL lock_timeout='200ms';
 SELECT json_build_object('verified_at',(SELECT verified_at::text FROM analytics_public.coverage),
- 'datasets',(SELECT coalesce(json_object_agg(dataset,ready IS TRUE),'{}'::json) FROM analytics_public.dataset_coverage)); ROLLBACK;"""
+ 'datasets',(SELECT coalesce(json_object_agg(dataset,ready IS TRUE),'{}'::json) FROM analytics_public.dataset_coverage),
+ 'relations',(SELECT coalesce(json_agg(n.nspname||'.'||c.relname),'[]'::json) FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid=r.srsubid JOIN pg_class c ON c.oid=r.srrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE s.subname='ask_public_core_v1')); ROLLBACK;"""
 
 def dataset_errors(datasets):
     """Required datasets must exist and be ready; others are reported, never alerted."""
@@ -17,7 +22,14 @@ def dataset_errors(datasets):
     missing=[name for name in REQUIRED_DATASETS if datasets.get(name) is not True]
     warming=sorted(name for name,ready in datasets.items() if name not in REQUIRED_DATASETS and not ready)
     return (['datasets_unavailable'] if missing else []),warming
-def probe(runner=subprocess.run):
+def recovery_errors(relations,config_path=RECOVERY_CONFIG):
+    """An installed recovery config must list exactly the subscribed tables."""
+    if not config_path.exists():return []
+    try:expected=json.loads(config_path.read_text())['expected_relations']
+    except Exception:return ['recovery_config_unreadable']
+    if not isinstance(relations,list) or not isinstance(expected,list) or set(expected)!=set(relations):return ['recovery_relations_drift']
+    return []
+def probe(runner=subprocess.run,config_path=RECOVERY_CONFIG):
     errors=[];verified=None;warming=[]
     try:
         health=runner(['/usr/bin/python3','/opt/zecblock-ask-operations/host-health.py','--stage','ready'],capture_output=True,text=True,timeout=20)
@@ -25,6 +37,7 @@ def probe(runner=subprocess.run):
         output=runner(['/usr/bin/psql','-X','-w','-At','-v','ON_ERROR_STOP=1','-d','ask_analytics','-c',SQL],capture_output=True,text=True,check=True,timeout=5).stdout
         data=json.loads(next(line for line in output.splitlines() if line.startswith('{')));verified=data.get('verified_at')
         dataset_failures,warming=dataset_errors(data.get('datasets'));errors.extend(dataset_failures)
+        errors.extend(recovery_errors(data.get('relations'),config_path))
         worker=runner(['/usr/bin/systemctl','is-active','zecblock-ask-analytics.service'],capture_output=True,text=True,timeout=3)
         if worker.returncode or worker.stdout.strip()!='active':errors.append('query_worker_unavailable')
     except Exception:errors=['analytics_probe_failed'];warming=[]

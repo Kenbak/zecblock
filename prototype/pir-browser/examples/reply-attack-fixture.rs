@@ -30,16 +30,10 @@ fn main() -> Result<(), String> {
         .find(|item| item["txid"].as_str() == Some(txid.as_str()))
         .ok_or("Target transaction not in catalogue")?;
     let (row, ordinal_value) = if ordinal == "cover" {
-        if manifest["packing"] != "compact-v1"
-            || entry["rows"].as_array().ok_or("Missing record rows")?.len()
-                >= manifest["chunkCount"]
-                    .as_u64()
-                    .ok_or("Missing batch count")? as usize
-        {
-            return Err("Target does not select a compact cover suffix".into());
-        }
+        // Collection cover-only lookups select this row even when every
+        // actual record occupies the publication's complete query count.
         (
-            manifest["coverRow"].as_u64().ok_or("Missing cover row")? as usize,
+            full_record::packing_cover_row(&manifest)?.ok_or("Compact cover row required")?,
             json!("cover"),
         )
     } else {
@@ -95,7 +89,7 @@ fn main() -> Result<(), String> {
         "testOnly": true, "targetTxid": txid, "chunkOrdinal": ordinal_value, "row": row,
         "publicationId": manifest["publicationId"], "publicSha256": manifest["publicSha256"],
         "databaseSha256": manifest["databaseSha256"],
-        "attack": "One selected plaintext chunk has invalid magic; public setup recomputed over the poisoned database while original record commitments and publication identity remain unchanged.",
+        "attack": "One data or shared-cover row is corrupted; public setup recomputed over the poisoned database while original record commitments and publication identity remain unchanged.",
     });
     fs::write(
         output.join("attack-receipt.json"),

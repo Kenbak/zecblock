@@ -306,11 +306,18 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let result = match args.as_slice() {
         [_, mode, dir] if mode == "prepare" => prepare(Path::new(dir)),
+        [_, mode, source, dir, flag] if mode == "prepare-full" && flag == "--debug-oracle" => {
+            full::prepare_full_debug(Path::new(source), Path::new(dir))
+        }
         [_, mode, source, dir] if mode == "prepare-full" => {
             full::prepare_full(Path::new(source), Path::new(dir))
         }
+        [_, mode, source, dir] if mode == "prepare-full-legacy" => {
+            full::prepare_full_legacy(Path::new(source), Path::new(dir))
+        }
+        [_, mode, source] if mode == "plan-full" => full::plan_full(Path::new(source)),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
-        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory>".into()),
+        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json>".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");

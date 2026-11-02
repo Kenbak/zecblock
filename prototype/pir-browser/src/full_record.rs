@@ -14,6 +14,177 @@ pub const HEADER_BYTES: usize = 128;
 pub const PAYLOAD_BYTES: usize = ROW_BYTES - HEADER_BYTES;
 const MAGIC: &[u8; 8] = b"ZBFTX001";
 
+pub const RECORD_CODEC: &str = "json-context-zlib-v1";
+pub const MAX_DECODED_RECORD_BYTES: usize = 8 * 1024 * 1024;
+pub const MAX_ENCODED_RECORD_BYTES: usize = 64 * PAYLOAD_BYTES;
+const STORED_MAGIC: &[u8; 8] = b"ZBTXZ001";
+const STORED_HEADER: usize = 16;
+
+/// The codec field is optional for existing uncompressed publications. Its
+/// explicit value is included in the publication identity for new records.
+pub fn record_codec(manifest: &Value) -> Result<Option<&str>, String> {
+    match manifest.get("recordCodec") {
+        None => Ok(None),
+        Some(Value::String(codec)) if codec == RECORD_CODEC => Ok(Some(RECORD_CODEC)),
+        _ => Err("Unsupported full-record storage codec".into()),
+    }
+}
+
+/// Store only transaction-specific facts. Shared context is reconstructed from
+/// the publication-bound manifest; a flag preserves the original presence of
+/// decoded.hex when that field exactly duplicates raw.hex.
+pub fn encode_record_for_storage(envelope: &Value) -> Result<Vec<u8>, String> {
+    if serde_json::to_vec(envelope)
+        .map_err(|error| error.to_string())?
+        .len()
+        > MAX_DECODED_RECORD_BYTES
+    {
+        return Err("Decoded full-record envelope exceeds its limit".into());
+    }
+    let mut payload = envelope.clone();
+    let object = payload
+        .as_object_mut()
+        .ok_or("Invalid full-record object")?;
+    if object.contains_key("found") || object.contains_key("publicationId") {
+        return Err("Full-record input contains reserved result context".into());
+    }
+    for field in ["schema", "network", "snapshot", "coverage"] {
+        object
+            .remove(field)
+            .ok_or("Missing shared full-record context")?;
+    }
+    let restore_hex = payload["raw"]["hex"].is_string()
+        && payload["raw"]["decoded"]["hex"] == payload["raw"]["hex"];
+    if restore_hex {
+        payload["raw"]["decoded"]
+            .as_object_mut()
+            .ok_or("Invalid decoded transaction object")?
+            .remove("hex");
+    }
+    let decoded = serde_json::to_vec(&payload).map_err(|error| error.to_string())?;
+    if decoded.is_empty() || decoded.len() > MAX_DECODED_RECORD_BYTES {
+        return Err("Decoded full-record storage payload exceeds its limit".into());
+    }
+    let compressed = miniz_oxide::deflate::compress_to_vec_zlib(&decoded, 6);
+    let mut stored = Vec::with_capacity(STORED_HEADER + compressed.len());
+    stored.extend_from_slice(STORED_MAGIC);
+    stored.extend_from_slice(&(decoded.len() as u32).to_le_bytes());
+    stored.push(u8::from(restore_hex));
+    stored.extend_from_slice(&[0; 3]);
+    stored.extend(compressed);
+    if stored.len() > MAX_ENCODED_RECORD_BYTES {
+        return Err("Encoded full-record storage payload exceeds its chunk budget".into());
+    }
+    Ok(stored)
+}
+
+/// Called only after the complete fixed PIR batch and its encoded checksum are
+/// verified. Exact stream consumption rejects trailing/concatenated zlib data.
+pub fn decode_record_from_storage(
+    stored: &[u8],
+    manifest: &Value,
+    selected: &str,
+) -> Result<Value, String> {
+    if stored.is_empty() || stored.len() > MAX_ENCODED_RECORD_BYTES {
+        return Err("Encoded full-record storage length exceeds its limit".into());
+    }
+    let record = if record_codec(manifest)?.is_none() {
+        let record: Value = serde_json::from_slice(stored).map_err(|error| error.to_string())?;
+        if serde_json::to_vec(&record).map_err(|error| error.to_string())? != stored {
+            return Err("Noncanonical full-record JSON".into());
+        }
+        record
+    } else {
+        use miniz_oxide::inflate::{
+            TINFLStatus,
+            core::{DecompressorOxide, decompress, inflate_flags},
+        };
+        if stored.len() <= STORED_HEADER
+            || &stored[..8] != STORED_MAGIC
+            || stored[12] & !1 != 0
+            || stored[13..16] != [0; 3]
+        {
+            return Err("Invalid compressed full-record header".into());
+        }
+        let length = u32::from_le_bytes(stored[8..12].try_into().unwrap()) as usize;
+        if length == 0 || length > MAX_DECODED_RECORD_BYTES {
+            return Err("Decoded full-record length exceeds its limit".into());
+        }
+        let mut decoded = vec![0; length];
+        let (status, consumed, produced) = decompress(
+            &mut DecompressorOxide::new(),
+            &stored[STORED_HEADER..],
+            &mut decoded,
+            0,
+            inflate_flags::TINFL_FLAG_PARSE_ZLIB_HEADER
+                | inflate_flags::TINFL_FLAG_USING_NON_WRAPPING_OUTPUT_BUF,
+        );
+        if status != TINFLStatus::Done
+            || consumed != stored.len() - STORED_HEADER
+            || produced != length
+        {
+            return Err(
+                "Invalid, truncated, trailing or oversized compressed full-record stream".into(),
+            );
+        }
+        let mut payload: Value =
+            serde_json::from_slice(&decoded).map_err(|error| error.to_string())?;
+        if serde_json::to_vec(&payload).map_err(|error| error.to_string())? != decoded {
+            return Err("Noncanonical compressed full-record JSON".into());
+        }
+        let object = payload
+            .as_object_mut()
+            .ok_or("Invalid stored full-record object")?;
+        if [
+            "schema",
+            "network",
+            "snapshot",
+            "coverage",
+            "found",
+            "publicationId",
+        ]
+        .iter()
+        .any(|field| object.contains_key(*field))
+        {
+            return Err("Stored full-record payload contains reserved shared context".into());
+        }
+        if stored[12] == 1 {
+            let hex = payload["raw"]["hex"]
+                .as_str()
+                .ok_or("Missing deduplicated raw hex")?
+                .to_owned();
+            let decoded = payload["raw"]["decoded"]
+                .as_object_mut()
+                .ok_or("Missing decoded transaction object")?;
+            if decoded.insert("hex".into(), json!(hex)).is_some() {
+                return Err("Conflicting deduplicated raw hex".into());
+            }
+        }
+        let object = payload.as_object_mut().unwrap();
+        object.insert("schema".into(), json!(RECORD_SCHEMA));
+        for field in ["network", "snapshot", "coverage"] {
+            object.insert(
+                field.into(),
+                manifest
+                    .get(field)
+                    .ok_or("Missing publication context")?
+                    .clone(),
+            );
+        }
+        payload
+    };
+    if record_codec(manifest)?.is_some()
+        && serde_json::to_vec(&record)
+            .map_err(|error| error.to_string())?
+            .len()
+            > MAX_DECODED_RECORD_BYTES
+    {
+        return Err("Reconstructed full-record envelope exceeds its limit".into());
+    }
+    validate_record(&record, manifest, selected)?;
+    Ok(record)
+}
+
 pub fn profile() -> Result<TableProfile, String> {
     TableProfile::new(SCHEMA, GEOMETRY, TABLE, ROWS as u64, ROW_BYTES as u32)
 }
@@ -72,6 +243,9 @@ pub fn publication_identity(manifest: &Value) -> Result<Value, String> {
             .get(key)
             .ok_or_else(|| format!("Missing publication field {key}"))?;
         identity.insert(key.to_string(), value.clone());
+    }
+    if record_codec(manifest)?.is_some() {
+        identity.insert("recordCodec".into(), manifest["recordCodec"].clone());
     }
     if packing_cover_row(manifest)?.is_some() {
         identity.insert("packing".into(), manifest["packing"].clone());
@@ -304,3 +478,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "codec_tests.rs"]
+mod codec_tests;

@@ -197,7 +197,7 @@ struct FullDirectoryEntry {
 }
 
 struct FullLookup {
-    entry: FullDirectoryEntry,
+    entry: Option<FullDirectoryEntry>,
     next_query: usize,
     next_response: usize,
     secrets: Vec<Option<NativeSecret>>,
@@ -337,6 +337,12 @@ impl FullPirBrowser {
         self.begin_lookup(txid).map_err(js_error)
     }
 
+    /// A collection lookup uses this on every non-selected segment. All C
+    /// encrypted cover requests and responses follow the same fixed schedule.
+    pub fn begin_cover_query(&mut self) -> Result<u32, JsValue> {
+        self.begin_cover_lookup().map_err(js_error)
+    }
+
     /// Generate the whole fixed query batch in order before dispatch or decode.
     /// Reply bytes cannot be consumed until every query has been generated.
     pub fn make_chunk_query(&mut self, index: u32) -> Result<Vec<u8>, JsValue> {
@@ -373,10 +379,24 @@ impl FullPirBrowser {
             )?;
         self.lookup = Some(FullLookup {
             assembled: Vec::with_capacity(entry.record_bytes),
-            entry,
+            entry: Some(entry),
             next_query: 0,
             next_response: 0,
             secrets: (0..self.chunk_count).map(|_| None).collect(),
+        });
+        Ok(self.chunk_count as u32)
+    }
+
+    fn begin_cover_lookup(&mut self) -> Result<u32, String> {
+        if self.lookup.is_some() || self.cover_row.is_none() {
+            return Err("Compact cover query unavailable or another lookup is pending".into());
+        }
+        self.lookup = Some(FullLookup {
+            entry: None,
+            next_query: 0,
+            next_response: 0,
+            secrets: (0..self.chunk_count).map(|_| None).collect(),
+            assembled: Vec::new(),
         });
         Ok(self.chunk_count as u32)
     }
@@ -392,9 +412,8 @@ impl FullPirBrowser {
         }
         let row = lookup
             .entry
-            .rows
-            .get(index)
-            .copied()
+            .as_ref()
+            .and_then(|entry| entry.rows.get(index).copied())
             .or(self.cover_row)
             .ok_or("Missing full-record query row")?;
         let (secret, query) = self.profile.prepare(row)?;
@@ -415,14 +434,18 @@ impl FullPirBrowser {
             .take()
             .ok_or("No pending encrypted chunk")?;
         let row = self.profile.decode(&secret, &self.public, response)?;
-        if lookup.next_response < lookup.entry.rows.len() {
+        if let Some(entry) = lookup
+            .entry
+            .as_ref()
+            .filter(|entry| lookup.next_response < entry.rows.len())
+        {
             let context = full_record::ChunkContext {
                 publication_id: &self.publication_id,
-                txid: &lookup.entry.txid,
+                txid: &entry.txid,
                 index: lookup.next_response,
-                count: lookup.entry.rows.len(),
-                record_bytes: lookup.entry.record_bytes,
-                record_sha256: &lookup.entry.record_sha256,
+                count: entry.rows.len(),
+                record_bytes: entry.record_bytes,
+                record_sha256: &entry.record_sha256,
             };
             let payload = full_record::decode_chunk(&context, &row)?;
             lookup.assembled.extend(payload);
@@ -437,17 +460,19 @@ impl FullPirBrowser {
             self.lookup = Some(lookup);
             return Ok(None);
         }
-        if lookup.assembled.len() != lookup.entry.record_bytes
-            || hex::encode(Sha256::digest(&lookup.assembled)) != lookup.entry.record_sha256
+        let Some(entry) = lookup.entry else {
+            return Ok(None);
+        };
+        if lookup.assembled.len() != entry.record_bytes
+            || hex::encode(Sha256::digest(&lookup.assembled)) != entry.record_sha256
         {
             return Err("Full-record checksum or length mismatch".into());
         }
-        let record: serde_json::Value =
-            serde_json::from_slice(&lookup.assembled).map_err(|error| error.to_string())?;
-        if serde_json::to_vec(&record).map_err(|error| error.to_string())? != lookup.assembled {
-            return Err("Noncanonical full-record JSON".into());
-        }
-        full_record::validate_record(&record, &self.manifest, &lookup.entry.txid)?;
+        let record = full_record::decode_record_from_storage(
+            &lookup.assembled,
+            &self.manifest,
+            &entry.txid,
+        )?;
         full_record::result_envelope(record, &self.publication_id).map(Some)
     }
 }

@@ -455,3 +455,72 @@ fn compact_layout_and_optional_identity_are_strict_without_changing_legacy_hashe
     invalid["coverRow"] = json!(2047);
     assert!(full_record::publication_identity(&invalid).is_err());
 }
+
+fn codec_fixture() -> &'static Fixture {
+    static DATA: OnceLock<Fixture> = OnceLock::new();
+    DATA.get_or_init(|| {
+        let compact=compact_fixture();let mut records=compact.records.clone();
+        let padding=(0_u32..600).map(|i|hex::encode(Sha256::digest(i.to_le_bytes()))).collect::<String>();
+        records.values_mut().next_back().unwrap()["raw"]["decoded"]["codec_fixture_padding"]=json!(padding);
+        let bodies:BTreeMap<_,_>=records.iter().map(|(id,r)|(id.clone(),full_record::encode_record_for_storage(r).unwrap())).collect();
+        let count=bodies.values().map(|r|r.len().div_ceil(full_record::PAYLOAD_BYTES)).max().unwrap();assert!(count>1);
+        let mut next=0;let catalogue:Vec<_>=bodies.iter().map(|(id,body)|{let actual=body.len().div_ceil(full_record::PAYLOAD_BYTES);let rows:Vec<_>=(next..next+actual).collect();next+=actual;json!({"txid":id,"rows":rows,"recordBytes":body.len(),"recordSha256":hex::encode(Sha256::digest(body))})}).collect();
+        let mut manifest=compact.manifest.clone();manifest["recordCodec"]=json!(full_record::RECORD_CODEC);manifest["catalogue"]=json!(catalogue);manifest["chunkCount"]=json!(count);
+        let id=full_record::publication_id(&manifest).unwrap();manifest["publicationId"]=json!(id);
+        let mut database=vec![0;full_record::ROWS*full_record::ROW_BYTES];
+        for entry in manifest["catalogue"].as_array().unwrap(){let txid=entry["txid"].as_str().unwrap();let body=&bodies[txid];let actual=entry["rows"].as_array().unwrap().len();for index in 0..actual {let context=full_record::ChunkContext{publication_id:&id,txid,index,count:actual,record_bytes:body.len(),record_sha256:entry["recordSha256"].as_str().unwrap()};let start=index*full_record::PAYLOAD_BYTES;let end=(start+full_record::PAYLOAD_BYTES).min(body.len());let row=entry["rows"][index].as_u64().unwrap()as usize;database[row*full_record::ROW_BYTES..(row+1)*full_record::ROW_BYTES].copy_from_slice(&full_record::encode_chunk(&context,&body[start..end]).unwrap());}}
+        let evaluator=Evaluator::new(database);manifest["publicSha256"]=json!(hex::encode(Sha256::digest(&evaluator.public)));manifest["databaseSha256"]=json!(hex::encode(Sha256::digest(&evaluator.database)));
+        Fixture{manifest,evaluator,records}
+    })
+}
+#[test]
+fn compressed_records_roundtrip_actual_pir_with_identical_complete_ui_results() {
+    let f = codec_fixture();
+    let count = f.manifest["chunkCount"].as_u64().unwrap() as usize;
+    for txid in f.records.keys() {
+        let mut client = f.client();
+        let queries = prepare_batch(&mut client, txid);
+        assert_eq!(queries.len(), count);
+        let replies: Vec<_> = queries.iter().map(|q| f.evaluator.answer(q)).collect();
+        let mut result = None;
+        for (i, reply) in replies.iter().enumerate() {
+            result = client.decode_batch_response(reply).unwrap();
+            if i + 1 < count {
+                assert!(result.is_none());
+            }
+        }
+        assert_eq!(
+            serde_json::from_str::<Value>(&result.unwrap()).unwrap(),
+            f.expected(txid)
+        );
+    }
+}
+#[test]
+fn collection_cover_batches_validate_every_reply_and_never_release_a_record() {
+    let f = codec_fixture();
+    let count = f.manifest["chunkCount"].as_u64().unwrap() as usize;
+    let mut client = f.client();
+    assert_eq!(client.begin_cover_lookup().unwrap() as usize, count);
+    let queries: Vec<_> = (0..count)
+        .map(|i| client.generate_chunk_query(i).unwrap())
+        .collect();
+    let replies: Vec<_> = queries.iter().map(|q| f.evaluator.answer(q)).collect();
+    for reply in replies {
+        assert!(client.decode_batch_response(&reply).unwrap().is_none());
+    }
+    assert!(client.lookup.is_none());
+    let poisoned = f.poisoned_row(full_record::ROWS - 1);
+    let mut client = poisoned.client();
+    client.begin_cover_lookup().unwrap();
+    let queries: Vec<_> = (0..count)
+        .map(|i| client.generate_chunk_query(i).unwrap())
+        .collect();
+    let replies: Vec<_> = queries
+        .iter()
+        .map(|q| poisoned.evaluator.answer(q))
+        .collect();
+    assert_eq!(queries.len(), count);
+    assert!(client.decode_batch_response(&replies[0]).is_err());
+    assert!(client.lookup.is_none());
+    assert!(fixture().client().begin_cover_lookup().is_err());
+}

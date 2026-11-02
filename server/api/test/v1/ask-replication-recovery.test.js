@@ -112,7 +112,7 @@ test('isolated PG16 acknowledgement ledger preserves real errors, epochs and ope
  assert.equal(await release(),true,'a pending baseline may run for the acknowledged epoch');
  await db.query("UPDATE analytics_meta.sync_state SET state='quarantined'");assert.equal(await release(),false,'a quarantine is released only by an operator');
  await db.query("UPDATE analytics_meta.sync_state SET state='stale'");
- await record('g',{generation:'00000000-0000-4000-8000-000000000002'});assert.equal(await release(),false);
+ await record('1',{generation:'00000000-0000-4000-8000-000000000002'});assert.equal(await release(),false);
  await db.query('UPDATE analytics_meta.replication_recovery_ack SET event_id=$1 WHERE subid=$2',['c'.repeat(64),subid]);assert.equal(await release(),true);
  await db.query('UPDATE analytics_meta.admission_control SET baseline_verified=true');assert.equal(await acknowledged(),true);
  await assert.rejects(db.query(fs.readFileSync(path.join(deploy,'replication-recovery-v2.sql'),'utf8')),/v2 not yet applied/);

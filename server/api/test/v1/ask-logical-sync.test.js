@@ -538,8 +538,9 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
   // 2026-11-02: once an error epoch is acknowledged, the strict helper needs a
   // verified baseline, which quarantine clears. A released store stayed stale.
   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
-  // Fixture roles only: the cluster superuser is ask_fixture_admin, not postgres.
-  await target.query('CREATE ROLE postgres NOLOGIN');
+  // Fixture roles only: the cluster superuser is ask_fixture_admin. postgres owns
+  // the ledger, and its foreign-key checks run as that owner, so it is superuser as in production.
+  await target.query('CREATE ROLE postgres NOLOGIN SUPERUSER');
   const operator=name=>read(name).replace("OR current_user<>'postgres'","OR NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)");
   await target.query(operator('replication-recovery-v1.sql'));
   const acknowledge=async(tag,generation)=>{

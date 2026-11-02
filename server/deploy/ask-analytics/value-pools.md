@@ -60,6 +60,7 @@ No existing dataset reads the new table. `test/v1/ask-logical-sync.test.js` (PG1
    - the dates and `chain_supply` equal the same query on mainnet, row for row;
    - `chain_supply` equals `supply_daily.chain_supply` on every date whose snapshot is the date's last block;
    - each `chain_supply` equals the sum of its pool columns.
+   - 2026-11-02 result: 35 dates identical to mainnet; `chain_supply` equal to the pool sum and to `supply_daily` on all 35 (same day-end block every date); no NULL pool; NSM 0 throughout.
 9. **Live `sql_query`** still rejects `value_pools_daily`.
 10. **Publish PR:** it removes `published:false` and adds `value_pools_daily` to `REQUIRED_DATASETS` in both scripts.
     - **Before merging, deploy a worker build of the publish commit.** The worker enforces `published` itself, and so does the API after its deploy.

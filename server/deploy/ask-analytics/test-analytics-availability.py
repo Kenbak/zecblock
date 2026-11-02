@@ -11,7 +11,7 @@ class Probe(unittest.TestCase):
   (cls.build/'server/api/v1/lib').mkdir(parents=True);(cls.build/a.WORKER_CATALOGUE).write_text(CATALOGUE)
  @classmethod
  def tearDownClass(cls):cls.tmp.cleanup()
- READY={'activity_daily':True,'address_activity':True,'addresses':True,'block_timing':True,'daily':True,'flow_daily':True,'issuance_daily':True,'mining_daily':True,'orphaned_blocks':True,'reorgs':True,'software_daily':True,'supply_daily':True,'swap_daily':True,'swaps':True}
+ READY={'activity_daily':True,'address_activity':True,'addresses':True,'block_timing':True,'daily':True,'flow_daily':True,'issuance_daily':True,'mining_daily':True,'orphaned_blocks':True,'reorgs':True,'software_daily':True,'supply_daily':True,'swap_daily':True,'swaps':True,'value_pools_daily':True}
  def runner(self,healthy=True,datasets=None,worker=True,reader=None,build=None):
   datasets=dict(self.READY) if datasets is None else datasets
   reader=access() if reader is None else reader;build=str(self.build) if build is None else build

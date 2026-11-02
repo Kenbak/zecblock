@@ -9,7 +9,7 @@ const {sqlExamples}=require('../../../../lib/ask/sql-examples');
 const deploy=name=>fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8');
 const migration=deploy('value-pools-v1.sql'),rollback=deploy('value-pools-v1-rollback.sql'),grant=deploy('value-pools-grant-v1.sql');
 const source=deploy('value-pools-source-v1.sql'),sourceRollback=deploy('value-pools-source-v1-rollback.sql');
-const id='value_pools_daily',preview={preview:true};
+const id='value_pools_daily';
 const view=/CREATE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(migration)[0];
 const published='hash,height,observed_at,chain,nsm_balance_zat,circulating_supply_zat,pool_balances_zat';
 // Output column names of the outermost SELECT list: the alias, or the bare column name.
@@ -21,20 +21,20 @@ function viewColumns(sql){
  return parts.map(p=>{p=p.trim();const alias=/\bAS\s+([a-z_]+)$/i.exec(p);return alias?alias[1]:p.split('.').pop();});
 }
 
-test('value_pools_daily is an unpublished extended dataset until its rollout is verified',async()=>{
+// Published 2026-11-02 after the host rollout was verified (value-pools.md).
+test('value_pools_daily is a published extended dataset with guidance',async()=>{
  const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
- assert.equal(isPublished(id),false);assert.equal(isPublished(id,preview),true);
- assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
- assert.ok(!catalogueFor(false,preview).some(d=>d.id===id));
- await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM value_pools_daily',limit:1},{extended:true}),/not admitted/);
- assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM value_pools_daily',limit:1},{extended:true,...preview})).datasets,[id]);
+ assert.equal(isPublished(id),true);
+ assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+ await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM value_pools_daily',limit:1}),/not admitted/);
+ assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM value_pools_daily',limit:1},{extended:true})).datasets,[id]);
  assert.ok(!coreGatedIds.includes(id));
- assert.doesNotMatch(instructionsFor(true),/read value_pools_daily/);
- assert.match(instructionsFor(true,preview),/read value_pools_daily \(completed UTC dates from 2026-09-28\)/);
- assert.match(instructionsFor(true,preview),/never SUM its balances across dates/);
- assert.match(instructionsFor(true,preview),/name the source used/);
- assert.deepEqual(pendingCases.filter(c=>(c.requires||[]).includes(id)).map(c=>c.id),['value_pools_end_2026_10']);
- assert.ok(!cases.some(c=>(c.requires||[]).includes(id)));
+ assert.match(instructionsFor(true),/read value_pools_daily \(completed UTC dates from 2026-09-28\)/);
+ assert.match(instructionsFor(true),/never SUM its balances across dates/);
+ assert.match(instructionsFor(true),/name the source used/);
+ assert.doesNotMatch(instructionsFor(false),/read value_pools_daily/);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).includes(id)));
+ assert.ok(cases.some(c=>c.id==='value_pools_end_2026_10'));
 });
 
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
@@ -46,16 +46,16 @@ test('catalogue columns are exactly the view columns and semantics are stated',(
  assert.doesNotMatch(entry.columns,/circulating/);
 });
 
-test('examples compile in preview; the raw observation table stays unreachable',async()=>{
+test('examples compile; the raw observation table stays unreachable',async()=>{
  const examples=sqlExamples.filter(e=>(e.datasets||[]).includes(id));
  assert.deepEqual(examples.map(e=>e.id),['value-pools-weekly']);
  for(const example of examples){
-  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true,...preview});
+  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true});
   assert.deepEqual(compiled.datasets,[id],example.id);
   assert.equal(displaySQL(compiled.request.sql).includes('analytics_public'),false);
  }
  for(const sql of ['WITH value_pools_daily AS (SELECT 1) SELECT * FROM value_pools_daily','SELECT * FROM public.node_accounting_observations','SELECT subsidy FROM node_accounting_observations'])
-  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true,...preview}));
+  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true}));
 });
 
 test('migrations are guarded, keep private columns private and order destination before source',()=>{

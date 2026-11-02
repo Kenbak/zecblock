@@ -21,7 +21,7 @@ OLD, NEW = base.OLD, base.NEW
 
 
 class Fixture(base.Fixture):
-    def __init__(self, *, failure=None):
+    def __init__(self, *, failure=None, archive_prefix=''):
         super().__init__()
         self.original_module = self.m
         spec = importlib.util.spec_from_file_location('tested_archive_upgrade', HERE.parent / 'pilot/upgrade-archive.py')
@@ -46,8 +46,13 @@ class Fixture(base.Fixture):
             files['prototype/private-tx/' + name] = b'closed runtime fixture\n'
         files['provenance.json'] = self.provenance(NEW, files)
         with tarfile.open(self.archive, 'w:gz') as packed:
+            if archive_prefix:
+                item = tarfile.TarInfo(archive_prefix); item.type = tarfile.DIRTYPE; packed.addfile(item)
+                directories = {str(parent) for name in files for parent in Path(name).parents if str(parent) != '.'}
+                for name in sorted(directories, key=lambda value: (len(Path(value).parts), value)):
+                    item = tarfile.TarInfo(archive_prefix + name); item.type = tarfile.DIRTYPE; packed.addfile(item)
             for name, raw in files.items():
-                item = tarfile.TarInfo(name); item.size = len(raw); packed.addfile(item, io.BytesIO(raw))
+                item = tarfile.TarInfo(archive_prefix + name); item.size = len(raw); packed.addfile(item, io.BytesIO(raw))
         self.sha = hashlib.sha256(self.archive.read_bytes()).hexdigest()
         self.failure = failure
         self.active = set(m.SERVICES)
@@ -177,6 +182,23 @@ class ArchiveUpgrade(unittest.TestCase):
         box = self.fixture(); before = box.tree(Path(box.temp.name))
         self.assertTrue(box.execute(True)['verifiedOnly'])
         self.assertEqual(box.tree(Path(box.temp.name)), before); self.assertEqual(box.events, [])
+
+    def test_dot_prefixed_real_bundle_members_support_preflight_and_migration(self):
+        for verify_only in (True, False):
+            with self.subTest(verify_only=verify_only):
+                box = self.fixture(archive_prefix='./')
+                with tarfile.open(box.archive) as packed:
+                    members = packed.getmembers()
+                    self.assertTrue(all(member.name.startswith('./') or member.name in ('.', './') for member in members))
+                    self.assertTrue(all(member.name.startswith('./') for member in members if member.isfile()))
+                before = box.tree(Path(box.temp.name))
+                result = box.execute(verify_only)
+                if verify_only:
+                    self.assertTrue(result['verifiedOnly'])
+                    self.assertEqual(box.tree(Path(box.temp.name)), before); self.assertEqual(box.events, [])
+                else:
+                    self.assertEqual(result['originalRecordsRetained'], 393)
+                    self.assertEqual((box.m.u.ROOT / 'current').resolve().name, NEW)
 
     def test_success_retains_393_with_explicit_gap_and_preserves_every_old_file(self):
         box = self.fixture(); m = box.m

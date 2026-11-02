@@ -10,5 +10,5 @@ test('offline archive migration preserves live rollback state and waits before e
   });
   assert.ifError(result.error);
   assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.match(result.stderr, /Ran 6 tests/);
+  assert.match(result.stderr, /Ran 7 tests/);
 });

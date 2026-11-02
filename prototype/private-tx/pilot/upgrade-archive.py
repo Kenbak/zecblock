@@ -7,7 +7,7 @@ import http.client
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import pwd
 import re
 import subprocess
@@ -205,10 +205,22 @@ def main(argv=None):
     u.require(floor == BOOTSTRAP_HEIGHT and len(baseline) == BASELINE_RECORDS, 'Unexpected original live cohort or floor')
     templates = {}
     with tarfile.open(args.archive) as packed:
+        members = {}
+        for member in packed.getmembers():
+            u.require(member.isfile() or member.isdir(), 'Unsafe archive template member type')
+            if member.isdir() and PurePosixPath(member.name) == PurePosixPath('.'):
+                continue
+            normalized = u.relative_file(member.name)
+            u.require(normalized not in members, 'Duplicate normalized archive template path')
+            members[normalized] = member
         for name, template in TEMPLATES.items():
             path = 'prototype/private-tx/pilot/' + template
             u.require(path in provenance['files'], 'Archive service template missing from closed release')
-            templates[name] = packed.extractfile(path).read()
+            member = members.get(path)
+            expected = provenance['files'][path]
+            u.require(member is not None and member.isfile() and member.size == expected['bytes'], 'Invalid archive service template member')
+            templates[name] = packed.extractfile(member).read()
+            u.require(hashlib.sha256(templates[name]).hexdigest() == expected['sha256'], 'Archive service template hash mismatch')
     for name in SERVICES:
         directory = u.UNITS / (name + '.d')
         if directory.exists() or directory.is_symlink():

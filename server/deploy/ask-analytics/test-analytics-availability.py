@@ -1,14 +1,26 @@
-import importlib.util,pathlib,unittest,json,types
+import importlib.util,pathlib,unittest,json,types,tempfile,re
 spec=importlib.util.spec_from_file_location('analytics_alerts',pathlib.Path(__file__).with_name('analytics-availability.py'));a=importlib.util.module_from_spec(spec);spec.loader.exec_module(a)
+REPO=pathlib.Path(__file__).parents[3]
+CATALOGUE=(REPO/'server/api/v1/lib/ask-core-catalogue.js').read_text()
+VIEWS=re.findall(r"'([a-z_]+)'",re.search(r"coreViews=Object\.freeze\(\[([^\]]*)\]\)",CATALOGUE).group(1))
+def access(names=VIEWS,**extra):return [dict({'schema':'analytics_public','name':n,'kind':'v','write':False},**extra) for n in names]
 class Probe(unittest.TestCase):
+ @classmethod
+ def setUpClass(cls):
+  cls.tmp=tempfile.TemporaryDirectory();cls.build=pathlib.Path(cls.tmp.name)/'build'
+  (cls.build/'server/api/v1/lib').mkdir(parents=True);(cls.build/a.WORKER_CATALOGUE).write_text(CATALOGUE)
+ @classmethod
+ def tearDownClass(cls):cls.tmp.cleanup()
  READY={'activity_daily':True,'address_activity':True,'addresses':True,'block_timing':True,'daily':True,'flow_daily':True,'issuance_daily':True,'mining_daily':True,'orphaned_blocks':True,'reorgs':True,'software_daily':True,'supply_daily':True,'swap_daily':True,'swaps':True}
- def runner(self,healthy=True,datasets=None,worker=True):
+ def runner(self,healthy=True,datasets=None,worker=True,reader=None,build=None):
   datasets=dict(self.READY) if datasets is None else datasets
+  reader=access() if reader is None else reader;build=str(self.build) if build is None else build
   def run(args,**kwargs):
    self.assertLessEqual(kwargs['timeout'],20)
    if args[0]=='/usr/bin/python3':return types.SimpleNamespace(stdout=json.dumps({'healthy':healthy}),returncode=0)
    if args[0]=='/usr/bin/psql':
-    self.assertIn('BEGIN READ ONLY',args[-1]);self.assertIn("statement_timeout='2s'",args[-1]);return types.SimpleNamespace(stdout=json.dumps({'verified_at':'2026-10-12 00:00:00+00','datasets':datasets}),returncode=0)
+    self.assertIn('BEGIN READ ONLY',args[-1]);self.assertIn("statement_timeout='2s'",args[-1]);return types.SimpleNamespace(stdout=json.dumps({'verified_at':'2026-10-12 00:00:00+00','datasets':datasets,'reader_access':reader}),returncode=0)
+   if args[1]=='show':self.assertEqual(args[-1],a.WORKER_UNIT);return types.SimpleNamespace(stdout=build+'\n',returncode=0)
    return types.SimpleNamespace(stdout='active' if worker else 'inactive',returncode=0 if worker else 1)
   return run
  def test_admission_datasets_and_worker_all_required(self):
@@ -31,7 +43,7 @@ class Probe(unittest.TestCase):
  def test_analytics_alone_reports_research_data_readiness(self):
   text=a.notification_text('recovery','')
   self.assertIn('research data readiness restored',text)
-  self.assertIn('admission, datasets and query worker checks passed',text)
+  self.assertIn('admission, datasets, query worker and reader guard checks passed',text)
   failed=a.notification_text('failure','datasets_unavailable')
   self.assertIn('research data readiness blocked',failed)
   self.assertIn('datasets_unavailable',failed)
@@ -55,6 +67,27 @@ class Probe(unittest.TestCase):
    self.assertEqual(a.recovery_errors(subscribed,path),['recovery_config_unreadable'])
    path.write_text(json.dumps({'expected_relations':['public.blocks']}))
    self.assertIn('recovery_relations_drift',a.probe(self.runner(),path)[0])
+ def test_reader_access_must_match_running_worker_views(self):
+  self.assertEqual(a.worker_views(self.build),set(VIEWS))
+  self.assertIn('swap_daily_query',VIEWS)
+  self.assertEqual(a.probe(self.runner())[0],[])
+  self.assertEqual(a.probe(self.runner(reader=access(VIEWS[:3])))[0],[])  # a missing grant fails only that dataset
+  # The 2026-11-02 incident: the reader could read a view the running build did not list.
+  self.assertEqual(a.probe(self.runner(reader=access()+access(['future_daily_query'])))[0],['reader_view_drift'])
+  for bad in [access(['blocks'],kind='r'),access(['blocks'],schema='public'),access(['blocks'],write=True),['blocks'],[None]]:
+   self.assertEqual(a.probe(self.runner(reader=access()+bad))[0],['reader_view_drift'],bad)
+ def test_unknown_worker_views_or_reader_access_are_never_healthy(self):
+  self.assertEqual(a.probe(self.runner(build='/nonexistent'))[0],['reader_guard_unverifiable'])
+  for reader in ['absent',{},None]:
+   run=self.runner();base=run
+   def patched(args,**kwargs):
+    out=base(args,**kwargs)
+    if args[0]=='/usr/bin/psql':data=json.loads(out.stdout);data['reader_access']=reader;out.stdout=json.dumps(data)
+    return out
+   self.assertEqual(a.probe(patched)[0],['reader_guard_unverifiable'],reader)
+  with tempfile.TemporaryDirectory() as d:
+   (pathlib.Path(d)/'server/api/v1/lib').mkdir(parents=True);(pathlib.Path(d)/a.WORKER_CATALOGUE).write_text('module.exports={}')
+   self.assertEqual(a.probe(self.runner(build=d))[0],['reader_guard_unverifiable'])
  def test_unreadable_probe_is_never_healthy(self):
   def broken(*args,**kwargs):raise RuntimeError('secret fixture is never output')
   errors,_,warming=a.probe(broken);self.assertEqual(errors,['analytics_probe_failed']);self.assertEqual(warming,[])

@@ -6,6 +6,7 @@ Proposal, not applied. The owner approves each rollout step. `swap_daily` ships
 ## Rollback (written first; reverse order, each step safe on its own)
 
 - **Before step 10:**
+  0. Revoke the reader grant first if applied: `REVOKE ALL ON analytics_public.swap_daily_query FROM ask_public_reader;`
   1. Re-deploy the previous worker drop-in (`zzzzzzzzzzzzzzzz-ask-reorgs-20261101.conf` is the current last) and restore the admission backup taken at step 7.
   2. Restore the recovery config/state backups from step 5 (see `feed-recovery.md`, "Adding a replicated table").
   3. On mainnet: `swaps-source-v1-rollback.sql`. It restores the original nine `cross_chain_swaps` columns and drops the venue table in one transaction.
@@ -50,7 +51,8 @@ The existing `swaps` dataset is unaffected throughout: its view reads only the o
    - Stream the export without a file: `ssh zcash-mainnet "sudo -u postgres psql -X -d zcash_explorer_mainnet -c '\copy (SELECT id,source_amount,dest_amount FROM public.cross_chain_swaps ORDER BY id) TO STDOUT'"` piped into `sudo -u postgres psql -X -d ask_analytics -c '\copy analytics_meta.swap_amount_backfill FROM STDIN'` on the store.
    - Measure the first batch: `-v lo=1 -v hi=20000 -f swaps-backfill-v1.sql` under `/usr/bin/time -v`. Then run 500,000-id ranges up to the max id.
    - Verify zero mismatches: `SELECT count(*) FROM public.cross_chain_swaps s JOIN analytics_meta.swap_amount_backfill b USING(id) WHERE s.source_amount IS DISTINCT FROM b.source_amount OR s.dest_amount IS DISTINCT FROM b.dest_amount;` then drop the staging table.
-7. **Worker build at the merge commit:** deploy it, back up the admission script and install the new one, then restart and check health 200.
+7. **Worker build at the merge commit:** deploy it, back up the admission script and install the new one, then restart and check health 200
+   Only then apply `swaps-grant-v1.sql`, and confirm a live `sql_query` on `blocks` still succeeds. The worker's guard refuses every query while the reader can select a view the running build does not list, so the grant must never precede the worker. (On 2026-11-02 the grant shipped inside step 2 and research was offline until it was revoked.)
 8. **Verify as `ask_public_reader`:**
    - `sum(missing_zec)` is 0;
    - NEAR Intents swap counts per date equal the `swaps` dataset;

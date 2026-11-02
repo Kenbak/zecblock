@@ -4,7 +4,8 @@
 -- replicated Maya/THORChain venue action table (reviewed columns only). Apply
 -- BEFORE swaps-source-v1.sql: a published column or table without its
 -- destination stops apply, and disable_on_error halts all research.
--- Reader grants change only by adding one view. The view never exposes a single
+-- The reader grant for the new view is a separate step (swaps-grant-v1.sql),
+-- after the worker that knows the view is running. The view never exposes a single
 -- swap's ZEC amount or time: flows already exposes exact shield/deshield amounts
 -- with timestamps, so per-swap amounts would let SQL rebuild linkage edges.
 -- Rollback: see swaps.md (source first, then swaps-v1-rollback.sql).
@@ -69,5 +70,4 @@ CREATE VIEW analytics_public.swap_daily_query WITH(security_barrier=true) AS
  WHERE c.dataset='swap_daily' AND c.ready;
 RESET ROLE;
 REVOKE ALL ON public.crosschain_venue_actions FROM PUBLIC;
-GRANT SELECT ON analytics_public.swap_daily_query TO ask_public_reader;
 COMMIT;

@@ -764,6 +764,7 @@ paths:
                           - issuance_daily
                           - reorgs
                           - orphaned_blocks
+                          - value_pools_daily
                           - swap_daily
                           - labels
                     measures:

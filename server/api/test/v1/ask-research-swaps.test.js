@@ -82,7 +82,7 @@ test('migrations are guarded, keep linkable fields private and order destination
  assert.match(rollback,/EXISTS\(SELECT FROM pg_subscription_rel WHERE srrelid='public\.crosschain_venue_actions'::regclass\)/);
  const admission=fs.readFileSync(path.join(__dirname,'../../scripts/ask-core-admission.js'),'utf8');
  assert.match(admission,/WHEN 'swap_daily' THEN ARRAY\['public\.cross_chain_swaps','public\.crosschain_venue_actions'\]/);
- assert.match(admission,/'reorgs','orphaned_blocks','swap_daily'\)/);
+ assert.match(admission,/'reorgs','orphaned_blocks','swap_daily'[,)]/);
 });
 
 test('swap_daily view: venues, directions, folding, rounding and suppression',{skip:process.env.ASK_EVAL_TEST_POSTGRES!=='1',timeout:60000},async t=>{

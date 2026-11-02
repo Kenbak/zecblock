@@ -348,7 +348,7 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
   assert.equal((await refreshAdmission(target)).state,'verified');
   // 2026-11-01: the Sprout repair backfilled historical pool='sprout' flows and
   // admission quarantined them as unknown pools. A Sprout flow is valid history.
-  await source.query("INSERT INTO shielded_flows VALUES(12,'b1-tx',1,1700000001,'deshield','sprout',50,'excluded-secret')");
+  await source.query("INSERT INTO shielded_flows VALUES(12,'replacement-b2-tx',2,1700000002,'deshield','sprout',50,'excluded-secret')");
   await wait(async()=>(await target.query("SELECT count(*)::int AS n FROM public.shielded_flows WHERE pool='sprout'")).rows[0].n===1);
   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
   assert.equal((await refreshAdmission(target)).state,'verified');

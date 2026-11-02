@@ -586,6 +586,41 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    assert.equal(await errors(),errorsBefore);
    assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
   });
+  await admission.test('value-pool observations replicate only reviewed columns, snapshot canonical day ends and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));await target.query(read('swaps-v1.sql'));await target.query(read('value-pools-v1.sql'));
+   // The indexer's table, private columns included; one observation per canonical block plus an orphan observation.
+   await source.query(`CREATE TABLE node_accounting_observations(hash text PRIMARY KEY,height bigint NOT NULL,observed_at timestamptz NOT NULL,chain text,nsm_balance_zat bigint,circulating_supply_zat bigint,pool_balances_zat jsonb NOT NULL,subsidy jsonb,upgrades jsonb,source text NOT NULL,poll_interval_ms integer NOT NULL)`);
+   await source.query(`INSERT INTO node_accounting_observations SELECT hash,height,now(),'main',0,1000+height,jsonb_build_object('transparent',(900+height)::text,'lockbox','100'),'{"fundingstreams":[{"address":"t3secret"}]}','{"secret":true}','getblockchaininfo',1000 FROM blocks`);
+   await source.query(`INSERT INTO node_accounting_observations SELECT repeat('f',64),max(height),now(),'main',0,1,'{"transparent":"1"}',NULL,NULL,'getblockchaininfo',1000 FROM blocks`);
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('value-pools-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+1);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.node_accounting_observations'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['hash','height','observed_at','chain','nsm_balance_zat','circulating_supply_zat','pool_balances_zat']);
+   assert.equal((await target.query('SELECT count(*)::int AS n FROM public.node_accounting_observations')).rows[0].n,(await source.query('SELECT count(*)::int AS n FROM node_accounting_observations')).rows[0].n);
+   await target.query(read('value-pools-grant-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='value_pools_daily'")).rows[0].ready,true);
+   // Each completed date shows its highest canonical block; the orphan observation never appears.
+   const expected=(await source.query(`SELECT DISTINCT ON(d) d::text AS date,height::text,(900+height)::text AS transparent,(1000+height)::text AS chain_supply FROM (SELECT (to_timestamp(timestamp) AT TIME ZONE 'UTC')::date AS d,height FROM blocks) b WHERE d<(now() AT TIME ZONE 'UTC')::date ORDER BY d,height DESC`)).rows;
+   assert.ok(expected.length>0);
+   assert.deepEqual((await reader.query('SELECT date::text,height::text,transparent::text,chain_supply::text FROM analytics_public.value_pools_daily_query ORDER BY date')).rows,expected);
+   for(const sql of ['SELECT * FROM public.node_accounting_observations','SELECT subsidy FROM analytics_public.value_pools_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('value-pools-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('value-pools-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('value-pools-v1-rollback.sql'));await target.query(read('swaps-v1-rollback.sql'));await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.node_accounting_observations') IS NULL AS gone")).rows[0].gone,true);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');

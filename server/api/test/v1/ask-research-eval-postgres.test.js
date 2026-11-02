@@ -45,6 +45,7 @@ CREATE TABLE fixture_private.software_daily(date date,software text,blocks bigin
 CREATE TABLE fixture_private.block_timing(height bigint PRIMARY KEY,hash text,timestamp bigint,miner text,first_seen numeric,lag_seconds numeric,observed_by text);
 CREATE TABLE fixture_private.reorgs(reorg_id integer PRIMARY KEY,fork_height bigint,depth integer,reported_orphans integer,orphans bigint,detected_at bigint);
 CREATE TABLE fixture_private.orphaned_blocks(height bigint,hash text PRIMARY KEY,canonical_hash text,timestamp bigint,miner text,transactions integer,bytes integer,reorg_id integer,detected_at bigint,canonical_now boolean);
+CREATE TABLE fixture_private.value_pools_daily(date date PRIMARY KEY,height bigint,hash text,observed_blocks bigint,day_blocks bigint,transparent bigint,sprout bigint,sapling bigint,orchard bigint,ironwood bigint,lockbox bigint,nsm bigint,chain_supply bigint);
 CREATE TABLE fixture_private.swap_daily(date date,venue text,direction text,chain text,token text,swaps bigint,zec bigint,usd bigint,missing_zec bigint,missing_usd bigint,PRIMARY KEY(date,venue,direction,chain,token));
 CREATE TABLE fixture_private.issuance_daily(date date PRIMARY KEY,first_height bigint,last_height bigint,blocks bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
@@ -67,6 +68,7 @@ CREATE VIEW analytics_public.issuance_daily_query WITH(security_barrier=true) AS
 CREATE VIEW analytics_public.reorgs_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.reorgs;
 CREATE VIEW analytics_public.orphaned_blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.orphaned_blocks;
 CREATE VIEW analytics_public.swap_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.swap_daily;
+CREATE VIEW analytics_public.value_pools_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.value_pools_daily;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -96,6 +98,8 @@ INSERT INTO fixture_private.issuance_daily SELECT d,1000*i+1,1000*(i+1),1000,156
 -- One depth-1 reorg every 2.5 days in September-November 2026, one depth-2; each orphan replaced by fixture_block_0's miner.
 INSERT INTO fixture_private.reorgs SELECT n,3510000+n*100,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint FROM generate_series(1,36) n;
 INSERT INTO fixture_private.orphaned_blocks SELECT 3510000+n*100,'fixture_orphan_'||n,'fixture_block_0',extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint-60,CASE n%3 WHEN 0 THEN 't1orphanA' WHEN 1 THEN 't1orphanB' ELSE 'fixture_miner' END,2,500,n,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint,n=7 FROM generate_series(1,36) n;
+-- Node pool snapshots from 2026-09-28: transparent shrinks 10 ZEC a day, the lockbox grows 216 ZEC a day, NSM stays zero before NU7.
+INSERT INTO fixture_private.value_pools_daily SELECT d,3498000+i*1150,'fixture_pools_'||i,1145,1150,t,1300000000000,42000000000000,34000000000000,419000000000000,l,0,t+1300000000000+42000000000000+34000000000000+419000000000000+l FROM (SELECT d::date,row_number() OVER(ORDER BY d) AS i FROM generate_series(DATE '2026-09-28',DATE '2026-11-15','1 day') d) x,LATERAL (SELECT 119700000000000000/100-i*1000000000 AS t,7000000000000+i*21600000000 AS l) v;
 -- Daily swaps per venue in September-November 2026: NEAR Intents busiest, Maya next, THORChain small and folded into other.
 INSERT INTO fixture_private.swap_daily SELECT d,v,dir,ch,tk,n,CASE WHEN n>=5 THEN n*z END,CASE WHEN n>=5 THEN n*z*400 END,0,0 FROM generate_series(DATE '2026-09-01',DATE '2026-11-15','1 day') d CROSS JOIN (VALUES('near-intents','inflow','eth','ETH',40,3),('near-intents','outflow','tron','USDT',35,2),('maya','inflow','btc','BTC',8,4),('maya','outflow','btc','BTC',12,5),('thorchain','inflow','other','other',2,6)) x(v,dir,ch,tk,n,z);
 RESET ROLE;`;

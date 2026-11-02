@@ -563,7 +563,7 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
   await acknowledge('c');
   const released=await release();assert.deepEqual([released.state,released.checked_heights],['verified','baseline']);
   assert.deepEqual((await target.query('SELECT c.baseline_verified,analytics_meta.replication_errors_acknowledged() AS strict FROM analytics_meta.admission_control c')).rows[0],{baseline_verified:true,strict:true});
-  assert.equal((await target.query('SELECT count(*)::int AS n FROM analytics_meta.dirty_heights')).rows[0].n,0);
+  assert.equal((await target.query('SELECT count(*)::int AS n FROM analytics_meta.dirty_heights d CROSS JOIN analytics_meta.admission_control c WHERE d.height<=c.baseline_through')).rows[0].n,0,'the baseline clears every dirty height it verified');
  });
  await target.query('DROP SUBSCRIPTION ask_public_core_v1');
  assert.equal((await source.query('SELECT count(*) FROM pg_replication_slots')).rows[0].count,'0');

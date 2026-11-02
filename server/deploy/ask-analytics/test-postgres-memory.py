@@ -52,7 +52,7 @@ MemorySwapMax=0
 class PolicyTests(unittest.TestCase):
     def test_candidate_caps_leave_space_above_configured_shared_buffers(self):
         text = (HERE / 'postgres-memory.conf.example').read_text()
-        for expected in ['MemoryAccounting=yes', 'MemoryHigh=24G', 'MemoryMax=32G', 'MemorySwapMax=1G']:
+        for expected in ['MemoryAccounting=yes', 'MemoryHigh=40G', 'MemoryMax=48G', 'MemorySwapMax=1G']:
             self.assertIn(expected, text)
         self.assertNotIn('Restart=', text)
 

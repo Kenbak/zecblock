@@ -764,6 +764,7 @@ paths:
                           - issuance_daily
                           - reorgs
                           - orphaned_blocks
+                          - swap_daily
                           - labels
                     measures:
                       maxItems: 6

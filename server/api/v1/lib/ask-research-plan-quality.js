@@ -17,12 +17,12 @@ const string=n=>n?.TypeCast?string(n.TypeCast.arg):n?.A_Const?.sval?.sval;
 const integer=n=>n?.A_Const?.ival?.ival;
 const column=n=>n?.ColumnRef?.fields?.map(x=>x.String?.sval);
 const andTerms=n=>n?.BoolExpr?.boolop==='AND_EXPR'?n.BoolExpr.args.flatMap(andTerms):[n];
-const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',address_daily_query:'address_daily',supply_daily_query:'supply_daily',issuance_query:'issuance',mining_daily_query:'mining_daily',software_daily_query:'software_daily',block_timing_query:'block_timing',reorgs_query:'reorgs',orphaned_blocks_query:'orphaned_blocks',issuance_daily_query:'issuance_daily',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
+const canonical=name=>({blocks_query:'blocks',transactions_query:'transactions',flows_query:'flows',addresses_query:'addresses',address_activity_query:'address_activity',activity_daily_query:'activity_daily',address_daily_query:'address_daily',supply_daily_query:'supply_daily',issuance_query:'issuance',mining_daily_query:'mining_daily',software_daily_query:'software_daily',block_timing_query:'block_timing',reorgs_query:'reorgs',orphaned_blocks_query:'orphaned_blocks',swap_daily_query:'swap_daily',issuance_daily_query:'issuance_daily',daily_query:'daily',swaps_query:'swaps',flow_daily_query:'flow_daily'})[name]||name;
 // Unit lineage is deliberately separate from SQL acceptance. Unknown expressions
 // remain queryable; they cannot substantiate a monetary unit in generated prose.
 const {researchCatalogue}=require('../../../../lib/ask/research-catalogue');
-const monetaryFields={blocks:['fees'],transactions:['fees'],flows:['amount'],daily:['orchard','ironwood','sapling','sprout'],addresses:['balance','received','sent'],address_activity:['received','sent'],activity_daily:['fees'],flow_daily:['amount'],swaps:['usd'],supply_daily:['chain_supply','lockbox','circulating_supply','net_change'],issuance:['subsidy','miner_subsidy','founders','funding_streams','lockbox','lockbox_disbursed','fees'],issuance_daily:['subsidy','miner_subsidy','founders','funding_streams','lockbox','lockbox_disbursed']};
-const countFields=new Set('height first_height last_height day_blocks fork_height depth reported_orphans orphans orphaned reorg_id transactions shielded_transactions transparent_transactions unclassified_transactions blocks tx_index records missing_fees missing_bytes missing_amounts active_addresses sending_addresses receiving_addresses new_addresses incidences input_incidences output_incidences'.split(' '));
+const monetaryFields={blocks:['fees'],transactions:['fees'],flows:['amount'],daily:['orchard','ironwood','sapling','sprout'],addresses:['balance','received','sent'],address_activity:['received','sent'],activity_daily:['fees'],flow_daily:['amount'],swaps:['usd'],swap_daily:['zec','usd'],supply_daily:['chain_supply','lockbox','circulating_supply','net_change'],issuance:['subsidy','miner_subsidy','founders','funding_streams','lockbox','lockbox_disbursed','fees'],issuance_daily:['subsidy','miner_subsidy','founders','funding_streams','lockbox','lockbox_disbursed']};
+const countFields=new Set('height first_height last_height day_blocks fork_height depth reported_orphans orphans orphaned reorg_id swaps missing_zec missing_usd transactions shielded_transactions transparent_transactions unclassified_transactions blocks tx_index records missing_fees missing_bytes missing_amounts active_addresses sending_addresses receiving_addresses new_addresses incidences input_incidences output_incidences'.split(' '));
 const booleanFields=new Set('shielded orchard ironwood sapling is_input is_output'.split(' '));
 const unit=value=>({unit:value});
 const unknown=()=>unit('unknown');
@@ -59,7 +59,7 @@ function unitsFromTree(tree,issues,{question}={}){
  const targets=[];
  const baseColumns=name=>{
   const dataset=researchCatalogue.find(d=>d.id===canonical(name));
-  return dataset?.columns.split(', ').map(name=>({name,...unit(monetaryFields[dataset.id]?.includes(name)?dataset.id==='swaps'?'usd':'zatoshi':countFields.has(name)?'count':name==='bytes'?'bytes':name==='date'?'date':name==='timestamp'||name==='first_seen'||name==='last_seen'?'time':booleanFields.has(name)?'boolean':'text')}))||[];
+  return dataset?.columns.split(', ').map(name=>({name,...unit(monetaryFields[dataset.id]?.includes(name)?name==='usd'?'usd':dataset.id==='swap_daily'?'zec':'zatoshi':countFields.has(name)?'count':name==='bytes'?'bytes':name==='date'?'date':name==='timestamp'||name==='first_seen'||name==='last_seen'?'time':booleanFields.has(name)?'boolean':'text')}))||[];
  };
  const rename=(columns,names)=>columns.map((c,i)=>({...c,name:names?.[i]?.String?.sval||c.name}));
  function select(s,inherited=new Map(),outer=[]){

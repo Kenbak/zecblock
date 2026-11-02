@@ -43,6 +43,7 @@ const POOL_TITLE: Record<TxCategory, string> = {
   ironwood: 'Ironwood',
   orchard: 'Orchard',
   sapling: 'Sapling',
+  sprout: 'Sprout',
   shielded: 'Shielded',
 } as Record<TxCategory, string>;
 
@@ -125,7 +126,7 @@ export function TxHeroFlow({
   classification: TxClassification;
   priceUsd?: number | null;
 }) {
-  const { txType, allBridges, migrationSourcePool, valueBalance, isCoinbase } = classification;
+  const { txType, allBridges, migrationSourcePool, migrationDestPool, valueBalance, isCoinbase } = classification;
 
   if (allBridges.length > 0) {
     const entries = allBridges.filter((b) => b.direction === 'entry');
@@ -171,21 +172,28 @@ export function TxHeroFlow({
   }
 
   if (txType === 'MIGRATION') {
-    const ironwoodAmt = Math.abs(data.valueBalanceIronwood || 0);
-    const srcCategory: TxCategory = migrationSourcePool === 'Sapling' ? 'sapling' : 'orchard';
+    // The amount is what verifiably entered the destination pool. For Sprout
+    // the source side also paid the fee, which isn't indexed.
+    const destAmt = Math.abs(
+      (migrationDestPool === 'Sapling' ? data.valueBalanceSapling : data.valueBalanceIronwood) || 0,
+    );
+    const srcCategory: TxCategory =
+      migrationSourcePool === 'Sprout' ? 'sprout' : migrationSourcePool === 'Sapling' ? 'sapling' : 'orchard';
+    const destCategory: TxCategory = migrationDestPool === 'Sapling' ? 'sapling' : 'ironwood';
     return (
       <FlowChain
         sources={[poolFlowNode(srcCategory, migrationSourcePool || 'Shielded')]}
-        amount={<ZecAmount value={ironwoodAmt} priceUsd={priceUsd} />}
-        destinations={[poolFlowNode('ironwood', 'Ironwood')]}
+        amount={<ZecAmount value={destAmt} priceUsd={priceUsd} />}
+        destinations={[poolFlowNode(destCategory, POOL_TITLE[destCategory])]}
       />
     );
   }
 
-  if (txType === 'IRONWOOD' || txType === 'ORCHARD' || txType === 'SHIELDED') {
+  if (txType === 'IRONWOOD' || txType === 'ORCHARD' || txType === 'SHIELDED' || txType === 'SPROUT') {
     // Each is a single-pool self-loop — label and color it as that pool
     // rather than a generic "Shielded", matching the block table's convention.
-    const category: TxCategory = txType === 'IRONWOOD' ? 'ironwood' : txType === 'ORCHARD' ? 'orchard' : 'sapling';
+    const category: TxCategory =
+      txType === 'IRONWOOD' ? 'ironwood' : txType === 'ORCHARD' ? 'orchard' : txType === 'SPROUT' ? 'sprout' : 'sapling';
     const node = poolFlowNode(category, POOL_TITLE[category]);
     return (
       <FlowChain

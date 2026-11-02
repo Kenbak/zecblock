@@ -11,7 +11,7 @@ export function generateTxSummary(
   data: TransactionData,
   classification: TxClassification,
 ): React.ReactNode {
-  const { txType, allBridges, migrationSourcePool, valueBalance } = classification;
+  const { txType, allBridges, migrationSourcePool, migrationDestPool, valueBalance } = classification;
 
   if (allBridges.length > 0) {
     if (allBridges.length === 1) {
@@ -97,6 +97,15 @@ export function generateTxSummary(
       );
     }
     return `This coinbase transaction creates a block reward.`;
+  }
+
+  if (txType === 'MIGRATION' && migrationSourcePool === 'Sprout') {
+    const saplingAmt = Math.abs(data.valueBalanceSapling || 0);
+    return `Sprout → ${migrationDestPool} pool migration. ${saplingAmt.toFixed(4)} ${CURRENCY} left the legacy Sprout pool, Zcash's original shielded pool, and entered Sapling. Sprout has been closed to deposits since Canopy, and NU7 retires it: after activation, Sprout funds can no longer be spent. Senders and recipients remain shielded.`;
+  }
+
+  if (txType === 'SPROUT') {
+    return 'Private transaction inside the legacy Sprout pool. Amounts, senders, and recipients are encrypted.';
   }
 
   if (txType === 'MIGRATION') {

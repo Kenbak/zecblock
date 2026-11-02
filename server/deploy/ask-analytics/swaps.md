@@ -54,7 +54,7 @@ The existing `swaps` dataset is unaffected throughout: its view reads only the o
 7. **Worker build at the merge commit:** deploy it, back up the admission script and install the new one, then restart and check health 200
    Only then apply `swaps-grant-v1.sql`, and confirm a live `sql_query` on `blocks` still succeeds. The worker's guard refuses every query while the reader can select a view the running build does not list, so the grant must never precede the worker. (On 2026-11-02 the grant shipped inside step 2 and research was offline until it was revoked.)
 8. **Verify as `ask_public_reader`:**
-   - `sum(missing_zec)` is 0;
+   - every `missing_zec` row traces to a source row that also lacks the amount (2026-11-02: one THORChain swap on 2026-10-09 with no ZEC amount or destination chain on mainnet; every NEAR Intents amount filled);
    - NEAR Intents swap counts per date equal the `swaps` dataset;
    - venue totals equal the mainnet source sums within rounding.
 9. **Live `sql_query`** still rejects `swap_daily`.

@@ -10,7 +10,6 @@ const deploy=name=>fs.readFileSync(path.join(__dirname,'../../../deploy/ask-anal
 const migration=deploy('swaps-v1.sql'),rollback=deploy('swaps-v1-rollback.sql');
 const source=deploy('swaps-source-v1.sql'),sourceRollback=deploy('swaps-source-v1-rollback.sql');
 const id='swap_daily';
-const preview={preview:true};
 const view=/CREATE VIEW analytics_public\.swap_daily_query[\s\S]*?;\n/.exec(migration)[0];
 // Output column names of the outermost SELECT list: the alias, or the bare column name.
 function viewColumns(sql){
@@ -21,20 +20,20 @@ function viewColumns(sql){
  return parts.map(p=>{p=p.trim();const alias=/\bAS\s+([a-z_]+)$/i.exec(p);return alias?alias[1]:p.split('.').pop();});
 }
 
-test('swap_daily is an unpublished extended dataset until its rollout is verified',async()=>{
+// Published 2026-11-02 after the host rollout was verified (swaps.md).
+test('swap_daily is a published extended dataset with guidance',async()=>{
  const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
- assert.equal(isPublished(id),false);assert.equal(isPublished(id,preview),true);
- assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
- assert.ok(!catalogueFor(false,preview).some(d=>d.id===id));
- await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM swap_daily',limit:1},{extended:true}),/not admitted/);
- assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM swap_daily',limit:1},{extended:true,...preview})).datasets,[id]);
+ assert.equal(isPublished(id),true);
+ assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+ await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM swap_daily',limit:1}),/not admitted/);
+ assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM swap_daily',limit:1},{extended:true})).datasets,[id]);
  assert.ok(!coreGatedIds.includes(id));
- assert.doesNotMatch(instructionsFor(true),/read swap_daily/);
- assert.match(instructionsFor(true,preview),/read swap_daily \(completed UTC dates\)/);
- assert.match(instructionsFor(true,preview),/whole ZEC, not zatoshis/);
- assert.match(instructionsFor(true,preview),/refuse requests to match swaps to transactions or flows/);
- assert.deepEqual(pendingCases.filter(c=>(c.requires||[]).includes(id)).map(c=>c.id),['swap_volume_by_venue_2026_10','swap_linkage_unavailable']);
- assert.ok(!cases.some(c=>(c.requires||[]).includes(id)));
+ assert.match(instructionsFor(true),/read swap_daily \(completed UTC dates\)/);
+ assert.match(instructionsFor(true),/whole ZEC, not zatoshis/);
+ assert.match(instructionsFor(true),/refuse requests to match swaps to transactions or flows/);
+ assert.doesNotMatch(instructionsFor(false),/read swap_daily/);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).includes(id)));
+ for(const caseId of ['swap_volume_by_venue_2026_10','swap_linkage_unavailable'])assert.ok(cases.some(c=>c.id===caseId),caseId);
 });
 
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
@@ -44,16 +43,16 @@ test('catalogue columns are exactly the view columns and semantics are stated',(
  for(const re of [/near-intents, from 2026-06-14/,/maya, from 2025-05-21/,/thorchain, from 2026-10-02/,/fewer than 5 swaps on a date are folded into chain and token other/,/zec is whole ZEC/,/Individual swap amounts and times are not available/,/not all exchange activity/])assert.match(entry.description,re);
 });
 
-test('examples compile in preview; raw swap tables stay unreachable',async()=>{
+test('examples compile; raw swap tables stay unreachable',async()=>{
  const examples=sqlExamples.filter(e=>(e.datasets||[]).includes(id));
  assert.deepEqual(examples.map(e=>e.id),['swap-volume-by-venue','swap-top-chains-30d']);
  for(const example of examples){
-  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true,...preview});
+  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true});
   assert.deepEqual(compiled.datasets,[id],example.id);
   assert.equal(displaySQL(compiled.request.sql).includes('analytics_public'),false);
  }
  for(const sql of ['WITH swap_daily AS (SELECT 1) SELECT * FROM swap_daily','SELECT * FROM public.crosschain_venue_actions','SELECT source_amount FROM public.cross_chain_swaps'])
-  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true,...preview}));
+  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true}));
 });
 
 test('migrations are guarded, keep linkable fields private and order destination before source',()=>{

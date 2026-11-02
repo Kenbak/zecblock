@@ -63,7 +63,10 @@ test('migrations are guarded, keep linkable fields private and order destination
  // Additive only: the one ALTER TABLE adds the two amount columns.
  assert.doesNotMatch(migration,/\bDROP\b|\bDELETE FROM\b|\bTRUNCATE\b|\bUPDATE\b|\bALTER (?:SUBSCRIPTION|PUBLICATION)\b/);
  assert.deepEqual(migration.match(/ALTER TABLE [^;]+;/g),['ALTER TABLE public.cross_chain_swaps ADD COLUMN source_amount numeric,ADD COLUMN dest_amount numeric;']);
- assert.deepEqual(migration.match(/GRANT [^;]+;/g),['GRANT SELECT ON public.crosschain_venue_actions TO ask_public_view_owner;','GRANT SELECT(source_amount,dest_amount) ON public.cross_chain_swaps TO ask_public_view_owner;','GRANT SELECT ON analytics_public.swap_daily_query TO ask_public_reader;']);
+ assert.deepEqual(migration.match(/GRANT [^;]+;/g),['GRANT SELECT ON public.crosschain_venue_actions TO ask_public_view_owner;','GRANT SELECT(source_amount,dest_amount) ON public.cross_chain_swaps TO ask_public_view_owner;']);
+ // The reader grant waits for the worker that lists the view (its guard refuses every query otherwise).
+ assert.doesNotMatch(migration,/ask_public_reader/);
+ assert.deepEqual(deploy('swaps-grant-v1.sql').match(/GRANT [^;]+;/g),['GRANT SELECT ON analytics_public.swap_daily_query TO ask_public_reader;']);
  const added=/ADD TABLE([^;]*);/.exec(source)[1];
  const venue=/CREATE TABLE public\.crosschain_venue_actions\((.*?),PRIMARY KEY/.exec(migration)[1].split(',').map(c=>c.trim().split(' ')[0]);
  const venuePublished=/public\.crosschain_venue_actions\(([^)]*)\)/.exec(added)[1].split(',');

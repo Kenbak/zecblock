@@ -563,6 +563,7 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
    assert.deepEqual((await target.query('SELECT id,dest_amount::text FROM public.cross_chain_swaps ORDER BY id')).rows,[{id:1,dest_amount:null},{id:2,dest_amount:null},{id:3,dest_amount:null},{id:4,dest_amount:'3.5'}]);
    assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.crosschain_venue_actions'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['venue','id','action_type','status','swap_created_at','source_chain','source_token','dest_chain','dest_token','zec_amount_zat','source_amount_usd','dest_amount_usd']);
+   await target.query(read('swaps-grant-v1.sql'));
    assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='swap_daily'")).rows[0].ready,true);
    assert.deepEqual((await reader.query("SELECT venue,direction,swaps::int,zec::text,missing_zec::int FROM analytics_public.swap_daily_query ORDER BY venue,direction")).rows,[
     {venue:'maya',direction:'inflow',swaps:5,zec:'5',missing_zec:0},{venue:'near-intents',direction:'inflow',swaps:2,zec:null,missing_zec:1},{venue:'near-intents',direction:'outflow',swaps:1,zec:null,missing_zec:1}]);

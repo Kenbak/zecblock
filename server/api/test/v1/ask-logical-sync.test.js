@@ -545,6 +545,35 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
   await source.query('UPDATE blocks SET transaction_count=2 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===2);
   assert.equal((await refreshAdmission(target)).state,'quarantined');
+  // 2026-11-02: once an error epoch is acknowledged, the strict helper needs a
+  // verified baseline, which quarantine clears. A released store stayed stale.
+  const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+  // Fixture roles only: the cluster superuser is ask_fixture_admin. postgres owns
+  // the ledger, and its foreign-key checks run as that owner, so it is superuser as in production.
+  await target.query('CREATE ROLE postgres NOLOGIN SUPERUSER');
+  const operator=name=>read(name).replace("OR current_user<>'postgres'","OR NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)");
+  await target.query(operator('replication-recovery-v1.sql'));
+  const acknowledge=async(tag,generation)=>{
+   await target.query(`INSERT INTO analytics_meta.replication_recovery_events(event_id,subid,stats_reset,apply_errors,sync_errors,source_generation,source_system_identifier,source_timeline,origin_name,event_at,evidence)
+    SELECT $1,stats.subid,stats.stats_reset,stats.apply_error_count,stats.sync_error_count,coalesce($2::uuid,signal.generation),signal.system_identifier,signal.timeline,'pg_'||stats.subid::text,clock_timestamp(),'{"classification":"disposable-fixture-only"}'::jsonb
+    FROM pg_stat_subscription_stats stats CROSS JOIN analytics_feed_meta.signal signal`,[tag.repeat(64),generation??null]);
+   await target.query('INSERT INTO analytics_meta.replication_recovery_ack(subid,event_id) SELECT subid,$1 FROM analytics_meta.replication_recovery_events WHERE event_id=$1 ON CONFLICT(subid) DO UPDATE SET event_id=excluded.event_id',[tag.repeat(64)]);
+  };
+  const release=async()=>{await target.query("UPDATE analytics_meta.sync_state SET state='stale' WHERE state='quarantined'");await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);return refreshAdmission(target);};
+  await acknowledge('a');
+  assert.equal((await release()).state,'stale','v1 alone: a released quarantine cannot run its baseline');
+  await target.query(operator('replication-recovery-v2.sql'));
+  await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
+  await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
+  assert.equal((await release()).state,'quarantined','the baseline re-quarantines history that is still broken');
+  await source.query('UPDATE blocks SET transaction_count=2 WHERE height=1');
+  await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===2);
+  await acknowledge('b','00000000-0000-4000-8000-000000000002');
+  assert.equal((await release()).state,'stale','an acknowledgement for another generation never releases');
+  await acknowledge('c');
+  const released=await release();assert.deepEqual([released.state,released.checked_heights],['verified','baseline']);
+  assert.deepEqual((await target.query('SELECT c.baseline_verified,analytics_meta.replication_errors_acknowledged() AS strict FROM analytics_meta.admission_control c')).rows[0],{baseline_verified:true,strict:true});
+  assert.equal((await target.query('SELECT count(*)::int AS n FROM analytics_meta.dirty_heights d CROSS JOIN analytics_meta.admission_control c WHERE d.height<=c.baseline_through')).rows[0].n,0,'the baseline clears every dirty height it verified');
  });
  await target.query('DROP SUBSCRIPTION ask_public_core_v1');
  assert.equal((await source.query('SELECT count(*) FROM pg_replication_slots')).rows[0].count,'0');

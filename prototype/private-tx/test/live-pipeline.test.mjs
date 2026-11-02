@@ -1,11 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { sourceTick } from '../pilot/source-watch.mjs';
 import { atomicJson, verifyGuard } from '../pilot/source-guard.mjs';
-import { admitSource, liveTick } from '../pilot/publish-live.mjs';
+import { admitNativePlan, admitSource, liveTick } from '../pilot/publish-live.mjs';
 import { decodePrimarySnapshot, MAINNET_GENESIS_HASH, PRIMARY_SNAPSHOT_SCHEMA, primaryFactsFingerprint } from '../primary-source.mjs';
 import { publishRecent } from '../publish-recent.mjs';
 import { localPublications, startPrototype } from '../server.mjs';
@@ -13,6 +13,15 @@ import { localPublications, startPrototype } from '../server.mjs';
 const hash = value => BigInt(value).toString(16).padStart(64, '0');
 const config = { startHeight: 100, maxBlocks: 16, maxRecords: 2048 };
 const generousDisk = async () => ({ bavail: 10_000_000, bsize: 4096 });
+const nativePlanFor = (source, overrides = {}) => ({
+  schema: 'zecblock-private-tx-plan-v1', recordCodec: 'json-context-zlib-v1', packing: 'compact-v1',
+  rows: 2048, rowBytes: 8192, payloadBytes: 8064, records: source.records.length,
+  payloadRows: source.records.length, coverRows: 1, totalRows: source.records.length + 1, chunkCount: 1,
+  recordBytesTotal: 1000, decodedBytesTotal: 2000, legacyRecordBytesTotal: 3000,
+  maxRecordBytes: 1000, maxDecodedRecordBytes: 2000, decodedAggregateLimit: 64 * 1024 ** 2,
+  fits: true, capacityReason: null, ...overrides,
+});
+const planSource = async source => nativePlanFor(source);
 
 // These synthetic source-shape fixtures exercise pipeline state transitions.
 // Raw parsing and PIR cryptography remain covered by the native/browser suites.
@@ -165,10 +174,10 @@ test('live publication includes the tip immediately and retains older identifier
     await writePublication(localDir, manifest);
     return { publicationId: manifest.publicationId };
   }
-  await liveTick({ config, localDir, sourceDir, rawCache: cache, readRaw: rawReader(first, { calls: rawCalls }), publish });
+  await liveTick({ config, localDir, sourceDir, rawCache: cache, readRaw: rawReader(first, { calls: rawCalls }), publish, planSource });
   const second = primaryFixture({ end: 101, spent: true });
   await writeSource(sourceDir, second);
-  await liveTick({ config, localDir, sourceDir, rawCache: cache, readRaw: rawReader(second, { calls: rawCalls }), publish });
+  await liveTick({ config, localDir, sourceDir, rawCache: cache, readRaw: rawReader(second, { calls: rawCalls }), publish, planSource });
   assert.deepEqual(captured.map(source => [source.coverage.startHeight, source.coverage.endHeight]), [[100, 100], [100, 101]]);
   assert.equal(captured[0].records[0].detail.confirmations, 1);
   assert.equal(captured[1].records[0].txid, captured[0].records[0].txid);
@@ -206,7 +215,7 @@ test('capture-capacity blockage retains the serving pointer and performs no raw 
   assert.deepEqual(await readFile(join(localDir, 'current.json')), before);
 });
 
-test('oversized padded record is rejected before native publication without changing the pointer', async t => {
+test('native encoded-capacity rejection prevents publication without changing the pointer', async t => {
   const { localDir, sourceDir } = await workspace(t);
   const snapshot = primaryFixture();
   await writePublication(localDir, manifestFor(snapshot)); await writeSource(sourceDir, snapshot);
@@ -214,6 +223,7 @@ test('oversized padded record is rejected before native publication without chan
   let published = false;
   await assert.rejects(liveTick({ config, localDir, sourceDir,
     readRaw: rawReader(snapshot, { padding: 'x'.repeat(64 * 8064) }),
+    planSource: async source => nativePlanFor(source, { payloadRows: 2048, totalRows: 2049, fits: false, capacityReason: 'table-rows' }),
     publish: async () => { published = true; assert.fail('Oversized native geometry must not be prepared.'); },
   }), /capacity/i);
   assert.equal(published, false);
@@ -237,7 +247,7 @@ for (const correction of ['spent-correction', 'same-height-reorg']) {
     const binary = await fakeNative(directory);
     const publish = async options => publishRecent({ ...options, binary, beforeActivate: async manifest =>
       activationHeartbeat(sourceDir, changed, () => options.beforeActivate(manifest)) });
-    await assert.rejects(liveTick({ config, localDir, sourceDir, readRaw: rawReader(snapshot), publish }), /facts changed|membership changed|unavailable or stale/);
+    await assert.rejects(liveTick({ config, localDir, sourceDir, readRaw: rawReader(snapshot), publish, planSource }), /facts changed|membership changed|unavailable or stale/);
     assert.deepEqual(await readFile(join(localDir, 'current.json')), before);
     assert.equal(JSON.parse(await readFile(join(localDir, 'publisher-status.json'))).state, 'unavailable');
   });
@@ -297,4 +307,69 @@ test('compact geometry reserves one cover row and rejects whole-set overflow', (
   const uneven = make(1);
   uneven.records.push(...Array.from({ length: 200 }, () => ({ txid: hash(2), detail: {}, raw: {} })));
   assert.equal(admitSource(uneven).payloadRows, 264, 'Smaller records must not consume the largest record count.');
+});
+
+test('live admission uses native encoded geometry when the legacy JSON estimate is too large', async t => {
+  const { localDir, sourceDir } = await workspace(t);
+  const snapshot = primaryFixture();
+  await writePublication(localDir, manifestFor(snapshot)); await writeSource(sourceDir, snapshot);
+  let planned = 0, published = false;
+  await liveTick({ config, localDir, sourceDir, readRaw: rawReader(snapshot, { padding: 'x'.repeat(64 * 8064) }),
+    planSource: async (source, directory, options) => {
+      planned++;
+      assert.equal(directory, localDir);
+      assert.equal(options.binary, '/fixture/native');
+      assert.throws(() => admitSource(source), /capacity/i, 'Legacy JSON must exceed the former admission estimate.');
+      return nativePlanFor(source);
+    }, binary: '/fixture/native', publish: async ({ source }) => {
+      published = true;
+      assert.equal(source.records.length, 1, 'Capacity optimization must not omit the oversized JSON record.');
+      return { publicationId: hash(2) };
+    },
+  });
+  assert.equal(planned, 1);
+  assert.equal(published, true);
+});
+
+test('native admission validates codec, capacity bounds and aggregate decoded limit', () => {
+  const source = { records: [{}] }, valid = nativePlanFor(source);
+  assert.deepEqual(admitNativePlan(valid, source), { chunks: 1, records: 1, payloadRows: 1, coverRows: 1 });
+  for (const invalid of [
+    { recordCodec: null }, { recordCodec: 'unknown' }, { packing: null }, { records: 2 },
+    { chunkCount: 65 }, { totalRows: 2049 }, { payloadRows: 0 }, { maxRecordBytes: 516097 },
+    { maxDecodedRecordBytes: 8 * 1024 ** 2 + 1 }, { fits: false }, { capacityReason: 'table-rows' },
+  ]) assert.throws(() => admitNativePlan({ ...valid, ...invalid }, source), /capacity/i);
+  for (const capacity of [
+    { payloadRows: 2048, totalRows: 2049, capacityReason: 'table-rows' },
+    { chunkCount: 65, capacityReason: 'chunk-budget' },
+    { legacyRecordBytesTotal: 64 * 1024 ** 2 + 1, capacityReason: 'decoded-aggregate' },
+  ]) assert.throws(() => admitNativePlan({ ...valid, ...capacity, fits: false }, source), /exceeded/i);
+});
+
+test('native planner failure has no legacy fallback and cannot change the serving pointer', async t => {
+  const { localDir, sourceDir } = await workspace(t);
+  const snapshot = primaryFixture();
+  await writePublication(localDir, manifestFor(snapshot)); await writeSource(sourceDir, snapshot);
+  const before = await readFile(join(localDir, 'current.json'));
+  let published = false;
+  await assert.rejects(liveTick({ config, localDir, sourceDir, readRaw: rawReader(snapshot),
+    planSource: async () => { throw new Error('Native planner unavailable'); },
+    publish: async () => { published = true; },
+  }), /Native planner unavailable/);
+  assert.equal(published, false);
+  assert.deepEqual(await readFile(join(localDir, 'current.json')), before);
+});
+
+test('default live admission invokes native plan-full before preparation', async t => {
+  const { directory, localDir, sourceDir } = await workspace(t);
+  const snapshot = primaryFixture();
+  await writePublication(localDir, manifestFor(snapshot)); await writeSource(sourceDir, snapshot);
+  const marker = join(directory, 'planned.json'), binary = join(directory, 'native-planner.mjs');
+  await writeFile(binary, `#!${process.execPath}\nimport {readFile,writeFile} from 'node:fs/promises';\nif(process.argv[2]!=='plan-full')process.exit(2);\nconst source=JSON.parse(await readFile(process.argv[3],'utf8'));\nawait writeFile(${JSON.stringify(marker)},JSON.stringify(source));\nprocess.stdout.write(JSON.stringify(${JSON.stringify(nativePlanFor({ records: [{}] }))}));\n`);
+  await chmod(binary, 0o755);
+  await liveTick({ config, localDir, sourceDir, binary, readRaw: rawReader(snapshot), publish: async ({ source }) => {
+    assert.deepEqual(JSON.parse(await readFile(marker)), source);
+    return { publicationId: hash(2) };
+  } });
+  assert.equal((await readdir(localDir)).some(name => name.startsWith('plan-')), false, 'Native planning source files must be cleaned up.');
 });

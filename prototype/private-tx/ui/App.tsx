@@ -7,11 +7,15 @@ import type { TransactionData } from '@/app/tx/[txid]/components/types';
 import { TransactionView } from './TransactionView';
 import type { PrivateRecord } from './TransactionView';
 
+type Snapshot = { height: number; hash: string; publishedAt: string };
+type PublishedRange = { startHeight: number; endHeight: number; transactionCount?: number };
 type Manifest = {
+  schema?: string;
   publicationId?: string;
+  collectionId?: string;
   network?: string;
-  snapshot?: { height: number; hash: string; publishedAt: string };
-  coverage?: { startHeight: number; endHeight: number; [key: string]: unknown };
+  snapshot?: Snapshot;
+  coverage?: { startHeight: number; endHeight: number; complete?: boolean; ranges?: PublishedRange[]; [key: string]: unknown };
 };
 type Sample = { txid: string; label?: string; height?: number };
 type Measurements = { queryBytes: number; responseBytes: number; encryptMs: number; requestMs: number; decodeMs: number; totalMs: number; [key: string]: number };
@@ -168,6 +172,12 @@ export function App() {
 
   const coverage = manifest?.coverage;
   const snapshot = manifest?.snapshot;
+  const collection = manifest?.schema === 'zecblock-private-tx-collection-v1';
+  const coverageLabel = coverage && (collection
+    ? `Published ranges: ${coverage.ranges?.map(range => range.startHeight === range.endHeight
+      ? range.startHeight.toLocaleString()
+      : `${range.startHeight.toLocaleString()}–${range.endHeight.toLocaleString()}`).join(' · ') || 'unavailable'}`
+    : `Blocks ${coverage.startHeight.toLocaleString()}–${coverage.endHeight.toLocaleString()}`);
 
   return <>
     <header className="private-header"><div className="private-shell private-header-inner"><span className="private-brand">ZecBlock<span>.</span></span><div className="flex items-center gap-2"><Badge color="gold" variant="subtle">PRIVATE</Badge><span className="private-header-local">ISOLATED PILOT</span></div></div></header>
@@ -175,9 +185,10 @@ export function App() {
       <div className="private-page-heading"><div><p className="text-caption text-muted font-mono uppercase tracking-widest mb-2">EXPLORER / PRIVATE LOOKUP</p><h1>Private transaction explorer</h1><p className="private-intro">Explore a confirmed mainnet publication with browser-side private information retrieval.</p></div><span className={`private-runtime ${ready ? 'ready' : ''}`} id="runtime-status">{ready ? 'Browser client ready' : 'Loading client'}</span></div>
 
       <section className="private-search" aria-labelledby="lookup-title"><Card><CardBody>
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><h2 className="text-sm font-medium text-primary" id="lookup-title">Transaction lookup</h2>{coverage && <span className="text-caption text-muted font-mono">Blocks {coverage.startHeight.toLocaleString()}–{coverage.endHeight.toLocaleString()}</span>}</div>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><h2 className="text-sm font-medium text-primary" id="lookup-title">Transaction lookup</h2>{coverageLabel && <span className="text-caption text-muted font-mono" id="publication-coverage">{coverageLabel}</span>}</div>
         <form id="lookup-form" onSubmit={lookup} autoComplete="off"><label className="sr-only" htmlFor="txid">Transaction ID</label><div className="private-search-row"><input ref={inputRef} id="txid" name="private-record" value={txid} onChange={event => setTxid(event.target.value)} disabled={busy} type="text" inputMode="text" spellCheck={false} autoCapitalize="off" autoComplete="off" maxLength={64} placeholder="Search a transaction ID in this publication" aria-describedby="input-help" aria-invalid={error && !TXID.test(txid.trim()) ? true : undefined} /><button className="btn btn-primary btn-md" id="lookup-button" type="submit" disabled={!ready || busy}>{busy ? 'Retrieving privately…' : 'Look up privately'}<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-5-5 5 5-5 5" /></svg></button></div></form>
         <p className="text-caption text-muted mt-3" id="input-help">Lookup uses this page's pinned publication. The identifier stays in browser memory; no public API fallback.</p>
+        {collection && coverage?.complete === false && <p className="text-caption text-muted mt-3" id="coverage-warning">Only the listed ranges are published. Transactions in the gaps are unavailable in this publication.</p>}
         <div className="flex flex-wrap items-center justify-between gap-3 mt-3"><p className="text-caption text-muted">Publication pinned for this page. All encrypted replies arrive before decoding; refresh is manual.</p><button type="button" id="refresh-publication" className="private-clear" disabled={busy} onClick={() => window.location.reload()}>Refresh publication</button></div>
         <div className="private-search-status"><span id="lookup-status" role="status" aria-live="polite">{status}</span>{record && <button type="button" id="clear-button" className="private-clear" onClick={clear}>Clear</button>}</div>
         {error && <p className="private-error" id="lookup-error" role="alert">{error}</p>}
@@ -186,7 +197,8 @@ export function App() {
       </CardBody></Card></section>
 
       {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
-      {snapshot && !record && <div className="private-publication"><span>Publication snapshot</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
+      {collection && <p className="text-caption text-muted mb-4" id="collection-snapshot-warning">{snapshot ? 'The collection head is the newest segment snapshot. Older segments retain their captured observations; each result shows its own snapshot.' : 'The collection snapshot is unavailable.'} Current confirmation counts and spent status are unavailable.</p>}
+      {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
       {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`], ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`], ['Browser encryption', formatMs(measurements.encryptMs)], ['PIR service', formatMs(measurements.requestMs)], ['Browser decoding', formatMs(measurements.decodeMs)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>}
 

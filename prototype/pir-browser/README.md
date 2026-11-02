@@ -75,6 +75,16 @@ string/null fields. The exporter, its capture/recheck policy and its update
 schedule are separate from this Rust library. Publishing never depends on
 which transaction a browser selects.
 
+`prepare-full` now defaults to the publication-bound `json-context-zlib-v1`
+codec. It removes repeated shared context, conditionally deduplicates equal raw
+hex fields and compresses each record, with bounded exact decompression before
+validation. `plan-full <source.json>` reports actual encoded allocation and
+capacity without preparing a PIR table. `prepare-full-legacy` retains the older
+uncompressed compact encoding. Add `--debug-oracle` to `prepare-full` only when
+an offline test needs `expected.json`; normal full preparation omits that copy.
+The serving evaluator never reads source DTOs or test oracles. The archive
+publisher removes those build inputs after checking the prepared artifacts.
+
 `prepare-full` verifies confirmed/canonical state, declared coverage and raw
 transaction IDs, then emits a `zecblock-private-tx-full-v1` publication. The
 fixed profile has 2,048 rows of 8,192 bytes. Each row has a 128-byte header

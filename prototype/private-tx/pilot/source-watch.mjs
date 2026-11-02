@@ -7,7 +7,16 @@ import { buildPrimarySnapshotSql, decodePrimarySnapshot, primaryFactsFingerprint
 import { atomicJson } from './source-guard.mjs';
 
 export async function capturePrimary(config, { binary = '/usr/bin/psql' } = {}) {
-  const sql = buildPrimarySnapshotSql(config);
+  const value = await readPrimaryJson(buildPrimarySnapshotSql(config), { binary });
+  try { return decodePrimarySnapshot(JSON.stringify(value)); }
+  catch (error) {
+    const failure = new Error('Primary snapshot identity, completeness or capacity validation failed.');
+    failure.code = /bound|oversized|capacity/i.test(error.message) ? 'CAPACITY' : 'INVALID_SOURCE';
+    throw failure;
+  }
+}
+
+export async function readPrimaryJson(sql, { binary = '/usr/bin/psql', maxBytes = 128 * 1024 * 1024 } = {}) {
   return new Promise((resolveSnapshot, reject) => {
     const child = spawn(binary, ['-X', '--no-align', '--tuples-only', '--quiet', '--set', 'ON_ERROR_STOP=1',
       '--host=/var/run/postgresql', '--dbname=zcash_explorer_mainnet'], {
@@ -19,7 +28,7 @@ export async function capturePrimary(config, { binary = '/usr/bin/psql' } = {}) 
     const timer = setTimeout(() => { failed = true; child.kill('SIGKILL'); }, 10_000);
     child.stdout.on('data', chunk => {
       bytes += chunk.length;
-      if (bytes > 128 * 1024 * 1024) { failed = true; child.kill('SIGKILL'); }
+      if (bytes > maxBytes) { failed = true; child.kill('SIGKILL'); }
       else chunks.push(chunk);
     });
     child.stderr.resume(); // No SQL diagnostics or source payloads in service logs.
@@ -27,12 +36,8 @@ export async function capturePrimary(config, { binary = '/usr/bin/psql' } = {}) 
     child.on('close', code => {
       clearTimeout(timer);
       if (failed || code !== 0) { reject(new Error('Bounded primary read-only capture failed.')); return; }
-      try { resolveSnapshot(decodePrimarySnapshot(Buffer.concat(chunks).toString('utf8'))); }
-      catch (error) {
-        const failure = new Error('Primary snapshot identity, completeness or capacity validation failed.');
-        failure.code = /bound|oversized|capacity/i.test(error.message) ? 'CAPACITY' : 'INVALID_SOURCE';
-        reject(failure);
-      }
+      try { resolveSnapshot(JSON.parse(Buffer.concat(chunks).toString('utf8'))); }
+      catch { reject(new Error('Primary source JSON response invalid.')); }
     });
     child.stdin.on('error', () => {});
     child.stdin.end(sql);

@@ -15,6 +15,8 @@ const safeAliases = new Map([
   ['@/components/PrivacyRiskInline', localAdapter],
   ['@/components/TokenChainIcon', localAdapter],
   ['@/components/Tooltip', localAdapter],
+  ['@/components/ui/FactBox', resolve(HERE, 'adapters/fact-box.tsx')],
+  ['@/components/ExportButton', resolve(HERE, 'adapters/export-button.tsx')],
   ['@/lib/address-labels', localAdapter],
   ['@/lib/config', configAdapter],
   ['@/lib/network', configAdapter],

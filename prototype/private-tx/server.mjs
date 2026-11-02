@@ -27,6 +27,8 @@ export function nativeEvaluator(binary, fixtureDir) {
   const waiting = new Map();
   let sequence = 0;
   let stopped = false;
+  let finishClose;
+  const exited = new Promise(resolveExit => { finishClose = resolveExit; });
   child.stderr.resume(); // Do not persist native payloads or potentially sensitive diagnostics.
   const failAll = () => {
     stopped = true;
@@ -36,8 +38,8 @@ export function nativeEvaluator(binary, fixtureDir) {
     }
     waiting.clear();
   };
-  child.on('error', failAll);
-  child.on('exit', failAll);
+  child.on('error', () => { failAll(); finishClose(); });
+  child.on('exit', () => { failAll(); finishClose(); });
   const lines = createInterface({ input: child.stdout });
   lines.on('line', line => {
     let reply;
@@ -69,7 +71,12 @@ export function nativeEvaluator(binary, fixtureDir) {
         });
       });
     },
-    close() { failAll(); lines.close(); child.kill(); },
+    async close() {
+      failAll(); lines.close(); child.kill();
+      const force = setTimeout(() => child.kill('SIGKILL'), 2000);
+      force.unref();
+      try { await exited; } finally { clearTimeout(force); }
+    },
   };
 }
 
@@ -181,7 +188,7 @@ export async function startPrototype({
     try {
       if (req.method === 'GET' && req.url === '/health') {
         const current = publications && await publications.current();
-        respond(res, 200, JSON.stringify({ local: true, fixtureOnly: !publications, publicationId: current?.manifest.publicationId, snapshot: current?.manifest.snapshot }), 'application/json'); return;
+        respond(res, 200, JSON.stringify({ local: true, fixtureOnly: !publications, publicationId: current?.manifest.publicationId ?? current?.manifest.collectionId, snapshot: current?.manifest.snapshot }), 'application/json'); return;
       }
       if (req.method === 'GET' && req.url === '/robots.txt') {
         respond(res, 200, 'User-agent: *\nDisallow: /\n'); return;
@@ -220,6 +227,9 @@ export async function startPrototype({
           selectedEvaluator = publication.evaluator;
         }
         const result = await selectedEvaluator.evaluate(query);
+        // Canonical admission can expire while work waits in the bounded FIFO.
+        // Recheck before returning an answer, including retained generations.
+        if (publications) await publications.assertUsable?.(publications.get(req.headers['x-pir-publication']));
         respond(res, 200, result, 'application/octet-stream'); return;
       }
       const file = req.method === 'GET' && staticFiles.get(req.url);
@@ -242,9 +252,8 @@ export async function startPrototype({
     url: `http://127.0.0.1:${server.address().port}`,
     manifest,
     close: async () => {
-      evaluator?.close?.();
-      publications?.close();
       server.closeAllConnections();
+      await Promise.all([evaluator?.close?.(), publications?.close()]);
       await new Promise(resolveClose => server.close(resolveClose));
     },
   };
@@ -258,7 +267,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   if (!Number.isInteger(port) || port < 1024 || port > 65535) throw new Error('Invalid local port.');
   const fixtureMode = Boolean(process.env.PRIVATE_TX_FIXTURE_DIR);
   const evaluator = fixtureMode ? nativeEvaluator(binary, fixtureDir) : undefined;
-  const publications = fixtureMode ? undefined : localPublications({ binary, localDir });
+  const publications = fixtureMode ? undefined : process.env.PRIVATE_TX_COLLECTION_DIR
+    ? (await import('./collection-server.mjs')).collectionPublications({ binary, localDir: resolve(process.env.PRIVATE_TX_COLLECTION_DIR), sourceDir: process.env.PRIVATE_TX_SOURCE_DIR })
+    : localPublications({ binary, localDir });
   try {
     const app = await startPrototype({ port, fixtureDir, evaluator, publications });
     process.stdout.write(`Local private transaction view: ${app.url}\n`);

@@ -16,7 +16,7 @@ function integer(value, name = 'source integer') {
 }
 function bounds({ startHeight, endHeight, maxBlocks = 16, maxRecords = 2048 }) {
   const start = integer(startHeight, 'coverage floor');
-  requireCondition(start > 0, 'Coverage floor must be positive.');
+  requireCondition(start >= 0, 'Coverage floor must be nonnegative.');
   requireCondition(Number.isSafeInteger(maxBlocks) && maxBlocks >= 1 && maxBlocks <= 2048, 'Invalid block bound.');
   requireCondition(Number.isSafeInteger(maxRecords) && maxRecords >= 1 && maxRecords <= 2048, 'Invalid record bound.');
   const end = endHeight === undefined ? null : integer(endHeight, 'coverage end');
@@ -25,7 +25,8 @@ function bounds({ startHeight, endHeight, maxBlocks = 16, maxRecords = 2048 }) {
 }
 
 // Execute only through the collector's existing local Unix peer connection.
-// All interpolated values are validated integers; no identifier/SQL input exists.
+// PostgreSQL 16 psql binds values through the extended protocol. Only validated
+// integer/boolean tokens appear in the separate \bind command, never in SQL.
 export function buildPrimarySnapshotSql(options) {
   const { start, end, maxBlocks, maxRecords } = bounds(options);
   const textRow = alias => `(SELECT jsonb_object_agg(cell.key,cell.value) FROM jsonb_each_text(to_jsonb(${alias})) cell)`;
@@ -35,23 +36,25 @@ SET LOCAL lock_timeout='200ms';
 SET LOCAL idle_in_transaction_session_timeout='5s';
 SET LOCAL work_mem='8MB';
 WITH tip AS MATERIALIZED (SELECT height,hash FROM public.blocks ORDER BY height DESC LIMIT 1),
-bounds AS (SELECT ${start}::bigint AS start_height,COALESCE(${end ?? 'NULL'}::bigint,tip.height) AS end_height FROM tip),
-selected_blocks AS MATERIALIZED (SELECT b.* FROM public.blocks b,bounds x WHERE b.height BETWEEN x.start_height AND x.end_height ORDER BY b.height LIMIT ${maxBlocks + 1}),
-selected_transactions AS MATERIALIZED (SELECT t.* FROM public.transactions t JOIN selected_blocks b ON b.height=t.block_height AND b.hash=t.block_hash ORDER BY t.block_height,t.tx_index,t.txid LIMIT ${maxRecords + 1}),
-selected_inputs AS MATERIALIZED (SELECT i.* FROM public.transaction_inputs i JOIN selected_transactions t USING(txid) ORDER BY i.txid,i.vout_index LIMIT ${MAX_IO + 1}),
-selected_outputs AS MATERIALIZED (SELECT o.* FROM public.transaction_outputs o JOIN selected_transactions t USING(txid) ORDER BY o.txid,o.vout_index LIMIT ${MAX_IO + 1})
+bounds AS (SELECT $1::bigint AS start_height,CASE WHEN $3::boolean THEN $2::bigint ELSE tip.height END AS end_height FROM tip),
+selected_blocks AS MATERIALIZED (SELECT b.* FROM public.blocks b,bounds x WHERE b.height BETWEEN x.start_height AND x.end_height ORDER BY b.height LIMIT $4::integer),
+selected_transactions AS MATERIALIZED (SELECT t.* FROM public.transactions t JOIN selected_blocks b ON b.height=t.block_height AND b.hash=t.block_hash ORDER BY t.block_height,t.tx_index,t.txid LIMIT $5::integer),
+selected_inputs AS MATERIALIZED (SELECT i.* FROM public.transaction_inputs i JOIN selected_transactions t USING(txid) ORDER BY i.txid,i.vout_index LIMIT $6::integer),
+selected_outputs AS MATERIALIZED (SELECT o.* FROM public.transaction_outputs o JOIN selected_transactions t USING(txid) ORDER BY o.txid,o.vout_index LIMIT $6::integer)
 SELECT jsonb_build_object(
 'schema','${PRIMARY_SNAPSHOT_SCHEMA}','network','mainnet',
 'observedAt',to_char(statement_timestamp() AT TIME ZONE 'UTC','YYYY-MM-DD"T"HH24:MI:SS.US"Z"'),
 'database',current_database(),'isPrimary',NOT pg_is_in_recovery(),'readOnly',current_setting('transaction_read_only')='on',
 'genesisHash',(SELECT hash FROM public.blocks WHERE height=0),'snapshotId',pg_current_snapshot()::text,
-'limits',jsonb_build_object('maxBlocks',${maxBlocks},'maxRecords',${maxRecords},'maxIoRows',${MAX_IO}),
+'limits',jsonb_build_object('maxBlocks',$7::integer,'maxRecords',$8::integer,'maxIoRows',$9::integer),
 'coverage',(SELECT jsonb_build_object('startHeight',start_height::text,'endHeight',end_height::text) FROM bounds),
 'tip',(SELECT jsonb_build_object('height',height::text,'hash',hash) FROM tip),
 'blocks',COALESCE((SELECT jsonb_agg(${textRow('b')} ORDER BY b.height) FROM selected_blocks b),'[]'::jsonb),
 'transactions',COALESCE((SELECT jsonb_agg(${textRow('t')} ORDER BY t.block_height,t.tx_index,t.txid) FROM selected_transactions t),'[]'::jsonb),
 'inputs',COALESCE((SELECT jsonb_agg(${textRow('i')} ORDER BY i.txid,i.vout_index) FROM selected_inputs i),'[]'::jsonb),
-'outputs',COALESCE((SELECT jsonb_agg(${textRow('o')} ORDER BY o.txid,o.vout_index) FROM selected_outputs o),'[]'::jsonb));
+'outputs',COALESCE((SELECT jsonb_agg(${textRow('o')} ORDER BY o.txid,o.vout_index) FROM selected_outputs o),'[]'::jsonb))
+\\bind ${start} ${end ?? 0} ${end !== null} ${maxBlocks + 1} ${maxRecords + 1} ${MAX_IO + 1} ${maxBlocks} ${maxRecords} ${MAX_IO}
+\\g
 ROLLBACK;
 `;
 }
@@ -113,7 +116,7 @@ export function decodePrimarySnapshot(stdout, { expectedGenesisHash = MAINNET_GE
     const height = integer(tx.block_height); const block = blocks.get(height); const index = integer(tx.tx_index);
     requireCondition(HASH.test(tx.txid) && !transactions.has(tx.txid) && block && tx.block_hash === block.hash && tx.block_time === block.timestamp, 'Invalid captured transaction identity.');
     requireCondition(!positions.has(`${height}:${index}`), 'Duplicate transaction position.'); positions.add(`${height}:${index}`);
-    for (const field of ['fee','total_input','total_output','value_balance','value_balance_sapling','value_balance_orchard','value_balance_ironwood']) if (tx[field] !== undefined) exact(tx[field]);
+    for (const field of ['fee','total_input','total_output','value_balance','value_balance_sprout','value_balance_sapling','value_balance_orchard','value_balance_ironwood']) if (tx[field] !== undefined) exact(tx[field]);
     transactions.set(tx.txid, tx); counts.set(height, (counts.get(height) ?? 0) + 1);
   }
   for (const [height, block] of blocks) {
@@ -135,12 +138,12 @@ function coinbaseText(hex) { return typeof hex === 'string' && hex.length > 0 &&
 function formatDetail(tx, block, capture, inputs, outputs) {
   const monetary = name => tx[name] === undefined ? null : exact(tx[name]);
   const zec = value => value === null ? null : Number(value) / 100_000_000;
-  const balances = [['valueBalance','value_balance'],['valueBalanceSapling','value_balance_sapling'],['valueBalanceOrchard','value_balance_orchard'],['valueBalanceIronwood','value_balance_ironwood'],['fee','fee'],['totalInput','total_input'],['totalOutput','total_output']];
+  const balances = [['valueBalance','value_balance'],['valueBalanceSprout','value_balance_sprout'],['valueBalanceSapling','value_balance_sapling'],['valueBalanceOrchard','value_balance_orchard'],['valueBalanceIronwood','value_balance_ironwood'],['fee','fee'],['totalInput','total_input'],['totalOutput','total_output']];
   const result = {
     txid: tx.txid, blockHeight: tx.block_height, blockHash: tx.block_hash, blockTime: tx.block_time, confirmations: capture.tip.height - integer(tx.block_height) + 1,
     isCanonical: true, status: 'confirmed', size: cellInt(tx, 'size'), version: cellInt(tx, 'version'), locktime: tx.locktime ?? null, expiryHeight: cellInt(tx, 'expiry_height') || null,
     isCoinbase: bool(tx.is_coinbase), hasSapling: tx.has_sapling == null ? null : bool(tx.has_sapling), hasOrchard: tx.has_orchard == null ? null : bool(tx.has_orchard), hasIronwood: bool(tx.has_ironwood), hasSprout: tx.has_sprout == null ? null : bool(tx.has_sprout),
-    orchardActions: cellInt(tx, 'orchard_actions', 0), ironwoodActions: cellInt(tx, 'ironwood_actions', 0), saplingSpendCount: cellInt(tx, 'sapling_spend_count', 0), saplingOutputCount: cellInt(tx, 'sapling_output_count', 0),
+    orchardActions: cellInt(tx, 'orchard_actions', 0), ironwoodActions: cellInt(tx, 'ironwood_actions', 0), saplingSpendCount: cellInt(tx, 'sapling_spend_count', 0), saplingOutputCount: cellInt(tx, 'sapling_output_count', 0), sproutJoinsplitCount: cellInt(tx, 'sprout_joinsplit_count', 0),
     inputs: inputs.map(row => ({ prev_txid: row.prev_txid, prev_vout: cellInt(row,'prev_vout'), address: row.address, value: row.value, vout_index: cellInt(row,'vout_index') })),
     outputs: outputs.map(row => ({ address: row.address, value: row.value, vout_index: cellInt(row,'vout_index'), spent: bool(row.spent) })),
     inputCount: inputs.length, outputCount: outputs.length,

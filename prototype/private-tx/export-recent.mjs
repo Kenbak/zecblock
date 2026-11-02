@@ -41,10 +41,10 @@ function validateDetail(detail, txid, block) {
   requireCondition(detail.txid === txid && detail.status === 'confirmed' && detail.isCanonical === true, 'Source transaction is not canonically confirmed.');
   requireCondition(integer(detail.blockHeight) === integer(block.height) && detail.blockHash === block.hash, 'Source transaction/block mismatch.');
   requireCondition(Array.isArray(detail.inputs) && Array.isArray(detail.outputs), 'Full inputs/outputs unavailable.');
-  for (const field of ['feeZat', 'totalInputZat', 'totalOutputZat', 'valueBalanceZat', 'valueBalanceSaplingZat', 'valueBalanceOrchardZat', 'valueBalanceIronwoodZat']) {
+  for (const field of ['feeZat', 'totalInputZat', 'totalOutputZat', 'valueBalanceZat', 'valueBalanceSproutZat', 'valueBalanceSaplingZat', 'valueBalanceOrchardZat', 'valueBalanceIronwoodZat']) {
     requireCondition(detail[field] === null || detail[field] === undefined || typeof detail[field] === 'string' && EXACT.test(detail[field]), 'Inexact monetary source field.');
   }
-  requireCondition(typeof detail.feeZat === 'string' && /^\d+$/.test(detail.feeZat), 'Authoritative fee unavailable.');
+  requireCondition(detail.feeZat === null || typeof detail.feeZat === 'string' && /^\d+$/.test(detail.feeZat), 'Authoritative exact fee or explicit unavailable state required.');
   for (const item of [...detail.inputs, ...detail.outputs]) {
     requireCondition(item.value === null || item.value === undefined || typeof item.value === 'string' && EXACT.test(item.value), 'Inexact input/output amount.');
   }
@@ -75,7 +75,7 @@ export async function exportConfirmedRange({
   requireCondition(Number.isSafeInteger(height) && height >= 0 && Number.isSafeInteger(startHeight) && Number.isSafeInteger(endHeight)
     && endHeight >= startHeight && endHeight <= height, 'Invalid indexed coverage boundaries.');
   requireCondition(Number.isSafeInteger(maxRecords) && maxRecords >= 1 && maxRecords <= 2048, 'Choose a record limit from 1–2048.');
-  requireCondition(startHeight > 0, 'Insufficient indexed coverage.');
+  requireCondition(startHeight >= 0, 'Insufficient indexed coverage.');
   const anchor = (await read(`/v1/blocks/${height}?summary=1`)).data;
   requireCondition(HASH.test(anchor.hash) && integer(anchor.height) === height, 'Invalid indexed tip anchor.');
   requireCondition(expectedSnapshotHash === undefined || anchor.hash === expectedSnapshotHash, 'Canonical indexed tip changed before capture.');
@@ -92,6 +92,7 @@ export async function exportConfirmedRange({
     blocks.push(block);
   }
   const records = [];
+  let recordBytes = 0;
   const seen = new Set();
   const prices = new Map();
   for (const block of blocks) {
@@ -112,7 +113,7 @@ export async function exportConfirmedRange({
         try { prices.set(date, { available: true, ...(await read(`/v1/network/price/at?date=${date}`)).data }); }
         catch { prices.set(date, { available: false, reason: 'Historical price unavailable during capture.' }); }
       }
-      records.push({
+      const record = {
         txid,
         // Confirmations are explicitly tied to this captured indexed tip.
         // Preserve the API's own observation separately rather than implying
@@ -127,7 +128,14 @@ export async function exportConfirmedRange({
           observedConfirmations: detail.confirmations,
           confirmationBasis: 'captured-indexed-tip',
         },
-      });
+      };
+      recordBytes += Buffer.byteLength(JSON.stringify(record));
+      if (recordBytes > 64 * 1024 * 1024) {
+        const error = new Error('Full transaction source record capacity exceeded.');
+        error.code = 'SOURCE_CAPACITY';
+        throw error;
+      }
+      records.push(record);
     }
   }
   // Bracket chain membership. A reorg or source mismatch aborts publication

@@ -9,6 +9,53 @@ uses a separate unprivileged runtime/data directory on the mainnet primary,
 accessed only through an SSH loopback tunnel. It changes no production explorer
 route, API/indexer code, database schema, DNS or public listener.
 
+## Retained archive and live publication
+
+The archive implementation reuses the same pinned PIR engine and transaction
+view. `json-context-zlib-v1` stores bounded compressed records, omits repeated
+publication context, and reconstructs an equal duplicate verbose hex field in
+the browser. The publication identity binds the codec and shared context; old
+uncompressed publications remain readable. `plan-full` measures the actual
+encoded allocation before preparation. On 219 real transactions the payload
+allocation falls from 1,063 to 341 rows and the fixed lookup batch from 31 to 9
+queries. Every physical table remains 16 MiB.
+
+`pilot/publish-archive.mjs` commits immutable segments and one fsynced
+`collection.json` head under a single Linux writer lock. Previously published
+IDs cannot disappear without explicit canonical retirement. Restart progress
+comes from the committed head; cleanup preserves its referenced generations.
+Finalized segments retain only `database.bin`, `public.bin` and `manifest.json`;
+the validated input DTO and test oracle are not permanent serving requirements.
+
+`pilot/archive-source.mjs` runs bounded PostgreSQL16 extended-protocol read-only
+capture and fresh canonical-header checks. `pilot/archive-watch.mjs` prioritizes
+the indexed live tip, retains older published ranges, and records intervening
+gaps explicitly. Canonical replacement retires affected observations before
+replacement publication. Payload capacity/failure does not reuse old source
+facts or disable independent fresh checks of healthy archives. Confirmation,
+spent and optional enrichment observations remain tied to each segment snapshot.
+
+For a collection, the browser downloads **every** setup before lookup and sends
+the same complete query schedule to **every** published segment. Unselected
+segments receive real encrypted zero-cover queries. All replies settle before
+any decode; one invalid real or cover reply fails the complete lookup without
+an automatic retry or ordinary API fallback. The query service uses a bounded
+FIFO and one native evaluator at a time.
+
+This mode currently admits at most **8 segments / 64 aggregate queries** and an
+8 MiB public collection manifest. This is a deliberate resource bound, **not a
+globally private full-history routing implementation**. Choosing just one
+archive openly would reveal a cohort; the implementation does not make that
+tradeoff. Genesis backfill and public release remain gated on scalable private
+routing and historical/large-record qualification. The upgrade config initially
+omits `backfillFrom`; it retains the earlier cohort and catches the live tip with
+explicitly disclosed gaps. No all-history availability is implied.
+
+The existing loopback service can select the archive runtime with
+`PRIVATE_TX_COLLECTION_DIR` and `PRIVATE_TX_SOURCE_DIR`. The controlled main-box
+upgrade and rollback are in `pilot/upgrade-archive.py`; the legacy commands below
+continue to run the recent-publication workflow.
+
 ## Run
 
 Prerequisites: Rust **1.97.1**, `wasm32-unknown-unknown`, wasm-bindgen-cli

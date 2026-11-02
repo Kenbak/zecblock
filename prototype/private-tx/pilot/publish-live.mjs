@@ -7,6 +7,7 @@ import { exportLive } from '../export-live.mjs';
 import { publishRecent } from '../publish-recent.mjs';
 import { prepareState } from './state-budget.mjs';
 import { atomicJson, freshGuard } from './source-guard.mjs';
+import { planFullSource } from './publish-archive.mjs';
 
 async function currentManifest(localDir) {
   const pointer = JSON.parse(await readFile(resolve(localDir, 'current.json'), 'utf8'));
@@ -28,6 +29,28 @@ export function admitSource(source) {
   return { chunks, records: sizes.length, payloadRows, coverRows: 1 };
 }
 
+// The native planner owns the versioned storage codec. JSON byte estimates
+// remain useful only for the legacy uncompressed helper above.
+export function admitNativePlan(plan, source) {
+  const positive = field => Number.isSafeInteger(plan?.[field]) && plan[field] > 0;
+  if (plan?.schema !== 'zecblock-private-tx-plan-v1' || plan.recordCodec !== 'json-context-zlib-v1'
+    || plan.packing !== 'compact-v1' || plan.rows !== 2048 || plan.rowBytes !== 8192 || plan.payloadBytes !== 8064
+    || plan.coverRows !== 1 || !positive('records') || plan.records > 2048 || plan.records !== source.records.length
+    || !['payloadRows', 'totalRows', 'chunkCount', 'recordBytesTotal', 'decodedBytesTotal',
+      'legacyRecordBytesTotal', 'maxRecordBytes', 'maxDecodedRecordBytes'].every(positive)
+    || plan.decodedAggregateLimit !== 64 * 1024 ** 2 || typeof plan.fits !== 'boolean'
+    || plan.totalRows !== plan.payloadRows + 1 || plan.payloadRows < plan.records
+    || plan.maxRecordBytes > 64 * 8064 || plan.maxDecodedRecordBytes > 8 * 1024 ** 2) {
+    throw new Error('Invalid or incompatible native live capacity plan; previous publication retained.');
+  }
+  const fits = plan.totalRows <= 2048 && plan.chunkCount <= 64 && plan.legacyRecordBytesTotal <= plan.decodedAggregateLimit;
+  if (plan.fits !== fits || (fits && plan.capacityReason !== null)) {
+    throw new Error('Inconsistent native live capacity plan; previous publication retained.');
+  }
+  if (!fits) throw new Error('Cumulative pilot capacity exceeded; all previous records retained.');
+  return { chunks: plan.chunkCount, records: plan.records, payloadRows: plan.payloadRows, coverRows: 1 };
+}
+
 export async function rawFromLoopback(txid) {
   if (!/^[a-f0-9]{64}$/.test(txid)) throw new Error('Invalid raw observation identifier.');
   const response = await fetch(`http://127.0.0.1:3001/v1/transactions/${txid}/verbose`, {
@@ -45,7 +68,7 @@ export async function rawFromLoopback(txid) {
   return body;
 }
 
-export async function liveTick({ localDir, sourceDir, binary, config, rawCache = new Map(), readRaw = rawFromLoopback, publish = publishRecent }) {
+export async function liveTick({ localDir, sourceDir, binary, config, rawCache = new Map(), readRaw = rawFromLoopback, publish = publishRecent, planSource = planFullSource }) {
   const previous = await currentManifest(localDir);
   const snapshot = decodePrimarySnapshot(await readFile(resolve(sourceDir, 'latest.json'), 'utf8'));
   const sourceGuard = await freshGuard(sourceDir, { coverage: { blocks: snapshot.blocks } });
@@ -72,7 +95,7 @@ export async function liveTick({ localDir, sourceDir, binary, config, rawCache =
       maxBlocks: config.maxBlocks, maxRecords: config.maxRecords, sourceOrigin: 'mainnet-primary-read-only-snapshot', sourceAuthority: scope.authority });
     source.coverage.primaryFingerprint = fingerprint;
     source.coverage.sourceObservedAt = snapshot.observedAt;
-    admitSource(source);
+    admitNativePlan(await planSource(source, localDir, { binary }), source);
     await prepareState(localDir);
     const result = await publish({ source, localDir, binary, beforeActivate: async manifest => {
       const guard = await freshGuard(sourceDir, manifest, { notBefore: Date.now(), waitMs: 6000 });

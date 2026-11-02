@@ -23,6 +23,8 @@
       "@/components/PrivacyRiskInline": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/components/TokenChainIcon": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/components/Tooltip": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/ui/FactBox": ["prototype/private-tx/ui/adapters/fact-box.tsx"],
+      "@/components/ExportButton": ["prototype/private-tx/ui/adapters/export-button.tsx"],
       "@/lib/address-labels": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/lib/config": ["prototype/private-tx/ui/adapters/config.ts"],
       "@/lib/network": ["prototype/private-tx/ui/adapters/config.ts"],

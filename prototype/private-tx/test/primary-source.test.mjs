@@ -23,7 +23,8 @@ test('SQL is fixed, bounded and read only; no arbitrary source SQL/identifier is
   assert.match(sql, /^BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY;/);
   assert.match(sql, /statement_timeout='3s'/);
   assert.match(sql, /jsonb_each_text/);
-  assert.match(sql, /LIMIT 2049/);
+  assert.match(sql, /LIMIT \$5::integer/);
+  assert.match(sql, /\\bind 100 0 false 17 2049 200001 16 2048 200000\n\\g/);
   assert.match(sql, /ROLLBACK;\n$/);
   assert.doesNotMatch(sql, /\b(?:INSERT|UPDATE|DELETE|CREATE|ALTER|TRUNCATE|pg_create|pg_drop)\b/i);
   for (const options of [{ startHeight: '1;DROP TABLE blocks' }, { startHeight: -1 }, { startHeight: 1, endHeight: 30 }, { startHeight: 1, maxRecords: 2049 }]) assert.throws(() => buildPrimarySnapshotSql(options));

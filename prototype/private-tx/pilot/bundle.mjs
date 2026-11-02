@@ -40,6 +40,9 @@ await mkdir(destination, { recursive: true });
 const staging = await mkdtemp(resolve(destination, `${commit.slice(0, 12)}-`));
 const files = [
   'prototype/private-tx/server.mjs',
+  'prototype/private-tx/collection.mjs',
+  'prototype/private-tx/collection-server.mjs',
+  'prototype/private-tx/state-files.mjs',
   'prototype/private-tx/publish-recent.mjs',
   'prototype/private-tx/export-recent.mjs',
   'prototype/private-tx/export-live.mjs',
@@ -50,6 +53,13 @@ const files = [
   'prototype/private-tx/pilot/upgrade.py',
   'prototype/private-tx/pilot/upgrade-live.py',
   'prototype/private-tx/pilot/upgrade-live-release.py',
+  'prototype/private-tx/pilot/upgrade-archive.py',
+  'prototype/private-tx/pilot/archive-query.conf',
+  'prototype/private-tx/pilot/archive-source.conf',
+  'prototype/private-tx/pilot/archive-publish.conf',
+  'prototype/private-tx/pilot/archive-source.mjs',
+  'prototype/private-tx/pilot/archive-watch.mjs',
+  'prototype/private-tx/pilot/publish-archive.mjs',
   'prototype/private-tx/pilot/source-guard.mjs',
   'prototype/private-tx/pilot/source-watch.mjs',
   'prototype/private-tx/pilot/publish-live.mjs',
@@ -78,7 +88,7 @@ await chmod(resolve(staging, nativeTarget), 0o755);
 hashes[nativeTarget] = { sha256: sha256(binary), bytes: binary.length };
 await writeFile(resolve(staging, 'provenance.json'), `${JSON.stringify({
   commit, branch: 'new/private-tx-browser-prototype', createdAt: new Date().toISOString(),
-  environment: 'Isolated mainnet-primary few-block PIR pilot; loopback/SSH only',
+  environment: 'Isolated mainnet-primary confirmed-transaction archive/live PIR service; loopback/SSH only; bounded published coverage',
   nativeBuild, files: hashes,
 }, null, 2)}\n`);
 const archive = `${staging}.tar.gz`;

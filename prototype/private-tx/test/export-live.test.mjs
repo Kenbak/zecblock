@@ -29,7 +29,7 @@ function indexedSource(options = {}) {
         || options.reorgBeforeCapture && blockHeight === tip && tipSummaryReads >= 2;
       data = {
         height: String(blockHeight), hash: changed ? hash(999) : hash(blockHeight),
-        previous_block_hash: hash(options.brokenChain && blockHeight === tip ? 999 : blockHeight - 1),
+        previous_block_hash: hash(options.brokenChain && blockHeight === tip ? 999 : Math.max(0, blockHeight - 1)),
         transactionCount: count + (options.incomplete ? 1 : 0),
         transactions: Array.from({ length: count }, (_, index) => ({ txid: hash(options.duplicate ? 100001 : blockHeight * 10000 + index + 1) })),
         isOrphaned: options.orphanTip && blockHeight === tip,
@@ -135,9 +135,17 @@ test('indexed tip includes its canonical hash so a same-height replacement is ob
 });
 
 test('requires explicit valid floor and finite capacity bounds', async () => {
-  for (const startHeight of [undefined, 0, -1, '10', 1.5, Number.MAX_SAFE_INTEGER + 1]) {
-    await assert.rejects(exportLive({ read: indexedSource().read, startHeight }), /explicit positive coverage/);
+  for (const startHeight of [undefined, -1, '10', 1.5, Number.MAX_SAFE_INTEGER + 1]) {
+    await assert.rejects(exportLive({ read: indexedSource().read, startHeight }), /explicit nonnegative coverage/);
   }
   for (const maxBlocks of [0, -1, 2049, Infinity]) await assert.rejects(exportLive({ read: indexedSource().read, startHeight: 10, maxBlocks }), /block limit/);
   for (const maxRecords of [0, -1, 2049, Infinity]) await assert.rejects(exportLive({ read: indexedSource().read, startHeight: 10, maxRecords }), /record limit/);
+});
+
+test('explicit genesis capture preserves height zero without changing the confirmation-depth policy', async () => {
+  const result = await exportLive({ read: indexedSource({ tip: 0 }).read, startHeight: 0 });
+  assert.equal(result.coverage.startHeight, 0);
+  assert.equal(result.coverage.endHeight, 0);
+  assert.equal(result.records.length, 1);
+  assert.equal(result.records[0].detail.blockHeight, '0');
 });

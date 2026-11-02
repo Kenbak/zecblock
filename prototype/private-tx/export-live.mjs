@@ -37,7 +37,7 @@ export async function exportLive({
   sourceOrigin = 'injected-indexed-source',
   sourceAuthority = 'Injected indexed source and separately observed raw transaction data; block identities checked before and after capture. This exporter does not establish a database snapshot; the publisher must supply and verify its source scope.',
 } = {}) {
-  requireCondition(Number.isSafeInteger(startHeight) && startHeight > 0, 'An explicit positive coverage startHeight is required.');
+  requireCondition(Number.isSafeInteger(startHeight) && startHeight >= 0, 'An explicit nonnegative coverage startHeight is required.');
   requireCondition(Number.isSafeInteger(maxBlocks) && maxBlocks >= 1 && maxBlocks <= MAX_TABLE_RECORDS, 'Choose a block limit from 1–2048.');
   requireCondition(Number.isSafeInteger(maxRecords) && maxRecords >= 1 && maxRecords <= MAX_TABLE_RECORDS, 'Choose a record limit from 1–2048.');
   const captureStartedAt = now();

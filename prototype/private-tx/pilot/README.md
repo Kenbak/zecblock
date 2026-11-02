@@ -212,3 +212,30 @@ immutable release remain available for inspection/restart. A host reboot does
 not start this experiment automatically. Never enable or restart production or
 standby writers as part of this pilot. For failed refresh, retain the previous
 publication and use the browser's explicit age/unavailable warning.
+# Archive/live release path
+
+`upgrade-archive.py` upgrades only the three owned pilot services, with a short
+explicit query outage and verified rollback. It preserves the six original
+unit files, existing `live.conf`/`live.json`, old state directories and the stopped
+rolling timer. New `zz-archive.conf` drop-ins select archive source/publisher/query
+paths. The source identity remains the trusted existing `postgres` Unix peer
+inside fixed bounded read-only queries; no role, grant, schema or WAL slot is
+created. This is not a qualified least-privilege public service identity.
+
+New state is `/var/lib/zecblock-pir-archive` (`pilot:pilot`, mode `0750`), source spool is
+`/var/lib/zecblock-pir-archive-source` (`postgres:pilot`, mode `0750`), and the root-owned
+configuration is `/etc/zecblock-pir-pilot/archive.json`. Only the shared request
+and collection head are group-readable (`0640`); table artifacts remain `0600`. Explicit
+fchmod preserves those controls under the publisher's restrictive umask.
+
+Before the query service starts, the helper checks exact closed release hashes,
+the Linux constructor, fresh canonical membership/observation anchors, retention
+of the original 393 IDs, and a live range reaching the sampled indexed tip.
+It then checks HTTP health and served assets. Production services and boot
+enablement are outside the helper's operation allowlist. Browser encrypted
+lookup acceptance is a separate required post-install check.
+
+The collection’s 8-segment / 64-query admission and global full-history routing
+gate remain explicit. The initial config has no `backfillFrom`; a historical
+coverage gap must never be described as complete or silently looked up through
+the ordinary explorer API. Read the collection manifest for actual coverage.

@@ -17,6 +17,12 @@ ships `published:false` in `lib/ask/research-catalogue.js` until step 10.
 
 No existing dataset reads the new table. `test/v1/ask-logical-sync.test.js` (PG16, CI) exercises the copy, the reviewed column list, admission readiness, the reader grant, an orphan observation never appearing, the refused early destination rollback and the full rollback order.
 
+## 2026-11-02 temp-limit fix (`value-pools-v2.sql`)
+
+After publishing, any query that read a balance failed with "temporary file size exceeds temp_file_limit". The reader runs with `work_mem=1MB` and `temp_file_limit=16MB`. v1 materialized every observation's `pool_balances_zat` jsonb in a CTE that it read three times.
+- **Fix:** v2 aggregates one row per date first, then reads the jsonb for those rows only. Rehearsed in a rolled-back transaction on the store under the reader's limits: 0.14 s, about 1 MB of temp, and 0 differing rows out of 35. Columns and the reader grant are unchanged.
+- **Why step 8 missed it:** `SET ROLE ask_public_reader` does not apply the role's own settings. Verify as the reader with its limits set first (`SET LOCAL temp_file_limit='16MB'; SET LOCAL work_mem='1MB';` before `SET LOCAL ROLE`), and always run a live `sql_query` that reads real columns, not only `count(*)`.
+
 ## Dataset
 
 ### `value_pools_daily` (replicated `node_accounting_observations`)

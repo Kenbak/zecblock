@@ -40,6 +40,21 @@ class Probe(unittest.TestCase):
   source_text=a.alerts.notification_text('recovery','')
   self.assertIn('feed connection restored',source_text)
   self.assertNotIn('research data readiness restored',source_text.lower())
+ def test_recovery_config_must_match_subscribed_tables(self):
+  import tempfile
+  subscribed=['public.blocks','public.fork_events']
+  with tempfile.TemporaryDirectory() as d:
+   path=pathlib.Path(d)/'config.json'
+   self.assertEqual(a.recovery_errors(subscribed,path),[])  # recovery not installed
+   path.write_text(json.dumps({'expected_relations':['public.fork_events','public.blocks']}))
+   self.assertEqual(a.recovery_errors(subscribed,path),[])
+   # The 2026-10-31 incident: a rollout added a table but not to the recovery config.
+   for relations in [subscribed+['public.orphaned_blocks'],['public.blocks'],None]:
+    self.assertEqual(a.recovery_errors(relations,path),['recovery_relations_drift'])
+   path.write_text('{')
+   self.assertEqual(a.recovery_errors(subscribed,path),['recovery_config_unreadable'])
+   path.write_text(json.dumps({'expected_relations':['public.blocks']}))
+   self.assertIn('recovery_relations_drift',a.probe(self.runner(),path)[0])
  def test_unreadable_probe_is_never_healthy(self):
   def broken(*args,**kwargs):raise RuntimeError('secret fixture is never output')
   errors,_,warming=a.probe(broken);self.assertEqual(errors,['analytics_probe_failed']);self.assertEqual(warming,[])

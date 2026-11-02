@@ -2,12 +2,18 @@
 // Trusted operator process only; never imported by HTTP/model/query workers.
 const {Pool}=require('pg');
 const SETTINGS="SET LOCAL lock_timeout='500ms'; SET LOCAL idle_in_transaction_session_timeout='15s'; SET LOCAL timezone='UTC'; SET LOCAL search_path=pg_catalog; SET LOCAL max_parallel_workers_per_gather=0; SET LOCAL jit=off";
-async function replicationErrorsAcknowledged(client) {
- const installed=(await client.query("SELECT to_regprocedure('analytics_meta.replication_errors_acknowledged()') IS NOT NULL AS installed")).rows[0]?.installed;
+async function replicationErrorsAcknowledged(client,{baselinePending=false}={}) {
+ const helper=(await client.query("SELECT to_regprocedure('analytics_meta.replication_errors_acknowledged()') IS NOT NULL AS installed, to_regprocedure('analytics_meta.replication_errors_acknowledged(boolean)') IS NOT NULL AS release_mode")).rows[0];
+ const installed=helper?.installed;
  if(typeof installed!=='boolean')throw Error('Recovery helper availability unknown');
  // Older fixtures/stores retain the original zero-errors rule. A failed helper
  // query is never converted into a pass or a fallback that ignores its ledger.
- const sql=installed===true ? 'SELECT analytics_meta.replication_errors_acknowledged() AS acknowledged' : 'SELECT coalesce(sum(apply_error_count+sync_error_count),0)=0 AS acknowledged FROM pg_stat_subscription_stats';
+ // A released quarantine has no verified baseline, which the strict form
+ // requires once an epoch is acknowledged; only the pending baseline itself may
+ // use the release form (replication-recovery-v2.sql), never health or recovery.
+ const sql=installed!==true ? 'SELECT coalesce(sum(apply_error_count+sync_error_count),0)=0 AS acknowledged FROM pg_stat_subscription_stats'
+  : baselinePending&&helper.release_mode===true ? 'SELECT analytics_meta.replication_errors_acknowledged(false) AS acknowledged'
+  : 'SELECT analytics_meta.replication_errors_acknowledged() AS acknowledged';
  return (await client.query(sql)).rows[0]?.acknowledged===true;
 }
 async function refreshAdmission(pool) {
@@ -21,7 +27,7 @@ async function refreshAdmission(pool) {
   if(s.state==='quarantined'){await client.query('ROLLBACK');return {state:'quarantined'};}
   const m=(await client.query('SELECT *,sampled_at<=statement_timestamp() AND sampled_at>statement_timestamp()-interval \'120 seconds\' AS fresh FROM analytics_feed_meta.signal WHERE singleton')).rows[0];
   const status=(await client.query("SELECT (SELECT count(*)=1 AND bool_and(subenabled AND subdisableonerr AND NOT subrunasowner AND subname='ask_public_core_v1') FROM pg_subscription) AS enabled,(SELECT count(*)=4 AND bool_and(srsubstate='r') FROM pg_subscription_rel WHERE srrelid IN('public.blocks'::regclass,'public.transactions'::regclass,'public.shielded_flows'::regclass,'analytics_feed_meta.signal'::regclass)) AS copied,(SELECT count(*)=1 FROM pg_stat_subscription WHERE relid IS NULL AND pid IS NOT NULL AND subname='ask_public_core_v1') AS running,(SELECT remote_lsn FROM pg_replication_origin_status WHERE external_id='pg_'||(SELECT oid::text FROM pg_subscription WHERE subname='ask_public_core_v1')) AS applied_lsn")).rows[0];
-  status.error_free=await replicationErrorsAcknowledged(client);
+  status.error_free=await replicationErrorsAcknowledged(client,{baselinePending:c.baseline_verified!==true});
   const fail=async state=>{await client.query('UPDATE analytics_meta.sync_state SET state=$1,verified_at=NULL WHERE singleton',[state]);if(state==='quarantined')await client.query('UPDATE analytics_meta.admission_control SET baseline_verified=false WHERE singleton');await client.query('COMMIT');return {state};};
   if(m && (m.generation!==s.source_id || m.system_identifier!==s.source_system_identifier || m.timeline!==c.expected_timeline))return await fail('quarantined');
   if(!m?.fresh || !status.enabled || !status.copied || !status.running || !status.error_free || !status.applied_lsn)return await fail('stale');
@@ -29,7 +35,7 @@ async function refreshAdmission(pool) {
   if(!checkpoint.applied)return await fail('stale');
   const tip=(await client.query('SELECT hash FROM public.blocks WHERE height=$1',[m.tip_height])).rows[0];
   if(!tip || tip.hash!==m.tip_hash)return await fail('stale');
-  await client.query(c.baseline_verified ? "SET LOCAL statement_timeout='3s'; SET LOCAL work_mem='4MB'; SET LOCAL temp_file_limit='16MB'" : "SET LOCAL statement_timeout='60s'; SET LOCAL work_mem='256MB'; SET LOCAL temp_file_limit='2GB'");
+  await client.query(c.baseline_verified ? "SET LOCAL statement_timeout='3s'; SET LOCAL work_mem='4MB'; SET LOCAL temp_file_limit='16MB'" : "SET LOCAL statement_timeout='180s'; SET LOCAL work_mem='256MB'; SET LOCAL temp_file_limit='2GB'");
   const dirty=c.baseline_verified ? (await client.query('SELECT height FROM analytics_meta.dirty_heights WHERE height<=$1 ORDER BY height LIMIT 200',[m.tip_height])).rows.map(r=>r.height) : null;
   const params=[m.tip_height,...(dirty ? [dirty] : [])];
   const range=alias=>dirty ? `${alias}.height<=$1 AND ${alias}.height=ANY($2::bigint[])` : `${alias}.height BETWEEN 0 AND $1`;

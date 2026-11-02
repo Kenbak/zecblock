@@ -17,7 +17,7 @@ const numbers = load('lib/format-numbers.ts');
 const { transformExpressBlockData } = load('app/block/[height]/components/transformBlockData.ts', { '@/lib/format-numbers': numbers });
 
 test('archived vin/vout retain addresses and zatoshi values through frontend normalization', () => {
-  const data = transformExpressBlockData({ height: 100, isOrphaned: true, transactionCount: 2, transactions: [{
+  const data = transformExpressBlockData({ height: 100, isOrphaned: true, transactionCount: 2, total_fees: '10000', transactions: [{
     txid: 'a'.repeat(64), tx_index: 1, is_coinbase: false,
     vin: [{ prev_txid: 'b'.repeat(64), prev_vout: 0, value: 100000000, address: 'from' }],
     vout: [{ vout_index: 0, value: 99990000, address: 'to' }],
@@ -29,6 +29,19 @@ test('archived vin/vout retain addresses and zatoshi values through frontend nor
   assert.equal(data.transactions[0].vout[0].value, 0.9999);
   assert.equal(data.totalFees, 0.0001);
   assert.equal(data.transactionCount, 2);
+});
+
+test('block fees come from the indexer total, including Sprout, and unknown stays unknown', () => {
+  // t->Sprout deposit: 1 ZEC in, no transparent output. A transparent-plus-
+  // Sapling/Orchard/Ironwood recompute would call the whole deposit a fee.
+  const sproutTx = {
+    txid: 'c'.repeat(64), tx_index: 1, is_coinbase: false,
+    vin: [{ prev_txid: 'd'.repeat(64), prev_vout: 0, value: 100000000, address: 'from' }],
+    vout: [],
+  };
+  assert.equal(transformExpressBlockData({ height: 500758, total_fees: '10000', transactions: [sproutTx] }).totalFees, 0.0001);
+  assert.equal(transformExpressBlockData({ height: 500758, total_fees: null, transactions: [sproutTx] }).totalFees, null);
+  assert.equal(transformExpressBlockData({ height: 500758, transactions: [sproutTx] }).totalFees, null);
 });
 
 test('first seen renders milliseconds in UTC and does not invent missing observations', () => {

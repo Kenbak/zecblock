@@ -19,6 +19,7 @@ interface TxHeaderBadgesProps {
 const TX_TYPE_TO_CATEGORY: Partial<Record<TxType, TxCategory>> = {
   COINBASE: 'coinbase',
   MIGRATION: 'migration',
+  SPROUT: 'sprout',
   IRONWOOD: 'ironwood',
   ORCHARD: 'orchard',
   SHIELDED: 'sapling',

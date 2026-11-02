@@ -185,7 +185,7 @@ async function run(args=process.argv.slice(2)) {
    try {
     await cache.connect();
     // Only these small, namespaced chart families; never flush the cache.
-    for(const pattern of ['zcash:valuation:*','mining:*miner-behavior:*','mining:*zodl:*','mining:*hashrate-share:*','analytics:fee-dist:all']) {
+    for(const pattern of ['zcash:valuation:*','mining:*miner-behavior:*','mining:*zodl:*','mining:*hashrate-share:*','analytics:fee-dist:v2:*']) {
      for await(const keys of cache.scanIterator({MATCH:pattern,COUNT:100})) if(keys.length) await cache.unlink(keys);
     }
    } catch(error) {log(`Cache invalidation deferred: ${error.name}`);}

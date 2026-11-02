@@ -118,6 +118,50 @@ recognize reviewed transport errors while rejecting new errors, changed epochs
 and mismatched identity. Recovery does not make coverage `ready`; normal applied
 checkpoint, freshness, consistency and dirty-history reconciliation still run.
 
+## Releasing a quarantine
+
+Admission never lifts a quarantine on its own. Quarantine also clears
+`admission_control.baseline_verified`. Before `replication-recovery-v2.sql`,
+the strict acknowledgement needed that flag whenever an error epoch was
+acknowledged. A released store therefore stayed `stale` forever and never ran
+the baseline that sets it. This is what happened in the 2026-11-01 Sprout
+incident, which needed a manual baseline.
+
+**Rollback (written first):**
+- Restore the previous admission script.
+- On the store: `psql -d ask_analytics -f replication-recovery-v2-rollback.sql`.
+- Any baseline-pending store with an acknowledged epoch then needs the manual
+  baseline again. That means admission's own five full-history checks in one
+  REPEATABLE READ transaction, which abort on any failure and then set
+  `baseline_verified` and delete dirty heights up to the tip.
+
+**Install, once:** as `postgres`, run
+`psql -d ask_analytics -f replication-recovery-v2.sql`, then deploy the matching
+admission script. The migration refuses unless v1 is present and v2 is not.
+
+**Release:**
+1. Find and fix the cause. Read the failed check from the admission source,
+   and confirm the offending rows are valid history or have been repaired.
+2. Deploy any admission change first. Back up the deployed script.
+3. Set the state:
+   `UPDATE analytics_meta.sync_state SET state='stale' WHERE state='quarantined';`
+4. The next admission run (within 15 s) checks the release form of the
+   acknowledgement: the same epoch, counters, generation, system, timeline and
+   origin, with only the verified-baseline requirement lifted. It then runs the
+   full-history baseline with a 180 s statement limit.
+   - Passing sets `baseline_verified`, clears dirty heights up to the tip, and
+     returns `ready`.
+   - Still-broken history quarantines again.
+   - An unacknowledged epoch stays `stale`.
+5. Summaries rebuild the affected days. While the baseline holds memory,
+   `ask-memory-pressure` may refuse queries for about 30 s. Confirm that all
+   required datasets are ready and that `analytics-availability.py` reports
+   healthy, then run one MCP `sql_query`.
+
+Health, load and feed recovery keep the strict zero-argument helper. Only
+admission calls `replication_errors_acknowledged(false)`, and only while its
+baseline is pending.
+
 ## Configuration and installation
 
 Use [feed-recovery.json.example](feed-recovery.json.example) as a template for

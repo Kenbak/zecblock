@@ -203,7 +203,9 @@ export function BlockFactsCard({
 
           {data.totalFees !== undefined && !data.isOrphaned && (
             <FactBox fit className="order-5 sm:order-none" label="Total Fees" tooltip="Total fees paid by all transactions in this block">
-              <BoldZec value={data.totalFees} />
+              {data.totalFees === null
+                ? <span className="text-sm text-muted">Unavailable</span>
+                : <BoldZec value={data.totalFees} />}
             </FactBox>
           )}
         </div>

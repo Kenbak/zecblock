@@ -1033,6 +1033,12 @@
                             "flow_daily",
                             "supply_daily",
                             "issuance",
+                            "mining_daily",
+                            "software_daily",
+                            "block_timing",
+                            "issuance_daily",
+                            "reorgs",
+                            "orphaned_blocks",
                             "labels"
                           ]
                         }

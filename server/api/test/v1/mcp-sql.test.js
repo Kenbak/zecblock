@@ -54,6 +54,8 @@ test('SQL tools appear only when enabled on mainnet; the catalogue needs no key'
   const api = await serve(t), c = await api.client();
   const tools = (await c.listTools()).tools.filter(tool => /^sql_/.test(tool.name));
   assert.deepEqual(tools.map(tool => tool.name), ['sql_catalogue', 'sql_query']);
+  // The server instructions must match the keyless tool: agents give up when told a key is required.
+  assert.match(c.getInstructions(), /No key is needed/); assert.doesNotMatch(c.getInstructions(), /key required/i);
   assert.ok(tools.every(tool => tool.annotations.readOnlyHint === true && tool.annotations.destructiveHint === false));
   const catalogue = (await c.callTool({ name: 'sql_catalogue', arguments: {} })).structuredContent;
   assert.ok(catalogue.datasets.some(dataset => dataset.id === 'address_activity'), 'extended datasets are listed');

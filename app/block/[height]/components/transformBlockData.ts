@@ -48,25 +48,10 @@ export function transformExpressBlockData(blockData: any): BlockData {
     };
   });
 
-  const calculatedFees = (blockData.transactions || []).reduce((sum: number, tx: any) => {
-    const isCoinbaseTx = tx.tx_index === 0;
-    if (isCoinbaseTx) return sum;
-
-    const transparentInputs = (tx.inputs || tx.vin || []).reduce((inputSum: number, input: any) => {
-      return inputSum + parseInt(input.value || 0);
-    }, 0);
-
-    const transparentOutputs = (tx.outputs || tx.vout || []).reduce((outputSum: number, output: any) => {
-      return outputSum + parseInt(output.value || 0);
-    }, 0);
-
-    const valueBalance = parseInt(tx.value_balance_sapling || 0) + parseInt(tx.value_balance_orchard || 0) + parseInt(tx.value_balance_ironwood || 0);
-
-    const txFee = transparentInputs - transparentOutputs + valueBalance;
-    return sum + (txFee > 0 ? txFee : 0);
-  }, 0);
-
-  const totalFeesZatoshi = calculatedFees;
+  // The indexer's block total includes every shielded pool (Sprout JoinSplits
+  // too); recomputing it here from Sapling/Orchard/Ironwood was wrong for
+  // Sprout blocks. NULL means a fee in the block is unknown, never zero.
+  const totalFeesZatoshi = blockData.total_fees == null ? null : Number(blockData.total_fees);
 
   const canonicalBlock: CanonicalBlockSummary | null = blockData.canonicalBlock
     ? {
@@ -105,7 +90,7 @@ export function transformExpressBlockData(blockData: any): BlockData {
     bits: blockData.bits,
     nonce: blockData.nonce,
     solution: blockData.solution,
-    totalFees: zatToZec(totalFeesZatoshi),
+    totalFees: totalFeesZatoshi == null || !Number.isFinite(totalFeesZatoshi) ? null : zatToZec(totalFeesZatoshi),
     minerAddress: blockData.miner_address || blockData.minerAddress,
     minerPool: blockData.miner_pool || null,
     minerPoolUrl: blockData.miner_pool_url || null,

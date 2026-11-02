@@ -1,5 +1,6 @@
 'use client';
 
+import { useSyncExternalStore } from 'react';
 import Link from 'next/link';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
@@ -10,6 +11,20 @@ import { BlockPulse } from '@/components/network/BlockPulse';
 import { ChartShareControl } from '@/components/charts/ChartShareControl';
 import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
 import { ANNOUNCED_MAINNET_NU7, readUpgradeSnapshot, getFutureBlockUpgrade, estimateBlockArrival, estimateBlockArrivalDate, formatUpgradeTime } from '@/lib/network-upgrades';
+
+const subscribeNever = () => () => {};
+const getViewerTimeZone = () => Intl.DateTimeFormat().resolvedOptions().timeZone;
+const getServerTimeZone = () => null;
+
+/** The viewer's own clock time for the estimate; server HTML keeps only the UTC line. */
+function LocalArrival({ dateTime }: { dateTime: string }) {
+  const timeZone = useSyncExternalStore(subscribeNever, getViewerTimeZone, getServerTimeZone);
+  if (!timeZone || timeZone === 'UTC' || timeZone === 'Etc/UTC') return null;
+  const date = new Date(dateTime);
+  const day = date.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
+  const time = date.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit', timeZoneName: 'short' });
+  return <p className="mt-1 text-xs text-muted"><time dateTime={dateTime}>{day} · {time}</time></p>;
+}
 
 export function FutureBlockView({
   targetHeight,
@@ -163,7 +178,10 @@ export function FutureBlockView({
             {announced ? (
               <p className="mt-3 text-sm text-secondary">Announced date: <time dateTime={upgrade.announcedDate} className="font-medium text-primary">{ANNOUNCED_MAINNET_NU7.dateLabel}</time></p>
             ) : arrivalDate ? (
-              <p className="mt-3 text-sm text-secondary">Estimated arrival: <time dateTime={arrivalDate.dateTime} className="font-medium text-primary">{arrivalDate.label}</time></p>
+              <>
+                <p className="mt-3 text-sm text-secondary">Estimated arrival: <time dateTime={arrivalDate.dateTime} className="font-medium text-primary">{arrivalDate.label}</time></p>
+                <LocalArrival dateTime={arrivalDate.dateTime} />
+              </>
             ) : null}
           </div>
           <div className="mt-6">

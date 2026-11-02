@@ -7,14 +7,15 @@ const {coreViews}=require('../../v1/lib/ask-core-catalogue');
 const {displaySQL}=require('../../../../lib/ask/sql-display');
 const {sqlExamples}=require('../../../../lib/ask/sql-examples');
 const deploy=name=>fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8');
-const migration=deploy('value-pools-v1.sql'),rollback=deploy('value-pools-v1-rollback.sql'),grant=deploy('value-pools-grant-v1.sql');
+const migration=deploy('value-pools-v1.sql'),fix=deploy('value-pools-v2.sql'),rollback=deploy('value-pools-v1-rollback.sql'),grant=deploy('value-pools-grant-v1.sql');
 const source=deploy('value-pools-source-v1.sql'),sourceRollback=deploy('value-pools-source-v1-rollback.sql');
 const id='value_pools_daily';
 const view=/CREATE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(migration)[0];
+const view2=/CREATE OR REPLACE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(fix)[0];
 const published='hash,height,observed_at,chain,nsm_balance_zat,circulating_supply_zat,pool_balances_zat';
 // Output column names of the outermost SELECT list: the alias, or the bare column name.
 function viewColumns(sql){
- const list=/\n SELECT (l\.date[\s\S]*?)\n FROM last l/.exec(sql)[1];
+ const list=/\n SELECT ([lp]\.date[\s\S]*?)\n FROM (?:last l|per p)/.exec(sql)[1];
  let depth=0,part='';const parts=[];
  for(const ch of list){if(ch==='(')depth++;if(ch===')')depth--;if(ch===','&&depth===0){parts.push(part);part='';}else part+=ch;}
  parts.push(part);
@@ -40,6 +41,7 @@ test('value_pools_daily is a published extended dataset with guidance',async()=>
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
  const entry=researchCatalogue.find(d=>d.id===id);
  assert.deepEqual(viewColumns(view),entry.columns.split(', '));
+ assert.deepEqual(viewColumns(view2),entry.columns.split(', '));
  assert.ok(coreViews.includes('value_pools_daily_query'));
  for(const re of [/from 2026-09-28/,/getblockchaininfo/,/including the lockbox/,/equal to supply_daily\.chain_supply/,/zero before NU7 activation/,/zatoshis and are stocks: never sum/,/absent, not zero/,/did not monitor is NULL/])assert.match(entry.description,re);
  // The node's circulating_supply_zat includes the lockbox; supply_daily.circulating_supply does not.
@@ -58,8 +60,17 @@ test('examples compile; the raw observation table stays unreachable',async()=>{
   await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true}));
 });
 
+test('v2 keeps the view inside the reader temp_file_limit without changing columns or grants',()=>{
+ // 2026-11-02: v1 materialized every observation's jsonb in a CTE; reading a balance spilled past 16MB.
+ const ctes=/WITH ([\s\S]*?)\n SELECT p\.date/.exec(view2)[1];
+ assert.doesNotMatch(ctes,/pool_balances_zat/);
+ assert.match(ctes,/GROUP BY 1\)/);
+ assert.doesNotMatch(fix,/GRANT|REVOKE|DROP|ask_public_reader/);
+ assert.match(fix,/SET LOCAL ROLE ask_public_view_owner;/);
+});
+
 test('migrations are guarded, keep private columns private and order destination before source',()=>{
- for(const sql of [migration,rollback,grant,source,sourceRollback]){assert.match(sql,/^\\set ON_ERROR_STOP on\n/);assert.match(sql,/COMMIT;\n$/);assert.equal(sql.match(/BEGIN;/g).length,1);}
+ for(const sql of [migration,fix,rollback,grant,source,sourceRollback]){assert.match(sql,/^\\set ON_ERROR_STOP on\n/);assert.match(sql,/COMMIT;\n$/);assert.equal(sql.match(/BEGIN;/g).length,1);}
  assert.match(migration,/current_database\(\)<>'ask_analytics' OR pg_is_in_recovery\(\)/);
  assert.match(migration,/to_regclass\('analytics_public\.swap_daily_query'\) IS NULL/);
  assert.doesNotMatch(migration,/\bDROP\b|\bDELETE FROM\b|\bTRUNCATE\b|\bUPDATE\b|\bALTER\b/);
@@ -109,7 +120,7 @@ test('value_pools_daily view: canonical day-end snapshots, coverage counts and g
   ('h100',100,now(),'main',0,1650,$1),('h101',101,now(),'main',-5,1640,$2),('x102',102,now(),'main',0,9999,$3),
   ('h103',103,now(),'main',7,1630,$4),('h104',104,now(),'main',0,1620,$5),('t100',99,now(),'test',0,1,$6)`,
   [pools(1000,300),pools(990,300),pools(1,1),pools(980,null),pools(970,300),pools(5,5)]);
- await client.query(view);
+ await client.query(view);await client.query(view2);
  const rows=async()=>(await client.query('SELECT date::text,height::int,hash,observed_blocks::int,day_blocks::int,transparent::text,ironwood::text,lockbox::text,nsm::text,chain_supply::text FROM analytics_public.value_pools_daily_query ORDER BY date')).rows;
  assert.deepEqual(await rows(),[
   {date:'2026-10-30',height:101,hash:'h101',observed_blocks:2,day_blocks:3,transparent:'990',ironwood:'300',lockbox:'50',nsm:'-5',chain_supply:'1640'},

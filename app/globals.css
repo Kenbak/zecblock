@@ -2181,6 +2181,64 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
   to { opacity: 0; transform: scale(1.8); }
 }
 
+/* Block speed distribution: one 100% bar per window, fast buckets brightest. */
+.speed-spectrum {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 2.75rem;
+}
+.speed-spectrum-segment {
+  flex-basis: 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--speed-bucket-color);
+  transform-origin: left;
+  animation: speed-spectrum-grow 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--segment-index, 0) * 90ms);
+}
+.speed-spectrum-segment:first-child { border-radius: 0.5rem 2px 2px 0.5rem; }
+.speed-spectrum-segment[data-bucket='long-wait'] { border-radius: 2px 0.5rem 0.5rem 2px; }
+.speed-spectrum-expected {
+  position: absolute;
+  top: -0.375rem;
+  bottom: -0.375rem;
+  border-left: 1.5px dashed var(--color-text-primary);
+  opacity: 0.55;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* One ramp from gold (fastest) to the muted text tone (slowest), legible on both themes. */
+[data-bucket='super-fast'] { --speed-bucket-color: rgb(var(--color-gold-rgb)); }
+[data-bucket='fast'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 75%, var(--color-text-muted)); }
+[data-bucket='slow'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 50%, var(--color-text-muted)); }
+[data-bucket='very-slow'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 25%, var(--color-text-muted)); }
+[data-bucket='long-wait'] { --speed-bucket-color: var(--color-text-muted); }
+.speed-bucket-swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  background: var(--speed-bucket-color);
+}
+.speed-buckets { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.speed-bucket {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--color-border);
+}
+.speed-bucket-value { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+@media (min-width: 768px) {
+  .speed-buckets { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .speed-bucket { padding: 0.75rem 1rem; border-left: 1px solid var(--color-border); align-content: start; }
+  .speed-bucket:first-child { padding-left: 0; border-left: 0; }
+  .speed-bucket-value { display: grid; justify-content: start; gap: 0; }
+}
+@keyframes speed-spectrum-grow { from { transform: scaleX(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .speed-spectrum-segment { animation: none; }
+}
+
 /* Countdown digits slide up when they change. */
 .countdown-digit { display: inline-block; animation: countdown-tick 320ms ease-out; }
 @keyframes countdown-tick { from { opacity: 0.2; transform: translateY(-0.25em); } }

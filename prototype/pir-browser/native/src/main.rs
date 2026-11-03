@@ -31,6 +31,9 @@ use zcash_transaction_wire::TransactionView;
 mod full;
 #[path = "../../src/full_record.rs"]
 pub mod full_record;
+mod global;
+#[path = "../../src/global.rs"]
+pub mod global_data;
 mod matvec;
 
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
@@ -327,13 +330,24 @@ fn main() {
             full::prepare_full_legacy(Path::new(source), Path::new(dir))
         }
         [_, mode, source] if mode == "plan-full" => full::plan_full(Path::new(source)),
+        [_, mode, source] if mode == "plan-global" => global::plan_global(Path::new(source)),
+        [_, mode, source, dir] if mode == "prepare-global" => {
+            global::prepare_global(Path::new(source), Path::new(dir))
+        }
+        [_, mode, clean, dir, layer, row, offset] if mode == "prepare-global-poison-test" => {
+            layer.parse::<usize>().and_then(|layer|row.parse::<usize>().map(|row|(layer,row)))
+                .and_then(|(layer,row)|offset.parse::<usize>().map(|offset|(layer,row,offset)))
+                .map_err(|_|"Invalid offline poison-test indices".to_owned())
+                .and_then(|(layer,row,offset)|global::prepare_global_poison_test(Path::new(clean),Path::new(dir),layer,row,offset))
+        }
+        [_, mode, dir] if mode == "serve-global" => global::serve_global(Path::new(dir)),
         [_, mode, dir] if mode == "benchmark-matvec" => benchmark_matvec(Path::new(dir), 15),
         [_, mode, dir, iterations] if mode == "benchmark-matvec" => iterations
             .parse::<usize>()
             .map_err(|_| "invalid benchmark iteration count".into())
             .and_then(|iterations| benchmark_matvec(Path::new(dir), iterations)),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
-        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | benchmark-matvec <directory> [iterations]".into()),
+        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global <source.json> | prepare-global <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global <directory> | benchmark-matvec <directory> [iterations]".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");

@@ -14,6 +14,10 @@ use zakura_pir_protocol::transparent::{
 };
 
 pub mod full_record;
+mod global_client;
+#[path = "global.rs"]
+pub mod global_data;
+pub use global_client::GlobalPirBrowser;
 
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
 const GEOMETRY: &str = "fixture-2k";

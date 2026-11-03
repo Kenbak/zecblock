@@ -754,7 +754,10 @@ version = "0.1.0"
 dependencies = [
  "base64",
  "hex",
+ "libc",
+ "memmap2",
  "miniz_oxide",
+ "reinspiring",
  "serde",
  "serde_json",
  "sha2",

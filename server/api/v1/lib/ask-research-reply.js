@@ -640,4 +640,4 @@ const approxWords=/\b(approximately|about|around|roughly|nearly|aproximadamente|
 function tidyProse(text){
  return text.replace(/%\s+(?:percent|per cent)\b/gi,'%').replace(/≈\s*≈/g,'≈').replace(approxWords,'$1 ').replace(/(примерно|около)\s+≈/gu,'$1 ').replace(/\b(ZEC|USD|zatoshis)\s+\1\b/g,'$1').replace(/(?<!\.)\.\.(?!\.)/g,'.').replace(/[ \t]{2,}/g,' ');
 }
-module.exports={tidyProse,researchReply,chartChoice,researchFacts,windowFacts,windowBounds,comparisonPairs,researchTemplate,checkedCaption,checkedInterpretation,captionTask,columnShapes,caveats};
+module.exports={MAX_FACT_COLUMNS,tidyProse,researchReply,chartChoice,researchFacts,windowFacts,windowBounds,comparisonPairs,researchTemplate,checkedCaption,checkedInterpretation,captionTask,columnShapes,caveats};

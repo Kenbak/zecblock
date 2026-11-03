@@ -84,3 +84,10 @@ test('the largest visitor request with every repair fits MAX_CONTEXT_BYTES', asy
   }
   assert.throws(() => maximumCost(config, 'x'.repeat(MAX_CONTEXT_BYTES + 1)), /Context too large/);
 });
+
+test('drafting guidance names the number of result columns the answer sees', () => {
+  const { MAX_FACT_COLUMNS } = require('../../v1/lib/ask-research-reply');
+  const { researchDraftingGuidance } = require('../../v1/lib/ask-chat');
+  assert.equal(MAX_FACT_COLUMNS, 12);
+  assert.match(researchDraftingGuidance, /Only the first twelve result columns reach the written answer/);
+});

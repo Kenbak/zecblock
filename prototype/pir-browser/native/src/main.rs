@@ -34,6 +34,7 @@ pub mod full_record;
 mod global;
 #[path = "../../src/global.rs"]
 pub mod global_data;
+mod global_size;
 mod matvec;
 
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
@@ -331,8 +332,13 @@ fn main() {
         }
         [_, mode, source] if mode == "plan-full" => full::plan_full(Path::new(source)),
         [_, mode, source] if mode == "plan-global" => global::plan_global(Path::new(source)),
+        [_, mode, source] if mode == "plan-global-compact" => global::plan_global_compact(Path::new(source)),
+        [_, mode, source] if mode == "measure-global" => global_size::measure_source(Path::new(source)),
         [_, mode, source, dir] if mode == "prepare-global" => {
             global::prepare_global(Path::new(source), Path::new(dir))
+        }
+        [_, mode, source, dir] if mode == "prepare-global-compact" => {
+            global::prepare_global_compact(Path::new(source), Path::new(dir))
         }
         [_, mode, clean, dir, layer, row, offset] if mode == "prepare-global-poison-test" => {
             layer.parse::<usize>().and_then(|layer|row.parse::<usize>().map(|row|(layer,row)))
@@ -341,13 +347,15 @@ fn main() {
                 .and_then(|(layer,row,offset)|global::prepare_global_poison_test(Path::new(clean),Path::new(dir),layer,row,offset))
         }
         [_, mode, dir] if mode == "serve-global" => global::serve_global(Path::new(dir)),
+        [_, mode, dir] if mode == "serve-global-cached" => global::serve_global_cached(Path::new(dir)),
+        [_, mode, dir, options @ ..] if mode == "profile-global" => global::profile_global(Path::new(dir), options),
         [_, mode, dir] if mode == "benchmark-matvec" => benchmark_matvec(Path::new(dir), 15),
         [_, mode, dir, iterations] if mode == "benchmark-matvec" => iterations
             .parse::<usize>()
             .map_err(|_| "invalid benchmark iteration count".into())
             .and_then(|iterations| benchmark_matvec(Path::new(dir), iterations)),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
-        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global <source.json> | prepare-global <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global <directory> | benchmark-matvec <directory> [iterations]".into()),
+        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global|plan-global-compact|measure-global <source.json> | prepare-global|prepare-global-compact <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global|serve-global-cached <directory> | profile-global <directory> [--mode baseline|cached|compare] [--layers N|all] [--iterations N] | benchmark-matvec <directory> [iterations]".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");

@@ -17,6 +17,16 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use zakura_pir_protocol::native::{D, PREPARED_HEADER_BYTES};
+#[path = "global_profile.rs"]
+mod global_profile;
+
+pub(super) fn profile_global(root: &Path, options: &[String]) -> Result<(), String> {
+    global_profile::profile_global(root, options)
+}
+
+pub(super) fn serve_global_cached(root: &Path) -> Result<(), String> {
+    global_profile::serve_global_cached(root)
+}
 
 const SOURCE_SCHEMA: &str = "zecblock-private-global-source-v1";
 const MAX_SOURCE_BYTES: u64 = 128 * 1024 * 1024;
@@ -31,6 +41,7 @@ const RESOURCE_LIMIT_BYTES: u64 = 4 * 1024 * 1024 * 1024;
 const INVALID_QUERY: &str = "Invalid encrypted global query";
 
 struct Source {
+    record_codec: &'static str,
     buckets: Vec<Vec<u8>>,
     summary: Value,
     digest: String,
@@ -138,6 +149,10 @@ fn read_bounded(path: &Path, min: u64, max: u64) -> Result<Vec<u8>, String> {
 }
 
 fn read_source(path: &Path) -> Result<Source, String> {
+    read_source_with_codec(path, data::RECORD_CODEC)
+}
+
+fn read_source_with_codec(path: &Path, record_codec: &'static str) -> Result<Source, String> {
     let file = open_bounded(path, 2, MAX_SOURCE_BYTES)?;
     let mut source: Value =
         serde_json::from_reader(io::BufReader::new(file.take(MAX_SOURCE_BYTES + 1)))
@@ -179,7 +194,7 @@ fn read_source(path: &Path) -> Result<Source, String> {
         return Err("Global records must be an array".into());
     };
     for record in input {
-        let entry = data::encode_entry(&record)?;
+        let entry = data::encode_entry_with_codec(&record, record_codec)?;
         if !seen.insert(entry.txid.clone()) {
             return Err("Duplicate global source transaction ID".into());
         }
@@ -281,7 +296,7 @@ fn read_source(path: &Path) -> Result<Source, String> {
     let mut bucket_encoded_bytes = 0usize;
     let mut max_bucket_bytes = 0;
     for entries in grouped {
-        let bucket = data::encode_bucket_entries(&entries)?;
+        let bucket = data::encode_bucket_entries_with_codec(&entries, record_codec)?;
         max_bucket_bytes = max_bucket_bytes.max(bucket.len());
         bucket_encoded_bytes = bucket_encoded_bytes
             .checked_add(bucket.len())
@@ -293,6 +308,7 @@ fn read_source(path: &Path) -> Result<Source, String> {
         return Err("Global source exceeds the fixed 128-layer budget".into());
     }
     Ok(Source {
+        record_codec,
         buckets,
         summary,
         digest,
@@ -309,7 +325,7 @@ fn base_manifest(source: &Source, profile: &TableProfile) -> Value {
         "schema":data::SCHEMA,"geometry":data::GEOMETRY,"table":data::TABLE,
         "rows":data::ROWS,"rowBytes":data::ROW_BYTES,"payloadBytes":data::PAYLOAD_BYTES,
         "layerCount":source.layer_count,"hashAlgorithm":"sha256-display-v1",
-        "recordCodec":"full-envelope-zlib-v1","network":"mainnet",
+        "recordCodec":source.record_codec,"network":"mainnet",
         "sourceDigest":source.digest,"sourceSummary":source.summary,"scheme":profile.scheme
     })
 }
@@ -322,6 +338,7 @@ fn plan_value(source: &Source, profile: &TableProfile) -> Value {
     let physical_payload = layers * data::ROWS as u64 * data::PAYLOAD_BYTES as u64;
     json!({
         "schema":"zecblock-private-global-plan-v1","geometry":data::GEOMETRY,
+        "recordCodec":source.record_codec,
         "status":"experimental-uncertified","sourceDigest":source.digest,"sourceSummary":source.summary,
         "rows":data::ROWS,"rowBytes":data::ROW_BYTES,"payloadBytes":data::PAYLOAD_BYTES,
         "recordEncodedBytes":source.record_encoded_bytes,"bucketEncodedBytes":source.bucket_encoded_bytes,
@@ -350,6 +367,15 @@ pub(super) fn plan_global(path: &Path) -> Result<(), String> {
     let profile = data::profile()?;
     serde_json::to_writer(io::stdout().lock(), &plan_value(&source, &profile))
         .map_err(|error| error.to_string())?;
+    println!();
+    Ok(())
+}
+
+pub(super) fn plan_global_compact(path: &Path) -> Result<(), String> {
+    let source = read_source_with_codec(path, data::COMPACT_RECORD_CODEC)?;
+    let profile = data::profile()?;
+    serde_json::to_writer(io::stdout().lock(), &plan_value(&source, &profile))
+        .map_err(|e| e.to_string())?;
     println!();
     Ok(())
 }
@@ -522,6 +548,18 @@ fn prepare_layer(
 }
 
 pub(super) fn prepare_global(source_path: &Path, output: &Path) -> Result<(), String> {
+    prepare_global_with_codec(source_path, output, data::RECORD_CODEC)
+}
+
+pub(super) fn prepare_global_compact(source_path: &Path, output: &Path) -> Result<(), String> {
+    prepare_global_with_codec(source_path, output, data::COMPACT_RECORD_CODEC)
+}
+
+fn prepare_global_with_codec(
+    source_path: &Path,
+    output: &Path,
+    record_codec: &'static str,
+) -> Result<(), String> {
     if fs::symlink_metadata(output).is_ok() {
         return Err("Global output must be a new directory".into());
     }
@@ -535,7 +573,7 @@ pub(super) fn prepare_global(source_path: &Path, output: &Path) -> Result<(), St
         .file_name()
         .ok_or("Global output needs a directory name")?;
     let output = parent.join(name);
-    let source = read_source(source_path)?;
+    let source = read_source_with_codec(source_path, record_codec)?;
     let profile = data::profile()?;
     let mut manifest = base_manifest(&source, &profile);
     let context_id = data::manifest_context_id(&manifest)?;

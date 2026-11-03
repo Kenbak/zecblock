@@ -9,6 +9,7 @@ pub const GEOMETRY: &str = "global-2k-64k";
 pub const TABLE: &str = "txdirectory";
 pub const HASH_ALGORITHM: &str = "sha256-display-v1";
 pub const RECORD_CODEC: &str = "full-envelope-zlib-v1";
+pub const COMPACT_RECORD_CODEC: &str = "full-envelope-binary-zlib-v2";
 pub const ROWS: usize = 2048;
 pub const ROW_BYTES: usize = 65_536;
 pub const AUTH_HEADER_BYTES: usize = 512;
@@ -21,12 +22,16 @@ pub const MAX_SOURCE_BYTES: usize = 128 * 1024 * 1024;
 pub const MAX_SOURCE_SUMMARY_BYTES: usize = 16 * 1024;
 pub const MAX_MANIFEST_BYTES: usize = 1024 * 1024;
 const RECORD_MAGIC: &[u8; 8] = b"ZBGLREC1";
+const COMPACT_RECORD_MAGIC: &[u8; 8] = b"ZBGLREC2";
 const RECORD_HEADER_BYTES: usize = 16;
 const BUCKET_MAGIC: &[u8; 8] = b"ZBGLBKT1";
 const BUCKET_HEADER_BYTES: usize = 16;
 const ENTRY_HEADER_BYTES: usize = 72;
 const ROW_MAGIC: &[u8; 8] = b"ZBGLROW1";
 const MERKLE_DEPTH: usize = 11;
+
+#[path = "global_codec.rs"]
+mod compact_codec;
 
 pub fn profile() -> Result<TableProfile, String> {
     TableProfile::new(SCHEMA, GEOMETRY, TABLE, ROWS as u64, ROW_BYTES as u32)
@@ -83,8 +88,19 @@ pub fn validate_record(record: &Value, selected: &str) -> Result<(), String> {
 /// Compress the complete canonical envelope. The one deduplication flag restores
 /// decoded.hex only when it was present and exactly equal to raw.hex.
 pub fn encode_record(record: &Value) -> Result<Vec<u8>, String> {
-    let full = canonical(record)?;
-    if full.is_empty() || full.len() > MAX_DECODED_RECORD_BYTES {
+    encode_record_with_codec(record, RECORD_CODEC)
+}
+
+pub fn supported_record_codec(codec: &str) -> bool {
+    matches!(codec, RECORD_CODEC | COMPACT_RECORD_CODEC)
+}
+
+pub fn encode_record_with_codec(record: &Value, codec: &str) -> Result<Vec<u8>, String> {
+    if !supported_record_codec(codec) {
+        return Err("Unsupported global full-record codec".into());
+    }
+    let full_bytes = canonical(record)?.len();
+    if full_bytes == 0 || full_bytes > MAX_DECODED_RECORD_BYTES {
         return Err("Restored global full-record envelope exceeds its limit".into());
     }
     let txid = record["txid"].as_str().ok_or("Missing full-record txid")?;
@@ -98,9 +114,17 @@ pub fn encode_record(record: &Value) -> Result<Vec<u8>, String> {
             .ok_or("Invalid decoded transaction object")?
             .remove("hex");
     }
-    let decoded = canonical(&payload)?;
+    let decoded = if codec == COMPACT_RECORD_CODEC {
+        compact_codec::encode(&payload)?
+    } else {
+        canonical(&payload)?
+    };
     let mut stored = Vec::with_capacity(RECORD_HEADER_BYTES + decoded.len().min(64 * 1024));
-    stored.extend_from_slice(RECORD_MAGIC);
+    stored.extend_from_slice(if codec == COMPACT_RECORD_CODEC {
+        COMPACT_RECORD_MAGIC
+    } else {
+        RECORD_MAGIC
+    });
     stored.extend_from_slice(&(decoded.len() as u32).to_le_bytes());
     stored.push(u8::from(restore_hex));
     stored.extend_from_slice(&[0; 3]);
@@ -114,24 +138,49 @@ pub fn encode_record(record: &Value) -> Result<Vec<u8>, String> {
 fn validate_record_header(stored: &[u8]) -> Result<usize, String> {
     if stored.len() <= RECORD_HEADER_BYTES
         || stored.len() > MAX_ENCODED_RECORD_BYTES
-        || &stored[..8] != RECORD_MAGIC
+        || (&stored[..8] != RECORD_MAGIC && &stored[..8] != COMPACT_RECORD_MAGIC)
         || stored[12] & !1 != 0
         || stored[13..16] != [0; 3]
     {
         return Err("Invalid compressed global full-record header or length".into());
     }
     let length = u32::from_le_bytes(stored[8..12].try_into().unwrap()) as usize;
-    if length == 0 || length > MAX_DECODED_RECORD_BYTES {
+    let max_payload = if &stored[..8] == COMPACT_RECORD_MAGIC {
+        compact_codec::MAX_PAYLOAD_BYTES
+    } else {
+        MAX_DECODED_RECORD_BYTES
+    };
+    if length == 0 || length > max_payload {
         return Err("Decoded global full-record length exceeds its limit".into());
     }
     Ok(length)
 }
 
+pub fn stored_record_codec(stored: &[u8]) -> Result<&'static str, String> {
+    validate_record_header(stored)?;
+    Ok(if &stored[..8] == COMPACT_RECORD_MAGIC {
+        COMPACT_RECORD_CODEC
+    } else {
+        RECORD_CODEC
+    })
+}
+
 pub fn decode_record(stored: &[u8], selected: &str) -> Result<Value, String> {
+    decode_record_with_codec(stored, selected, stored_record_codec(stored)?)
+}
+
+pub fn decode_record_with_codec(
+    stored: &[u8],
+    selected: &str,
+    codec: &str,
+) -> Result<Value, String> {
     use miniz_oxide::inflate::{
         TINFLStatus,
         core::{DecompressorOxide, decompress, inflate_flags},
     };
+    if !supported_record_codec(codec) || stored_record_codec(stored)? != codec {
+        return Err("Global full-record codec differs from its publication".into());
+    }
     let length = validate_record_header(stored)?;
     let mut decoded = vec![0; length];
     let (status, consumed, produced) = decompress(
@@ -148,10 +197,15 @@ pub fn decode_record(stored: &[u8], selected: &str) -> Result<Value, String> {
     {
         return Err("Invalid, truncated, trailing or oversized compressed global record".into());
     }
-    let mut record: Value = serde_json::from_slice(&decoded).map_err(|error| error.to_string())?;
-    if canonical(&record)? != decoded {
-        return Err("Noncanonical compressed global full-record JSON".into());
-    }
+    let mut record: Value = if codec == COMPACT_RECORD_CODEC {
+        compact_codec::decode(&decoded)?
+    } else {
+        let record = serde_json::from_slice(&decoded).map_err(|error| error.to_string())?;
+        if canonical(&record)? != decoded {
+            return Err("Noncanonical compressed global full-record JSON".into());
+        }
+        record
+    };
     if stored[12] == 1 {
         let hex = record["raw"]["hex"]
             .as_str()
@@ -181,7 +235,11 @@ pub struct EncodedEntry {
 }
 
 pub fn encode_entry(record: &Value) -> Result<EncodedEntry, String> {
-    let encoded = encode_record(record)?;
+    encode_entry_with_codec(record, RECORD_CODEC)
+}
+
+pub fn encode_entry_with_codec(record: &Value, codec: &str) -> Result<EncodedEntry, String> {
+    let encoded = encode_record_with_codec(record, codec)?;
     Ok(EncodedEntry {
         txid: record["txid"]
             .as_str()
@@ -210,6 +268,16 @@ pub fn encode_bucket_refs(records: &[&Value]) -> Result<Vec<u8>, String> {
 /// Entries MUST originate from encode_entry; the decoder independently verifies
 /// the selected record's canonical digest and wire identity after authentication.
 pub fn encode_bucket_entries(entries: &[EncodedEntry]) -> Result<Vec<u8>, String> {
+    encode_bucket_entries_with_codec(entries, RECORD_CODEC)
+}
+
+pub fn encode_bucket_entries_with_codec(
+    entries: &[EncodedEntry],
+    codec: &str,
+) -> Result<Vec<u8>, String> {
+    if !supported_record_codec(codec) {
+        return Err("Unsupported global full-record codec".into());
+    }
     if entries.is_empty() {
         return Ok(Vec::new());
     }
@@ -227,7 +295,9 @@ pub fn encode_bucket_entries(entries: &[EncodedEntry]) -> Result<Vec<u8>, String
             return Err("Duplicate global bucket txid".into());
         }
         hash_bytes(&entry.record_sha256)?;
-        validate_record_header(&entry.encoded)?;
+        if stored_record_codec(&entry.encoded)? != codec {
+            return Err("Mixed global full-record codecs in bucket".into());
+        }
         total = total
             .checked_add(ENTRY_HEADER_BYTES + entry.encoded.len())
             .filter(|&n| n <= MAX_BUCKET_BYTES)
@@ -250,6 +320,17 @@ pub fn encode_bucket_entries(entries: &[EncodedEntry]) -> Result<Vec<u8>, String
 /// Framing of EVERY entry is checked before decoding only the selected record.
 /// Callers retrieving PIR rows must first authenticate and hash the whole bucket.
 pub fn decode_bucket(bucket: &[u8], selected: &str) -> Result<Option<Value>, String> {
+    decode_bucket_with_codec(bucket, selected, RECORD_CODEC)
+}
+
+pub fn decode_bucket_with_codec(
+    bucket: &[u8],
+    selected: &str,
+    codec: &str,
+) -> Result<Option<Value>, String> {
+    if !supported_record_codec(codec) {
+        return Err("Unsupported global full-record codec".into());
+    }
     let selected_bytes = display_bytes(selected)?;
     if bucket.is_empty() {
         return Ok(None);
@@ -290,6 +371,9 @@ pub fn decode_bucket(bucket: &[u8], selected: &str) -> Result<Option<Value>, Str
             .checked_add(length)
             .filter(|&end| end <= bucket.len())
             .ok_or("Truncated global bucket record")?;
+        if stored_record_codec(&bucket[header_end..end])? != codec {
+            return Err("Global bucket record codec differs from its publication".into());
+        }
         if txid == selected_bytes {
             matching = Some((
                 header_end..end,
@@ -304,7 +388,7 @@ pub fn decode_bucket(bucket: &[u8], selected: &str) -> Result<Option<Value>, Str
     let Some((range, commitment)) = matching else {
         return Ok(None);
     };
-    let record = decode_record(&bucket[range], selected)?;
+    let record = decode_record_with_codec(&bucket[range], selected, codec)?;
     if Sha256::digest(canonical(&record)?).as_slice() != commitment {
         return Err("Global full-record canonical digest mismatch".into());
     }
@@ -560,7 +644,9 @@ pub fn validate_manifest(manifest: &Value) -> Result<TableProfile, String> {
         || manifest["rowBytes"].as_u64() != Some(ROW_BYTES as u64)
         || manifest["payloadBytes"].as_u64() != Some(PAYLOAD_BYTES as u64)
         || manifest["hashAlgorithm"] != HASH_ALGORITHM
-        || manifest["recordCodec"] != RECORD_CODEC
+        || !manifest["recordCodec"]
+            .as_str()
+            .is_some_and(supported_record_codec)
         || manifest["network"] != "mainnet"
     {
         return Err("Unsupported global publication profile".into());
@@ -681,9 +767,13 @@ pub fn assemble_bucket(
     if bucket.len() != first.bucket_bytes || digest(&bucket) != first.bucket_sha256 {
         return Err("Global encoded bucket checksum mismatch".into());
     }
-    decode_bucket(&bucket, selected)
+    decode_bucket_with_codec(&bucket, selected, manifest["recordCodec"].as_str().unwrap())
 }
 
 #[cfg(test)]
 #[path = "global_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "global_codec_tests.rs"]
+mod codec_tests;

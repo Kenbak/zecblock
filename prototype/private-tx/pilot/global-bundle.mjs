@@ -36,6 +36,7 @@ export const NATIVE_SOURCE_PATHS = Object.freeze([
   'prototype/pir-browser/native',
   'prototype/pir-browser/src/full_record.rs',
   'prototype/pir-browser/src/global.rs',
+  'prototype/pir-browser/src/global_codec.rs',
   'prototype/pir-browser/bootstrap.py',
   'prototype/pir-browser/build.sh',
   'prototype/pir-browser/rust-toolchain.toml',

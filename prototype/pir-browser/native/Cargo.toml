@@ -8,6 +8,7 @@ publish = false
 zakura-pir-protocol = { path = "../.upstream/wallet-libraries/zakura/pir-protocol", default-features = false, features = ["native", "transparent"] }
 zakura-pir-query-server = { path = "../.upstream/wallet-libraries/zakura/pir-query-server", default-features = false, features = ["transparent"] }
 zakura-pir-server-core = { path = "../.upstream/wallet-libraries/zakura/pir-server-core", default-features = false, features = ["transparent"] }
+zakura-pir-client = { path = "../.upstream/wallet-libraries/zakura/pir-client", default-features = false, features = ["transparent"] }
 zakura-transaction-wire = { path = "../.upstream/wallet-libraries/zakura/transaction-wire" }
 base64 = "0.22"
 serde = { version = "1", features = ["derive"] }
@@ -18,6 +19,4 @@ miniz_oxide = "=0.8.9"
 reinspiring = { path = "../.upstream/ipir-sp/reinspiring", version = "=0.1.3-rc.1" }
 memmap2 = "=0.9.12"
 libc = "=0.2.191"
-
-[dev-dependencies]
-zakura-pir-client = { path = "../.upstream/wallet-libraries/zakura/pir-client", default-features = false, features = ["transparent"] }
+rayon = "=1.12.0"

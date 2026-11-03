@@ -1,14 +1,17 @@
 //! One opaque selection reused across every layer of a global publication.
 use crate::{full_record, global_data, js_error};
+use reinspiring::native::{NativeDecoder, NativeDecodingState};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use wasm_bindgen::prelude::*;
 use zakura_pir_client::transparent::native::{NativeSecret, TableClientExt, TableProfile};
+use zakura_pir_protocol::native::{D, Q_BITS, bits::contiguous_bytes_to_u64s};
 
 struct Pending {
     secret: NativeSecret,
     txid: String,
     row: usize,
+    decoding: Option<NativeDecodingState>,
 }
 
 /// All public layer hints are loaded before a private transaction ID is entered.
@@ -19,6 +22,7 @@ pub struct GlobalPirBrowser {
     publication_id: String,
     profile: TableProfile,
     public: Vec<u8>,
+    decoder: NativeDecoder,
     layers: usize,
     pending: Option<Pending>,
 }
@@ -46,6 +50,19 @@ impl GlobalPirBrowser {
     /// Discard the pending selection. This does not claim device memory erasure.
     pub fn cancel_query(&mut self) {
         self.pending = None;
+    }
+
+    /// Prepare fresh request-local products while the one HTTP reply is in
+    /// flight. This uses only the already authenticated public masks and the
+    /// fresh secret; it sends no message and never examines server content.
+    pub fn prepare_decode(&mut self) -> Result<(), JsValue> {
+        self.prepare_decoding().map_err(js_error)
+    }
+
+    /// Public transform storage only; excludes context/allocator/WASM overhead.
+    #[wasm_bindgen(getter)]
+    pub fn decoder_coefficient_bytes(&self) -> usize {
+        self.decoder.coefficient_bytes()
     }
 
     #[wasm_bindgen(getter)]
@@ -88,11 +105,13 @@ impl GlobalPirBrowser {
             .as_str()
             .ok_or("Missing global publication identity")?
             .to_owned();
+        let decoder = Self::prepare_decoder(&profile, public_setups)?;
         Ok(Self {
             manifest,
             publication_id,
             profile,
             public: public_setups.to_vec(),
+            decoder,
             layers,
             pending: None,
         })
@@ -108,18 +127,93 @@ impl GlobalPirBrowser {
             secret,
             txid: txid.to_ascii_lowercase(),
             row,
+            decoding: None,
         });
         Ok(query)
     }
 
     fn decode_bundle(&mut self, bundle: &[u8]) -> Result<String, String> {
-        let pending = self
+        let mut pending = self
             .pending
             .take()
             .ok_or("No pending global private query")?;
-        self.decode_complete_bundle(pending, bundle, |secret, public, response| {
-            self.profile.decode(secret, public, response)
+        let expected = self
+            .layers
+            .checked_mul(self.profile.scheme.response_bytes)
+            .ok_or("Global reply size overflow")?;
+        if bundle.len() != expected {
+            return Err("Global response bundle has the wrong length".into());
+        }
+        let decoding = match pending.decoding.take() {
+            Some(state) => state,
+            None => self
+                .decoder
+                .prepare_request(&pending.secret)
+                .map_err(|e| e.to_string())?,
+        };
+        let coefficients: Vec<u64> = bundle
+            .chunks_exact(self.profile.scheme.response_bytes)
+            .flat_map(|response| {
+                contiguous_bytes_to_u64s(response, self.profile.native.response_bits)
+            })
+            .map(|value| value << (Q_BITS - self.profile.native.response_bits))
+            .collect();
+        let decoded = decoding.decrypt(&coefficients).map_err(|e| e.to_string())?;
+        let rows: Vec<u8> = decoded.into_iter().map(|value| value as u8).collect();
+        if rows.len() != self.layers * self.profile.row_bytes {
+            return Err("Global decoded shape mismatch".into());
+        }
+        let mut chunks = rows.chunks_exact(self.profile.row_bytes);
+        self.decode_complete_bundle(pending, bundle, |_, _, _| {
+            chunks
+                .next()
+                .map(|row| row.to_vec())
+                .ok_or_else(|| "Missing decoded global layer".into())
         })
+    }
+
+    fn prepare_decoder(profile: &TableProfile, public: &[u8]) -> Result<NativeDecoder, String> {
+        if profile.native.entry_bytes() != 1 {
+            return Err("Global decoder requires the pinned P8 profile".into());
+        }
+        let mut first = Vec::new();
+        let mut other = Vec::new();
+        for setup in public.chunks_exact(profile.scheme.public_bytes) {
+            let masks: Vec<_> = contiguous_bytes_to_u64s(setup, profile.native.mask_bits)
+                .into_iter()
+                .map(|value| value << (Q_BITS - profile.native.mask_bits))
+                .collect();
+            if masks.len() != 2 * profile.cols {
+                return Err("Global public mask shape mismatch".into());
+            }
+            first.extend(
+                masks[..profile.cols]
+                    .chunks_exact(D)
+                    .map(|mask| mask.to_vec()),
+            );
+            other.extend(
+                masks[profile.cols..]
+                    .chunks_exact(D)
+                    .map(|mask| mask.to_vec()),
+            );
+        }
+        NativeDecoder::new(&profile.native.params(), &first, Some(&other))
+            .map_err(|e| e.to_string())
+    }
+
+    fn prepare_decoding(&mut self) -> Result<(), String> {
+        let pending = self
+            .pending
+            .as_mut()
+            .ok_or("No pending global private query")?;
+        if pending.decoding.is_none() {
+            pending.decoding = Some(
+                self.decoder
+                    .prepare_request(&pending.secret)
+                    .map_err(|e| e.to_string())?,
+            );
+        }
+        Ok(())
     }
 
     fn decode_complete_bundle(
@@ -450,6 +544,8 @@ mod tests {
         assert!(client.pending.is_none());
         let second = client.prepare_query(txid).unwrap();
         assert_ne!(first, second);
+        client.prepare_decoding().unwrap();
+        assert!(client.pending.as_ref().unwrap().decoding.is_some());
         assert!(client.decode_bundle(&[]).is_err());
         assert!(client.pending.is_none());
         assert!(client.decode_bundle(&[]).is_err());
@@ -555,6 +651,34 @@ mod tests {
         let first_response = first.answer(&profile, &query);
         let second_response = second.answer(&profile, &query);
         assert_ne!(first_response, second_response);
+        let decoder = GlobalPirBrowser::prepare_decoder(
+            &profile,
+            &[first.public.clone(), second.public.clone()].concat(),
+        )
+        .unwrap();
+        assert!(decoder.coefficient_bytes() > 0);
+        let bodies: Vec<u64> = [&first_response, &second_response]
+            .into_iter()
+            .flat_map(|response| contiguous_bytes_to_u64s(response, profile.native.response_bits))
+            .map(|x| x << (Q_BITS - profile.native.response_bits))
+            .collect();
+        let decoded = decoder
+            .prepare_request(&secret)
+            .unwrap()
+            .decrypt(&bodies)
+            .unwrap();
+        let expected: Vec<u8> = [&first, &second]
+            .into_iter()
+            .flat_map(|layer| {
+                layer.database[target * profile.row_bytes..(target + 1) * profile.row_bytes]
+                    .iter()
+                    .copied()
+            })
+            .collect();
+        assert_eq!(
+            decoded.into_iter().map(|x| x as u8).collect::<Vec<_>>(),
+            expected
+        );
         for (layer, response) in [(&first, first_response), (&second, second_response)] {
             let decoded = profile.decode(&secret, &layer.public, &response).unwrap();
             assert_eq!(

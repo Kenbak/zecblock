@@ -20,6 +20,13 @@ acceptance through the separate loopback/SSH demo at port 4320. Large lookups
 currently take about 93–96 seconds. Independent cryptographic approval, full-history
 backfill and live global publication remain open; existing pilot paths stay separate.
 
+The separate optimized v2 demo is at `http://127.0.0.1:4324/`: 33 layers,
+39.42 GB artifacts, 3.58–3.88-second browser lookups and 7.05-second initialization
+in the reduced Chrome test. It uses a 48-GiB-high/52-GiB-max cache budget.
+Same-4-GiB server evaluation is 39.5 s baseline versus 16.2 s cached.
+Historical record bodies are estimated at 397 GB (approximate interval 301–492 GB),
+excluding the final PIR layout and operational headroom. [Measured scope](GLOBAL.md).
+
 ## Retained archive and live publication
 
 The archive implementation reuses the same pinned PIR engine and transaction

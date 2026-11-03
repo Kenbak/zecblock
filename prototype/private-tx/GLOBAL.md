@@ -18,6 +18,11 @@ the installed Node/browser runtime is exact `58b0ce9173cd0b894990db1be86f3500fae
 Acceptance uses driver `bc5f1bf8d5ad22e0e21d94d55e02eacdd1785c4a`. These are local
 feature-branch/lab states, not public production releases.
 
+The optimization commands documented below are a separate experimental path.
+The 71-layer sizes, installed identities and Chrome timings on this page belong
+to the completed v1 lab receipts above. Optimized main-host measurements and reduced Chrome acceptance are recorded below;
+the earlier receipts remain separate v1 evidence.
+
 ## Record and row layout
 
 The source schema is `zecblock-private-global-source-v1`, with `network:mainnet`
@@ -46,6 +51,18 @@ absent from this publication, rather than absent from Zcash.
 restored exactly. Decompression bounds both the stored representation and the
 complete reconstructed envelope. A restored record may be at most **33,554,432
 bytes (32 MiB)**; its encoded representation may be at most **8,322,944 bytes**.
+
+The opt-in `full-envelope-binary-zlib-v2` codec losslessly encodes the same JSON
+values before zlib compression. It stores a raw-transaction byte anchor and can
+reference repeated hex spans within it, preserving upper/lower case, arbitrary
+RPC fields, strings, Unicode, exact numbers and nulls. A root-only canonical
+JSON fallback bounds binary framing overhead. Equal `raw.decoded.hex`
+deduplication/restoration has the same presence-sensitive behavior as v1.
+The binary payload is bounded by 32 MiB plus nine framing bytes; the complete
+restored canonical envelope still has the unchanged **32 MiB** limit. Decoding
+checks lengths, nesting, expanded JSON size and canonical binary re-encoding,
+then the existing envelope digest and raw-txid validation apply. The manifest
+binds the codec, and record magic must match it throughout each bucket.
 
 The locally derived `global-2k-64k` profile uses table `txdirectory`:
 
@@ -93,6 +110,26 @@ and release a complete result. A successful result adds `found:true` and the
 global `publicationId` to the original record; it does not rewrite that record
 to the newest observation context.
 
+The optimized `GlobalPirBrowser` retains an upstream `NativeDecoder` containing
+public mask transforms for the authenticated publication. That construction is
+part of browser initialization. Each lookup still creates a fresh secret and
+request-local decoding products. After dispatching the one HTTP query, the
+worker calls the optional `prepare_decode()` hook to compute those products
+without examining any response content. A preparation exception is remembered
+locally: the worker still consumes and checks the complete bounded reply before
+reporting failure. The hook adds no request, acknowledgement, retry or fallback;
+older WASM clients without it retain the same transport path.
+
+Successful lookup measurements include `decodePrepareMs` and
+`decoderCoefficientBytes`. Preparation overlaps the HTTP interval, so
+`decodePrepareMs` is already included in `requestMs` and must not be added to it
+again. `encryptMs` ends before dispatch, `requestMs` ends after full reply
+consumption, `decodeMs` measures the remaining decode/validation/result work,
+and `totalMs` covers the lookup. `decoderCoefficientBytes` counts retained
+public transform coefficients only, excluding allocator, context and other
+WASM memory. Neither that counter nor these timings is a memory or latency
+guarantee.
+
 Absence and verification failure produce no partial record, automatic retry,
 ordinary transaction-API fallback, related-data fetch or automatic manifest
 refresh. The UI's Refresh publication action is manual. The request deadline is
@@ -115,8 +152,9 @@ and two prepared native files, `prepared-00.bin` and `prepared-01.bin`. Each
 prepared file holds 16 of the profile's 32 blocks. Preparation builds one hint
 block at a time and one layer at a time, rather than preprocessing all layers
 concurrently. Serving authenticates every layer on admission and reload, keeps
-one layer's database/prepared mappings resident at a time, and processes the
-entire layer list for every accepted query.
+one layer's database/prepared mappings at a time in the default `serve-global`
+mode, and processes the entire layer list for every accepted query. The opt-in
+cached mode described below instead retains mappings for the complete epoch.
 
 Per layer, the plan budgets **134,217,728 database bytes**, **360,448 public setup
 bytes** and **1,074,791,712 prepared bytes** at the planned/maximum prepared
@@ -208,11 +246,137 @@ without replacing an existing directory:
 "$PIR_NATIVE" prepare-global "$PIR_LAB/source.json" "$PIR_LAB/publication"
 ```
 
+Those two commands retain the v1 codec default. To opt in to codec v2, inspect
+its actual plan and choose another new destination:
+
+```sh
+"$PIR_NATIVE" plan-global-compact "$PIR_LAB/source.json" > "$PIR_LAB/plan-v2.json"
+"$PIR_NATIVE" prepare-global-compact "$PIR_LAB/source.json" "$PIR_LAB/publication-v2"
+```
+
+Both plans validate and encode the supplied full records without PIR
+preprocessing. The codec changes the encoded bucket sizes and therefore can
+change the layer count; it does not change the pinned row geometry, encrypted
+upload size, per-layer reply size, source authority or retention semantics.
+Neither command modifies an existing publication or selects it for serving.
+
 The complete source is unnecessary for native serving once immutable artifacts
 have been prepared. Keep the frozen source separately as a private acceptance
 oracle if running the Chrome test. `anchors.json` generated in the publication
 is canonical native JSON bound by the manifest; the capture's separately
 formatted `capture-anchors.json` is a receipt and must not replace it.
+
+## Experimental cached evaluation and offline profiling
+
+`serve-global-cached <publication>` is an explicit Linux-only alternative to
+the unchanged `serve-global` default. Admission hashes every database/public/
+prepared artifact, parses and validates the native prepared coefficients,
+compares the published masks, and retains the complete epoch's database and
+prepared-file mappings. Each query uses the same parsing, complete layer order,
+scan and packing operations as default serving. Cached serving has no selected
+layer or prefix option. Retained virtual mappings do not guarantee that their
+pages fit RAM; OS/cgroup limits and actual residency remain authoritative.
+
+The cached process must run under an unprivileged non-root Linux identity with
+matching real/effective/saved/filesystem UIDs, matching real/effective GIDs and
+no effective, permitted or ambient capabilities. Publication directories must
+be root-owned **0750** and ordinary artifact files root-owned **0640**, with a
+readable group for the query identity. All publication ancestors must be
+root-owned ordinary directories without group/other write permission. Normal
+preparation creates private 0700/0600 artifacts; a trusted root publisher must
+finalize the required ownership/modes before cache admission.
+
+The root publisher must close writable descriptors and never mutate admitted
+inodes through any alias. The evaluator retains descriptors and checks their
+device/inode, size, mode, ownership, link count and change/modification times
+against both descriptor and path before and after evaluation. A persistent
+change invalidates the epoch and prevents a successful reply. These metadata
+checks **cannot make a file-backed mmap safe against a concurrent root writer
+truncating or changing the inode**. Finish ownership, mode and hardlink changes
+before admission; replace the epoch through a separately controlled lifecycle.
+
+The Node service opts in only with
+`PRIVATE_TX_EVALUATOR_MODE=serve-global-cached`; omitting it retains
+`serve-global`. The fresh canonical guard, immutable publication ID and full
+bundle checks remain required in either mode. Artifact/cache admission is
+startup work, and the HTTP listener waits for it before becoming available.
+It must be reported separately from lookup latency rather than silently
+removed from the cost of starting a client/service.
+
+`profile-global` is an offline diagnostic using a public benchmark row, not a
+browser lookup or an alternate private-response protocol:
+
+```sh
+"$PIR_NATIVE" profile-global /absolute/publication \
+  --mode baseline --layers 1 --iterations 1 > /absolute/private/reports/profile-prefix.json
+"$PIR_NATIVE" profile-global /absolute/root-published/immutable-publication \
+  --mode compare --layers all --iterations 2 > /absolute/private/reports/profile-all.json
+```
+
+The second command requires the same non-root Linux/immutable-artifact policy
+as cached serving. Modes are `baseline`, `cached` and `compare`; defaults are
+`baseline`, one layer and one iteration, with **1–20 iterations** admitted.
+`--layers N` profiles an ordered prefix; if N is below the publication's layer
+count, that result is not a complete protocol response. Use `--layers all` for
+an explicit whole-publication comparison and check `completePublication` in the
+report.
+Each iteration prepares a fresh query. Compare mode gives the same ciphertext
+to both evaluators, alternates their run order between iterations, and requires
+byte-identical encrypted replies. Each evaluated row is separately decrypted,
+compared to its database row and checked against its Merkle commitment. Reports
+contain public identities, timings and counters, not queries, secrets or row
+contents.
+
+`metadataAdmissionNs` covers manifest/anchor admission; baseline runs perform
+artifact validation within each evaluation. `cachedAdmission` reports cached
+artifact admission separately from subsequent evaluations. `evaluationWallNs`
+includes the reported scan/packing work, benchmark row/public bookkeeping and
+JSON/base64 serialization, but excludes fresh client preparation, subsequent
+client verification and socket transport. `freshClientPreparationNs` and
+`clientVerificationNs` identify those separate phases. Prepared parsing and
+coefficient validation share one upstream API timing; proc/cgroup snapshots are
+cumulative and are not per-stage attribution. Prefix, startup, offline
+evaluation and actual Chrome timings must retain those different scopes.
+Measured full-publication results and timing scopes are recorded below.
+
+## Aggregate codec sizing and historical sampling
+
+`measure-global <source.json>` validates and round-trips the actual source with
+both codecs, then emits aggregate JSON to stdout. It accepts only a bounded
+ordinary source file of at most **128 MiB** containing **1–2,048 records**.
+It reports decoded/raw/encoded totals and maxima, encoded-size squares and
+aggregate candidate hash-bucket distributions, without transaction IDs or
+per-record output. It prepares no PIR tables and changes no publication or
+serving pointer:
+
+```sh
+"$PIR_NATIVE" measure-global "$PIR_LAB/source.json" > "$PIR_LAB/codec-statistics.json"
+```
+
+Candidate bucket counts at 2,048, 8,192, 16,384, 32,768, 65,536 and 131,072 rows
+describe that input only. They do not enable those other geometries or establish
+full-history bucket maxima, final serving size, preparation cost or a 700 GB fit.
+The three chosen stress blocks in the existing lab are not a probability sample.
+
+The separate read-only `pilot/measure-global-history.mjs` helper has `plan`,
+`capture` and `stats` stages. It fixes a pre-NU7 tip and seed before observing
+outcomes, then samples up to three 16-block clusters without replacement in
+each of eleven era strata: at most **33 clusters / 528 blocks**. Chosen
+genesis/large-transaction stress fixtures stay outside its probability
+estimator. Capacity splits must recover each entire selected cluster; incomplete
+or canonically unverified captures do not become estimates or measured zero.
+Full source files stay in private scratch on the source host; the native
+measurement output contains aggregates.
+
+The campaign caps work at **30 minutes**, **9,000 raw calls**, **8 GiB** of source
+files, and the existing **128 MiB / 2,048-record** bound per file, with at least
+200 ms raw-read pacing. The stats stage requires a complete capture with a final
+canonical-anchor recheck. Its stratified cluster total estimates and approximate
+95% intervals use finite-population correction and a Satterthwaite t
+approximation. Three clusters per era provide weak tail information: these
+intervals are not exact historical bounds and cannot bound unsampled exceptional
+records, collision maxima or complete serving storage. Historical campaign
+total serving-size qualification remains pending; measured scope is recorded below.
 
 ## Canonical guard and isolated HTTP service
 
@@ -242,8 +406,9 @@ PRIVATE_TX_PORT=4320 \
 node prototype/private-tx/global-server.mjs
 ```
 
-The server binds only `127.0.0.1`, starts only the explicitly selected native
-`serve-global` evaluator, and waits for artifact admission before listening.
+The server binds only `127.0.0.1`, starts the explicitly selected native
+evaluator (`serve-global` by default), and waits for artifact admission before
+listening.
 The native child uses `RAYON_NUM_THREADS=2`; its JSONL transport carries only
 bounded encrypted request/reply frames. The loopback listener checks Host,
 Origin and fetch-site, rejects URL queries/fragments, and serves exact
@@ -370,3 +535,13 @@ timing, public publication identity and sizes; there is no Tor/OHTTP transport
 or independently trusted installed client. This is a custom complete-transaction
 protocol using the pinned upstream PIR engine, not a Vizor Transparent `/v2`
 wallet provider or an established wallet-interoperability contract.
+
+## Optimized demo and sizing result — November 3
+
+Whole-publication measurements now complete: at the same 2-CPU/4-GiB limit, baseline evaluation is **39.112/39.974 s** versus cached **15.975/16.366 s**, with byte-identical replies and all 33 row/Merkle checks passing. Admission is **39.416 s** separately; cached runs still read about 37 GB each. The separate 48-GiB-high/52-GiB-max cache scenario measures **2.213/2.182 s** after **30.933 s** admission, with no additional physical reads during evaluations. This changes the memory budget. A 1.322-second read-only metadata aggregate overlaps the first baseline; no uncontended-host or causal-impact claim is made.
+
+**Active loopback 4324:** runtime/native `4f6acb89edb915c62a3a57cb4631aa932f4a6c21`, cached mode, 2 CPUs, memory-high 48 GiB/max 52 GiB/no swap, and a separate read-only canonical guard. Driver `bf6f8e9f` reduced Chrome acceptance passes **large1, small/genesis, repeat, invalid**. Initialization is **7.053 s**, complete browser lookups **3.5845–3.8849 s**, with full-envelope/raw/export parity and fresh repeat ciphertext. Each upload is 20,992 bytes; each reply 2,703,360 bytes. The report retains 69 observation gaps in reply body/hash/finish and per-setup completion/hash visibility; this is not a complete packet capture. New-format absence and 33-layer malicious-reply browser cases were not run after scope was shortened. Native crypto/row-authentication and worker full-body/failure tests pass; those remaining browser cases and expanded metrics at 390px remain unverified.
+
+Historical measurement covers **33 randomly selected clusters/528 blocks/3,463 records**. A known indexed block-size auxiliary and fixed-coefficient difference estimator gives **396,682,184,550 encoded record-body bytes**, approximate 95% sampling interval **301.38–491.99 decimal GB**. This excludes final geometry, bucket padding, authentication, prepared material, build space and retained generations. Prepared storage depends on geometry; a lab multiplier must not be applied to another row count. Full-history maxima/capacity and a 700-GB fit remain unverified. Full sources stay on the main host; only aggregate receipts were downloaded.
+
+This task issued no production release or restart. Existing 4319/4320 remain separate. In the final audit, eight of ten baseline process identities match; API/bot restarted at **14:34:38/14:34:41 UTC**, with no restart issued by this task and cause unattributed. They had also restarted before the pre-build baseline. During both later profile windows all ten baseline identities match. No public deployment, full-history availability or cryptographic certification is claimed.

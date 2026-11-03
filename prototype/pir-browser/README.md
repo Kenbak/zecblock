@@ -7,6 +7,12 @@ local feasibility prototype, not a public ZecBlock service or a qualified
 production anonymity set. It does not implement the production wallet-pir HTTP
 envelope, private address history or mempool retrieval.
 
+The separate experimental global mode retrieves one shared hash row across
+every layer of a bounded publication without a public transaction catalogue.
+Its protocol, lab receipts and remaining gates are documented in
+[GLOBAL.md](../private-tx/GLOBAL.md). It does not change the original fixture or
+full-snapshot mode defaults and is not a full-history qualification.
+
 `bootstrap.py` downloads and verifies wallet-libraries
 `a7c842fd4f16790ed6739346f44557a97065d242` and ipir-sp
 `5ea080a3281a01c5459f585e0a1bbbde50ec2bd2`, including pinned archive checksums
@@ -138,13 +144,106 @@ must fail while an unaffected transaction still succeeds under that same setup.
 This tests selective failures rather than a generic bad packet. The helper is not
 part of the serving binary, deployment bundle or production CLI.
 
+## Experimental global codec and evaluator options
+
+Global source files use `zecblock-private-global-source-v1`; each full record
+retains its original snapshot and coverage. `plan-global` and `prepare-global`
+keep `full-envelope-zlib-v1` as their default. The explicit compact commands
+select `full-envelope-binary-zlib-v2`, which encodes JSON values losslessly,
+packs hex strings and references repeated raw-transaction byte spans before
+zlib compression. Unknown fields, case-sensitive strings, exact numbers,
+nulls and the presence of duplicate raw hex survive recovery. A canonical JSON
+fallback bounds binary overhead. Both codecs retain the **32 MiB restored
+canonical-envelope** limit, source validation, full-record digest and raw-txid
+checks. Manifest codec identity and record magic must agree; mixed codecs in a
+bucket fail.
+
+From the repository root, with explicit source and new output paths:
+
+```sh
+PIR_NATIVE="prototype/pir-browser/target/release/zecblock-pir-fixture"
+"$PIR_NATIVE" plan-global /absolute/source.json
+"$PIR_NATIVE" plan-global-compact /absolute/source.json
+"$PIR_NATIVE" prepare-global /absolute/source.json /absolute/NEW-v1-publication
+"$PIR_NATIVE" prepare-global-compact /absolute/source.json /absolute/NEW-v2-publication
+"$PIR_NATIVE" measure-global /absolute/source.json
+```
+
+Plans encode the actual input and report its bucket/layer costs without PIR
+preprocessing. Preparation remains an explicit operation with a new destination;
+neither path replaces or activates an existing publication. `measure-global`
+round-trips both codecs and prints aggregate sizes, maxima, size squares and
+candidate bucket distributions only, with no transaction IDs or per-record
+output. Its source-file bound is **128 MiB / 1–2,048 records**. It does not
+prepare matrices, publish data or qualify another row geometry. Sample bucket
+maxima are not historical maxima, a final serving-size estimate or proof of a
+storage fit. The separate historical sampling helper and its approximate
+interval/tail limitations are described in [GLOBAL.md](../private-tx/GLOBAL.md).
+
+`serve-global <publication>` retains the default admission/reload behavior.
+`serve-global-cached <publication>` explicitly admits and retains immutable
+database/prepared mappings for every layer, validating artifact hashes,
+prepared coefficients and public-mask equality at startup. Query parsing,
+all-layer scan/packing order and fixed reply geometry are unchanged. Retained
+mappings are virtual address space, not a promise that all pages fit RAM.
+
+Cached admission is Linux-only and requires a non-root query identity with
+matching real/effective/saved/filesystem UIDs, matching real/effective GIDs and
+no effective, permitted or ambient capabilities. Publication directories must
+be root-owned **0750**, ordinary artifact files root-owned **0640**, and their
+ancestors root-owned directories without group/other writes. The query group
+must have read access. Normal preparation's private 0700/0600 files require a
+trusted root publisher to finalize this policy before cache admission.
+The publisher must close writable descriptors and never mutate an admitted
+inode through any alias. Descriptor/path metadata is checked before and after
+evaluation; replacement, mode, ownership, link-count or timestamp changes
+invalidate the epoch. Metadata checks **cannot make concurrent root truncation
+or writes to a file-backed mmap safe**. Cache startup and ownership/mode/hardlink
+finalization belong to the publication lifecycle, not a private lookup.
+
+The offline `profile-global <publication>` command accepts
+`--mode baseline|cached|compare`, `--layers N|all` and `--iterations 1..20`.
+Defaults are baseline, one layer and one iteration. Cached/compare modes require
+the same immutable non-root Linux admission as cached serving. Prefix results
+are diagnostics and never valid complete HTTP replies. Compare mode uses one
+fresh query per iteration for both evaluators, alternates evaluation order and
+requires byte-identical encrypted replies. Evaluated rows must decrypt to their
+database bytes and pass Merkle authentication. For example:
+
+```sh
+"$PIR_NATIVE" profile-global /absolute/publication --mode baseline --layers 1 --iterations 1
+"$PIR_NATIVE" profile-global /absolute/root-published/immutable-publication --mode compare --layers all --iterations 2
+```
+
+Reports separate `metadataAdmissionNs`, `cachedAdmission`, per-evaluation stages,
+fresh client preparation and post-evaluation client verification. Cached
+admission is startup work, not lookup latency; baseline evaluations repeat
+artifact validation. Evaluation wall time includes benchmark bookkeeping and
+JSON/base64 serialization, excludes socket/browser transport, and is not an
+end-to-end private-lookup measurement. Prepared parsing/coefficient validation
+share one API timing, and proc/cgroup snapshots are cumulative. No queries,
+secrets or row contents are reported. Optimized main-host measurements and
+acceptance are pending; earlier v1 lab receipts do not qualify this path.
+
+`GlobalPirBrowser` now retains upstream `NativeDecoder` public transforms at
+initialization. `make_query` still creates a fresh secret; `prepare_decode()`
+optionally computes request-local products while the one HTTP request is in
+flight. `decode_response` consumes pending state, decrypts the complete bundle,
+authenticates every row and only then checks membership and restores a record.
+The worker still drains the complete fixed reply before reporting a local
+preparation error, with no additional request or fallback. Its
+`decodePrepareMs` is included in the overlapping `requestMs`, not an extra
+additive duration. `decoderCoefficientBytes` counts public transform storage
+only and excludes allocator, context and other WASM memory.
+
 ## Interfaces and checks
 
 WASM exports `PirBrowser(manifestJson, publicSetupBytes)`,
 `make_query(txid)`, `decode_response(bytes)` and `cancel_query()`.
 
-The native binary accepts `prepare <fixture-dir>`,
-`prepare-full <source.json> <publication-dir>` and `serve <publication-dir>`.
+The original native fixture commands remain `prepare <fixture-dir>`,
+`prepare-full <source.json> <publication-dir>` and `serve <publication-dir>`;
+the global commands above are separate explicit modes.
 Its matrix scan visits database rows contiguously while preserving exact
 wrapping arithmetic modulo 2^54. The explicit diagnostic command
 `benchmark-matvec <publication-dir> [iterations]` compares the previous strided

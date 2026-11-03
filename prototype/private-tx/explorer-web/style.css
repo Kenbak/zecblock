@@ -1,0 +1,18 @@
+:root{--bg:#0b0d10;--panel:#14181d;--line:#262c34;--text:#e8ecf1;--muted:#8b95a3;--accent:#f4b728;--ok:#4cc38a;--bad:#ef6b6b;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,sans-serif}
+@media (prefers-color-scheme:light){:root{--bg:#f6f7f9;--panel:#fff;--line:#e2e6ec;--text:#14181d;--muted:#5d6876;--accent:#b8860b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text)}
+main{max-width:1040px;margin:0 auto;padding:32px 16px 64px}
+h1{margin:0 0 8px;font-size:28px}h2{font-size:16px;margin:0 0 12px;color:var(--muted);font-weight:600}
+.lede{max-width:72ch;line-height:1.5;margin:0 0 8px}.muted{color:var(--muted);font-size:14px}
+form{display:flex;gap:8px;margin:24px 0}input{flex:1;min-width:0;padding:12px 14px;border-radius:10px;border:1px solid var(--line);background:var(--panel);color:var(--text);font:14px ui-monospace,SFMono-Regular,Menlo,monospace}
+button{padding:12px 18px;border:0;border-radius:10px;background:var(--accent);color:#111;font-weight:700;cursor:pointer}button:disabled{opacity:.5;cursor:wait}
+section{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:18px;margin-top:16px}
+section:empty{display:none}
+table{width:100%;border-collapse:collapse;font-size:14px}td,th{padding:7px 8px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}th{color:var(--muted);font-weight:500}
+td.num{text-align:right;font-variant-numeric:tabular-nums}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px 20px;margin-bottom:18px}
+.grid div span{display:block;color:var(--muted);font-size:12px;margin-bottom:2px}.grid div b{font-weight:600;word-break:break-all}
+.mono{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13px;word-break:break-all}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;border:1px solid var(--line);margin-right:6px}
+.found{color:var(--ok)}.absent,.error{color:var(--bad)}
+.io{display:grid;grid-template-columns:1fr 1fr;gap:16px}@media (max-width:760px){.io{grid-template-columns:1fr}form{flex-direction:column}}

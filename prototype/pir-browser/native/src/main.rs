@@ -379,8 +379,8 @@ fn main() {
             .parse()
             .map_err(|_| "invalid snapshot tip".into())
             .and_then(|tip| explorer::build(Path::new(records), Path::new(dir), tip)),
-        [_, mode, dir, port, threads] if mode == "explorer-serve" => match (port.parse(), threads.parse()) {
-            (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads),
+        [_, mode, dir, port, threads, web @ ..] if mode == "explorer-serve" && web.len() <= 1 => match (port.parse(), threads.parse()) {
+            (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads, web.first().map(Path::new)),
             _ => Err("invalid port or threads".into()),
         },
         [_, mode, addr, txid] if mode == "explorer-lookup" => explorer::lookup(addr, txid, &explorer::default_cache()),

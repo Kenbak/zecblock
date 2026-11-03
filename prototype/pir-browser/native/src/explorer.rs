@@ -25,13 +25,7 @@ use std::{
 use zakura_pir_client::transparent::native::TableClientExt as _;
 use zakura_pir_protocol::native::D;
 
-const SCHEMA_NAME: &str = "zecblock-private-explorer-test-v1";
-const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-row-v1";
-const ROW_BYTES: usize = 16_384;
-const ROW_HEADER: usize = 4;
-const TAG: usize = 12;
-const ENTRY_HEADER: usize = TAG + 2;
-const STUB_FLAG: u16 = 0x8000;
+use super::explorer_record::layout::{self, ENTRY_HEADER, ROW_BYTES, ROW_HEADER, STUB_FLAG, TAG, row_of, stub};
 const INLINE_MAX: usize = 4_096;
 const MAX_INSTANCE_ROWS: usize = 131_072;
 const TARGET_FILL: f64 = 0.85;
@@ -40,36 +34,6 @@ const STUB_RESERVE: usize = 1_024;
 
 // ---- shared helpers ----------------------------------------------------------
 
-fn row_of(txid: &[u8; 32], rows: u64) -> u64 {
-    let digest = Sha256::new().chain_update(ROW_HASH_DOMAIN).chain_update(txid).finalize();
-    u64::from_le_bytes(digest[..8].try_into().unwrap()) % rows
-}
-
-fn put_var(out: &mut Vec<u8>, mut value: u64) {
-    loop {
-        let byte = (value & 0x7f) as u8;
-        value >>= 7;
-        if value == 0 {
-            out.push(byte);
-            return;
-        }
-        out.push(byte | 0x80);
-    }
-}
-
-fn get_var(bytes: &[u8], at: &mut usize) -> Result<u64, String> {
-    let mut value = 0;
-    for shift in (0..64).step_by(7) {
-        let byte = *bytes.get(*at).ok_or("truncated varint")?;
-        *at += 1;
-        value |= u64::from(byte & 0x7f) << shift;
-        if byte & 0x80 == 0 {
-            return Ok(value);
-        }
-    }
-    Err("varint too long".into())
-}
-
 fn instance_rows(total_rows: usize) -> (usize, usize) {
     let instances = total_rows.div_ceil(MAX_INSTANCE_ROWS).max(1);
     let rows = total_rows.div_ceil(instances).div_ceil(D) * D;
@@ -77,7 +41,7 @@ fn instance_rows(total_rows: usize) -> (usize, usize) {
 }
 
 fn profile_for(kind: &str, rows: usize) -> Result<TableProfile, String> {
-    TableProfile::new(SCHEMA_NAME, &format!("explorer-{kind}-{rows}x{ROW_BYTES}"), TABLE, rows as u64, ROW_BYTES as u32)
+    TableProfile::new(layout::SCHEMA_NAME, &layout::geometry(kind, rows), TABLE, rows as u64, ROW_BYTES as u32)
 }
 
 fn io_err(error: impl std::fmt::Display) -> String {
@@ -158,13 +122,6 @@ fn records(path: &Path, mut visit: impl FnMut([u8; 32], &[u8]) -> Result<(), Str
         reader.read_exact(&mut body).map_err(io_err)?;
         visit(header[..32].try_into().unwrap(), &body)?;
     }
-}
-
-fn stub(start: u64, len: usize) -> Vec<u8> {
-    let mut out = Vec::with_capacity(12);
-    put_var(&mut out, start);
-    put_var(&mut out, len as u64);
-    out
 }
 
 fn write_overflow(maps: &mut [MmapMut], cursor: &mut u64, rows: usize, limit: u64, bytes: &[u8]) -> Result<u64, String> {
@@ -267,8 +224,8 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
     }
     let max_used = *used.iter().max().unwrap() as usize;
     let mean_used = used.iter().map(|&u| u as u64).sum::<u64>() as f64 / used.len() as f64;
-    let manifest = json!({"schema":SCHEMA_NAME,"snapshotTip":snapshot_tip,"records":count,"rowBytes":ROW_BYTES,
-        "rowHashDomain":String::from_utf8_lossy(ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,
+    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"records":count,"rowBytes":ROW_BYTES,
+        "rowHashDomain":String::from_utf8_lossy(layout::ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,
         "main":{"instances":main_instances,"rows":main_rows,"totalRows":total_rows,"inlineBytes":inline_bytes,
             "meanRowBytesUsed":mean_used,"maxRowBytesUsed":max_used,"spilledToOverflow":spills},
         "overflow":{"instances":overflow_instances,"rows":overflow_rows,"bytesUsed":cursor,"largeRecords":large},
@@ -354,7 +311,7 @@ fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: 
     stream.write_all(body)
 }
 
-pub(super) fn serve(dir: &Path, port: u16, threads: usize) -> Result<(), String> {
+pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -> Result<(), String> {
     let manifest: Value = serde_json::from_slice(&fs::read(dir.join("manifest.json")).map_err(io_err)?).map_err(io_err)?;
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
     let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad manifest");
@@ -370,6 +327,10 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize) -> Result<(), String>
             let table = |name: &str| if name == "main" { Ok(&main) } else if name == "overflow" { Ok(&overflow) } else { Err("unknown table".to_string()) };
             match route.as_str() {
                 "GET /manifest" => respond(&mut stream, "200 OK", "application/json", "", &serde_json::to_vec(&manifest).unwrap()).map_err(io_err),
+                r if r.starts_with("GET /publics/") => {
+                    let t = table(&r["GET /publics/".len()..])?;
+                    respond(&mut stream, "200 OK", "application/octet-stream", "", &t.publics.concat()).map_err(io_err)
+                }
                 r if r.starts_with("GET /public/") => {
                     let mut parts = r["GET /public/".len()..].split('/');
                     let t = table(parts.next().unwrap_or(""))?;
@@ -395,6 +356,20 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize) -> Result<(), String>
                     }
                     let timing = format!("X-Server-Ns: {}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\n", start.elapsed().as_nanos());
                     respond(&mut stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
+                }
+                r if r.starts_with("GET /") && web.is_some() && !r.contains("..") => {
+                    let name = match r["GET /".len()..].split('?').next().unwrap_or("") { "" => "index.html", other => other };
+                    let kind = match name.rsplit('.').next() {
+                        Some("html") => "text/html; charset=utf-8",
+                        Some("js") => "text/javascript",
+                        Some("wasm") => "application/wasm",
+                        Some("css") => "text/css",
+                        _ => "application/octet-stream",
+                    };
+                    match fs::read(web.unwrap().join(name)) {
+                        Ok(bytes) => respond(&mut stream, "200 OK", kind, "Cache-Control: no-store\r\n", &bytes).map_err(io_err),
+                        Err(_) => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
+                    }
                 }
                 _ => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
             }
@@ -502,31 +477,16 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path) -> Result<(), Str
     let global = row_of(&txid, total_rows) as usize;
     let rows = main.rows(&http, "main", &[global % main.rows], &mut timing)?;
     let row = &rows[0][global / main.rows];
-    let entries = u16::from_le_bytes([row[0], row[1]]);
-    let mut at = ROW_HEADER;
-    let mut found = None;
-    for _ in 0..entries {
-        let len = u16::from_le_bytes([row[at + TAG], row[at + TAG + 1]]);
-        let body = &row[at + ENTRY_HEADER..at + ENTRY_HEADER + (len & !STUB_FLAG) as usize];
-        if row[at..at + TAG] == txid[..TAG] {
-            found = Some((len & STUB_FLAG != 0, body.to_vec()));
-            break;
-        }
-        at += ENTRY_HEADER + (len & !STUB_FLAG) as usize;
-    }
-    let record = match found {
-        None => None,
-        Some((false, body)) => Some(body),
-        Some((true, stub)) => {
-            let mut at = 0;
-            let start = get_var(&stub, &mut at)? as usize;
-            let len = get_var(&stub, &mut at)? as usize;
-            let (first, last) = (start / ROW_BYTES, (start + len - 1) / ROW_BYTES);
-            let wanted: Vec<usize> = (first..=last).collect();
+    let record = match layout::find(row, &txid)? {
+        layout::Entry::Absent => None,
+        layout::Entry::Inline(body) => Some(body),
+        layout::Entry::Overflow { start, len } => {
+            let wanted: Vec<usize> = layout::overflow_rows(start, len).map(|g| g as usize).collect();
+            let first = wanted[0];
             let fetched = overflow.rows(&http, "overflow", &wanted.iter().map(|g| g % overflow.rows).collect::<Vec<_>>(), &mut timing)?;
             let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / overflow.rows].clone()).collect();
             timing.insert("overflowRows".into(), wanted.len() as u128);
-            Some(bytes[start - first * ROW_BYTES..][..len].to_vec())
+            Some(bytes[start as usize - first * ROW_BYTES..][..len].to_vec())
         }
     };
     let result = match record {

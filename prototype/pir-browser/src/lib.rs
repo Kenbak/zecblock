@@ -13,7 +13,10 @@ use zakura_pir_protocol::transparent::{
     },
 };
 
+mod explorer_client;
+pub mod explorer_record;
 pub mod full_record;
+pub use explorer_client::ExplorerPirBrowser;
 mod global_client;
 #[path = "global.rs"]
 pub mod global_data;

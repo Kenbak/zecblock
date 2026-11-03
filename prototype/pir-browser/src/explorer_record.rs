@@ -590,3 +590,101 @@ mod tests {
         assert_eq!(json["coinbaseHex"], "0401");
     }
 }
+
+// ---- table layout shared by builder, server and clients ----------------------
+
+pub mod layout {
+    use sha2::{Digest, Sha256};
+
+    pub const SCHEMA_NAME: &str = "zecblock-private-explorer-test-v1";
+    pub const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-row-v1";
+    pub const ROW_BYTES: usize = 16_384;
+    pub const ROW_HEADER: usize = 4;
+    pub const TAG: usize = 12;
+    pub const ENTRY_HEADER: usize = TAG + 2;
+    pub const STUB_FLAG: u16 = 0x8000;
+
+    /// Global main-table row for a txid in display byte order.
+    pub fn row_of(txid: &[u8; 32], rows: u64) -> u64 {
+        let digest = Sha256::new().chain_update(ROW_HASH_DOMAIN).chain_update(txid).finalize();
+        u64::from_le_bytes(digest[..8].try_into().unwrap()) % rows
+    }
+
+    pub fn geometry(kind: &str, rows: usize) -> String {
+        format!("explorer-{kind}-{rows}x{ROW_BYTES}")
+    }
+
+    pub fn put_var(out: &mut Vec<u8>, mut value: u64) {
+        loop {
+            let byte = (value & 0x7f) as u8;
+            value >>= 7;
+            if value == 0 {
+                out.push(byte);
+                return;
+            }
+            out.push(byte | 0x80);
+        }
+    }
+
+    fn get_var(bytes: &[u8], at: &mut usize) -> Result<u64, String> {
+        let mut value = 0;
+        for shift in (0..64).step_by(7) {
+            let byte = *bytes.get(*at).ok_or("truncated varint")?;
+            *at += 1;
+            value |= u64::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                return Ok(value);
+            }
+        }
+        Err("varint too long".into())
+    }
+
+    pub fn stub(start: u64, len: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(12);
+        put_var(&mut out, start);
+        put_var(&mut out, len as u64);
+        out
+    }
+
+    /// Where a txid's record sits in a decoded main row.
+    #[derive(Debug, PartialEq, Eq)]
+    pub enum Entry {
+        Absent,
+        Inline(Vec<u8>),
+        /// Byte range in the concatenated overflow table.
+        Overflow { start: u64, len: usize },
+    }
+
+    pub fn find(row: &[u8], txid: &[u8; 32]) -> Result<Entry, String> {
+        if row.len() != ROW_BYTES {
+            return Err("main row has the wrong length".into());
+        }
+        let entries = u16::from_le_bytes([row[0], row[1]]);
+        let mut at = ROW_HEADER;
+        for _ in 0..entries {
+            let header = row.get(at..at + ENTRY_HEADER).ok_or("row entry exceeds row")?;
+            let raw = u16::from_le_bytes([header[TAG], header[TAG + 1]]);
+            let len = (raw & !STUB_FLAG) as usize;
+            let body = row.get(at + ENTRY_HEADER..at + ENTRY_HEADER + len).ok_or("row entry exceeds row")?;
+            if header[..TAG] == txid[..TAG] {
+                if raw & STUB_FLAG == 0 {
+                    return Ok(Entry::Inline(body.to_vec()));
+                }
+                let mut at = 0;
+                let start = get_var(body, &mut at)?;
+                let len = get_var(body, &mut at)? as usize;
+                if len == 0 {
+                    return Err("empty overflow record".into());
+                }
+                return Ok(Entry::Overflow { start, len });
+            }
+            at += ENTRY_HEADER + len;
+        }
+        Ok(Entry::Absent)
+    }
+
+    /// Global overflow rows covering a byte range.
+    pub fn overflow_rows(start: u64, len: usize) -> std::ops::RangeInclusive<u64> {
+        start / ROW_BYTES as u64..=(start + len as u64 - 1) / ROW_BYTES as u64
+    }
+}

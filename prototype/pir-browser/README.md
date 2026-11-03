@@ -145,6 +145,13 @@ WASM exports `PirBrowser(manifestJson, publicSetupBytes)`,
 
 The native binary accepts `prepare <fixture-dir>`,
 `prepare-full <source.json> <publication-dir>` and `serve <publication-dir>`.
+Its matrix scan visits database rows contiguously while preserving exact
+wrapping arithmetic modulo 2^54. The explicit diagnostic command
+`benchmark-matvec <publication-dir> [iterations]` compares the previous strided
+scan with the contiguous scan using a public synthetic query and verifies equal
+outputs. It checks the P8 database checksum and reports scan timings only;
+loading, setup, packing, browser work and transport are excluded. This command
+is separate from the HTTP query protocol and does not publish or activate data.
 The latter reads one JSON line `{id,query:<base64>}` per request and returns
 `{id,response:<base64>}` or a generic error. It writes diagnostics only to
 stderr. This framing is a local harness around the pinned native primitives,

@@ -56,6 +56,29 @@ The existing loopback service can select the archive runtime with
 upgrade and rollback are in `pilot/upgrade-archive.py`; the legacy commands below
 continue to run the recent-publication workflow.
 
+## Measure historical records without publishing
+
+`pilot/measure-history.mjs` can run from a separate private scratch directory
+against an explicit existing runtime directory and evaluator binary. It uses
+the same bounded read-only PostgreSQL capture, full transaction/raw exporter,
+fresh canonical-header checks and native `plan-full` codec. It never prepares
+tables, changes a serving head or starts a service.
+
+```sh
+node pilot/measure-history.mjs --runtime /absolute/runtime/private-tx \
+  --binary /absolute/zecblock-pir-fixture --start 419200 --end 419215 \
+  --scratch /absolute/owned-private-scratch
+```
+
+The scratch directory must already exist, be owned by the process UID and have
+mode 0700. The default raw-read interval is 200 ms; operators must also respect
+the source API's shared rate limit. Each job admits at most 128 complete blocks,
+2,048 transactions and eight planned segments. Output contains aggregate sizes,
+type counts, canonical block identities and input hashes. Complete-block and
+collection capacity failures remain explicit. The output is a bounded sample;
+it makes no full-history size or availability claim. Temporary native planning
+inputs are removed after each call.
+
 ## Run
 
 Prerequisites: Rust **1.97.1**, `wasm32-unknown-unknown`, wasm-bindgen-cli

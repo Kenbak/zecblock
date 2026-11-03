@@ -12,15 +12,12 @@ use std::{
     io::{self, BufRead, Write},
     path::Path,
 };
-use zakura_pir_protocol::{
-    native::Q,
-    transparent::{
-        events::Txid,
-        native::TableProfile,
-        shard::{
-            display::placement_row,
-            txid::{self, DisplayEntry, DisplayFacts, DisplayOutput, Tag},
-        },
+use zakura_pir_protocol::transparent::{
+    events::Txid,
+    native::TableProfile,
+    shard::{
+        display::placement_row,
+        txid::{self, DisplayEntry, DisplayFacts, DisplayOutput, Tag},
     },
 };
 use zakura_pir_query_server::{
@@ -34,6 +31,7 @@ use zcash_transaction_wire::TransactionView;
 mod full;
 #[path = "../../src/full_record.rs"]
 pub mod full_record;
+mod matvec;
 
 const SCHEMA: &str = "zecblock-private-tx-fixture-v1";
 const GEOMETRY: &str = "fixture-2k";
@@ -168,20 +166,7 @@ impl Evaluator {
         let (keys, query) = self.profile.parse(upload)?;
         // This full linear scan is the same native-ring server intermediate
         // used by upstream roundtrip tests; it never decodes a selected row.
-        let intermediate: Vec<u64> = (0..self.profile.cols)
-            .map(|col| {
-                query
-                    .iter()
-                    .enumerate()
-                    .fold(0u64, |sum, (row, &coefficient)| {
-                        sum.wrapping_add(
-                            u64::from(self.database[row * self.profile.row_bytes + col])
-                                .wrapping_mul(coefficient),
-                        )
-                    })
-                    & (Q - 1)
-            })
-            .collect();
+        let intermediate = matvec::multiply(&self.database, self.profile.row_bytes, &query);
         self.profile.native.pack(&self.blocks, &keys, &intermediate)
     }
 }
@@ -302,6 +287,32 @@ fn serve(dir: &Path) -> Result<(), String> {
     Ok(())
 }
 
+// Explicit local CLI only: never used by the query protocol or HTTP service.
+fn benchmark_matvec(dir: &Path, iterations: usize) -> Result<(), String> {
+    let manifest: Value =
+        serde_json::from_slice(&fs::read(dir.join("manifest.json")).map_err(|e| e.to_string())?)
+            .map_err(|e| e.to_string())?;
+    let profile = if manifest["schema"] == full_record::SCHEMA {
+        full::validate_manifest(&manifest)?
+    } else if manifest["schema"] == SCHEMA {
+        profile()?
+    } else {
+        return Err("unsupported publication schema".into());
+    };
+    let database = fs::read(dir.join("database.bin")).map_err(|e| e.to_string())?;
+    if profile.native.entry_bytes() != 1
+        || database.len() != profile.rows * profile.row_bytes
+        || manifest["databaseSha256"] != hex::encode(Sha256::digest(&database))
+    {
+        return Err("matrix benchmark requires a checksum-verified P8 database".into());
+    }
+    let query = matvec::benchmark_query(profile.rows);
+    let result = matvec::benchmark(&database, profile.row_bytes, &query, iterations)?;
+    serde_json::to_writer(io::stdout().lock(), &result).map_err(|e| e.to_string())?;
+    println!();
+    Ok(())
+}
+
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let result = match args.as_slice() {
@@ -316,8 +327,13 @@ fn main() {
             full::prepare_full_legacy(Path::new(source), Path::new(dir))
         }
         [_, mode, source] if mode == "plan-full" => full::plan_full(Path::new(source)),
+        [_, mode, dir] if mode == "benchmark-matvec" => benchmark_matvec(Path::new(dir), 15),
+        [_, mode, dir, iterations] if mode == "benchmark-matvec" => iterations
+            .parse::<usize>()
+            .map_err(|_| "invalid benchmark iteration count".into())
+            .and_then(|iterations| benchmark_matvec(Path::new(dir), iterations)),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
-        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json>".into()),
+        _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | benchmark-matvec <directory> [iterations]".into()),
     };
     if let Err(error) = result {
         eprintln!("{error}");
@@ -338,6 +354,18 @@ mod tests {
             let selected = placement_row(&Tag::of(&id), 0, 0, 0, ROWS as u64) as usize;
             let (secret, upload) = evaluator.profile.prepare(selected).unwrap();
             let response = evaluator.answer(&upload).unwrap();
+            let (keys, query) = evaluator.profile.parse(&upload).unwrap();
+            let reference =
+                matvec::column_strided(&evaluator.database, evaluator.profile.row_bytes, &query);
+            assert_eq!(
+                response,
+                evaluator
+                    .profile
+                    .native
+                    .pack(&evaluator.blocks, &keys, &reference)
+                    .unwrap(),
+                "same encrypted upload must produce byte-identical packed replies"
+            );
             let decoded = evaluator
                 .profile
                 .decode(&secret, &evaluator.public, &response)
@@ -349,5 +377,84 @@ mod tests {
             assert_eq!(entry, Some(expected));
         }
         assert!(evaluator.answer(&[0; 10]).is_err());
+    }
+
+    #[test]
+    #[ignore = "explicit offline archive benchmark; set PIR_MATVEC_BENCH_DIR"]
+    fn archive_matrix_and_pack_timing() {
+        use std::{hint::black_box, time::Instant};
+
+        let directory = std::env::var("PIR_MATVEC_BENCH_DIR").unwrap();
+        let dir = Path::new(&directory);
+        let manifest: Value =
+            serde_json::from_slice(&fs::read(dir.join("manifest.json")).unwrap()).unwrap();
+        let database = fs::read(dir.join("database.bin")).unwrap();
+        assert_eq!(
+            manifest["databaseSha256"],
+            hex::encode(Sha256::digest(&database))
+        );
+        let profile = full::validate_manifest(&manifest).unwrap();
+        let evaluator = Evaluator::with_profile(database, profile).unwrap();
+        assert_eq!(
+            manifest["publicSha256"],
+            hex::encode(Sha256::digest(&evaluator.public))
+        );
+        assert_eq!(
+            manifest["scheme"],
+            serde_json::to_value(&evaluator.profile.scheme).unwrap()
+        );
+        let mut results = Vec::new();
+        // First, middle and reserved cover rows; fresh actual client ciphertext.
+        for selected in [0, evaluator.profile.rows / 2, evaluator.profile.rows - 1] {
+            let (secret, upload) = evaluator.profile.prepare(selected).unwrap();
+            let mut timings = Vec::new();
+            let mut expected_response = None;
+            for baseline in [true, false, false, true] {
+                let total_start = Instant::now();
+                let (keys, query) = evaluator.profile.parse(black_box(&upload)).unwrap();
+                let parse_ns = total_start.elapsed().as_nanos();
+                let scan_start = Instant::now();
+                let intermediate = if baseline {
+                    matvec::column_strided(&evaluator.database, evaluator.profile.row_bytes, &query)
+                } else {
+                    matvec::multiply(&evaluator.database, evaluator.profile.row_bytes, &query)
+                };
+                let scan_ns = scan_start.elapsed().as_nanos();
+                let pack_start = Instant::now();
+                let response = evaluator
+                    .profile
+                    .native
+                    .pack(&evaluator.blocks, &keys, &intermediate)
+                    .unwrap();
+                let pack_ns = pack_start.elapsed().as_nanos();
+                let total_ns = total_start.elapsed().as_nanos();
+                if let Some(expected) = &expected_response {
+                    assert_eq!(&response, expected);
+                } else {
+                    expected_response = Some(response.clone());
+                }
+                let decoded = evaluator
+                    .profile
+                    .decode(&secret, &evaluator.public, &response)
+                    .unwrap();
+                assert_eq!(
+                    decoded,
+                    evaluator.database[selected * evaluator.profile.row_bytes
+                        ..(selected + 1) * evaluator.profile.row_bytes]
+                );
+                timings.push(json!({ "baseline": baseline, "parseNs": parse_ns,
+                    "scanNs": scan_ns, "packNs": pack_ns, "totalNs": total_ns }));
+            }
+            results.push(json!({"row": selected, "timings": timings}));
+        }
+        println!(
+            "{}",
+            json!({ "schema": "zecblock-pir-matvec-pack-benchmark-v1",
+            "databaseSha256": manifest["databaseSha256"],
+            "publicSha256": manifest["publicSha256"],
+            "profile": evaluator.profile.scheme, "repliesByteIdentical": true,
+            "decodedRowsMatchDatabase": true, "results": results,
+            "timingScope": "parse + matrix scan + packing; excludes evaluator setup, client preparation/decryption and transport" })
+        );
     }
 }

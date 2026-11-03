@@ -386,7 +386,8 @@ try {
   selectionIds = [...ids, absent, occupiedAbsent];
   const remote = await operatorGet('/publication/manifest.json'); manifest = JSON.parse(remote.bytes.toString('utf8'));
   assert.equal(manifest.schema, 'zecblock-private-global-v1'); assert.equal(manifest.geometry, 'global-2k-64k');
-  assert.equal(manifest.network, 'mainnet'); assert.equal(manifest.hashAlgorithm, 'sha256-display-v1'); assert.equal(manifest.recordCodec, 'full-envelope-zlib-v1');
+  assert.equal(manifest.network, 'mainnet'); assert.equal(manifest.hashAlgorithm, 'sha256-display-v1');
+  assert.ok(['full-envelope-zlib-v1', 'full-envelope-binary-zlib-v2'].includes(manifest.recordCodec), 'Unsupported global record codec.');
   assert.equal(manifest.rows, 2048); assert.equal(manifest.rowBytes, 65536); assert.equal(manifest.payloadBytes, 65024);
   assert.ok(Number.isSafeInteger(manifest.layerCount) && manifest.layerCount > 0 && manifest.layerCount <= 128);
   assert.equal(manifest.layers.length, manifest.layerCount);

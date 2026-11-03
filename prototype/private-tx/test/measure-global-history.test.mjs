@@ -4,7 +4,7 @@ import { mkdtemp, readFile, readdir, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { createGlobalHistoryPlan, validateGlobalHistoryPlan, estimateGlobalHistory,
-  captureGlobalHistoryCampaign, CAMPAIGN_LIMITS } from '../pilot/measure-global-history.mjs';
+  captureGlobalHistoryCampaign, runGlobalHistoryCli, CAMPAIGN_LIMITS } from '../pilot/measure-global-history.mjs';
 
 const hash = height => height.toString(16).padStart(64, '0');
 function plan(blocks = 161) {
@@ -127,4 +127,27 @@ test('campaign budgets reject before capture and cancellation prevents subsequen
   const abort = new AbortController(); abort.abort();
   const result = await value.run({ signal: abort.signal });
   assert.equal(result.complete, false); assert.equal(value.calls.captures.length, 0);
+});
+
+test('native measurement stage joins complete parts to sampled clusters before expanding totals', async t => {
+  const value = await box(t); await value.run();
+  const summary = (await readdir(value.directory)).find(name => name.startsWith('capture-summary-'));
+  const calls = [];
+  const result = await runGlobalHistoryCli(['stats', '--directory', value.directory, '--summary', resolve(value.directory, summary),
+    '--binary', '/unused/native'], { measureSource: async (binary, source, options) => {
+      calls.push(source); assert.equal(binary, '/unused/native'); assert.equal(options.command, 'measure-global');
+      return { recordCount: 1, codecs: { v1: { encodedBytes: 30 }, v2: { encodedBytes: 10 } } };
+    } });
+  assert.equal(calls.length, 11); assert.equal(result.estimate.estimates.records.estimatedTotal, 11);
+  assert.equal(result.estimate.estimates.v1EncodedBytes.estimatedTotal, 330);
+  assert.equal(result.estimate.estimates.v2EncodedBytes.estimatedTotal, 110);
+  assert.equal(result.clusterMetrics.length, 11);
+});
+
+test('measurement rejects a native record count mismatch rather than silently dropping records', async t => {
+  const value = await box(t); await value.run();
+  const summary = (await readdir(value.directory)).find(name => name.startsWith('capture-summary-'));
+  await assert.rejects(runGlobalHistoryCli(['stats', '--directory', value.directory, '--summary', resolve(value.directory, summary),
+    '--binary', '/unused/native'], { measureSource: async () => ({ recordCount: 0,
+      codecs: { v1: { encodedBytes: 0 }, v2: { encodedBytes: 0 } } }) }), /complete captured part/);
 });

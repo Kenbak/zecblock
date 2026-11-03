@@ -67,8 +67,10 @@ No existing dataset reads the new tables. `test/v1/ask-logical-sync.test.js` (PG
 8. **Verify as the reader with its limits.** Set them before the role: `SET LOCAL temp_file_limit='16MB'; SET LOCAL work_mem='1MB'; SET LOCAL ROLE ask_public_reader;`. Then check:
    - all columns equal the same query on mainnet, row for row;
    - `unspent` equals `value_pools_daily.transparent` on every overlapping date.
+   - 2026-11-03 result: 3,658 rows (2016-10-28 → 2026-11-02) identical to mainnet on all 14 columns (same MD5) in 45 ms under the reader limits; no NULL realized cap; `unspent` equal to `value_pools_daily.transparent` on all 36 overlapping dates.
 9. **Live `sql_query`** still rejects `utxo_daily`.
 10. **Publish PR:**
     - Deploy the publish worker build before merging.
     - Then merge and deploy `analytics-availability.py`.
     - After Deploy API, verify with a live `sql_query` that **reads the value columns**, not only `count(*)`.
+    - **Prompt budget:** every published dataset adds its catalogue text to the model prompts, and `maximumCost` (`ask-budget.js`) refuses any request body over 48,000 bytes. The first publish draft took the classifier prompt to 48,257 bytes, and 8 tests failed. The trimmed text measures 47,535 (classifier) and 44,425 (agent) bytes. The next dataset needs a prompt-budget change first.

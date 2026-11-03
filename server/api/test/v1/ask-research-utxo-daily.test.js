@@ -9,7 +9,7 @@ const {sqlExamples}=require('../../../../lib/ask/sql-examples');
 const deploy=name=>fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8');
 const migration=deploy('utxo-daily-v1.sql'),rollback=deploy('utxo-daily-v1-rollback.sql'),grant=deploy('utxo-daily-grant-v1.sql');
 const source=deploy('utxo-daily-source-v1.sql'),sourceRollback=deploy('utxo-daily-source-v1-rollback.sql');
-const id='utxo_daily',preview={preview:true};
+const id='utxo_daily';
 const view=/CREATE VIEW analytics_public\.utxo_daily_query[\s\S]*?;\n/.exec(migration)[0];
 const ageColumns='date,lt_1m_zat,b_1_3m_zat,b_3_6m_zat,b_6_12m_zat,b_1_2y_zat,gt_2y_zat,total_unspent_zat,utxo_count,cdd,avg_dormancy_days,spent_count';
 const capColumns='date,realized_cap_usd,unspent_count,avg_cost_basis_usd';
@@ -22,27 +22,27 @@ function viewColumns(sql){
  return parts.map(p=>{p=p.trim();const alias=/\bAS\s+([a-z0-9_]+)$/i.exec(p);return alias?alias[1]:p.split('.').pop();});
 }
 
-test('utxo_daily is an unpublished extended dataset until its rollout is verified',async()=>{
+// Published 2026-11-03 after the host rollout was verified (utxo-daily.md).
+test('utxo_daily is a published extended dataset with guidance',async()=>{
  const {cases,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
- assert.equal(isPublished(id),false);assert.equal(isPublished(id,preview),true);
- assert.ok(!catalogueFor(true).some(d=>d.id===id));assert.ok(catalogueFor(true,preview).some(d=>d.id===id));
- assert.ok(!catalogueFor(false,preview).some(d=>d.id===id));
- await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM utxo_daily',limit:1},{extended:true}),/not admitted/);
- assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM utxo_daily',limit:1},{extended:true,...preview})).datasets,[id]);
+ assert.equal(isPublished(id),true);
+ assert.ok(catalogueFor(true).some(d=>d.id===id));assert.ok(!catalogueFor(false).some(d=>d.id===id));
+ await assert.rejects(compileResearchSQL({version:3,sql:'SELECT * FROM utxo_daily',limit:1}),/not admitted/);
+ assert.deepEqual((await compileResearchSQL({version:3,sql:'SELECT * FROM utxo_daily',limit:1},{extended:true})).datasets,[id]);
  assert.ok(!coreGatedIds.includes(id));
- assert.doesNotMatch(instructionsFor(true),/read utxo_daily/);
- assert.match(instructionsFor(true,preview),/read utxo_daily \(completed UTC dates from 2016-10-28\)/);
- assert.match(instructionsFor(true,preview),/never SUM unspent or the age columns across dates/);
- assert.match(instructionsFor(true,preview),/daily-price estimates/);
- assert.deepEqual(pendingCases.filter(c=>(c.requires||[]).includes(id)).map(c=>c.id),['utxo_dormant_2026_10']);
- assert.ok(!cases.some(c=>(c.requires||[]).includes(id)));
+ assert.match(instructionsFor(true),/read utxo_daily \(completed UTC dates from 2016-10-28\)/);
+ assert.match(instructionsFor(true),/never SUM unspent or the age columns across dates/);
+ assert.match(instructionsFor(true),/daily-price estimates/);
+ assert.doesNotMatch(instructionsFor(false),/read utxo_daily/);
+ assert.ok(pendingCases.every(c=>!(c.requires||[]).includes(id)));
+ assert.ok(cases.some(c=>c.id==='utxo_dormant_2026_10'));
 });
 
 test('catalogue columns are exactly the view columns and semantics are stated',()=>{
  const entry=researchCatalogue.find(d=>d.id===id);
  assert.deepEqual(viewColumns(view),entry.columns.split(', '));
  assert.ok(coreViews.includes('utxo_daily_query'));
- for(const re of [/since 2016-10-28/,/value above zero/,/equal to the node-reported transparent pool/,/sum to unspent/,/coin-days destroyed/,/daily USD price of its creation date/,/estimates/,/never sum them across dates/,/can change slightly/])assert.match(entry.description,re);
+ for(const re of [/since 2016-10-28/,/value above zero/,/equals the node-reported transparent pool/,/split it by output age/,/coin-days destroyed/,/creation-date USD price/,/estimates, NULL if unmatched/,/Zatoshi stocks/,/can change slightly/])assert.match(entry.description,re);
 });
 
 test('USD columns carry the usd unit, not zatoshi',()=>{
@@ -51,16 +51,16 @@ test('USD columns carry the usd unit, not zatoshi',()=>{
  assert.match(quality,/utxo_daily:\['unspent','age_lt_1m','age_1_3m','age_3_6m','age_6_12m','age_1_2y','age_gt_2y','realized_cap_usd','avg_cost_basis_usd'\]/);
 });
 
-test('examples compile in preview; the raw tables stay unreachable',async()=>{
+test('examples compile; the raw tables stay unreachable',async()=>{
  const examples=sqlExamples.filter(e=>(e.datasets||[]).includes(id));
  assert.deepEqual(examples.map(e=>e.id),['utxo-age-monthly']);
  for(const example of examples){
-  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true,...preview});
+  const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:50},{extended:true});
   assert.deepEqual(compiled.datasets,[id],example.id);
   assert.equal(displaySQL(compiled.request.sql).includes('analytics_public'),false);
  }
  for(const sql of ['WITH utxo_daily AS (SELECT 1) SELECT * FROM utxo_daily','SELECT * FROM public.utxo_age_daily','SELECT * FROM transparent_realized_cap_daily'])
-  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true,...preview}));
+  await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true}));
 });
 
 test('migrations are guarded, keep bookkeeping private and order destination before source',()=>{

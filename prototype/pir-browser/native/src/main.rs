@@ -28,6 +28,7 @@ use zakura_pir_server_core::native::{
 };
 use zcash_transaction_wire::TransactionView;
 
+mod chunk_spike;
 mod full;
 #[path = "../../src/full_record.rs"]
 pub mod full_record;
@@ -354,6 +355,13 @@ fn main() {
             .parse::<usize>()
             .map_err(|_| "invalid benchmark iteration count".into())
             .and_then(|iterations| benchmark_matvec(Path::new(dir), iterations)),
+        [_, mode, rows, row_bytes, threads, queries] if mode == "spike-chunk" => (|| {
+            let rows = rows.parse().map_err(|_| "invalid rows")?;
+            let row_bytes = row_bytes.parse().map_err(|_| "invalid row bytes")?;
+            let threads = threads.split(',').map(str::parse).collect::<Result<Vec<usize>, _>>().map_err(|_| "invalid threads")?;
+            let queries = queries.parse().map_err(|_| "invalid queries")?;
+            chunk_spike::run(rows, row_bytes, &threads, queries)
+        })(),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
         _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global|plan-global-compact|measure-global <source.json> | prepare-global|prepare-global-compact <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global|serve-global-cached <directory> | profile-global <directory> [--mode baseline|cached|compare] [--layers N|all] [--iterations N] | benchmark-matvec <directory> [iterations]".into()),
     };

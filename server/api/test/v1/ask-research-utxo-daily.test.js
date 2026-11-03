@@ -42,7 +42,7 @@ test('catalogue columns are exactly the view columns and semantics are stated',(
  const entry=researchCatalogue.find(d=>d.id===id);
  assert.deepEqual(viewColumns(view),entry.columns.split(', '));
  assert.ok(coreViews.includes('utxo_daily_query'));
- for(const re of [/since 2016-10-28/,/value above zero/,/equals the node-reported transparent pool/,/split it by output age/,/coin-days destroyed/,/creation-date USD price/,/estimates, NULL if unmatched/,/Zatoshi stocks/,/can change slightly/])assert.match(entry.description,re);
+ for(const re of [/since 2016-10-28/,/value above zero/,/equals the node-reported transparent pool/,/split it by output age/,/coin-days destroyed/,/in ZEC-days/,/creation-date USD price/,/estimates, NULL if unmatched/,/Zatoshi stocks/,/can change slightly/])assert.match(entry.description,re);
 });
 
 test('USD columns carry the usd unit, not zatoshi',()=>{

@@ -41,6 +41,7 @@ test('supply_daily and issuance are published extended datasets with guidance',a
  }
  assert.match(instructionsFor(true),/read supply_daily: a current figure is the latest row/);
  assert.match(instructionsFor(true),/never SUM chain_supply, lockbox or circulating_supply across dates/);
+ assert.match(instructionsFor(true),/report summed zatoshis as exact issued ZEC/);
  assert.match(instructionsFor(true),/aggregate issuance/);
  assert.doesNotMatch(instructionsFor(false),/supply_daily|issuance\(/);
  assert.ok(pendingCases.every(c=>!(c.requires||[]).some(id=>['supply_daily','issuance'].includes(id))));

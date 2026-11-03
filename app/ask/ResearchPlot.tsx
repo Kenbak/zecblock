@@ -32,13 +32,15 @@ export default function ResearchPlot({result,chart}:{result:ResearchResult;chart
  const name=(i:number,k:number)=>`${result.columns[i].label.replaceAll('_',' ')}${axes[k]==='right'?' (right axis)':''}`;
  // Ordered labels are raw values; dates read as "Oct 2025" or "Oct 28" on the axis. The tooltip
  // shows readable dates and each value's exact cell text, never the drawn float.
- const dates=ordered?axisDateFormatter(result,chart.x):null;
+ const dates=ordered||chart.view==='bar'?axisDateFormatter(result,chart.x):null;
  const xLabel=(value:unknown)=>shortLabel(dates&&typeof value==='string'?dates(value):value);
  const labelDates=dateFormatter(result,chart.x);
  const pointLabel=(value:string|null)=>value===null?'Unavailable':labelDates?labelDates(value):value;
  // Up to sixteen bars each keep a label, angled when long or many. Denser bars
- // (a month of days) label evenly spaced bars instead; every bar keeps its tooltip.
- const dense=chart.view==='bar'&&data.length>16;
+ // (a month of days) label every nth bar, the most evenly spaced labels that
+ // fit the width; every bar keeps its tooltip.
+ // Short date labels thin out sooner instead of angling.
+ const dense=chart.view==='bar'&&data.length>(dates?8:16);
  const crowded=chart.view==='bar'&&!dense&&(data.length>6||data.some(d=>String(d.x).length>12));
  // A ranking of named categories (pools, chains) reads best as horizontal bars,
  // each name beside its own bar. Dates and two-axis charts stay vertical.
@@ -71,7 +73,7 @@ export default function ResearchPlot({result,chart}:{result:ResearchResult;chart
      <XAxis type="number" tick={tick} tickLine={false} axisLine={false} tickFormatter={compact} domain={[0,'auto']}/>
      <YAxis yAxisId="left" type="category" dataKey="x" tick={tick} tickLine={false} axisLine={{stroke:'var(--color-border)'}} width={labelWidth} interval={0} tickFormatter={xLabel}/>
     </>:<>
-    <XAxis dataKey="x" tick={tick} tickLine={false} axisLine={{stroke:'var(--color-border)'}} interval={chart.view==='bar'&&!dense?0:'preserveStartEnd'} minTickGap={dense?16:24} tickFormatter={xLabel} angle={crowded?-30:0} textAnchor={crowded?'end':'middle'} height={crowded?72:36}/>
+    <XAxis dataKey="x" tick={tick} tickLine={false} axisLine={{stroke:'var(--color-border)'}} interval={chart.view!=='bar'?'preserveStartEnd':dense?'equidistantPreserveStart':0} minTickGap={dense?16:24} tickFormatter={xLabel} angle={crowded?-30:0} textAnchor={crowded?'end':'middle'} height={crowded?72:36}/>
     {/* Bars start at zero; a level over time reads best on its own range. */}
     <YAxis yAxisId="left" tick={tick} tickLine={false} axisLine={false} width={52} tickFormatter={compact} domain={ordered&&!stacked?['auto','auto']:[0,'auto']}/>
     </>}

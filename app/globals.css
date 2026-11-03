@@ -2189,13 +2189,14 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
   height: 2.75rem;
 }
 .speed-spectrum-segment {
+  --segment-index: 0;
   flex-basis: 0;
   min-width: 3px;
   border-radius: 2px;
   background: var(--speed-bucket-color);
   transform-origin: left;
   animation: speed-spectrum-grow 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
-  animation-delay: calc(var(--segment-index, 0) * 90ms);
+  animation-delay: calc(var(--segment-index) * 90ms);
 }
 .speed-spectrum-segment:first-child { border-radius: 0.5rem 2px 2px 0.5rem; }
 .speed-spectrum-segment[data-bucket='long-wait'] { border-radius: 2px 0.5rem 0.5rem 2px; }
@@ -2209,11 +2210,21 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
   pointer-events: none;
 }
 /* One ramp from gold (fastest) to the muted text tone (slowest), legible on both themes. */
-[data-bucket='super-fast'] { --speed-bucket-color: rgb(var(--color-gold-rgb)); }
-[data-bucket='fast'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 75%, var(--color-text-muted)); }
-[data-bucket='slow'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 50%, var(--color-text-muted)); }
-[data-bucket='very-slow'] { --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 25%, var(--color-text-muted)); }
-[data-bucket='long-wait'] { --speed-bucket-color: var(--color-text-muted); }
+[data-bucket='super-fast'] {
+  --speed-bucket-color: rgb(var(--color-gold-rgb));
+}
+[data-bucket='fast'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 75%, var(--color-text-muted));
+}
+[data-bucket='slow'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 50%, var(--color-text-muted));
+}
+[data-bucket='very-slow'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 25%, var(--color-text-muted));
+}
+[data-bucket='long-wait'] {
+  --speed-bucket-color: var(--color-text-muted);
+}
 .speed-bucket-swatch {
   width: 0.625rem;
   height: 0.625rem;

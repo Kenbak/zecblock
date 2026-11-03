@@ -1615,7 +1615,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Height-bounded 30-day history; incomplete boundary days remain complete:false. The latest seven-day summary is null when scan coverage is insufficient; after activation it intentionally covers only the active era. Values use consecutive canonical block-header intervals and serving-node targets.",
+    "note": "Height-bounded 30-day history; incomplete boundary days remain complete:false. The latest seven-day summary is null when scan coverage is insufficient; after activation it intentionally covers only the active era. Values use consecutive canonical block-header intervals and serving-node targets. Each summary carries distribution: interval counts in buckets of <0.25, 0.25-1, 1-2, 2-4 and >=4 times its target spacing (null without a target).",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

@@ -1,9 +1,14 @@
 /** Block-speed story built from one serving-node network's canonical header timestamps. */
 import { ANNOUNCED_MAINNET_NU7 } from '@/lib/network-upgrades';
 
+export type SpeedBucketKey = 'super-fast' | 'fast' | 'slow' | 'very-slow' | 'long-wait';
+/** Intervals below `upToTarget` × the window's target (exclusive), above the previous bucket's bound. */
+export type SpeedBucket = { key: SpeedBucketKey; upToTarget: number | null; upToSeconds: number | null; blocks: number };
 export type SpeedSummary = {
   fromHeight: number; toHeight: number; fromTimestamp: number; toTimestamp: number; intervals: number;
   averageSeconds: number | null; medianSeconds: number | null; p90Seconds: number | null; targetSeconds: number | null;
+  /** Absent from older API responses; null when the window has no target spacing. */
+  distribution?: SpeedBucket[] | null;
 };
 export type SpeedDay = {
   date: string; start: number; nu7: boolean; targetSeconds: number | null; firstHeight: number; lastHeight: number;
@@ -33,10 +38,52 @@ export const ZIP_315_URL = 'https://zips.z.cash/zip-0315';
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const finiteOrNull = (value: unknown) => value === null || finite(value);
 
+export const SPEED_BUCKETS: readonly { key: SpeedBucketKey; label: string; upToTarget: number | null }[] = [
+  { key: 'super-fast', label: 'Super fast', upToTarget: 0.25 },
+  { key: 'fast', label: 'Fast', upToTarget: 1 },
+  { key: 'slow', label: 'Slow', upToTarget: 2 },
+  { key: 'very-slow', label: 'Very slow', upToTarget: 4 },
+  { key: 'long-wait', label: 'Long wait', upToTarget: null },
+];
+
+function isDistribution(value: unknown): value is SpeedBucket[] {
+  return Array.isArray(value) && value.length === SPEED_BUCKETS.length && value.every((bucket, index) => !!bucket && typeof bucket === 'object'
+    && bucket.key === SPEED_BUCKETS[index].key && bucket.upToTarget === SPEED_BUCKETS[index].upToTarget
+    && finiteOrNull(bucket.upToSeconds) && Number.isSafeInteger(bucket.blocks) && bucket.blocks >= 0);
+}
+
 function isSummary(value: unknown): value is SpeedSummary {
   const s = value as SpeedSummary;
   return !!s && typeof s === 'object' && [s.fromHeight, s.toHeight, s.fromTimestamp, s.toTimestamp, s.intervals].every(finite)
-    && [s.averageSeconds, s.medianSeconds, s.p90Seconds, s.targetSeconds].every(finiteOrNull);
+    && [s.averageSeconds, s.medianSeconds, s.p90Seconds, s.targetSeconds].every(finiteOrNull)
+    && (s.distribution == null || isDistribution(s.distribution));
+}
+
+/**
+ * Share of intervals expected in a bucket if blocks arrive at random (a Poisson
+ * process) at exactly the target pace: intervals are then exponential with the
+ * target as their mean.
+ */
+export function expectedBucketShare(index: number): number {
+  const lower = SPEED_BUCKETS[index - 1]?.upToTarget ?? 0;
+  const upper = SPEED_BUCKETS[index]?.upToTarget;
+  return Math.exp(-lower) - (upper == null ? 0 : Math.exp(-upper));
+}
+
+/**
+ * Half-open bucket range for display, e.g. `< 19s`, `19–75s`, `150s–5 min`, `≥ 5 min`.
+ * Header intervals are whole seconds, so fractional bounds round up.
+ */
+export function bucketRange(buckets: readonly SpeedBucket[], index: number): string {
+  const format = (value: number) => {
+    const seconds = Math.ceil(value);
+    return seconds >= 300 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+  };
+  const lower = buckets[index - 1]?.upToSeconds; const upper = buckets[index]?.upToSeconds;
+  if (upper == null) return lower == null ? '—' : `≥ ${format(lower)}`;
+  if (lower == null) return `< ${format(upper)}`;
+  const [from, to] = [format(lower), format(upper)];
+  return from.endsWith('s') && to.endsWith('s') ? `${from.slice(0, -1)}–${to}` : `${from}–${to}`;
 }
 
 function isDay(value: unknown): value is SpeedDay {

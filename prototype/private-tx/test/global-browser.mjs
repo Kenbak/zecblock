@@ -242,7 +242,9 @@ async function successUi(record, name) {
   await page.locator('#result-facts[aria-label="Inputs / Outputs"]').waitFor({ state: 'visible' });
   await noOverflow(`${name} desktop Inputs/Outputs`);
   await page.locator('#tx-tabs').getByText('Raw', { exact: true }).click();
-  sameText(await page.locator('#raw-decoded').textContent(), JSON.stringify(record.raw.decoded, null, 2), `${name}: exact formatted raw decoded JSON`);
+  const rawText = await page.locator('#raw-decoded').textContent(), rawObject = JSON.parse(rawText);
+  exact(rawObject, record.raw.decoded, `${name}: complete raw decoded JSON values`);
+  sameText(rawText, JSON.stringify(rawObject, null, 2), `${name}: exact pretty formatting of recovered raw JSON`);
   await noOverflow(`${name} desktop Raw JSON`);
   await page.getByRole('tab', { name: 'Hex', exact: true }).click();
   sameText(await page.locator('#raw-hex').textContent(), record.raw.hex, `${name}: exact raw transaction hex`);
@@ -487,7 +489,7 @@ try {
     initializationMs, initializationFinishedAt, workerCdpSessions: workerSessions, cases, quietWindows, freshness, storage, assets, observationGaps: gaps,
     browserRequestTrace: trace.map(summarize), workerCdpRequestTrace: cdpTrace.map(summarize),
     checks: ['fragment auto-selection after all public setup; fragment stripped', 'manual entry produces no typing traffic', 'full-envelope deepStrictEqual including original snapshot/source/raw/price/null fees',
-      'exact Raw JSON.stringify and hex display; exact local JSON export', 'single fixed POST and complete all-layer reply on success/absence/content failure',
+      'complete raw JSON value parity and exact recovered pretty formatting; exact hex and local JSON export', 'single fixed POST and complete all-layer reply on success/absence/content failure',
       'no partial result, automatic retry, fallback, metadata refresh or background traffic after failure', 'occupied and empty hash-row absence when requested',
       'allowlisted same-origin traffic and strict CSP', 'empty cookies/storage; no analytics/websockets/external origins', 'desktop, 500px and 390px Overview screenshots and overflow checks'],
     limits: 'Node operator-preflight reads are deliberately distinct from actual browser traces. Missing DevTools bodies are explicit gaps, never an observed-byte/freshness pass. No server log retention, constant-time execution, independent chain truth, delivered-client trust, public/full-history readiness or remote poisoning is proved. No encrypted request/reply bodies, keys or full decrypted envelopes are saved by this driver.' };

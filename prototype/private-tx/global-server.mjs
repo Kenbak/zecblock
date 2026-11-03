@@ -23,7 +23,8 @@ export function admitGlobalManifest(manifest) {
   assert(manifest?.schema === 'zecblock-private-global-v1' && manifest.geometry === 'global-2k-64k'
     && manifest.table === 'txdirectory' && manifest.network === 'mainnet'
     && manifest.rows === 2048 && manifest.rowBytes === 65536 && manifest.payloadBytes === 65024
-    && manifest.hashAlgorithm === 'sha256-display-v1' && manifest.recordCodec === 'full-envelope-zlib-v1'
+    && manifest.hashAlgorithm === 'sha256-display-v1'
+    && ['full-envelope-zlib-v1', 'full-envelope-binary-zlib-v2'].includes(manifest.recordCodec)
     && Number.isSafeInteger(manifest.layerCount) && manifest.layerCount >= 1 && manifest.layerCount <= 128
     && Array.isArray(manifest.layers) && manifest.layers.length === manifest.layerCount
     && HASH.test(manifest.contextId) && HASH.test(manifest.publicationId), 'Unsupported global manifest.');
@@ -45,8 +46,9 @@ export function admitGlobalManifest(manifest) {
 
 // The native process accepts only encrypted bytes, never the selected txid.
 // A fixed maximum bounds its JSONL transport even if a child misbehaves.
-export function globalNativeEvaluator(binary, directory, responseBytes, { deadlineMs = DEADLINE_MS } = {}) {
-  const child = spawn(binary, ['serve-global', directory], {
+export function globalNativeEvaluator(binary, directory, responseBytes, { deadlineMs = DEADLINE_MS, mode = 'serve-global' } = {}) {
+  assert(['serve-global', 'serve-global-cached'].includes(mode), 'Unsupported global evaluator mode.');
+  const child = spawn(binary, [mode, directory], {
     env: { PATH: '/usr/bin:/bin', LANG: 'C.UTF-8', RAYON_NUM_THREADS: '2' }, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const waiting = new Map();
@@ -144,7 +146,7 @@ export async function globalCanonicalGuard(file, manifest) {
 }
 
 export async function startGlobalPrototype({ port = 4320, globalDir, binary, wasmDir = resolve(HERE, '../pir-browser/pkg'),
-  createEvaluator = globalNativeEvaluator, assertCanonical = async () => {}, onRequest = () => {} } = {}) {
+  createEvaluator = globalNativeEvaluator, evaluatorMode = 'serve-global', assertCanonical = async () => {}, onRequest = () => {} } = {}) {
   assert(typeof globalDir === 'string' && typeof binary === 'string', 'Explicit global publication and native paths required.');
   const directory = await lstat(globalDir);
   assert(directory.isDirectory() && !directory.isSymbolicLink(), 'Ordinary immutable global directory required.');
@@ -156,7 +158,7 @@ export async function startGlobalPrototype({ port = 4320, globalDir, binary, was
     assert(bytes.length === LAYER_PUBLIC_BYTES && sha(bytes) === layer.publicSha256, 'Global public setup mismatch.'); setups.push(bytes);
   }
   await assertCanonical(manifest);
-  const evaluator = createEvaluator(binary, globalDir, manifest.layerCount * LAYER_REPLY_BYTES);
+  const evaluator = createEvaluator(binary, globalDir, manifest.layerCount * LAYER_REPLY_BYTES, { mode: evaluatorMode });
   try { await evaluator.ready?.(); } catch (error) { await evaluator.close(); throw error; }
   const assets = new Map([
     ['/', ['web/global-index.html', 'text/html; charset=utf-8']], ['/app.js', ['web/app.js', 'text/javascript; charset=utf-8']],
@@ -223,6 +225,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const port = Number(process.env.PRIVATE_TX_PORT ?? 4320);
   assert(Number.isSafeInteger(port) && port >= 1024 && port <= 65535, 'Invalid global loopback port.');
   const app = await startGlobalPrototype({ globalDir: resolve(globalDir), binary: resolve(binary), port,
+    evaluatorMode: process.env.PRIVATE_TX_EVALUATOR_MODE ?? 'serve-global',
     assertCanonical: manifest => globalCanonicalGuard(resolve(guard), manifest) });
   process.stdout.write(`Experimental global private lookup: ${app.url}\n`);
   for (const signal of ['SIGTERM', 'SIGINT']) process.once(signal, async () => { await app.close(); process.exit(0); });

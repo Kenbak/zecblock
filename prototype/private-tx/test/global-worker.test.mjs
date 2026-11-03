@@ -74,10 +74,12 @@ function publication(layerCount = 3) {
   };
 }
 
-async function harness({ manifest = publication(), fault = null, outcome = 'found', holdEof = false, setupFault = -1 } = {}) {
-  const clock = new Clock(), requests = [], messages = [], generated = [], decodes = [], constructors = [], streams = [], budgets = [];
-  let listener, selected, pending = false, cancellations = 0, requestId = 0, releaseEof;
+async function harness({ manifest = publication(), fault = null, outcome = 'found', holdEof = false, setupFault = -1,
+  prepareDecode = false, preparationFault = false, holdFetch = false } = {}) {
+  const clock = new Clock(), requests = [], messages = [], generated = [], decodes = [], constructors = [], streams = [], budgets = [], preparations = [], events = [];
+  let listener, selected, pending = false, cancellations = 0, requestId = 0, releaseEof, releaseFetch;
   const eofGate = new Promise(resolve => { releaseEof = resolve; });
+  const fetchGate = new Promise(resolve => { releaseFetch = resolve; });
   const responseBytes = manifest.layerCount * LAYER_REPLY_BYTES;
   const abortable = signal => new Promise((_, reject) => {
     const fail = () => reject(signal.reason);
@@ -157,6 +159,17 @@ async function harness({ manifest = publication(), fault = null, outcome = 'foun
     }
     cancel_query() { pending = false; cancellations++; }
   }
+  if (prepareDecode) {
+    Client.prototype.prepare_decode = function () {
+      events.push('prepare-decode');
+      preparations.push({ queryRequests: requests.filter(request => request.path === '/pir/query').length,
+        queryResponseStreams: streams.filter(stream => stream.path === '/pir/query').length });
+      assert.equal(pending, true, 'Preparation must use the pending locally generated query.');
+      clock.now += 17; // Simulate synchronous CPU work, without advancing HTTP.
+      if (preparationFault) throw new Error('Local decoder preparation failed.');
+    };
+    Object.defineProperty(Client.prototype, 'decoder_coefficient_bytes', { get: () => 4096 });
+  }
 
   const fetch = (path, options = {}) => {
     requests.push({ path, method: options.method ?? 'GET', headers: { ...options.headers },
@@ -171,6 +184,7 @@ async function harness({ manifest = publication(), fault = null, outcome = 'foun
       return Promise.resolve(response(path, new Uint8Array(PUBLIC_BYTES - Number(index === setupFault)).fill(index + 1)));
     }
     assert.equal(path, '/pir/query', 'No acknowledgement, catalogue, status refresh, selected route or public fallback is allowed.');
+    events.push('fetch-dispatched');
     assert.equal(generated.length, requests.filter(request => request.path === '/pir/query').length,
       'Each explicit selection must generate exactly one opaque query.');
     if (fault === 'fetch') return Promise.reject(new TypeError('Network unavailable.'));
@@ -178,7 +192,11 @@ async function harness({ manifest = publication(), fault = null, outcome = 'foun
     const length = responseBytes + (fault === 'short' ? -1 : fault === 'oversize' ? READ_BYTES * 2 : 0);
     const bytes = new Uint8Array(length);
     for (let index = 0; index < manifest.layerCount; index++) bytes.fill(index + 11, index * LAYER_REPLY_BYTES, (index + 1) * LAYER_REPLY_BYTES);
-    return Promise.resolve(response(path, bytes, { signal: options.signal, query: true, ok: fault !== '503', body: fault !== 'missing-body' }));
+    const deliver = () => {
+      events.push('fetch-response');
+      return response(path, bytes, { signal: options.signal, query: true, ok: fault !== '503', body: fault !== 'missing-body' });
+    };
+    return holdFetch ? fetchGate.then(deliver) : Promise.resolve(deliver());
   };
   const context = vm.createContext({
     Uint8Array, TextDecoder, TextEncoder, AbortController, DOMException, fetch,
@@ -202,9 +220,9 @@ async function harness({ manifest = publication(), fault = null, outcome = 'foun
   await clock.until(() => messages.some(message => ['ready', 'error'].includes(message.type)));
   const initialRequests = requests.length, initialMessages = messages.length;
   return {
-    clock, requests, messages, generated, decodes, constructors, streams, budgets, manifest, initialRequests, initialMessages,
+    clock, requests, messages, generated, decodes, constructors, streams, budgets, preparations, events, manifest, initialRequests, initialMessages,
     get cancellations() { return cancellations; },
-    releaseEof,
+    releaseEof, releaseFetch,
     startLookup(txid = IDS[0]) {
       const id = ++requestId;
       listener({ data: { type: 'lookup', requestId: id, txid } });
@@ -279,7 +297,68 @@ test('one opaque query receives the complete ordered all-layer body before decod
   assert.equal(result.measurements.queryBytes, REQUEST_BYTES);
   assert.equal(result.measurements.responseBytes, 3 * LAYER_REPLY_BYTES);
   assert.equal(result.measurements.layerCount, 3);
+  assert.equal(result.measurements.decodePrepareMs, 0, 'Older WASM clients without the optional preparation hook remain supported.');
+  assert.equal(result.measurements.decoderCoefficientBytes, 0);
   assert.deepEqual(run.budgets, [120_000, 900_000]);
+  await assertQuiet(run);
+});
+
+test('optional local decoder preparation overlaps the dispatched HTTP fetch without another request', async () => {
+  const run = await harness({ prepareDecode: true, holdFetch: true });
+  const requestId = run.startLookup();
+  await yieldTurn();
+  assert.deepEqual(run.events, ['fetch-dispatched', 'prepare-decode']);
+  assert.deepEqual(run.preparations, [{ queryRequests: 1, queryResponseStreams: 0 }],
+    'CPU preparation must run while the single fetch is still awaiting a response.');
+  assert.equal(run.decodes.length, 0);
+  assert.equal(run.cancellations, 0);
+  assert.ok(!run.messages.some(message => message.requestId === requestId && ['result', 'error'].includes(message.type)));
+  assertPrivateQuery(run);
+  run.releaseFetch();
+  await run.settleLookup(requestId);
+  assert.deepEqual(run.events, ['fetch-dispatched', 'prepare-decode', 'fetch-response']);
+  assert.equal(run.decodes.length, 1);
+  const result = run.messages.find(message => message.type === 'result');
+  assert.equal(result.result.txid, IDS[0]);
+  assert.equal(result.measurements.decodePrepareMs, 17);
+  assert.equal(result.measurements.decoderCoefficientBytes, 4096);
+  assert.equal(result.measurements.queryBytes, REQUEST_BYTES);
+  assert.equal(result.measurements.responseBytes, 3 * LAYER_REPLY_BYTES);
+  assertPrivateQuery(run);
+  await assertQuiet(run);
+});
+
+test('preparation failure waits for the complete bounded reply and EOF before any local failure feedback', async () => {
+  const run = await harness({ prepareDecode: true, preparationFault: true, holdFetch: true, holdEof: true });
+  const requestId = run.startLookup();
+  await yieldTurn();
+  assert.deepEqual(run.events, ['fetch-dispatched', 'prepare-decode']);
+  assert.equal(run.preparations.length, 1);
+  assert.equal(run.cancellations, 0, 'A local CPU failure must not cancel an in-flight public reply.');
+  assert.ok(!run.messages.some(message => message.requestId === requestId && ['result', 'error'].includes(message.type)));
+  run.releaseFetch();
+  await yieldTurn();
+  const slot = run.streams.find(stream => stream.path === '/pir/query');
+  assert.equal(slot.bytesRead, 3 * LAYER_REPLY_BYTES, 'All layer bytes must be consumed despite the earlier preparation exception.');
+  assert.equal(slot.waitingAtEof, true);
+  assert.equal(slot.eof, false);
+  assert.equal(slot.cancelled, false);
+  assert.equal(run.decodes.length, 0);
+  assert.equal(run.cancellations, 0);
+  assert.deepEqual(run.messages.filter(message => message.requestId === requestId).map(message => message.type === 'stage' ? message.stage : message.type),
+    ['query', 'server'], 'No failure or decode feedback may precede complete response EOF.');
+  assertPrivateQuery(run);
+  run.releaseEof();
+  await run.settleLookup(requestId);
+  assert.equal(slot.eof, true); assert.equal(slot.released, true); assert.equal(slot.cancelled, false);
+  assert.equal(run.decodes.length, 0, 'A failed preparation must never enter content decoding.');
+  assert.equal(run.cancellations, 1);
+  const outcomes = run.messages.filter(message => message.requestId === requestId && ['result', 'error'].includes(message.type));
+  assert.equal(outcomes.length, 1); assert.equal(outcomes[0].type, 'error');
+  assert.match(outcomes[0].message, /could not be verified.*No retry or public lookup/);
+  assert.deepEqual(run.messages.filter(message => message.requestId === requestId).map(message => message.type === 'stage' ? message.stage : message.type),
+    ['query', 'server', 'decode', 'error']);
+  assertPrivateQuery(run);
   await assertQuiet(run);
 });
 

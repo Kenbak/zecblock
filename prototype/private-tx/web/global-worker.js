@@ -44,13 +44,23 @@ async function lookup(data) {
     if (query.length !== REQUEST_BYTES) throw new Error('query');
     const encrypted = performance.now();
     self.postMessage({ type: 'stage', requestId, stage: 'server' });
-    const response = await fetch('/pir/query', { ...options(AbortSignal.timeout(900_000)), method: 'POST',
+    const responsePending = fetch('/pir/query', { ...options(AbortSignal.timeout(900_000)), method: 'POST',
       headers: { 'Content-Type': 'application/octet-stream', 'X-PIR-Publication': manifest.publicationId }, body: query });
+    // Observe rejection immediately while local CPU work runs, avoiding an
+    // unhandled fetch rejection. This adds no request, retry or acknowledgement.
+    responsePending.catch(() => {});
+    const preparationStarted = performance.now();
+    let preparationFailed = false;
+    try { if (typeof browser.prepare_decode === 'function') browser.prepare_decode(); }
+    catch { preparationFailed = true; }
+    const decodePrepareMs = performance.now() - preparationStarted;
+    const response = await responsePending;
     // The complete fixed bundle is consumed before a row is decoded or checked.
     const reply = await bounded(response, manifest.layerCount * LAYER_REPLY_BYTES);
     if (reply.length !== manifest.layerCount * LAYER_REPLY_BYTES) throw new Error('reply');
     const received = performance.now();
     self.postMessage({ type: 'stage', requestId, stage: 'decode' });
+    if (preparationFailed) throw new Error('local preparation');
     const result = JSON.parse(browser.decode_response(reply));
     const decoded = performance.now();
     if (result.found !== true) {
@@ -58,7 +68,9 @@ async function lookup(data) {
     }
     self.postMessage({ type: 'result', requestId, result, measurements: { publicationId: manifest.publicationId,
       queryBytes: query.length, responseBytes: reply.length, layerCount: manifest.layerCount, chunkCount: 1,
-      encryptMs: encrypted - started, requestMs: received - encrypted, decodeMs: decoded - received, totalMs: decoded - started } });
+      encryptMs: encrypted - started, requestMs: received - encrypted, decodePrepareMs,
+      decoderCoefficientBytes: browser.decoder_coefficient_bytes ?? 0,
+      decodeMs: decoded - received, totalMs: decoded - started } });
   } catch {
     browser?.cancel_query();
     self.postMessage({ type: 'error', requestId, message: 'The private response could not be verified. No retry or public lookup was made.' });

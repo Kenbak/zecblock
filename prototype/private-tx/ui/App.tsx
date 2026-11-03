@@ -219,7 +219,15 @@ export function App() {
       {global && <p className="text-caption text-muted mb-4" id="global-index-warning">This experimental index covers the published records only. Every lookup receives the same complete encrypted bundle; results retain their own original snapshot. Full-history coverage and independent cryptographic review are pending.</p>}
       {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
-      {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`], ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`], ['Browser encryption', formatMs(measurements.encryptMs)], ['PIR service', formatMs(measurements.requestMs)], ['Browser decoding', formatMs(measurements.decodeMs)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>}
+      {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[
+        ['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`],
+        ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`],
+        ['Browser encryption', formatMs(measurements.encryptMs)],
+        [measurements.decodePrepareMs === undefined ? 'PIR request' : 'Request with overlapping browser preparation', formatMs(measurements.requestMs)],
+        ...(measurements.decodePrepareMs === undefined ? [] : [['Browser reply preparation (overlaps request)', formatMs(measurements.decodePrepareMs)]]),
+        ['Browser decoding and verification', formatMs(measurements.decodeMs)],
+        ...(measurements.decoderCoefficientBytes === undefined ? [] : [['Cached public coefficients', `${measurements.decoderCoefficientBytes.toLocaleString()} bytes`]]),
+      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{measurements.decodePrepareMs !== undefined && <p>Browser reply preparation overlaps the request; these times cannot be added together. Coefficient bytes exclude other browser memory.</p>}</details>}
 
       <aside className="private-footer-note"><p><strong>Isolated pilot.</strong> Coverage is limited to this page's pinned publication. Complete fixed-size request batches are dispatched before replies are decoded. This does not provide live mempool or full-history search. Connection operators can still observe IP, timing and sizes.</p><p>Your browser trusts the delivered client code. Public blockchain data and bundled enrichments remain publisher-supplied facts, not a cryptographic proof of completeness.</p></aside>
     </main>

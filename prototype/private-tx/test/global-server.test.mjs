@@ -9,6 +9,14 @@ import { globalGuardTick } from '../pilot/global-source-watch.mjs';
 
 const hash = bytes => createHash('sha256').update(bytes).digest('hex');
 const id = '1'.repeat(64);
+function reidentify(manifest, changes) {
+  const next = { ...structuredClone(manifest), ...changes };
+  const context = Object.fromEntries(Object.entries(next).filter(([key]) => !['contextId', 'publicationId', 'layers', 'noiseCertificate'].includes(key)));
+  next.contextId = hash(Buffer.from(canonicalGlobal(context)));
+  delete next.publicationId;
+  next.publicationId = hash(Buffer.from(canonicalGlobal(next)));
+  return next;
+}
 async function fixture(t) {
   const directory = await mkdtemp(resolve(tmpdir(), 'global-server-test-'));
   t.after(() => rm(directory, { recursive: true, force: true }));
@@ -35,6 +43,59 @@ test('global metadata binds canonical anchor digest, context and ordered artifac
     m => { m.layers[0].publicSha256 = id; }, m => { m.layers[0].index = 1; }]) {
     const bad = structuredClone(box.manifest); mutate(bad); assert.throws(() => admitGlobalManifest(bad));
   }
+});
+
+test('binary v2 record codec admission requires its recomputed context and publication identities', async t => {
+  const box = await fixture(t);
+  const stale = { ...box.manifest, recordCodec: 'full-envelope-binary-zlib-v2' };
+  assert.throws(() => admitGlobalManifest(stale), /publication identity mismatch/,
+    'Changing the codec must not inherit a v1 publication identity.');
+  const compact = reidentify(box.manifest, { recordCodec: 'full-envelope-binary-zlib-v2' });
+  assert.notEqual(compact.contextId, box.manifest.contextId);
+  assert.notEqual(compact.publicationId, box.manifest.publicationId);
+  assert.equal(admitGlobalManifest(compact), compact);
+  const wrongContext = { ...compact, contextId: box.manifest.contextId };
+  delete wrongContext.publicationId;
+  wrongContext.publicationId = hash(Buffer.from(canonicalGlobal(wrongContext)));
+  assert.throws(() => admitGlobalManifest(wrongContext), /context identity mismatch/,
+    'A fresh final identity must not hide the old codec context.');
+});
+
+test('unsupported record codecs remain rejected even with internally recomputed identities', async t => {
+  const box = await fixture(t);
+  for (const recordCodec of ['unknown', 'json-context-zlib-v1', 'full-envelope-binary-zlib-v3', null, 2]) {
+    const bad = reidentify(box.manifest, { recordCodec });
+    assert.throws(() => admitGlobalManifest(bad), /Unsupported global manifest/);
+  }
+});
+
+test('unsupported evaluator modes reject before starting a native child or HTTP listener', async t => {
+  const box = await fixture(t);
+  for (const mode of ['serve-global-fast', 'serve', '', null]) {
+    assert.throws(() => globalNativeEvaluator('/must-not-spawn', box.directory, 81920, { mode }), /Unsupported global evaluator mode/);
+    await assert.rejects(startGlobalPrototype({ port: 0, globalDir: box.directory, binary: '/must-not-spawn', evaluatorMode: mode }),
+      /Unsupported global evaluator mode/);
+  }
+});
+
+test('configured cached evaluation serves an admitted v2 publication through the actual native mode argument', async t => {
+  const box = await fixture(t), binary = resolve(box.directory, 'fake-cached-native');
+  const manifest = reidentify(box.manifest, { recordCodec: 'full-envelope-binary-zlib-v2' });
+  await writeFile(resolve(box.directory, 'manifest.json'), JSON.stringify(manifest));
+  // The child advertises readiness only when both CLI arguments match. A
+  // dropped cached-mode option would fail admission rather than pass this test.
+  const script = `#!${process.execPath}\nconst readline=require('node:readline');if(process.argv[2]!=='serve-global-cached'||process.argv[3]!==${JSON.stringify(box.directory)})process.exit(9);process.stderr.write('Experimental global evaluator ready; all 1 layers evaluated per query\\n');readline.createInterface({input:process.stdin}).on('line',line=>{const request=JSON.parse(line);if(Buffer.from(request.query,'base64').length!==20992)process.exit(10);process.stdout.write(JSON.stringify({id:request.id,response:Buffer.alloc(81920,0x6c).toString('base64')})+'\\n');});\n`;
+  await writeFile(binary, script); await chmod(binary, 0o700);
+  const app = await startGlobalPrototype({ port: 0, globalDir: box.directory, binary, evaluatorMode: 'serve-global-cached' });
+  t.after(() => app.close());
+  const observedManifest = await fetch(app.url + '/publication/manifest.json');
+  assert.equal(observedManifest.status, 200); assert.deepEqual(await observedManifest.json(), manifest);
+  const response = await fetch(app.url + '/pir/query', { method: 'POST', headers: {
+    'Content-Type': 'application/octet-stream', 'X-PIR-Publication': manifest.publicationId,
+  }, body: Buffer.alloc(20992, 0x93) });
+  assert.equal(response.status, 200);
+  const reply = Buffer.from(await response.arrayBuffer());
+  assert.equal(reply.length, 81920); assert.ok(reply.every(byte => byte === 0x6c));
 });
 
 test('global HTTP accepts only fixed opaque uploads and rechecks canonical state after evaluation', async t => {

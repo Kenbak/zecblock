@@ -68,6 +68,7 @@ test('path parameters use OpenAPI braces and server URLs do not duplicate /v1', 
 test('public reads do not declare a global preview-key requirement', () => {
   const doc = buildOpenApiDocument();
   assert.equal(doc.security, undefined);
+  assert.doesNotMatch(doc.info.version, /preview/);
   assert.equal(doc.components.securitySchemes?.previewKey, undefined);
   const published = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'public', 'openapi-v1.json'), 'utf8'));
   assert.equal(published.security, undefined);

@@ -265,7 +265,7 @@ function buildOpenApiDocument() {
     openapi: '3.1.0',
     info: {
       title: 'ZecBlock API v1',
-      version: '1.0.0-preview',
+      version: '1.0.0',
       summary: 'Versioned, contract-stable read/write API for the Zcash blockchain data and privacy-intelligence features exposed by ZecBlock.',
       description: [
         'This is the v1 contract layer. Public production reads need no API key',

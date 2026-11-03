@@ -46,8 +46,9 @@ const quietMs = Number(process.env.PRIVATE_TX_GLOBAL_QUIET_MS ?? 35_000);
 assert.ok(Number.isSafeInteger(quietMs) && quietMs >= 35_000 && quietMs <= 60_000, 'The post-failure quiet window must be 35–60 seconds.');
 const output = resolve(process.env.PRIVATE_TX_GLOBAL_OUTPUT ?? resolve(ROOT, 'test-results', `global-${mode}-${new Date().toISOString().replaceAll(':', '-')}`));
 await mkdir(output, { recursive: true });
-const trace = [], cdpTrace = [], gaps = [], blocked = [], external = [], consoleErrors = [], pageErrors = [], websockets = [], cases = [], quietWindows = [], assets = [];
+const trace = [], cdpTrace = [], cdpPageTrace = [], gaps = [], blocked = [], external = [], consoleErrors = [], pageErrors = [], websockets = [], cases = [], quietWindows = [], assets = [];
 const pendingResponses = new Set(), pwRequests = new Map(), cdpRequests = new Map(), pendingCdp = new Map();
+const cdpByRequestId = new Map(), cdpExtraInfo = new Map();
 let phase = 'operator-preflight', browser, context, page, pageCdp, manifest, source, sourceBytes, initializationMs;
 let cdpSequence = 0, cdpCommand = 0, workerSessions = 0, initializationFinishedAt;
 const startedAt = new Date().toISOString();
@@ -60,7 +61,7 @@ deadlineTimer.unref();
 const phaseItems = name => trace.filter(item => item.phase === name);
 function gap(value) { if (!gaps.some(item => canonical(item) === canonical(value))) gaps.push(value); }
 
-function checkRequest({ url, method, headers, body }, { allowMissingBody = false } = {}) {
+function checkRequest({ url, method, headers, body }, { allowMissingBody = false, provisionalHeaders = false } = {}) {
   const target = new URL(url);
   assert.equal(target.origin, origin, 'Browser request must remain on the explicit origin.');
   assert.equal(target.search, '', 'Query strings are forbidden.'); assert.equal(target.hash, '', 'Fragments must never enter HTTP requests.');
@@ -70,7 +71,7 @@ function checkRequest({ url, method, headers, body }, { allowMissingBody = false
   assert.ok(staticPaths.includes(target.pathname) || setup && Number(setup[1]) < manifest.layerCount, `Unallowlisted browser path ${target.pathname}`);
   assert.equal(method, target.pathname === '/pir/query' ? 'POST' : 'GET');
   const normalized = Object.fromEntries(Object.entries(headers).map(([key, value]) => [key.toLowerCase(), value]));
-  for (const key of ['cookie', 'authorization', 'referer', 'forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip']) assert.equal(normalized[key], undefined, `Forbidden ${key} header`);
+  if (!provisionalHeaders) for (const key of ['cookie', 'authorization', 'referer', 'forwarded', 'x-forwarded-for', 'x-real-ip', 'cf-connecting-ip']) assert.equal(normalized[key], undefined, `Forbidden ${key} header`);
   for (const txid of selectionIds) {
     assert.ok(!url.toLowerCase().includes(txid) && !JSON.stringify(normalized).toLowerCase().includes(txid), 'Selection escaped in browser URL/headers.');
     if (body) for (const bytes of [Buffer.from(txid), Buffer.from(txid.toUpperCase()), Buffer.from(txid, 'hex'), Buffer.from(txid, 'hex').reverse()]) {
@@ -78,9 +79,11 @@ function checkRequest({ url, method, headers, body }, { allowMissingBody = false
     }
   }
   if (target.pathname === '/pir/query') {
-    assert.equal(normalized['content-type'], 'application/octet-stream');
-    assert.equal(normalized['x-pir-publication'], manifest.publicationId);
-    exact(Object.keys(normalized).filter(key => key.startsWith('x-')).sort(), ['x-pir-publication'], 'Only the public publication may be sent in a custom header');
+    if (!provisionalHeaders) {
+      assert.equal(normalized['content-type'], 'application/octet-stream');
+      assert.equal(normalized['x-pir-publication'], manifest.publicationId);
+      exact(Object.keys(normalized).filter(key => key.startsWith('x-')).sort(), ['x-pir-publication'], 'Only the public publication may be sent in a custom header');
+    }
     if (body) assert.equal(body.length, REQUEST_BYTES, 'Encrypted query must have fixed length.');
     else assert.ok(allowMissingBody, 'Encrypted upload bytes were unavailable.');
     if (normalized['content-length'] !== undefined) assert.equal(Number(normalized['content-length']), REQUEST_BYTES);
@@ -108,9 +111,49 @@ function headersSummary(headers) {
   return { headerNames: Object.keys(lower).sort(), publicationHeader: lower['x-pir-publication'] ?? null,
     contentType: lower['content-type'] ?? null, contentLength: lower['content-length'] ?? null };
 }
+function referrerCategory(headers) {
+  const entry = Object.entries(headers).find(([key]) => key.toLowerCase() === 'referer');
+  return !entry ? 'absent' : entry[1] === '' ? 'empty-string' : 'nonempty';
+}
 function inspectBody(item, bytes, provenance) {
-  checkRequest({ url: item.url, method: item.method, headers: item.headers, body: bytes });
+  checkRequest({ url: item.url, method: item.method, headers: item.headers, body: bytes }, { provisionalHeaders: item.headerObservation === 'renderer-provisional' });
   item.bodyBytes = bytes.length; item.bodySha256 = sha256(bytes); item.bodyObservation = provenance;
+}
+function inspectWireHeaders(item, event) {
+  try {
+    // Renderer requestWillBeSent synthesizes Referer, including an empty value.
+    // ExtraInfo comes from the network stack, sometimes on the parent page
+    // session for a worker request. Its requestId joins the two channels.
+    checkRequest({ ...item, headers: event.headers }, { allowMissingBody: true });
+    item.actualHeaderObservation = event.source;
+    item.actualHeaderSummary = headersSummary(event.headers);
+    item.actualReferrerCategory = referrerCategory(event.headers);
+  } catch (error) { blocked.push({ phase: item.phase, path: new URL(item.url).pathname, source: event.source, reason: compactError(error) }); }
+}
+function observeExtraInfo(data, source) {
+  const event = { headers: data.headers, source };
+  cdpExtraInfo.set(data.requestId, event);
+  const item = cdpByRequestId.get(data.requestId);
+  if (item) inspectWireHeaders(item, event);
+}
+function observeMetadata(data, source) {
+  const request = data.request;
+  if (['data:', 'blob:'].includes(new URL(request.url).protocol)) return null;
+  const item = { phase, sequence: ++cdpSequence, requestId: data.requestId,
+    url: request.url, method: request.method, headers: request.headers, atEpochMs: Date.now(), source,
+    headerObservation: 'renderer-provisional', provisionalReferrerCategory: referrerCategory(request.headers), referrerPolicy: request.referrerPolicy };
+  cdpByRequestId.set(data.requestId, item);
+  (source === 'dedicated-worker-CDP' ? cdpTrace : cdpPageTrace).push(item);
+  try { checkRequest(item, { allowMissingBody: true, provisionalHeaders: true }); }
+  catch (error) { blocked.push({ phase: item.phase, path: new URL(item.url).pathname, source, reason: compactError(error) }); }
+  const extra = cdpExtraInfo.get(data.requestId); if (extra) inspectWireHeaders(item, extra);
+  return item;
+}
+function observeReceivedData(data, source) {
+  const item = cdpByRequestId.get(data.requestId); if (!item) return;
+  item.receivedPayloadByChannel ??= {};
+  const received = item.receivedPayloadByChannel[source] ??= { events: 0, decodedBytes: 0, encodedBytes: 0 };
+  received.events++; received.decodedBytes += data.dataLength; received.encodedBytes += data.encodedDataLength;
 }
 function cdpSend(sessionId, method, params = {}) {
   const id = ++cdpCommand;
@@ -122,6 +165,13 @@ function cdpSend(sessionId, method, params = {}) {
 }
 async function attachWorkerObservation() {
   pageCdp = await context.newCDPSession(page);
+  pageCdp.on('Network.requestWillBeSent', data => observeMetadata(data, 'page-CDP'));
+  pageCdp.on('Network.requestWillBeSentExtraInfo', data => observeExtraInfo(data, 'page-CDP requestWillBeSentExtraInfo'));
+  pageCdp.on('Network.dataReceived', data => observeReceivedData(data, 'page-CDP'));
+  pageCdp.on('Network.loadingFinished', data => {
+    const item = cdpByRequestId.get(data.requestId);
+    if (item) { item.finishedAtEpochMs = Date.now(); item.finishObservation = 'page-CDP'; }
+  });
   pageCdp.on('Target.attachedToTarget', ({ sessionId, targetInfo }) => {
     task((async () => {
       try {
@@ -145,16 +195,20 @@ async function attachWorkerObservation() {
     }
     const data = value.params ?? {}, key = `${sessionId}:${data.requestId}`;
     if (value.method === 'Network.requestWillBeSent') {
-      const request = data.request, item = { phase, sequence: ++cdpSequence, url: request.url, method: request.method, headers: request.headers, atEpochMs: Date.now(), source: 'dedicated-worker-CDP' };
-      cdpTrace.push(item); cdpRequests.set(key, item);
+      const request = data.request, item = observeMetadata(data, 'dedicated-worker-CDP');
+      if (!item) return;
+      cdpRequests.set(key, item);
       try {
-        checkRequest(item, { allowMissingBody: true });
         // postData is UTF-8 text and cannot faithfully represent arbitrary PIR
         // ciphertext. Only CDP's base64 postDataEntries are accepted as bytes.
         if (request.postDataEntries?.length && request.postDataEntries.every(entry => typeof entry.bytes === 'string')) {
           inspectBody(item, Buffer.concat(request.postDataEntries.map(entry => Buffer.from(entry.bytes, 'base64'))), 'CDP postDataEntries');
         }
       } catch (error) { blocked.push({ phase: item.phase, path: new URL(item.url).pathname, reason: compactError(error) }); }
+    } else if (value.method === 'Network.requestWillBeSentExtraInfo') {
+      observeExtraInfo(data, 'worker-CDP requestWillBeSentExtraInfo');
+    } else if (value.method === 'Network.dataReceived') {
+      observeReceivedData(data, 'worker-CDP');
     } else if (value.method === 'Network.responseReceived') {
       const item = cdpRequests.get(key); if (item) {
         item.status = data.response.status; item.responseType = data.response.mimeType;
@@ -162,7 +216,7 @@ async function attachWorkerObservation() {
       }
     } else if (value.method === 'Network.loadingFinished') {
       const item = cdpRequests.get(key); if (!item) return;
-      item.finishedAtEpochMs = Date.now(); item.encodedDataLength = data.encodedDataLength;
+      item.finishedAtEpochMs = Date.now(); item.encodedDataLength = data.encodedDataLength; item.finishObservation = 'worker-CDP';
       task((async () => {
         try {
           const response = await cdpSend(sessionId, 'Network.getResponseBody', { requestId: data.requestId });
@@ -178,6 +232,7 @@ async function attachWorkerObservation() {
   });
   // Pause new dedicated workers just long enough to enable Network observation;
   // this neither changes their code nor intercepts/replaces their responses.
+  await pageCdp.send('Network.enable', { maxPostDataSize: 1024 * 1024, maxResourceBufferSize: 32 * 1024 * 1024, maxTotalBufferSize: 128 * 1024 * 1024 });
   await pageCdp.send('Target.setAutoAttach', { autoAttach: true, waitForDebuggerOnStart: true, flatten: false });
 }
 
@@ -205,7 +260,12 @@ async function checkBatch(name, expectedQueries = 1, { initial = false } = {}) {
     const reply = item.responseBytes !== undefined ? item : cdp?.responseBytes !== undefined ? cdp : null;
     if (reply) {
       assert.equal(reply.responseBytes, manifest.layerCount * REPLY_BYTES); item.responseBytes = reply.responseBytes; item.responseSha256 = reply.responseSha256;
-    } else gap({ phase: name, kind: 'encrypted-reply-body', detail: 'Worker reply body unavailable to DevTools; successful decode/decode-stage verifies client framing, but this is not an observed response-body length.' });
+    } else gap({ phase: name, kind: 'encrypted-reply-body', detail: 'Full worker reply body/hash unavailable to DevTools. Received payload counters are reported separately; no clean terminal transport event or body hash is claimed.' });
+    const payload = cdp?.receivedPayloadByChannel?.['worker-CDP'];
+    if (payload?.events) {
+      assert.equal(payload.decodedBytes, manifest.layerCount * REPLY_BYTES, `${name}: observed received payload byte count`);
+      item.receivedPayloadBytes = payload.decodedBytes; item.receivedPayloadObservation = 'worker-CDP dataReceived sum';
+    } else gap({ phase: name, kind: 'received-payload-count', detail: 'No independent CDP payload byte count was available.' });
   }
   assert.equal(page.url(), `${origin}/`, 'The wallet fragment must be stripped and never replaced by an identifier URL.');
   return queries;
@@ -406,6 +466,19 @@ try {
     item.declaredResponseBytes = headers['content-length'] === undefined ? undefined : Number(headers['content-length']);
     item.securityHeaders = { csp: headers['content-security-policy'], cacheControl: headers['cache-control'], referrerPolicy: headers['referrer-policy'], robots: headers['x-robots-tag'] };
     task((async () => {
+      let actual;
+      try { actual = await boundedObservation(response.request().allHeaders()); }
+      catch {
+        gap({ phase: item.phase, kind: 'playwright-all-headers', path: item.path, detail: 'Playwright allHeaders unavailable; separate CDP ExtraInfo raw-header evidence is required.' });
+        return;
+      }
+      try {
+        checkRequest({ ...item, headers: actual }, { allowMissingBody: true });
+        item.allHeadersObservation = 'Playwright allHeaders'; item.allHeadersSummary = headersSummary(actual);
+        item.allHeadersReferrerCategory = referrerCategory(actual);
+      } catch (error) { blocked.push({ phase: item.phase, path: item.path, source: 'Playwright allHeaders', reason: compactError(error) }); }
+    })());
+    task((async () => {
       try { const bytes = await boundedObservation(response.body()); item.responseBytes = bytes.length; item.responseSha256 = sha256(bytes); item.responseObservation = 'Playwright response body'; }
       catch { item.responseObservation = 'unavailable'; }
     })());
@@ -445,6 +518,15 @@ try {
     } else await lookup({ name, ...plans[name] });
   }
   await settle();
+  for (const item of trace) {
+    const matches = [...cdpTrace, ...cdpPageTrace].filter(entry => entry.phase === item.phase && entry.url === item.url && entry.method === item.method);
+    const actual = matches.find(entry => entry.actualHeaderObservation);
+    if (actual) {
+      item.actualHeaderObservation = actual.actualHeaderObservation; item.actualHeaderSummary = actual.actualHeaderSummary;
+      item.actualReferrerCategory = actual.actualReferrerCategory;
+    } else gap({ phase: item.phase, kind: 'raw-request-headers', path: item.path,
+      detail: 'No matching CDP ExtraInfo wire headers; provisional headers/allHeaders checks are retained, but raw transmitted-header absence is not claimed.' });
+  }
   const publicGets = trace.filter(item => /^\/publication\/layers\//.test(item.path));
   exact(publicGets.map(item => item.path), manifest.layers.map((_, index) => `/publication/layers/${index}/public.bin`), 'All setup layers must be fetched exactly once in public order');
   const firstQuery = trace.findIndex(item => item.path === '/pir/query');
@@ -487,7 +569,7 @@ try {
     manifest: { schema: manifest.schema, geometry: manifest.geometry, contextId: manifest.contextId, layerCount: manifest.layerCount, sourceSummary: manifest.sourceSummary },
     wire: { queriesPerLookup: 1, uploadBytes: REQUEST_BYTES, replyBytes: manifest.layerCount * REPLY_BYTES, setupBytes: manifest.layerCount * PUBLIC_BYTES },
     initializationMs, initializationFinishedAt, workerCdpSessions: workerSessions, cases, quietWindows, freshness, storage, assets, observationGaps: gaps,
-    browserRequestTrace: trace.map(summarize), workerCdpRequestTrace: cdpTrace.map(summarize),
+    browserRequestTrace: trace.map(summarize), workerCdpRequestTrace: cdpTrace.map(summarize), pageCdpRequestTrace: cdpPageTrace.map(summarize),
     checks: ['fragment auto-selection after all public setup; fragment stripped', 'manual entry produces no typing traffic', 'full-envelope deepStrictEqual including original snapshot/source/raw/price/null fees',
       'complete raw JSON value parity and exact recovered pretty formatting; exact hex and local JSON export', 'single fixed POST and complete all-layer reply on success/absence/content failure',
       'no partial result, automatic retry, fallback, metadata refresh or background traffic after failure', 'occupied and empty hash-row absence when requested',
@@ -499,6 +581,10 @@ try {
 } catch (error) {
   const failure = { status: 'failed', startedAt, completedAt: new Date().toISOString(), phase, mode, origin, publicationId: manifest?.publicationId ?? null,
     error: deadlineExceeded ? 'The whole-run 45-minute deadline expired.' : compactError(error), casesCompleted: cases.map(item => item.name), blocked, external, consoleErrors, pageErrors, observationGaps: gaps,
+    headerDiagnostics: [...cdpTrace, ...cdpPageTrace].map(item => ({ phase: item.phase, path: new URL(item.url).pathname,
+      requestId: item.requestId, provisionalReferrerCategory: item.provisionalReferrerCategory, referrerPolicy: item.referrerPolicy,
+      actualHeaderObservation: item.actualHeaderObservation ?? null, actualReferrerCategory: item.actualReferrerCategory ?? null,
+      receivedPayloadByChannel: item.receivedPayloadByChannel, finishObservation: item.finishObservation, transportError: item.transportError })),
     requestCountsByPhase: Object.fromEntries([...new Set(trace.map(item => item.phase))].map(name => [name, phaseItems(name).map(item => ({ path: item.path, method: item.method, status: item.status, bodyBytes: item.bodyBytes, responseBytes: item.responseBytes }))])) };
   await writeFile(resolve(output, 'global-browser-failure.json'), `${JSON.stringify(failure, null, 2)}\n`);
   console.error(JSON.stringify({ status: 'failed', phase, error: failure.error, output }, null, 2)); process.exitCode = 1;

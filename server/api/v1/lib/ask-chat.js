@@ -220,10 +220,12 @@ function directSelection(input) {
 }
 // preselected: a selection made by the agent's tool call. It skips the routing
 // call and renders through the same checked paths.
+// The research classifier drafts SQL from instructionsFor's schemas, so it is
+// not sent the plan catalogue.
 async function chat(input, run, internalClient, signal, analysisInstructions, cache, analytics, preselected = null) {
   const page = pageById(input.page);
   const publicExplain = !input.history.length && /^explain this (page|view|chart)[?.!]?$/i.test(input.question.trim());
-  const selection = preselected ? { topics: [], ...preselected } : directSelection(input) || await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { analyticsCatalogue: analytics.catalogue, utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
+  const selection = preselected ? { topics: [], ...preselected } : directSelection(input) || await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { ...(input.page === 'ask' && analytics.researchEnabled ? {} : { analyticsCatalogue: analytics.catalogue }), utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
   const locale = input.locale === 'auto' ? selection.locale : input.locale;
   // The page widget has no SQL research route. A question that needs one is
   // offered to Zift instead of refused (no SQL is compiled or run here); an

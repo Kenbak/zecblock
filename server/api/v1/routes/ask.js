@@ -447,4 +447,4 @@ function createAskRouter(env = process.env, dependencies = {}) {
   return router;
 }
 
-module.exports = { createAskRouter, interpret, agentStep, providerConfig, RESERVE, RELEASE_EXPLANATION };
+module.exports = { createAskRouter, interpret, agentStep, providerConfig, RESERVE, RELEASE_EXPLANATION, analysisInstruction: instruction };

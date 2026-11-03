@@ -89,9 +89,20 @@ function budgetConfig(env, { authenticatedStaging = false } = {}) {
 }
 // Planning calls that reason need room for reasoning tokens inside the cap.
 const MAX_OUTPUT_TOKENS = 4000;
+// Largest provider request body, derived from what can enter one: the fixed
+// prompts (held under FIXED_PROMPT_BYTES by ask-prompt-budget.test.js), the
+// visitor's /ask body (ASK_BODY_BYTES, at most doubled by JSON re-encoding)
+// and the agent's repair turns (model SQL of at most 8192 characters, at most
+// four bytes each once re-encoded, plus server feedback). Each reservation
+// uses the request's actual bytes; this bound only rejects larger requests.
+const ASK_BODY_BYTES = 16 * 1024;
+const FIXED_PROMPT_BYTES = 56000;
+const REPAIR_TURNS = 2;
+const REPAIR_TURN_BYTES = 4 * 8192 + 4096;
+const MAX_CONTEXT_BYTES = FIXED_PROMPT_BYTES + 2 * ASK_BODY_BYTES + REPAIR_TURNS * REPAIR_TURN_BYTES;
 function maximumCost(config, body) {
   const bytes = Buffer.byteLength(body, 'utf8');
-  if (bytes > 48000) throw new Error('Context too large');
+  if (bytes > MAX_CONTEXT_BYTES) throw new Error('Context too large');
   let request;
   try { request = JSON.parse(body); } catch { /* Legacy text callers reserve the default cap. */ }
   const caps = [request?.max_completion_tokens, request?.max_tokens].filter(value => value !== undefined);
@@ -179,4 +190,4 @@ async function admit(redis, config, req, fetchImpl = fetch) {
     throw askError('unavailable');
   }
 }
-module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, budgetConfig, maximumCost, reserve, admit, admitWork };
+module.exports = { RECONCILE, billedCost, RESERVE, ADMIT, ADMIT_WORK, REQUEST_LIMITS, WORK_LIMITS, ASK_BODY_BYTES, FIXED_PROMPT_BYTES, REPAIR_TURNS, MAX_CONTEXT_BYTES, budgetConfig, maximumCost, reserve, admit, admitWork };

@@ -4,7 +4,7 @@
     "title": "ZecBlock API v1",
     "version": "1.0.0-preview",
     "summary": "Versioned, contract-stable read/write API for the Zcash blockchain data and privacy-intelligence features exposed by ZecBlock.",
-    "description": "This is the v1 contract layer. It is gated behind API_V1_ENABLED and, pre-launch, an X-API-Preview-Key header (see the previewKey security scheme) — see server/api/v1/README.md in the repository for exact mount instructions and current caveats. Every success response uses the {data, meta} envelope; every error response is an RFC 9457 problem+json document. Every public inventory entry is adapted; The manifest explicitly identifies retained operational routes and payment-protected services.",
+    "description": "This is the v1 contract layer. Public production reads need no API key or preview header; protected deployments may still require X-API-Preview-Key. Individual operations document their own credentials (for example X-Node-Token). Every success response uses the {data, meta} envelope; every error response is an RFC 9457 problem+json document. Every public inventory entry is adapted; The manifest explicitly identifies retained operational routes and payment-protected services.",
     "contact": {
       "name": "ZecBlock / Atmosphere Labs"
     }
@@ -97,20 +97,7 @@
       "name": "valuation"
     }
   ],
-  "security": [
-    {
-      "previewKey": []
-    }
-  ],
   "components": {
-    "securitySchemes": {
-      "previewKey": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Preview-Key",
-        "description": "Required while API_V1_LAUNCHED=false. Dropped once v1 is generally available."
-      }
-    },
     "schemas": {
       "Problem": {
         "type": "object",
@@ -432,7 +419,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1235,7 +1222,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1496,7 +1483,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1682,7 +1669,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1875,7 +1862,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2030,7 +2017,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2297,7 +2284,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2452,7 +2439,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2617,7 +2604,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2772,7 +2759,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2942,7 +2929,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3107,7 +3094,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3272,7 +3259,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3427,7 +3414,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3815,7 +3802,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3989,7 +3976,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4154,7 +4141,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4326,7 +4313,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4491,7 +4478,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4664,7 +4651,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4819,7 +4806,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4974,7 +4961,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5129,7 +5116,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5284,7 +5271,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5439,7 +5426,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5594,7 +5581,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5749,7 +5736,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5904,7 +5891,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6059,7 +6046,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6225,7 +6212,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6380,7 +6367,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6536,7 +6523,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6703,7 +6690,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6858,7 +6845,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7025,7 +7012,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7180,7 +7167,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7335,7 +7322,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7528,7 +7515,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7683,7 +7670,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7838,7 +7825,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7993,7 +7980,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8148,7 +8135,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8303,7 +8290,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8478,7 +8465,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8633,7 +8620,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8788,7 +8775,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8978,7 +8965,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9153,7 +9140,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9319,7 +9306,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9485,7 +9472,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9651,7 +9638,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9854,7 +9841,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10208,7 +10195,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10403,7 +10390,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10593,7 +10580,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10934,7 +10921,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11089,7 +11076,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11264,7 +11251,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11439,7 +11426,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11594,7 +11581,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11749,7 +11736,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11937,7 +11924,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12141,7 +12128,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12312,7 +12299,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12477,7 +12464,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12632,7 +12619,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12787,7 +12774,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12942,7 +12929,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13121,7 +13108,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13297,7 +13284,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13473,7 +13460,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13711,7 +13698,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13964,7 +13951,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14207,7 +14194,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14450,7 +14437,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14615,7 +14602,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14780,7 +14767,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14973,7 +14960,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15157,7 +15144,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15334,7 +15321,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15500,7 +15487,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15666,7 +15653,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15832,7 +15819,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15998,7 +15985,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16164,7 +16151,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16330,7 +16317,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16498,7 +16485,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16666,7 +16653,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16821,7 +16808,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17014,7 +17001,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17187,7 +17174,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17353,7 +17340,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17569,7 +17556,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17735,7 +17722,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17901,7 +17888,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18067,7 +18054,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18233,7 +18220,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18399,7 +18386,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18565,7 +18552,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18720,7 +18707,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18875,7 +18862,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19030,7 +19017,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19196,7 +19183,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19351,7 +19338,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19506,7 +19493,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19708,7 +19695,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19863,7 +19850,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20018,7 +20005,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20173,7 +20160,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20348,7 +20335,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20523,7 +20510,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20698,7 +20685,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20891,7 +20878,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21046,7 +21033,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21263,7 +21250,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21418,7 +21405,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21573,7 +21560,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21738,7 +21725,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21913,7 +21900,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22112,7 +22099,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22277,7 +22264,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22443,7 +22430,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22617,7 +22604,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22783,7 +22770,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22949,7 +22936,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23114,7 +23101,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23269,7 +23256,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23424,7 +23411,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23579,7 +23566,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23745,7 +23732,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23900,7 +23887,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24080,7 +24067,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24245,7 +24232,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24478,7 +24465,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24652,7 +24639,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24827,7 +24814,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25002,7 +24989,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25167,7 +25154,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25350,7 +25337,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25505,7 +25492,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25660,7 +25647,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25839,7 +25826,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26036,7 +26023,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26269,7 +26256,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26458,7 +26445,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26633,7 +26620,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26788,7 +26775,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26953,7 +26940,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27118,7 +27105,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27283,7 +27270,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27462,7 +27449,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27627,7 +27614,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27809,7 +27796,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27991,7 +27978,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {

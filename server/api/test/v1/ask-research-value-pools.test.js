@@ -90,7 +90,7 @@ test('migrations are guarded, keep private columns private and order destination
  assert.match(rollback,/EXISTS\(SELECT FROM pg_subscription_rel WHERE srrelid='public\.node_accounting_observations'::regclass\)/);
  const admission=fs.readFileSync(path.join(__dirname,'../../scripts/ask-core-admission.js'),'utf8');
  assert.match(admission,/WHEN 'value_pools_daily' THEN ARRAY\['public\.node_accounting_observations'\]/);
- assert.match(admission,/'swap_daily','value_pools_daily'\)/);
+ assert.match(admission,/'swap_daily','value_pools_daily'[,)]/);
 });
 
 test('value_pools_daily view: canonical day-end snapshots, coverage counts and gating',{skip:process.env.ASK_EVAL_TEST_POSTGRES!=='1',timeout:60000},async t=>{

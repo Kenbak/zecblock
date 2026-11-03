@@ -6,11 +6,17 @@ row, splits those rows across a fixed public set of layers, and retrieves the
 same row from every layer with one encrypted query. The public manifest contains
 no transaction-ID catalogue or selected partition locator.
 
-The implementation is experimental and uncertified. The capture and native plan
-described below exist; they do not establish a completed preparation, running
-global service, successful Chrome acceptance, independent cryptographic approval
-or full-history availability. Existing recent/collection pilot protocols and
-their serving heads remain separate.
+The implementation is experimental and uncertified. The 71-layer real-data
+publication described below is prepared and serving on the main server through
+loopback/SSH at `http://127.0.0.1:4320/`. Clean and adversarial Chrome acceptance
+pass for the bounded 12-record source. This does not establish independent
+cryptographic approval or full-history availability. The existing recent/collection
+pilot and its serving head remain separate on port 4319.
+
+The installed native artifact is exact `310095f0fc019ffc640fff9a4bd1aa2fb031a703`;
+the installed Node/browser runtime is exact `58b0ce9173cd0b894990db1be86f3500faeae2f1`.
+Acceptance uses driver `bc5f1bf8d5ad22e0e21d94d55e02eacdd1785c4a`. These are local
+feature-branch/lab states, not public production releases.
 
 ## Record and row layout
 
@@ -142,8 +148,14 @@ The actual native `plan-global` result for that frozen input reports:
   observation-tip identity. Declared height bounds **0–2,000,007** do not imply
   coverage of the intervening blocks; `coverageComplete` remains false.
 
-These are input/plan measurements. They are not final artifact size, preparation
-duration, query latency, browser memory, native peak RSS or throughput evidence.
+The actual preparation completed at **2026-11-03T04:22:55.062134Z** after
+**1,671.592390 seconds**, using **2,913.264130 CPU seconds**. Final layer artifacts
+contain **85,613,603,808 bytes**, including **76,058,553,312 prepared bytes**;
+manifest, anchors, source, runtime and filesystem overhead are separate.
+The transient preparation unit was capped at 2 CPU, 4 GiB memory and no swap,
+with a 3 GiB memory-high threshold. Its **3,221,749,760-byte cgroup peak includes
+file cache**, not peak RSS; swap peak was zero. All 71 layers finalized normally.
+
 At the admitted 128-layer maximum, the reply is **10,485,760 bytes** and public
 setup is **46,137,344 bytes**; upload remains 20,992 bytes.
 
@@ -271,7 +283,11 @@ and null fees, checks fixed request/reply geometry, and tests no partial UI
 output. It observes worker traffic through Playwright and dedicated-worker CDP,
 checks selector bytes when upload bytes are available, compares repeated
 ciphertext hashes when observable, and records observation gaps explicitly.
-Missing DevTools bodies never become a claimed observed-byte or freshness pass.
+Missing DevTools bodies never become a claimed body-hash or clean terminal
+transport pass. Independent CDP `dataReceived` counters are checked separately
+for received payload length. Raw `requestWillBeSentExtraInfo` headers are joined
+from the parent page session: renderer metadata can synthesize an empty Referer
+member even when the transmitted header is absent.
 It also checks CSP, origin/path/header restrictions, no cookies/storage,
 analytics/external traffic or WebSockets, no typing requests, page overflow and
 desktop/500px/390px Overview screenshots. After each absence/failure it observes
@@ -292,7 +308,42 @@ or restart a server.
 Reports store counts, hashes, metadata, explicit gaps and screenshots; they do
 not retain encrypted bodies, client secrets or full decrypted envelopes. A
 passing run establishes only the cases and observations in its own receipt.
-This document does not assert that such a run has completed.
+The completed November 2 local-date / November 3 UTC runs use Chrome
+**156.0.8078.80** on the native ARM Node runner. All seven clean cases pass,
+including the **12,092,877-byte** and **11,508,879-byte** source envelopes, complete
+raw JSON values/pretty formatting, exact hex/export, original snapshot and
+1280/500/390px layouts. Six clean queries have distinct observed ciphertexts,
+including the same-transaction repeat. Every query sends **20,992 bytes** and
+CDP counts **5,816,320 received payload bytes**. Both absence windows and both
+adversarial failure windows have **35 seconds with zero further requests**.
+Selected-layer and unused-layer corruption are both rejected; the unaffected
+large transaction still passes from each adversarial publication.
+
+Actual wire-header observations omit Referer, cookies, authorization and
+forwarding headers. No transaction identifier appears in observed request paths,
+headers or encrypted upload bytes; there is no external traffic, storage or
+public fallback. These are bounded functional/transcript observations, not an
+independent cryptographic proof. Clean successful lookup totals were
+**92,809.635 / 95,333.085 / 94,333.130 / 93,858.015 ms** for large1 / large2 /
+genesis / repeat. The large-record latency is a release blocker to optimize;
+these limited, low-priority runs are not a throughput benchmark.
+
+The reports explicitly retain **148 / 144 / 145 observation gaps** for clean /
+selected-layer poison / unused-layer poison. DevTools does not expose full
+worker reply bodies/hashes or clean completion events; it reports
+`net::ERR_ABORTED` after the exact received-payload counts, also on successful
+lookups. Setup completion/browser-body observations are also missing; separate
+operator asset hashes and WASM setup admission pass. No clean terminal transport
+or unavailable body-hash observation is claimed. The original launch timeout,
+JSON-key-order test assumption and provisional-header false alarm are retained
+alongside the corrected tests.
+
+The clean source/query units remain active; auxiliary smoke/adversarial units
+are stopped after acceptance. The new lab uses separate directories under
+`/opt/zecblock-pir-global-lab` and `/var/lib/zecblock-pir-global-lab`. All nine
+baseline production/existing-pilot process IDs and activation times remained
+unchanged through the observed checks. PostgreSQL source reads remain read-only;
+no public listener, DNS, Vercel, existing pilot release or indexer was changed.
 
 ## Remaining gates
 

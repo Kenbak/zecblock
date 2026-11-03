@@ -14,10 +14,11 @@ route, API/indexer code, database schema, DNS or public listener.
 [GLOBAL.md](GLOBAL.md) documents the implemented shared hash-row/layer lab
 protocol, bounded read-only capture, native planning/preparation, isolated
 loopback service and actual Chrome acceptance driver. It uses a separate
-`global-2k-64k` profile with no public transaction catalogue. Its current sparse
-12-record input plan does not establish successful end-to-end acceptance,
-independent cryptographic approval or full-history readiness; existing pilot
-publication and serving paths remain separate.
+`global-2k-64k` profile with no public transaction catalogue. Its sparse
+12-record / 71-layer publication is prepared and passes clean/adversarial Chrome
+acceptance through the separate loopback/SSH demo at port 4320. Large lookups
+currently take about 93–96 seconds. Independent cryptographic approval, full-history
+backfill and live global publication remain open; existing pilot paths stay separate.
 
 ## Retained archive and live publication
 

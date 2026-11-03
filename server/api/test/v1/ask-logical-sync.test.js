@@ -621,6 +621,44 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    assert.equal(await errors(),errorsBefore);
    assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
   });
+  await admission.test('UTXO summaries replicate only reviewed columns, join on matching counts and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   for(const name of ['supply-issuance-v1.sql','mining-v1.sql','reorgs-v1.sql','swaps-v1.sql','value-pools-v1.sql','value-pools-v2.sql','utxo-daily-v1.sql'])await target.query(read(name));
+   // The explorer's tables, bookkeeping column included.
+   await source.query(`CREATE TABLE utxo_age_daily(date date PRIMARY KEY,lt_1m_zat bigint DEFAULT 0,b_1_3m_zat bigint DEFAULT 0,b_3_6m_zat bigint DEFAULT 0,b_6_12m_zat bigint DEFAULT 0,b_1_2y_zat bigint DEFAULT 0,gt_2y_zat bigint DEFAULT 0,total_unspent_zat bigint DEFAULT 0,utxo_count integer DEFAULT 0,cdd double precision DEFAULT 0,avg_dormancy_days double precision DEFAULT 0,spent_count integer DEFAULT 0,created_at timestamptz DEFAULT now())`);
+   await source.query('CREATE TABLE transparent_realized_cap_daily(date date PRIMARY KEY,realized_cap_usd numeric,unspent_count bigint,avg_cost_basis_usd numeric)');
+   await source.query(`INSERT INTO utxo_age_daily(date,gt_2y_zat,total_unspent_zat,utxo_count,cdd,spent_count) SELECT d::date,n,10*n,n,n*1.5,n FROM generate_series(1,3) n,LATERAL (SELECT DATE '2026-10-28'+n AS d) x`);
+   await source.query(`INSERT INTO transparent_realized_cap_daily SELECT DATE '2026-10-28'+n,n*1000,n,n*10 FROM generate_series(1,3) n`);
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('utxo-daily-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+2);
+   // A morning repair rewrites the latest date in place.
+   await source.query("UPDATE utxo_age_daily SET total_unspent_zat=99,created_at=now() WHERE date=DATE '2026-10-31'");
+   await wait(async()=>(await target.query("SELECT total_unspent_zat::text AS t FROM public.utxo_age_daily WHERE date=DATE '2026-10-31'")).rows[0]?.t==='99');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.utxo_age_daily'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['date','lt_1m_zat','b_1_3m_zat','b_3_6m_zat','b_6_12m_zat','b_1_2y_zat','gt_2y_zat','total_unspent_zat','utxo_count','cdd','avg_dormancy_days','spent_count']);
+   await target.query(read('utxo-daily-grant-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='utxo_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query('SELECT date::text,utxos::int,unspent::text,age_gt_2y::text,cdd::text,realized_cap_usd::text FROM analytics_public.utxo_daily_query ORDER BY date')).rows,[
+    {date:'2026-10-29',utxos:1,unspent:'10',age_gt_2y:'1',cdd:'1.5000',realized_cap_usd:'1000.00'},
+    {date:'2026-10-30',utxos:2,unspent:'20',age_gt_2y:'2',cdd:'3.0000',realized_cap_usd:'2000.00'},
+    {date:'2026-10-31',utxos:3,unspent:'99',age_gt_2y:'3',cdd:'4.5000',realized_cap_usd:'3000.00'}]);
+   for(const sql of ['SELECT * FROM public.utxo_age_daily','SELECT * FROM public.transparent_realized_cap_daily','SELECT created_at FROM analytics_public.utxo_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('utxo-daily-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('utxo-daily-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   for(const name of ['utxo-daily-v1-rollback.sql','value-pools-v1-rollback.sql','swaps-v1-rollback.sql','reorgs-v1-rollback.sql','mining-v1-rollback.sql','supply-issuance-v1-rollback.sql'])await target.query(read(name));
+   assert.equal((await target.query("SELECT to_regclass('public.utxo_age_daily') IS NULL AND to_regclass('public.transparent_realized_cap_daily') IS NULL AS gone")).rows[0].gone,true);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');

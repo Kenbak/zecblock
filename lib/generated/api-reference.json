@@ -563,6 +563,7 @@
                   "issuance_daily",
                   "reorgs",
                   "orphaned_blocks",
+                  "utxo_daily",
                   "value_pools_daily",
                   "swap_daily",
                   "labels"

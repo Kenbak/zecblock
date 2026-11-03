@@ -175,14 +175,17 @@ test('restart reclaims only marked owned staging under the writer lock', async t
 test('aborted planner waits for actual child exit before returning control', { timeout: 5000 }, async t => {
   const box = await fixture(t);
   const binary = resolve(box.directory, 'delayed-native'), pidFile = resolve(box.directory, 'native.pid');
-  await writeFile(binary, `#!${process.execPath}\nconst fs=require('node:fs');process.once('SIGTERM',()=>setTimeout(()=>process.exit(1),150));fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=>{},1000);\n`);
+  await writeFile(binary, `#!${process.execPath}\nconst fs=require('node:fs');process.once('SIGTERM',()=>setTimeout(()=>process.exit(1),150));fs.writeFileSync(${JSON.stringify(`${pidFile}.tmp`)},String(process.pid));fs.renameSync(${JSON.stringify(`${pidFile}.tmp`)},${JSON.stringify(pidFile)});setInterval(()=>{},1000);\n`);
   await chmod(binary, 0o700);
   const controller = new AbortController();
   const job = planFullSource(source(10, 10), box.directory, { binary, signal: controller.signal });
   const rejected = assert.rejects(job, { name: 'AbortError' });
   let pid;
   for (let attempt = 0; attempt < 100; attempt++) {
-    try { pid = Number(await readFile(pidFile, 'utf8')); break; }
+    try {
+      const candidate = Number(await readFile(pidFile, 'utf8'));
+      if (Number.isSafeInteger(candidate) && candidate > 0) { pid = candidate; break; }
+    }
     catch (error) { if (error.code !== 'ENOENT') throw error; }
     await new Promise(resolveWait => setTimeout(resolveWait, 10));
   }

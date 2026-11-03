@@ -29,6 +29,9 @@ use zakura_pir_server_core::native::{
 use zcash_transaction_wire::TransactionView;
 
 mod chunk_spike;
+mod explorer;
+#[path = "../../src/explorer_record.rs"]
+pub mod explorer_record;
 mod full;
 mod index_spike;
 #[path = "../../src/full_record.rs"]
@@ -371,6 +374,16 @@ fn main() {
             let queries = queries.parse().map_err(|_| "invalid queries")?;
             index_spike::run(entries, rows, row_bytes, &threads, queries)
         })(),
+        [_, mode, out] if mode == "explorer-encode" => explorer::encode(Path::new(out)),
+        [_, mode, records, dir, tip] if mode == "explorer-build" => tip
+            .parse()
+            .map_err(|_| "invalid snapshot tip".into())
+            .and_then(|tip| explorer::build(Path::new(records), Path::new(dir), tip)),
+        [_, mode, dir, port, threads] if mode == "explorer-serve" => match (port.parse(), threads.parse()) {
+            (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads),
+            _ => Err("invalid port or threads".into()),
+        },
+        [_, mode, addr, txid] if mode == "explorer-lookup" => explorer::lookup(addr, txid, &explorer::default_cache()),
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
         _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global|plan-global-compact|measure-global <source.json> | prepare-global|prepare-global-compact <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global|serve-global-cached <directory> | profile-global <directory> [--mode baseline|cached|compare] [--layers N|all] [--iterations N] | benchmark-matvec <directory> [iterations]".into()),
     };

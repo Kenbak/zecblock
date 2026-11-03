@@ -40,7 +40,7 @@ fn synthetic(rows: usize, row_bytes: usize) -> Vec<u8> {
 }
 
 /// Same exact Z/(2^64) sums as `matvec::multiply`, split by row ranges.
-fn parallel_multiply(database: &[u8], row_bytes: usize, query: &[u64]) -> Vec<u64> {
+pub(super) fn parallel_multiply(database: &[u8], row_bytes: usize, query: &[u64]) -> Vec<u64> {
     let rows_per_task = (query.len() / (rayon::current_num_threads() * 4)).max(1);
     let mut out = database
         .par_chunks(rows_per_task * row_bytes)
@@ -69,7 +69,7 @@ fn parallel_multiply(database: &[u8], row_bytes: usize, query: &[u64]) -> Vec<u6
     out
 }
 
-fn preprocess_blocks(database: &[u8], profile: &TableProfile) -> Result<Vec<NativePreprocessed>, String> {
+pub(super) fn preprocess_blocks(database: &[u8], profile: &TableProfile) -> Result<Vec<NativePreprocessed>, String> {
     (0..profile.blocks())
         .into_par_iter()
         .map(|block| {
@@ -90,7 +90,7 @@ fn preprocess_blocks(database: &[u8], profile: &TableProfile) -> Result<Vec<Nati
         .collect()
 }
 
-fn median(values: &mut [u128]) -> u128 {
+pub(super) fn median(values: &mut [u128]) -> u128 {
     values.sort_unstable();
     values[values.len() / 2]
 }

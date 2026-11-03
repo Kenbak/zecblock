@@ -16,6 +16,8 @@ type Manifest = {
   network?: string;
   snapshot?: Snapshot;
   coverage?: { startHeight: number; endHeight: number; complete?: boolean; ranges?: PublishedRange[]; [key: string]: unknown };
+  layerCount?: number;
+  sourceSummary?: { recordCount?: number };
 };
 type Sample = { txid: string; label?: string; height?: number };
 type Measurements = { queryBytes: number; responseBytes: number; encryptMs: number; requestMs: number; decodeMs: number; totalMs: number; [key: string]: number };
@@ -38,6 +40,7 @@ export function App() {
   const requestRef = useRef(0);
   const publicationRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
+  const editedRef = useRef(false);
   const [txid, setTxid] = useState('');
   const [ready, setReady] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -53,6 +56,7 @@ export function App() {
 
   useEffect(() => {
     const worker = new Worker('/worker.js', { type: 'module' });
+    let fragmentHandled = false;
     workerRef.current = worker;
     worker.addEventListener('message', ({ data }) => {
       if (data.type === 'ready') {
@@ -70,6 +74,17 @@ export function App() {
         const catalogue = data.samples ?? data.catalogue ?? data.manifest?.catalogue ?? [];
         setSamples(Array.isArray(catalogue) ? catalogue.filter((sample: Sample | null) => sample !== null && typeof sample === 'object' && typeof sample.txid === 'string' && TXID.test(sample.txid)) : []);
         setStatus(changed ? 'The publication changed. Previous results were cleared; enter a transaction from the new coverage.' : 'Ready. The selected transaction ID stays in your browser.');
+        if (data.manifest?.schema === 'zecblock-private-global-v1' && !fragmentHandled) {
+          fragmentHandled = true;
+          const match = /^#tx=([a-f\d]{64})$/i.exec(window.location.hash);
+          if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
+          if (match && !editedRef.current) {
+            const selected = match[1].toLowerCase();
+            setTxid(selected); setBusy(true); setStage('query');
+            setStatus('Preparing the private lookup in this browser.');
+            worker.postMessage({ type: 'lookup', requestId: ++requestRef.current, txid: selected });
+          }
+        }
         return;
       }
       if (data.type === 'publication-warning') {
@@ -173,7 +188,10 @@ export function App() {
   const coverage = manifest?.coverage;
   const snapshot = manifest?.snapshot;
   const collection = manifest?.schema === 'zecblock-private-tx-collection-v1';
-  const coverageLabel = coverage && (collection
+  const global = manifest?.schema === 'zecblock-private-global-v1';
+  const coverageLabel = global
+    ? `${manifest?.sourceSummary?.recordCount?.toLocaleString() ?? 'Unknown'} published records · global index experiment`
+    : coverage && (collection
     ? `Published ranges: ${coverage.ranges?.map(range => range.startHeight === range.endHeight
       ? range.startHeight.toLocaleString()
       : `${range.startHeight.toLocaleString()}–${range.endHeight.toLocaleString()}`).join(' · ') || 'unavailable'}`
@@ -186,7 +204,7 @@ export function App() {
 
       <section className="private-search" aria-labelledby="lookup-title"><Card><CardBody>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><h2 className="text-sm font-medium text-primary" id="lookup-title">Transaction lookup</h2>{coverageLabel && <span className="text-caption text-muted font-mono" id="publication-coverage">{coverageLabel}</span>}</div>
-        <form id="lookup-form" onSubmit={lookup} autoComplete="off"><label className="sr-only" htmlFor="txid">Transaction ID</label><div className="private-search-row"><input ref={inputRef} id="txid" name="private-record" value={txid} onChange={event => setTxid(event.target.value)} disabled={busy} type="text" inputMode="text" spellCheck={false} autoCapitalize="off" autoComplete="off" maxLength={64} placeholder="Search a transaction ID in this publication" aria-describedby="input-help" aria-invalid={error && !TXID.test(txid.trim()) ? true : undefined} /><button className="btn btn-primary btn-md" id="lookup-button" type="submit" disabled={!ready || busy}>{busy ? 'Retrieving privately…' : 'Look up privately'}<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-5-5 5 5-5 5" /></svg></button></div></form>
+        <form id="lookup-form" onSubmit={lookup} autoComplete="off"><label className="sr-only" htmlFor="txid">Transaction ID</label><div className="private-search-row"><input ref={inputRef} id="txid" name="private-record" value={txid} onChange={event => { editedRef.current = true; setTxid(event.target.value); }} disabled={busy} type="text" inputMode="text" spellCheck={false} autoCapitalize="off" autoComplete="off" maxLength={64} placeholder="Search a transaction ID in this publication" aria-describedby="input-help" aria-invalid={error && !TXID.test(txid.trim()) ? true : undefined} /><button className="btn btn-primary btn-md" id="lookup-button" type="submit" disabled={!ready || busy}>{busy ? 'Retrieving privately…' : 'Look up privately'}<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-5-5 5 5-5 5" /></svg></button></div></form>
         <p className="text-caption text-muted mt-3" id="input-help">Lookup uses this page's pinned publication. The identifier stays in browser memory; no public API fallback.</p>
         {collection && coverage?.complete === false && <p className="text-caption text-muted mt-3" id="coverage-warning">Only the listed ranges are published. Transactions in the gaps are unavailable in this publication.</p>}
         <div className="flex flex-wrap items-center justify-between gap-3 mt-3"><p className="text-caption text-muted">Publication pinned for this page. All encrypted replies arrive before decoding; refresh is manual.</p><button type="button" id="refresh-publication" className="private-clear" disabled={busy} onClick={() => window.location.reload()}>Refresh publication</button></div>
@@ -198,6 +216,7 @@ export function App() {
 
       {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
       {collection && <p className="text-caption text-muted mb-4" id="collection-snapshot-warning">{snapshot ? 'The collection head is the newest segment snapshot. Older segments retain their captured observations; each result shows its own snapshot.' : 'The collection snapshot is unavailable.'} Current confirmation counts and spent status are unavailable.</p>}
+      {global && <p className="text-caption text-muted mb-4" id="global-index-warning">This experimental index covers the published records only. Every lookup receives the same complete encrypted bundle; results retain their own original snapshot. Full-history coverage and independent cryptographic review are pending.</p>}
       {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
       {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`], ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`], ['Browser encryption', formatMs(measurements.encryptMs)], ['PIR service', formatMs(measurements.requestMs)], ['Browser decoding', formatMs(measurements.decodeMs)]].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl></details>}

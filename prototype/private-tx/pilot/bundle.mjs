@@ -18,6 +18,7 @@ if (!/^[a-f0-9]{40}$/.test(nativeBuild.commit) || nativeBuild.artifact.sha256 !=
 // never accept a binary after native/profile/normal dependency changes.
 execFileSync('git', ['diff', '--quiet', nativeBuild.commit, commit, '--',
   'prototype/pir-browser/native', 'prototype/pir-browser/src/full_record.rs',
+  'prototype/pir-browser/src/global.rs',
   'prototype/pir-browser/bootstrap.py', 'prototype/pir-browser/build.sh',
   'server/tests/fixtures/browser-transactions.json'], { cwd: ROOT });
 const gitFile = (revision, path) => execFileSync('git', ['show', `${revision}:prototype/pir-browser/${path}`], { cwd: ROOT, encoding: 'utf8' });

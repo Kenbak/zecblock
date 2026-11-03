@@ -9,6 +9,16 @@ uses a separate unprivileged runtime/data directory on the mainnet primary,
 accessed only through an SSH loopback tunnel. It changes no production explorer
 route, API/indexer code, database schema, DNS or public listener.
 
+## Separate global-index experiment
+
+[GLOBAL.md](GLOBAL.md) documents the implemented shared hash-row/layer lab
+protocol, bounded read-only capture, native planning/preparation, isolated
+loopback service and actual Chrome acceptance driver. It uses a separate
+`global-2k-64k` profile with no public transaction catalogue. Its current sparse
+12-record input plan does not establish successful end-to-end acceptance,
+independent cryptographic approval or full-history readiness; existing pilot
+publication and serving paths remain separate.
+
 ## Retained archive and live publication
 
 The archive implementation reuses the same pinned PIR engine and transaction

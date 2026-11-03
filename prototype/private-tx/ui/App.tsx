@@ -22,13 +22,16 @@ type Manifest = {
 type Sample = { txid: string; label?: string; height?: number };
 type Measurements = { queryBytes: number; responseBytes: number; encryptMs: number; requestMs: number; decodeMs: number; totalMs: number; [key: string]: number };
 const TXID = /^[a-f\d]{64}$/i;
+const EXPLORER = 'zecblock-private-explorer-test-v1';
 
 function fullRecord(value: unknown): PrivateRecord | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as PrivateRecord;
   if (record.schema !== 'zecblock-private-tx-record-v1' || record.found !== true || record.network !== 'mainnet'
-      || !TXID.test(record.txid) || !record.detail || !record.raw || typeof record.raw.hex !== 'string'
-      || !record.raw.decoded || !record.snapshot || !Number.isSafeInteger(record.snapshot.height)
+      || !TXID.test(record.txid) || !record.detail
+      // The all-transactions explorer test carries no raw bytes; other publications must.
+      || (record.raw !== null && (!record.raw || typeof record.raw.hex !== 'string' || !record.raw.decoded))
+      || !record.snapshot || !Number.isSafeInteger(record.snapshot.height)
       || typeof record.snapshot.publishedAt !== 'string' || !record.coverage) return null;
   return record;
 }
@@ -55,7 +58,8 @@ export function App() {
   const [measurements, setMeasurements] = useState<Measurements | null>(null);
 
   useEffect(() => {
-    const worker = new Worker('/worker.js', { type: 'module' });
+    const workerUrl = document.querySelector<HTMLMetaElement>('meta[name="private-worker"]')?.content || '/worker.js';
+    const worker = new Worker(workerUrl, { type: 'module' });
     let fragmentHandled = false;
     workerRef.current = worker;
     worker.addEventListener('message', ({ data }) => {
@@ -74,7 +78,7 @@ export function App() {
         const catalogue = data.samples ?? data.catalogue ?? data.manifest?.catalogue ?? [];
         setSamples(Array.isArray(catalogue) ? catalogue.filter((sample: Sample | null) => sample !== null && typeof sample === 'object' && typeof sample.txid === 'string' && TXID.test(sample.txid)) : []);
         setStatus(changed ? 'The publication changed. Previous results were cleared; enter a transaction from the new coverage.' : 'Ready. The selected transaction ID stays in your browser.');
-        if (data.manifest?.schema === 'zecblock-private-global-v1' && !fragmentHandled) {
+        if ((data.manifest?.schema === 'zecblock-private-global-v1' || data.manifest?.schema === EXPLORER) && !fragmentHandled) {
           fragmentHandled = true;
           const match = /^#tx=([a-f\d]{64})$/i.exec(window.location.hash);
           if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
@@ -189,7 +193,10 @@ export function App() {
   const snapshot = manifest?.snapshot;
   const collection = manifest?.schema === 'zecblock-private-tx-collection-v1';
   const global = manifest?.schema === 'zecblock-private-global-v1';
-  const coverageLabel = global
+  const explorer = manifest?.schema === EXPLORER;
+  const coverageLabel = explorer
+    ? `${manifest?.sourceSummary?.recordCount?.toLocaleString() ?? 'Unknown'} transactions · every confirmed block to ${manifest?.snapshot?.height.toLocaleString()}`
+    : global
     ? `${manifest?.sourceSummary?.recordCount?.toLocaleString() ?? 'Unknown'} published records · global index experiment`
     : coverage && (collection
     ? `Published ranges: ${coverage.ranges?.map(range => range.startHeight === range.endHeight
@@ -216,6 +223,7 @@ export function App() {
 
       {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
       {collection && <p className="text-caption text-muted mb-4" id="collection-snapshot-warning">{snapshot ? 'The collection head is the newest segment snapshot. Older segments retain their captured observations; each result shows its own snapshot.' : 'The collection snapshot is unavailable.'} Current confirmation counts and spent status are unavailable.</p>}
+      {explorer && <p className="text-caption text-muted mb-4" id="explorer-warning">All-transactions test. Every lookup sends the same encrypted request to every main table, so the server cannot tell which transaction you chose or whether it exists. Large transactions need an extra overflow request, which reveals that the record is large. Raw transaction bytes are not included.</p>}
       {global && <p className="text-caption text-muted mb-4" id="global-index-warning">This experimental index covers the published records only. Every lookup receives the same complete encrypted bundle; results retain their own original snapshot. Full-history coverage and independent cryptographic review are pending.</p>}
       {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
@@ -226,6 +234,8 @@ export function App() {
         [measurements.decodePrepareMs === undefined ? 'PIR request' : 'Request with overlapping browser preparation', formatMs(measurements.requestMs)],
         ...(measurements.decodePrepareMs === undefined ? [] : [['Browser reply preparation (overlaps request)', formatMs(measurements.decodePrepareMs)]]),
         ['Browser decoding and verification', formatMs(measurements.decodeMs)],
+        ...(measurements.serverMs === undefined ? [] : [['Server computation (all tables)', formatMs(measurements.serverMs)]]),
+        ...(measurements.overflowRows ? [['Overflow rows fetched', String(measurements.overflowRows)], ['Overflow request', formatMs(measurements.overflowMs)]] : []),
         ...(measurements.decoderCoefficientBytes === undefined ? [] : [['Cached public coefficients', `${measurements.decoderCoefficientBytes.toLocaleString()} bytes`]]),
       ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{measurements.decodePrepareMs !== undefined && <p>Browser reply preparation overlaps the request; these times cannot be added together. Coefficient bytes exclude other browser memory.</p>}</details>}
 

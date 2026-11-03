@@ -24,7 +24,7 @@ export interface PrivateRecord {
   coverage: { startHeight: number; endHeight: number; [key: string]: unknown };
   txid: string;
   detail: Record<string, unknown>;
-  raw: RawTxData;
+  raw: RawTxData | null;
   price?: { price_usd?: number | null; exact?: boolean; actual_date?: string; [key: string]: unknown } | null;
 }
 
@@ -65,7 +65,7 @@ export function TransactionView({ record, data }: { record: PrivateRecord; data:
     <div className="private-full-hash mb-5"><code id="result-txid">{record.txid}</code><CopyButton text={record.txid} label="transaction ID" /></div>
     <div className="private-snapshot-notice">
       <span>Confirmed mainnet snapshot</span>
-      <span>Block {record.snapshot.height.toLocaleString()} · {new Date(record.snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span>
+      <span>Block {record.snapshot.height.toLocaleString()}{record.snapshot.publishedAt && new Date(record.snapshot.publishedAt).getTime() > 0 ? ` · ${new Date(record.snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}` : ''}</span>
       <span>Confirmation counts and available enrichments are fixed at export.</span>
     </div>
     {hasSprout ? <>
@@ -77,7 +77,7 @@ export function TransactionView({ record, data }: { record: PrivateRecord; data:
     </> : <><TxHeaderBadges data={data} classification={classification} /><TxHeroCard data={data} classification={classification} priceUsd={priceUsd} /></>}
     {!priceUsd && <p className="text-caption text-muted mb-5">Historical USD price is unavailable in this publication.</p>}
     {priceUsd && record.price?.exact !== true && <p className="text-caption text-muted mb-5">USD estimates use the nearest bundled price observation{record.price?.actual_date ? ` from ${new Date(record.price.actual_date).toLocaleString(undefined, { timeZoneName: 'short' })}` : ''}; this is not an exact transaction-time quote.</p>}
-    <div className="mb-6" id="tx-tabs"><Tabs tabs={[{ id: 'summary', label: 'Overview' }, { id: 'io', label: 'Inputs / Outputs' }, { id: 'raw', label: 'Raw' }]} active={activeTab} onChange={setActiveTab} /></div>
+    <div className="mb-6" id="tx-tabs"><Tabs tabs={[{ id: 'summary', label: 'Overview' }, { id: 'io', label: 'Inputs / Outputs' }, ...(record.raw ? [{ id: 'raw' as const, label: 'Raw' }] : [])]} active={activeTab} onChange={setActiveTab} /></div>
     {copyError && <p className="text-caption text-danger mb-4" role="status">Could not copy. Select and copy the value manually.</p>}
     <div id="result-facts" role="tabpanel" aria-label={activeTab === 'summary' ? 'Overview' : activeTab === 'io' ? 'Inputs / Outputs' : 'Raw'}>
       {activeTab === 'summary' && <>
@@ -88,7 +88,7 @@ export function TransactionView({ record, data }: { record: PrivateRecord; data:
         </div></CardBody></Card>}
       </>}
       {activeTab === 'io' && <InputsOutputsSection data={data} classification={classification} copiedText={copiedText} onCopy={copyToClipboard} />}
-      {activeTab === 'raw' && <RawTransaction raw={record.raw} />}
+      {activeTab === 'raw' && record.raw && <RawTransaction raw={record.raw} />}
     </div>
     <p className="private-boundary-note">Addresses, previous transactions and block references are displayed locally. Navigation to public detail pages is disabled in this private prototype.</p>
   </section></PrivateRecordContext>;

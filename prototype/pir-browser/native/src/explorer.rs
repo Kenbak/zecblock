@@ -364,6 +364,7 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -
                         Some("js") => "text/javascript",
                         Some("wasm") => "application/wasm",
                         Some("css") => "text/css",
+                        Some("woff2") => "font/woff2",
                         _ => "application/octet-stream",
                     };
                     match fs::read(web.unwrap().join(name)) {

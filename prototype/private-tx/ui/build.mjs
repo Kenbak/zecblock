@@ -5,8 +5,10 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
+// PRIVATE_UI_OUT builds a separate copy (for example the explorer test) without touching web/.
 const APP = resolve(HERE, '..');
 const ROOT = resolve(APP, '../..');
+const OUT = process.env.PRIVATE_UI_OUT ? resolve(process.env.PRIVATE_UI_OUT) : resolve(APP, 'web');
 const localAdapter = resolve(HERE, 'adapters/local-only.tsx');
 const configAdapter = resolve(HERE, 'adapters/config.ts');
 const safeAliases = new Map([
@@ -24,7 +26,7 @@ const safeAliases = new Map([
 const bundled = await build({
   absWorkingDir: ROOT,
   entryPoints: [resolve(HERE, 'main.tsx')],
-  outfile: resolve(APP, 'web/app.js'),
+  outfile: resolve(OUT, 'app.js'),
   bundle: true, minify: true, format: 'esm', platform: 'browser', target: ['es2022'],
   jsx: 'automatic', metafile: true,
   nodePaths: [resolve(APP, 'node_modules')],
@@ -68,12 +70,12 @@ const input = [
 ].join('\n');
 const inputPath = resolve(APP, '.local/ui/input.css');
 await writeFile(inputPath, input);
-const result = spawnSync(process.execPath, [resolve(APP, 'node_modules/@tailwindcss/cli/dist/index.mjs'), '-i', inputPath, '-o', resolve(APP, 'web/style.css'), '--minify'], { cwd: APP, stdio: 'inherit' });
+const result = spawnSync(process.execPath, [resolve(APP, 'node_modules/@tailwindcss/cli/dist/index.mjs'), '-i', inputPath, '-o', resolve(OUT, 'style.css'), '--minify'], { cwd: APP, stdio: 'inherit' });
 if (result.status !== 0) throw new Error('Private UI stylesheet build failed.');
 
-await mkdir(resolve(APP, 'web/fonts'), { recursive: true });
+await mkdir(resolve(OUT, 'fonts'), { recursive: true });
 const geist = resolve(APP, 'node_modules/geist/dist/fonts');
-await copyFile(resolve(geist, 'geist-sans/Geist-Variable.woff2'), resolve(APP, 'web/fonts/geist-sans.woff2'));
-await copyFile(resolve(geist, 'geist-mono/GeistMono-Variable.woff2'), resolve(APP, 'web/fonts/geist-mono.woff2'));
-await copyFile(resolve(APP, 'node_modules/geist/LICENSE.txt'), resolve(APP, 'web/fonts/LICENSE.txt'));
+await copyFile(resolve(geist, 'geist-sans/Geist-Variable.woff2'), resolve(OUT, 'fonts/geist-sans.woff2'));
+await copyFile(resolve(geist, 'geist-mono/GeistMono-Variable.woff2'), resolve(OUT, 'fonts/geist-mono.woff2'));
+await copyFile(resolve(APP, 'node_modules/geist/LICENSE.txt'), resolve(OUT, 'fonts/LICENSE.txt'));
 process.stdout.write(`Built private React transaction view from ${Object.keys(bundled.metafile.inputs).length} local source modules.\n`);

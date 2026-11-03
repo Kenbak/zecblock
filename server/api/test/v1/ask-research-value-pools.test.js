@@ -34,6 +34,7 @@ test('value_pools_daily is a published extended dataset with guidance',async()=>
  assert.match(instructionsFor(true),/never SUM its balances across dates/);
  assert.match(instructionsFor(true),/name the source used/);
  assert.match(instructionsFor(true),/never attribute a large change to the source/);
+ assert.match(instructionsFor(true),/before 2026-09-28 does not exist: answer that part from daily/);
  assert.match(instructionsFor(true),/include sapling, orchard and ironwood for the same dates/);
  assert.doesNotMatch(instructionsFor(false),/read value_pools_daily/);
  assert.ok(pendingCases.every(c=>!(c.requires||[]).includes(id)));

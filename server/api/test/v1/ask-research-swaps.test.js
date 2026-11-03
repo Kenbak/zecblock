@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const fs=require('node:fs'),os=require('node:os'),path=require('node:path');
-const {compileResearchSQL,instructionsFor}=require('../../v1/lib/ask-research-sql');
+const {compileResearchSQL,instructionsFor,researchEvidence}=require('../../v1/lib/ask-research-sql');
 const {catalogueFor,researchCatalogue,isPublished,coreGatedIds}=require('../../../../lib/ask/research-catalogue');
 const {coreViews}=require('../../v1/lib/ask-core-catalogue');
 const {displaySQL}=require('../../../../lib/ask/sql-display');
@@ -55,6 +55,11 @@ test('examples compile; raw swap tables stay unreachable',async()=>{
   await assert.rejects(compileResearchSQL({version:3,sql,limit:1},{extended:true}));
 });
 
+test('result units say swap_daily.zec is whole ZEC only when it is queried',async()=>{
+  const units=async sql=>researchEvidence(await compileResearchSQL({version:3,sql,limit:5},{extended:true}),[['1']],[{name:'n',dataTypeID:1700}],{indexed_through:'2026-11-02T00:00:00Z'},'2026-11-02T00:00:01Z').units;
+  assert.match(await units('SELECT sum(zec) AS n FROM swap_daily'),/swap_daily\.zec is already whole ZEC, not zatoshis/);
+  assert.doesNotMatch(await units('SELECT sum(fees) AS n FROM blocks'),/swap_daily/);
+});
 test('migrations are guarded, keep linkable fields private and order destination before source',()=>{
  assert.match(migration,/^\\set ON_ERROR_STOP on\n/);assert.match(migration,/COMMIT;\n$/);
  assert.match(migration,/current_database\(\)<>'ask_analytics' OR pg_is_in_recovery\(\)/);

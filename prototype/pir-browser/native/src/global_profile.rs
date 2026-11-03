@@ -158,7 +158,7 @@ fn process_snapshot() -> Value {
         if let Ok(stat) = fs::read_to_string("/proc/self/stat") {
             if let Some((_, tail)) = stat.rsplit_once(") ") {
                 let fields: Vec<_> = tail.split_whitespace().collect();
-                let field = |index| fields.get(index).and_then(|word| word.parse::<u64>().ok());
+            let field = |index: usize| fields.get(index).and_then(|word| word.parse::<u64>().ok());
                 value["process"] = json!({"minorFaults":field(7),"majorFaults":field(9),"userTicks":field(11),"systemTicks":field(12),"rssPages":field(21)});
             }
         }

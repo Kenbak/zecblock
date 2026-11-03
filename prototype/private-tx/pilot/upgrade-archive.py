@@ -195,7 +195,7 @@ def main(argv=None):
         u.absent(path)
     u.release_manifest(previous, args.previous_commit)
     provenance, units = u.check_archive(args.archive, args.archive_sha256, args.new_commit)
-    required = [*v.ASSETS, v.NATIVE, 'prototype/private-tx/collection.mjs', 'prototype/private-tx/collection-server.mjs', 'prototype/private-tx/state-files.mjs',
+    required = [*v.ASSETS, v.NATIVE, 'prototype/private-tx/native-evaluator.mjs', 'prototype/private-tx/collection.mjs', 'prototype/private-tx/collection-server.mjs', 'prototype/private-tx/state-files.mjs',
                 'prototype/private-tx/pilot/archive-source.mjs', 'prototype/private-tx/pilot/archive-watch.mjs',
                 'prototype/private-tx/pilot/publish-archive.mjs']
     u.require(all(name in provenance['files'] for name in required), 'Incomplete archive runtime closure')

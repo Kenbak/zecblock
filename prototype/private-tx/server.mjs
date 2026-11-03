@@ -1,9 +1,8 @@
 import { createServer } from 'node:http';
-import { spawn } from 'node:child_process';
 import { readFile } from 'node:fs/promises';
 import { resolve, dirname, basename } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { createInterface } from 'node:readline';
+import { nativeEvaluator } from './native-evaluator.mjs';
 import { freshGuard } from './pilot/source-guard.mjs';
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -22,63 +21,7 @@ const SECURITY_HEADERS = {
 
 // Only encrypted query bytes cross this bridge. Never pass a transaction ID,
 // route parameter, request headers or arbitrary user input as a CLI argument.
-export function nativeEvaluator(binary, fixtureDir) {
-  const child = spawn(binary, ['serve', fixtureDir], { stdio: ['pipe', 'pipe', 'pipe'] });
-  const waiting = new Map();
-  let sequence = 0;
-  let stopped = false;
-  let finishClose;
-  const exited = new Promise(resolveExit => { finishClose = resolveExit; });
-  child.stderr.resume(); // Do not persist native payloads or potentially sensitive diagnostics.
-  const failAll = () => {
-    stopped = true;
-    for (const pending of waiting.values()) {
-      clearTimeout(pending.timer);
-      pending.reject(new Error('Local evaluator unavailable.'));
-    }
-    waiting.clear();
-  };
-  child.on('error', () => { failAll(); finishClose(); });
-  child.on('exit', () => { failAll(); finishClose(); });
-  const lines = createInterface({ input: child.stdout });
-  lines.on('line', line => {
-    let reply;
-    try { reply = JSON.parse(line); } catch { failAll(); child.kill(); return; }
-    const pending = waiting.get(reply.id);
-    if (!pending) return;
-    clearTimeout(pending.timer);
-    waiting.delete(reply.id);
-    if (typeof reply.response === 'string' && !reply.error) {
-      pending.resolve(Buffer.from(reply.response, 'base64'));
-    } else pending.reject(new Error('Local query rejected.'));
-  });
-  return {
-    async evaluate(query) {
-      // The native stdin protocol evaluates in FIFO order. Bound queued work
-      // while admitting a browser's fixed batch independently of reply content.
-      if (stopped || waiting.size >= MAX_BATCH_CHUNKS) throw new Error('Local evaluator unavailable or queue full.');
-      const id = ++sequence;
-      return await new Promise((resolveReply, reject) => {
-        const timer = setTimeout(() => {
-          waiting.delete(id);
-          stopped = true;
-          child.kill();
-          reject(new Error('Local query timed out.'));
-        }, 60_000);
-        waiting.set(id, { resolve: resolveReply, reject, timer });
-        child.stdin.write(`${JSON.stringify({ id, query: query.toString('base64') })}\n`, error => {
-          if (error) failAll();
-        });
-      });
-    },
-    async close() {
-      failAll(); lines.close(); child.kill();
-      const force = setTimeout(() => child.kill('SIGKILL'), 2000);
-      force.unref();
-      try { await exited; } finally { clearTimeout(force); }
-    },
-  };
-}
+export { nativeEvaluator };
 
 // No upstream reads happen here. Only the independent publisher can advance
 // current.json. Retained evaluators keep in-flight sessions on their own setup.

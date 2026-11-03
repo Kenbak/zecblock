@@ -1,7 +1,7 @@
 import { readFile } from 'node:fs/promises';
 import { createHash } from 'node:crypto';
 import { resolve } from 'node:path';
-import { nativeEvaluator } from './server.mjs';
+import { nativeEvaluator } from './native-evaluator.mjs';
 import { validateCollection, canonicalJson, MAX_COLLECTION_BYTES, MAX_COLLECTION_CHUNKS } from './collection.mjs';
 import { freshGuard, verifyGuard } from './pilot/source-guard.mjs';
 import { readStateBytes } from './state-files.mjs';

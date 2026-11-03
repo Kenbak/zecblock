@@ -40,6 +40,7 @@ await mkdir(destination, { recursive: true });
 const staging = await mkdtemp(resolve(destination, `${commit.slice(0, 12)}-`));
 const files = [
   'prototype/private-tx/server.mjs',
+  'prototype/private-tx/native-evaluator.mjs',
   'prototype/private-tx/collection.mjs',
   'prototype/private-tx/collection-server.mjs',
   'prototype/private-tx/state-files.mjs',

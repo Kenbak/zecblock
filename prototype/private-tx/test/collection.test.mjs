@@ -7,7 +7,9 @@ import { collectionManifest, validateCollection, canonicalJson } from '../collec
 import { evaluatorPool, collectionPublications } from '../collection-server.mjs';
 import { startPrototype } from '../server.mjs';
 import { createHash } from 'node:crypto';
-import { spawnSync } from 'node:child_process';
+import { spawnSync, spawn } from 'node:child_process';
+import { createServer } from 'node:net';
+import { fileURLToPath } from 'node:url';
 import { atomicJson } from '../pilot/source-guard.mjs';
 
 const hash = n => n.toString(16).padStart(64, '0');
@@ -163,4 +165,37 @@ test('group-readable source controls survive restrictive publisher umask and fai
   assert.equal((await stat(path)).mode & 0o777, 0o640);
   await assert.rejects(atomicJson(resolve(dir, 'invalid.json'), { unsupported: 1n }));
   assert.deepEqual(await readdir(dir), ['control.json']);
+});
+
+test('the actual collection CLI reaches HTTP readiness without a circular top-level-await deadlock', { timeout: 12000 }, async t => {
+  const localDir = await mkdtemp(resolve(tmpdir(), 'zecblock-cli-startup-'));
+  t.after(() => rm(localDir, { recursive: true, force: true }));
+  const entry = segment(10), collection = collectionManifest({ segments: [entry] });
+  const dir = resolve(localDir, 'segments', entry.publicationId);
+  await mkdir(dir, { recursive: true });
+  await writeFile(resolve(dir, 'manifest.json'), JSON.stringify(entry.manifest));
+  await writeFile(resolve(dir, 'public.bin'), Buffer.alloc(45056));
+  await writeFile(resolve(localDir, 'collection.json'), JSON.stringify(collection));
+  const reservation = createServer();
+  await new Promise(resolveListen => reservation.listen(0, '127.0.0.1', resolveListen));
+  const port = reservation.address().port;
+  await new Promise(resolveClose => reservation.close(resolveClose));
+  const child = spawn(process.execPath, [fileURLToPath(new URL('../server.mjs', import.meta.url))], {
+    env: { PATH: process.env.PATH, LANG: 'C.UTF-8', PRIVATE_TX_COLLECTION_DIR: localDir, PRIVATE_TX_PORT: `${port}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  let output = '', diagnostics = '', exited = false;
+  const closed = new Promise(resolveExit => child.once('close', code => { exited = true; resolveExit(code); }));
+  child.stdout.on('data', part => { output += part; });
+  child.stderr.on('data', part => { diagnostics += part; });
+  t.after(async () => { child.kill(); const force = setTimeout(() => child.kill('SIGKILL'), 1000); try { await closed; } finally { clearTimeout(force); } });
+  const deadline = Date.now() + 8000;
+  while (!output.includes('Local private transaction view:')) {
+    assert.equal(exited, false, `CLI exited before listening: ${diagnostics}`);
+    assert.ok(Date.now() < deadline, `CLI did not listen: ${diagnostics}`);
+    await new Promise(resolveTick => setTimeout(resolveTick, 20));
+  }
+  const health = await (await fetch(`http://127.0.0.1:${port}/health`)).json();
+  assert.equal(health.publicationId, collection.collectionId);
+  assert.doesNotMatch(diagnostics, /unsettled top-level await/);
 });

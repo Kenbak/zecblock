@@ -42,7 +42,7 @@ class Fixture(base.Fixture):
                  for path in (u.ROOT / 'releases' / OLD).rglob('*') if path.is_file() and path.name != 'provenance.json'}
         for template in m.TEMPLATES.values():
             files['prototype/private-tx/pilot/' + template] = (HERE.parent / 'pilot' / template).read_bytes()
-        for name in ('collection.mjs', 'collection-server.mjs', 'state-files.mjs', 'pilot/archive-source.mjs', 'pilot/archive-watch.mjs', 'pilot/publish-archive.mjs'):
+        for name in ('native-evaluator.mjs', 'collection.mjs', 'collection-server.mjs', 'state-files.mjs', 'pilot/archive-source.mjs', 'pilot/archive-watch.mjs', 'pilot/publish-archive.mjs'):
             files['prototype/private-tx/' + name] = b'closed runtime fixture\n'
         files['provenance.json'] = self.provenance(NEW, files)
         with tarfile.open(self.archive, 'w:gz') as packed:

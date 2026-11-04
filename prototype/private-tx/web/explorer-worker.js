@@ -89,11 +89,20 @@ async function refreshPair(pair) {
   pair.recent = next;
 }
 
+// Tables published after the page opened (blocks, addresses) are picked up
+// here, with the same public manifest requests for every visitor.
+async function openMissing() {
+  if (!blocks.base) blocks.base = await open('blocks', '/blocks/manifest').catch(() => null);
+  if (!addresses.base) addresses.base = await open('addresses', '/addresses/manifest').catch(() => null);
+  if (addresses.base && !pages) pages = await openPages().catch(() => null);
+}
+
 async function refresh() {
-  const before = tip();
+  const before = JSON.stringify([tip(), Boolean(blocks.base), Boolean(addresses.base)]);
+  await openMissing();
   await Promise.all([refreshPair(tx), refreshPair(blocks), refreshPair(addresses)]);
   await loadFeed().catch(() => {});
-  if (tip() !== before) self.postMessage({ type: 'tip', manifest: publication() });
+  if (JSON.stringify([tip(), Boolean(blocks.base), Boolean(addresses.base)]) !== before) self.postMessage({ type: 'tip', manifest: publication() });
 }
 
 // A replaced base answers 410: load the new one, then its recent table.
@@ -111,9 +120,6 @@ async function initialize() {
   // Public parameters are fetched for every table before any search exists.
   tx.base = await open('base', '/manifest');
   if (!tx.base) throw new Error('no base publication');
-  blocks.base = await open('blocks', '/blocks/manifest').catch(() => null);
-  addresses.base = await open('addresses', '/addresses/manifest').catch(() => null);
-  pages = addresses.base ? await openPages().catch(() => null) : null;
   await refresh().catch(() => {});
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
   if (feed) self.postMessage({ type: 'feed', feed: feed.data });

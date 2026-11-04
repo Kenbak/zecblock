@@ -8,8 +8,9 @@
 // so the server cannot tell an old transaction from a new one or a miss.
 import init, { ExplorerPirBrowser } from '/wasm/zecblock_pir_browser.js';
 
-const SCHEMA = 'zecblock-private-explorer-test-v2';
-let base, baseInfo, recent = null, busy = false, last = null, ready = null;
+const SCHEMA = 'zecblock-private-explorer-v3';
+// `base` and `recent` are { browser, id, info } for verified publications.
+let base, recent = null, busy = false, last = null, ready = null;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
 async function bytes(path, init = {}) {
@@ -19,28 +20,44 @@ async function bytes(path, init = {}) {
   return { body: new Uint8Array(await response.arrayBuffer()), response };
 }
 const zec = zat => zat == null ? null : Number(BigInt(zat)) / 1e8;
-const tip = () => recent?.tip ?? baseInfo.snapshotTip;
+const tip = () => recent?.info.snapshotTip ?? base.info.snapshotTip;
+const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
+const publicationId = async manifest => hex(await crypto.subtle.digest('SHA-256', manifest)).slice(0, 24);
+
+// Fetches a signed publication. The WASM constructor rejects it unless the
+// signature is from the pinned ZecBlock key; rows are then checked against
+// its roots on every decode. Returns null when the server has none.
+async function open(set, manifestPath) {
+  const response = await fetch(manifestPath, options(AbortSignal.timeout(30_000)));
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error('transport');
+  const manifest = new Uint8Array(await response.arrayBuffer());
+  const id = await publicationId(manifest);
+  const [signature, main, overflow] = await Promise.all([bytes(`/${set}/${id}/manifest.sig`), bytes(`/${set}/${id}/publics/main`), bytes(`/${set}/${id}/publics/overflow`)]);
+  const browser = new ExplorerPirBrowser(manifest, signature.body, main.body, overflow.body);
+  if (browser.publication_id !== id) throw new Error('publication id');
+  const info = JSON.parse(new TextDecoder().decode(manifest));
+  if (info.schema !== SCHEMA || !Number.isSafeInteger(info.snapshotTip)) throw new Error('manifest');
+  return { browser, id, info };
+}
 
 function publication() {
-  const builtAt = recent?.builtAt ?? baseInfo.builtAt;
+  const builtAt = recent?.info.builtAt ?? base.info.builtAt;
   return {
     schema: SCHEMA,
-    publicationId: `explorer-${baseInfo.snapshotTip}-${baseInfo.records}`,
+    publicationId: base.id,
     network: 'mainnet',
     snapshot: { height: tip(), hash: '', publishedAt: Number.isSafeInteger(builtAt) ? new Date(builtAt * 1000).toISOString() : new Date(0).toISOString() },
     coverage: { startHeight: 0, endHeight: tip(), complete: true },
-    sourceSummary: { recordCount: baseInfo.records + (recent?.records ?? 0) },
+    sourceSummary: { recordCount: base.info.records + (recent?.info.records ?? 0) },
   };
 }
 
 async function initialize() {
   await init();
-  const text = new TextDecoder().decode((await bytes('/manifest')).body);
-  baseInfo = JSON.parse(text);
-  if (baseInfo.schema !== SCHEMA || !Number.isSafeInteger(baseInfo.snapshotTip)) throw new Error('manifest');
   // Public parameters are fetched for every table before any selection exists.
-  const [main, overflow] = await Promise.all([bytes('/publics/main'), bytes('/publics/overflow')]);
-  base = new ExplorerPirBrowser(text, main.body, overflow.body);
+  base = await open('base', '/manifest');
+  if (!base) throw new Error('no base publication');
   await refreshRecent().catch(() => {});
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
   // The same public manifest for everyone, polled independently of lookups.
@@ -52,12 +69,20 @@ async function refreshRecent() {
   const response = await fetch('/recent/manifest', options(AbortSignal.timeout(30_000)));
   if (response.status === 404) { if (recent) { recent = null; self.postMessage({ type: 'tip', manifest: publication() }); } return; }
   if (!response.ok) throw new Error('transport');
-  const text = await response.text();
-  const value = JSON.parse(text);
-  if (value.id === recent?.id) return;
-  if (value.schema !== SCHEMA || value.baseTip !== baseInfo.snapshotTip || !Number.isSafeInteger(value.snapshotTip) || !/^[a-f\d]{24}$/.test(value.id)) throw new Error('recent manifest');
-  const [main, overflow] = await Promise.all([bytes(`/recent/${value.id}/publics/main`), bytes(`/recent/${value.id}/publics/overflow`)]);
-  recent = { browser: new ExplorerPirBrowser(text, main.body, overflow.body), id: value.id, tip: value.snapshotTip, records: value.records, builtAt: value.builtAt };
+  const manifest = new Uint8Array(await response.arrayBuffer());
+  if (await publicationId(manifest) === recent?.id) return;
+  const next = await open('recent', '/recent/manifest');
+  if (next && next.info.baseTip !== base.info.snapshotTip) throw new Error('recent table is for another base');
+  recent = next;
+  self.postMessage({ type: 'tip', manifest: publication() });
+}
+
+// A replaced base answers 410: load the new one, then the matching recent table.
+async function reloadBase() {
+  ready = null;
+  base = await open('base', '/manifest');
+  recent = null;
+  await refreshRecent();
   self.postMessage({ type: 'tip', manifest: publication() });
 }
 
@@ -104,37 +129,38 @@ function partialOf(result) {
 // is sent. Called ahead of time when the page has a complete txid, so a
 // submitted lookup costs only the network round trip and the final decrypt.
 function prepare(txid, ahead) {
-  if (ready?.txid === txid && ready.used === recent) return ready;
+  if (ready?.txid === txid && ready.used === recent && ready.usedBase === base) return ready;
   const started = performance.now();
   const used = recent;
-  const baseUpload = base.query_main(txid);
+  const usedBase = base;
+  const baseUpload = usedBase.browser.query_main(txid);
   const recentUpload = used?.browser.query_main(txid);
-  if (ahead) { base.prepare_decode(); used?.browser.prepare_decode(); }
-  ready = { txid, used, baseUpload, recentUpload, ahead, encryptMs: performance.now() - started };
+  if (ahead) { usedBase.browser.prepare_decode(); used?.browser.prepare_decode(); }
+  ready = { txid, used, usedBase, baseUpload, recentUpload, ahead, encryptMs: performance.now() - started };
   return ready;
 }
 
 async function lookupOnce(txid) {
   const started = performance.now();
-  const { used, baseUpload, recentUpload, encryptMs, ahead } = prepare(txid, false);
+  const { used, usedBase, baseUpload, recentUpload, encryptMs, ahead } = prepare(txid, false);
   ready = null;
   const encrypted = performance.now();
   const replies = Promise.all([
-    ask('/query/main', baseUpload),
+    ask(`/base/${usedBase.id}/query/main`, baseUpload),
     used ? ask(`/recent/${used.id}/query/main`, recentUpload) : null,
   ]);
   // No-ops when prepared ahead; otherwise overlaps the network round trip.
-  base.prepare_decode();
+  usedBase.browser.prepare_decode();
   used?.browser.prepare_decode();
   const [baseReply, recentReply] = await replies;
   const received = performance.now();
-  const fromBase = JSON.parse(base.decode_main(baseReply.body));
+  const fromBase = JSON.parse(usedBase.browser.decode_main(baseReply.body));
   const baseDecoded = performance.now();
   const fromRecent = used ? JSON.parse(used.browser.decode_main(recentReply.body)) : null;
   const decoded = performance.now();
   const owner = fromRecent?.found === true ? 'recent' : fromBase.found === true ? 'base' : null;
   const spent = owner === 'base' ? fromRecent?.outputsSpentSinceBase : undefined;
-  last = owner ? { owner, used, spent } : null;
+  last = owner ? { owner, used, usedBase, spent } : null;
   const measurements = {
     queryBytes: baseUpload.length + (recentUpload?.length ?? 0), responseBytes: baseReply.body.length + (recentReply?.body.length ?? 0),
     encryptMs: ahead ? 0 : encryptMs, preparedAheadMs: ahead ? encryptMs : 0, requestMs: received - encrypted, serverMs: baseReply.serverMs + (recentReply?.serverMs ?? 0),
@@ -151,8 +177,8 @@ async function lookup({ requestId, txid }) {
     // A rebuild can land between the manifest and the query; retry once.
     try { outcome = await lookupOnce(txid); } catch (error) {
       if (!(error instanceof Gone)) throw error;
-      ready = null;
-      await refreshRecent();
+      // The same recovery for every client after a rebuild; then one retry.
+      await reloadBase();
       outcome = await lookupOnce(txid);
     }
     if (!outcome.owner) {
@@ -172,12 +198,12 @@ async function loadFull({ requestId }) {
   busy = true;
   const started = performance.now();
   try {
-    const { owner, used, spent } = last;
-    const ownerBrowser = owner === 'recent' ? used.browser : base;
+    const { owner, used, usedBase, spent } = last;
+    const ownerBrowser = owner === 'recent' ? used.browser : usedBase.browser;
     const upload = ownerBrowser.query_full();
     const count = new DataView(upload.buffer, upload.byteOffset).getUint32(0, true);
-    const ownerPath = owner === 'recent' ? `/recent/${used.id}/query/overflow` : '/query/overflow';
-    const other = owner === 'recent' ? { browser: base, path: '/query/overflow' } : used ? { browser: used.browser, path: `/recent/${used.id}/query/overflow` } : null;
+    const ownerPath = owner === 'recent' ? `/recent/${used.id}/query/overflow` : `/base/${usedBase.id}/query/overflow`;
+    const other = owner === 'recent' ? { browser: usedBase.browser, path: `/base/${usedBase.id}/query/overflow` } : used ? { browser: used.browser, path: `/recent/${used.id}/query/overflow` } : null;
     const dummy = other?.browser.query_dummy(count);
     const encrypted = performance.now();
     const replies = Promise.all([ask(ownerPath, upload), other ? ask(other.path, dummy) : null]);

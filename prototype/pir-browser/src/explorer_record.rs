@@ -627,9 +627,9 @@ mod tests {
     #[test]
     fn bucket_entries_span_rows_and_previews_point_to_overflow() {
         use layout::*;
-        let mut bucket = vec![0u8; 2 * ROW_BYTES];
+        let mut bucket = vec![0u8; 2 * PAYLOAD];
         let (a, b) = ([1u8; 32], [2u8; 32]);
-        let first = vec![5u8; ROW_BYTES];
+        let first = vec![5u8; PAYLOAD];
         let second = preview_body(70_000, 40_000, b"cut");
         let mut at = BUCKET_HEADER;
         for (txid, body, flag) in [(a, &first, 0), (b, &second, PREVIEW_FLAG)] {
@@ -647,12 +647,31 @@ mod tests {
     }
 
     #[test]
+    fn row_proofs_verify_and_reject_tampering() {
+        use layout::*;
+        let rows = 5;
+        let payloads: Vec<Vec<u8>> = (0..rows).map(|r| vec![r as u8 + 1; PAYLOAD]).collect();
+        let levels = merkle_levels(payloads.iter().enumerate().map(|(r, p)| leaf("main", 2, r as u32, p)).collect());
+        let root = levels.last().unwrap()[0];
+        for (r, payload) in payloads.iter().enumerate() {
+            let mut row = payload.clone();
+            row.extend(path(&levels, r));
+            assert_eq!(verify_row("main", 2, r as u32, &row, &root, depth(rows)).unwrap(), &payload[..]);
+            assert!(verify_row("main", 3, r as u32, &row, &root, depth(rows)).is_err());
+            assert!(verify_row("overflow", 2, r as u32, &row, &root, depth(rows)).is_err());
+            assert!(verify_row("main", 2, (r as u32 + 1) % rows as u32, &row, &root, depth(rows)).is_err());
+            row[7] ^= 1;
+            assert!(verify_row("main", 2, r as u32, &row, &root, depth(rows)).is_err());
+        }
+    }
+
+    #[test]
     fn spent_markers_share_the_txid_bucket_without_matching_its_record() {
         use layout::*;
         let txid = [7u8; 32];
         let bitmap = spent_bitmap([0, 9, 1_252]);
         assert_eq!(spent_indices(&bitmap), vec![0, 9, 1_252]);
-        let mut bucket = vec![0u8; ROW_BYTES];
+        let mut bucket = vec![0u8; PAYLOAD];
         bucket[..2].copy_from_slice(&1u16.to_le_bytes());
         let at = BUCKET_HEADER;
         bucket[at..at + TAG].copy_from_slice(&spent_tag(&txid));
@@ -674,11 +693,89 @@ pub mod layout {
     //! then entries `[tag 12][len u16 | PREVIEW_FLAG][body]`, which may cross
     //! row boundaries. A preview body is `[var start][var len][record preview]`
     //! pointing at the full record in the overflow table.
+    //!
+    //! Every row is `[payload PAYLOAD][Merkle path PROOF_BYTES]`: the path
+    //! proves the payload against the instance's root in the signed manifest.
+    //! It travels inside the row, so the one private query that returns a row
+    //! also returns its proof; fetching a proof separately would reveal the row.
+    //! Buckets and overflow offsets count payload bytes only.
     use sha2::{Digest, Sha256};
 
-    pub const SCHEMA_NAME: &str = "zecblock-private-explorer-test-v2";
-    pub const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-bucket-v2";
+    pub const SCHEMA_NAME: &str = "zecblock-private-explorer-v3";
+    pub const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-bucket-v3";
     pub const ROW_BYTES: usize = 16_384;
+    /// Room for a path in a tree of up to 2^18 rows.
+    pub const MAX_DEPTH: usize = 18;
+    pub const PROOF_BYTES: usize = MAX_DEPTH * 32;
+    pub const PAYLOAD: usize = ROW_BYTES - PROOF_BYTES;
+
+    /// Leaf hash binding a row's payload to its table, instance and position.
+    pub fn leaf(kind: &str, instance: u32, row: u32, payload: &[u8]) -> [u8; 32] {
+        Sha256::new()
+            .chain_update(b"zecblock-explorer-row-v3")
+            .chain_update([kind.len() as u8])
+            .chain_update(kind)
+            .chain_update(instance.to_le_bytes())
+            .chain_update(row.to_le_bytes())
+            .chain_update(payload)
+            .finalize()
+            .into()
+    }
+
+    pub fn node(left: &[u8; 32], right: &[u8; 32]) -> [u8; 32] {
+        Sha256::new().chain_update(b"zecblock-explorer-node-v3").chain_update(left).chain_update(right).finalize().into()
+    }
+
+    /// Stands in for the leaves past the last row in a power-of-two tree.
+    pub fn empty_leaf() -> [u8; 32] {
+        Sha256::digest(b"zecblock-explorer-empty-v3").into()
+    }
+
+    pub fn depth(rows: usize) -> usize {
+        rows.next_power_of_two().trailing_zeros() as usize
+    }
+
+    /// Every level of the tree, leaves first, root last.
+    pub fn merkle_levels(mut leaves: Vec<[u8; 32]>) -> Vec<Vec<[u8; 32]>> {
+        leaves.resize(leaves.len().next_power_of_two().max(1), empty_leaf());
+        let mut levels = vec![leaves];
+        while levels.last().unwrap().len() > 1 {
+            let next = levels.last().unwrap().chunks_exact(2).map(|pair| node(&pair[0], &pair[1])).collect();
+            levels.push(next);
+        }
+        levels
+    }
+
+    /// Sibling hashes from the leaf up, padded with zeros to PROOF_BYTES.
+    pub fn path(levels: &[Vec<[u8; 32]>], index: usize) -> Vec<u8> {
+        let mut out = Vec::with_capacity(PROOF_BYTES);
+        let mut at = index;
+        for level in &levels[..levels.len() - 1] {
+            out.extend_from_slice(&level[at ^ 1]);
+            at >>= 1;
+        }
+        out.resize(PROOF_BYTES, 0);
+        out
+    }
+
+    /// The row's payload, if its path leads to `root`.
+    pub fn verify_row<'a>(kind: &str, instance: u32, row: u32, bytes: &'a [u8], root: &[u8; 32], depth: usize) -> Result<&'a [u8], String> {
+        if bytes.len() != ROW_BYTES || depth > MAX_DEPTH {
+            return Err("row has the wrong shape".into());
+        }
+        let (payload, proof) = bytes.split_at(PAYLOAD);
+        let mut hash = leaf(kind, instance, row, payload);
+        let mut at = row as usize;
+        for sibling in proof[..depth * 32].chunks_exact(32) {
+            let sibling: &[u8; 32] = sibling.try_into().unwrap();
+            hash = if at & 1 == 0 { node(&hash, sibling) } else { node(sibling, &hash) };
+            at >>= 1;
+        }
+        if &hash != root {
+            return Err(format!("{kind} row failed verification against the signed manifest"));
+        }
+        Ok(payload)
+    }
     pub const BUCKET_HEADER: usize = 4;
     pub const TAG: usize = 12;
     pub const ENTRY_HEADER: usize = TAG + 2;
@@ -774,7 +871,7 @@ pub mod layout {
     }
 
     fn find_tag(bucket: &[u8], tag: &[u8]) -> Result<Entry, String> {
-        if bucket.is_empty() || bucket.len() % ROW_BYTES != 0 {
+        if bucket.is_empty() || bucket.len() % PAYLOAD != 0 {
             return Err("bucket has the wrong length".into());
         }
         let entries = u16::from_le_bytes([bucket[0], bucket[1]]);
@@ -801,14 +898,73 @@ pub mod layout {
         Ok(Entry::Absent)
     }
 
-    /// Global overflow rows covering a byte range.
+    /// Global overflow rows covering a payload byte range.
     pub fn overflow_rows(start: u64, len: usize) -> std::ops::RangeInclusive<u64> {
-        start / ROW_BYTES as u64..=(start + len as u64 - 1) / ROW_BYTES as u64
+        start / PAYLOAD as u64..=(start + len as u64 - 1) / PAYLOAD as u64
     }
 
     /// Row count actually requested for a full-record fetch: the next power
     /// of two, so the server learns only a coarse size class.
     pub fn padded_rows(rows: usize) -> usize {
         rows.next_power_of_two()
+    }
+}
+
+// ---- signed publications ---------------------------------------------------------
+
+pub mod publication {
+    //! A manifest is trusted only with a valid Ed25519 signature from the
+    //! pinned ZecBlock publishing key. Its roots then authenticate every row.
+    use super::layout;
+    use ed25519_dalek::{Signature, VerifyingKey};
+    use serde_json::Value;
+
+    /// ZecBlock private explorer publishing key (raw Ed25519 public key).
+    pub const PUBLISHER_KEY: &str = "710a2be39ee4ecbc2a8762df4da84066e0180f4ebcaffaf6eeab66abf7410e92";
+
+    pub struct Side {
+        pub instances: usize,
+        pub rows: usize,
+        pub roots: Vec<[u8; 32]>,
+        pub depth: usize,
+    }
+
+    pub struct Manifest {
+        pub value: Value,
+        pub tip: u64,
+        pub base_tip: Option<u64>,
+        pub main: Side,
+        pub overflow: Side,
+    }
+
+    pub fn verify(manifest: &[u8], signature: &[u8]) -> Result<Manifest, String> {
+        let key: [u8; 32] = hex::decode(PUBLISHER_KEY).unwrap().try_into().unwrap();
+        let key = VerifyingKey::from_bytes(&key).map_err(|e| e.to_string())?;
+        let signature = Signature::from_slice(signature).map_err(|_| "malformed manifest signature".to_string())?;
+        key.verify_strict(manifest, &signature).map_err(|_| "manifest signature is not from the ZecBlock publishing key".to_string())?;
+        let value: Value = serde_json::from_slice(manifest).map_err(|e| e.to_string())?;
+        if value["schema"] != layout::SCHEMA_NAME || value["network"] != "mainnet" || value["rowBytes"] != layout::ROW_BYTES
+            || value["payloadBytes"] != layout::PAYLOAD {
+            return Err("unsupported private explorer manifest".into());
+        }
+        let side = |kind: &str| -> Result<Side, String> {
+            let instances = value[kind]["instances"].as_u64().ok_or("bad manifest")? as usize;
+            let rows = value[kind]["rows"].as_u64().ok_or("bad manifest")? as usize;
+            let roots = value[kind]["roots"].as_array().ok_or("manifest has no roots")?.iter()
+                .map(|r| r.as_str().and_then(|h| hex::decode(h).ok()).and_then(|b| b.try_into().ok()).ok_or("bad root".to_string()))
+                .collect::<Result<Vec<[u8; 32]>, _>>()?;
+            let depth = value["proofDepth"][kind].as_u64().ok_or("bad manifest")? as usize;
+            if instances == 0 || rows == 0 || roots.len() != instances || depth != layout::depth(rows) {
+                return Err(format!("{kind} manifest shape mismatch"));
+            }
+            Ok(Side { instances, rows, roots, depth })
+        };
+        Ok(Manifest {
+            tip: value["snapshotTip"].as_u64().ok_or("bad manifest")?,
+            base_tip: value["baseTip"].as_u64(),
+            main: side("main")?,
+            overflow: side("overflow")?,
+            value,
+        })
     }
 }

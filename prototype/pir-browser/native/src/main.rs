@@ -388,6 +388,14 @@ fn main() {
             (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads, web.first().map(Path::new), web.get(1).map(Path::new)),
             _ => Err("invalid port or threads".into()),
         },
+        [_, mode, manifest, signature] if mode == "explorer-verify" => (|| {
+            let manifest = std::fs::read(manifest).map_err(|e| e.to_string())?;
+            let signature = std::fs::read(signature).map_err(|e| e.to_string())?;
+            let verified = explorer_record::publication::verify(&manifest, &signature)?;
+            println!("{}", serde_json::json!({"valid":true,"publicationId":explorer::publication_id(&manifest),"snapshotTip":verified.tip,
+                "baseTip":verified.base_tip,"tipHash":verified.value["tipHash"],"publisherKey":explorer_record::publication::PUBLISHER_KEY}));
+            Ok(())
+        })(),
         [_, mode, addr, txid, full @ ..] if mode == "explorer-lookup" && (full.is_empty() || full == ["full"]) => {
             explorer::lookup(addr, txid, &explorer::default_cache(), !full.is_empty())
         }

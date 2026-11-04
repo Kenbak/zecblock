@@ -15,7 +15,7 @@
 //! a preview's full lists touches the overflow table; that request is padded
 //! to a power-of-two row count and reveals the coarse size class.
 use super::chunk_spike::{parallel_multiply, parallel_multiply_batch, preprocess_blocks};
-use super::explorer_record::{Record, parse_export_line};
+use super::explorer_record::{Record, parse_export_line, publication};
 use super::*;
 use memmap2::{Mmap, MmapMut};
 use rayon::prelude::*;
@@ -30,7 +30,7 @@ use std::{
 use zakura_pir_client::transparent::native::TableClientExt as _;
 use zakura_pir_protocol::native::D;
 
-use super::explorer_record::layout::{self, BUCKET_HEADER, ENTRY_HEADER, PREVIEW_FLAG, ROW_BYTES, TAG, preview_body, row_of, spent_bitmap, spent_tag};
+use super::explorer_record::layout::{self, BUCKET_HEADER, ENTRY_HEADER, PAYLOAD, PREVIEW_FLAG, ROW_BYTES, TAG, preview_body, row_of, spent_bitmap, spent_tag};
 use std::collections::{HashMap, HashSet};
 /// Records up to this size are stored whole; larger ones get a preview.
 const INLINE_MAX: usize = 4_096;
@@ -122,18 +122,35 @@ fn write_overflow(maps: &mut [MmapMut], cursor: &mut u64, rows: usize, limit: u6
     if start + bytes.len() as u64 > limit {
         return Err("overflow table capacity exceeded".into());
     }
-    let instance_bytes = (rows * ROW_BYTES) as u64;
+    // Offsets count payload bytes: global row g is local row g % rows of instance g / rows.
     let mut at = start;
     let mut remaining = bytes;
     while !remaining.is_empty() {
-        let (instance, offset) = ((at / instance_bytes) as usize, (at % instance_bytes) as usize);
-        let take = remaining.len().min(instance_bytes as usize - offset);
-        maps[instance][offset..offset + take].copy_from_slice(&remaining[..take]);
+        let (global, offset) = ((at / PAYLOAD as u64) as usize, (at % PAYLOAD as u64) as usize);
+        let (instance, row) = (global / rows, global % rows);
+        let take = remaining.len().min(PAYLOAD - offset);
+        let base = row * ROW_BYTES + offset;
+        maps[instance][base..base + take].copy_from_slice(&remaining[..take]);
         remaining = &remaining[take..];
         at += take as u64;
     }
     *cursor = at;
     Ok(start)
+}
+
+/// Writes every row's Merkle path and returns each instance's root.
+fn prove(maps: &mut [MmapMut], kind: &str, rows: usize) -> Vec<String> {
+    maps.iter_mut()
+        .enumerate()
+        .map(|(instance, map)| {
+            let leaves: Vec<[u8; 32]> = (0..rows).into_par_iter()
+                .map(|r| layout::leaf(kind, instance as u32, r as u32, &map[r * ROW_BYTES..r * ROW_BYTES + PAYLOAD]))
+                .collect();
+            let levels = layout::merkle_levels(leaves);
+            map.par_chunks_mut(ROW_BYTES).enumerate().for_each(|(r, row)| row[PAYLOAD..].copy_from_slice(&layout::path(&levels, r)));
+            hex::encode(levels.last().unwrap()[0])
+        })
+        .collect()
 }
 
 fn table_files(dir: &Path, kind: &str, instances: usize, rows: usize) -> Result<Vec<MmapMut>, String> {
@@ -216,10 +233,20 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
         return Err("truncated records file".into());
     }
     let txid_at = |i: usize| -> [u8; 32] { data[index[i].0..index[i].0 + 32].try_into().unwrap() };
+    // The tip block's hash anchors the publication to the public chain.
+    let (tip_height, tip_hash) = (0..index.len()).into_par_iter()
+        .map(|i| {
+            let (offset, len) = index[i];
+            Record::decode(txid_at(i), &data[offset + 36..offset + 36 + len]).map(|r| (r.height, r.block_hash))
+        })
+        .try_reduce(|| (0, [0u8; 32]), |a, b| Ok(if b.0 > a.0 { b } else { a }))?;
+    if u64::from(tip_height) != snapshot_tip {
+        return Err(format!("records end at block {tip_height}, not the declared tip {snapshot_tip}"));
+    }
     let markers = if base_tip.is_some() { spent_markers(&data, &index)? } else { Vec::new() };
     estimate += markers.iter().map(|(_, bitmap)| (ENTRY_HEADER + bitmap.len()) as u64).sum::<u64>();
-    let (instances, rows) = instance_rows((estimate as f64 / (ROW_BYTES as f64 * TARGET_FILL)).ceil() as usize);
-    let bucket_bytes = instances * ROW_BYTES;
+    let (instances, rows) = instance_rows((estimate as f64 / (PAYLOAD as f64 * TARGET_FILL)).ceil() as usize);
+    let bucket_bytes = instances * PAYLOAD;
     // Items below index.len() are records; the rest are spent markers.
     let key_of = |item: usize| if item < index.len() { txid_at(item) } else { markers[item - index.len()].0 };
     let mut order: Vec<(u32, u32)> = (0..index.len() + markers.len()).into_par_iter().map(|i| (row_of(&key_of(i), rows as u64) as u32, i as u32)).collect();
@@ -228,12 +255,13 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
     // recent table stays small, and its preparation time scales with rows.
     let floor: u64 = if base_tip.is_some() { 4 << 20 } else { 64 << 20 };
     let overflow_capacity = (overflow_bytes + overflow_bytes / 10 + floor) as usize;
-    let (overflow_instances, overflow_rows) = instance_rows(overflow_capacity.div_ceil(ROW_BYTES));
+    let (overflow_instances, overflow_rows) = instance_rows(overflow_capacity.div_ceil(PAYLOAD));
     let mut main = table_files(dir, "main", instances, rows)?;
     let mut overflow = table_files(dir, "overflow", overflow_instances, overflow_rows)?;
-    let overflow_limit = (overflow_instances * overflow_rows * ROW_BYTES) as u64;
+    let overflow_limit = (overflow_instances * overflow_rows * PAYLOAD) as u64;
     let (mut cursor, mut previews, mut demoted_small, mut demoted_buckets, mut max_used, mut total_used) = (0u64, 0u64, 0u64, 0u64, 0usize, 0u64);
     let mut buffer = vec![0u8; bucket_bytes];
+    let mut dirty = 0;
     for group in order.chunk_by(|a, b| a.0 == b.0) {
         let bucket = group[0].0 as usize;
         let mut tags = HashSet::with_capacity(group.len());
@@ -278,7 +306,8 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
                 }
             }
         }
-        buffer[..used.max(BUCKET_HEADER)].fill(0);
+        buffer[..dirty.max(used).max(BUCKET_HEADER)].fill(0);
+        dirty = used;
         buffer[..2].copy_from_slice(&(entries.len() as u16).to_le_bytes());
         let mut at = BUCKET_HEADER;
         for (tag, _, body) in &entries {
@@ -296,20 +325,26 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             at += ENTRY_HEADER + payload.len();
         }
         for (instance, map) in main.iter_mut().enumerate() {
-            map[bucket * ROW_BYTES..(bucket + 1) * ROW_BYTES].copy_from_slice(&buffer[instance * ROW_BYTES..(instance + 1) * ROW_BYTES]);
+            map[bucket * ROW_BYTES..bucket * ROW_BYTES + PAYLOAD].copy_from_slice(&buffer[instance * PAYLOAD..(instance + 1) * PAYLOAD]);
         }
         max_used = max_used.max(at);
         total_used += at as u64;
     }
+    let proving = Instant::now();
+    let main_roots = prove(&mut main, "main", rows);
+    let overflow_roots = prove(&mut overflow, "overflow", overflow_rows);
+    let prove_seconds = proving.elapsed().as_secs_f64();
     for map in main.iter().chain(overflow.iter()) {
         map.flush().map_err(io_err)?;
     }
-    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"baseTip":base_tip,"spentMarkers":markers.len(),
+    let manifest = json!({"schema":layout::SCHEMA_NAME,"network":"mainnet","snapshotTip":snapshot_tip,"tipHash":hex::encode(tip_hash),
+        "baseTip":base_tip,"spentMarkers":markers.len(),"payloadBytes":PAYLOAD,"proofDepth":{"main":layout::depth(rows),"overflow":layout::depth(overflow_rows)},
+        "proveSeconds":prove_seconds,
         "records":index.len(),"rowBytes":ROW_BYTES,"builtAt":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(io_err)?.as_secs(),
         "rowHashDomain":String::from_utf8_lossy(layout::ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,"previewMax":PREVIEW_MAX,
-        "main":{"instances":instances,"rows":rows,"bucketBytes":bucket_bytes,"meanBucketBytesUsed":total_used as f64 / rows as f64,
+        "main":{"instances":instances,"rows":rows,"roots":main_roots,"bucketBytes":bucket_bytes,"meanBucketBytesUsed":total_used as f64 / rows as f64,
             "maxBucketBytesUsed":max_used,"previews":previews,"demotedSmallRecords":demoted_small,"bucketsWithDemotions":demoted_buckets},
-        "overflow":{"instances":overflow_instances,"rows":overflow_rows,"bytesUsed":cursor,"largeRecords":large},
+        "overflow":{"instances":overflow_instances,"rows":overflow_rows,"roots":overflow_roots,"bytesUsed":cursor,"largeRecords":large},
         "buildSeconds":start.elapsed().as_secs_f64()});
     fs::write(dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).map_err(io_err)?).map_err(io_err)?;
     println!("{manifest}");
@@ -376,53 +411,66 @@ impl Table {
     }
 }
 
-/// One loaded publication of the recent table, addressed by a content id so
-/// a client never mixes public parameters and queries across rebuilds.
-struct Recent {
+/// One loaded, signed publication (the base snapshot or a recent table),
+/// addressed by a content id so a client never mixes public parameters and
+/// queries across rebuilds.
+struct Publication {
     id: String,
     target: PathBuf,
     manifest: Vec<u8>,
+    signature: Vec<u8>,
+    tip: u64,
+    base_tip: Option<u64>,
     main: Arc<Table>,
     overflow: Arc<Table>,
 }
 
-impl Recent {
+pub(super) fn publication_id(manifest: &[u8]) -> String {
+    hex::encode(&sha2::Sha256::digest(manifest)[..12])
+}
+
+impl Publication {
     fn load(target: &Path, pool: &rayon::ThreadPool) -> Result<Self, String> {
         let bytes = fs::read(target.join("manifest.json")).map_err(io_err)?;
-        let mut manifest: Value = serde_json::from_slice(&bytes).map_err(io_err)?;
-        if manifest["schema"] != layout::SCHEMA_NAME || manifest["baseTip"].as_u64().is_none() {
-            return Err("not a recent publication".into());
+        let signature = fs::read(target.join("manifest.sig")).map_err(|_| "publication is not signed".to_string())?;
+        let manifest: Value = serde_json::from_slice(&bytes).map_err(io_err)?;
+        if manifest["schema"] != layout::SCHEMA_NAME {
+            return Err("unsupported publication schema".into());
         }
-        let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad recent manifest");
+        let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad manifest");
         let (main, _) = pool.install(|| Table::load(target, "main", count("main", "instances")?, count("main", "rows")?))?;
         let (overflow, _) = pool.install(|| Table::load(target, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
-        let id = hex::encode(&sha2::Sha256::digest(&bytes)[..12]);
-        manifest["id"] = json!(id);
-        Ok(Recent { id, target: target.to_owned(), manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main: Arc::new(main), overflow: Arc::new(overflow) })
+        Ok(Publication {
+            id: publication_id(&bytes), target: target.to_owned(), signature,
+            tip: manifest["snapshotTip"].as_u64().ok_or("bad manifest")?, base_tip: manifest["baseTip"].as_u64(),
+            manifest: bytes, main: Arc::new(main), overflow: Arc::new(overflow),
+        })
     }
 }
 
-type RecentSet = Arc<RwLock<Vec<Arc<Recent>>>>;
+type PublicationSet = Arc<RwLock<Vec<Arc<Publication>>>>;
 
-/// Follows `<root>/current`; keeps the newest two publications so lookups
-/// started just before a swap can still finish.
-fn watch_recent(root: PathBuf, set: RecentSet) {
-    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().expect("recent loader pool");
+/// Follows `<root>/current` for the base and the recent table. A new base is
+/// loaded beside the old one and replaces it; clients of the old one get 410
+/// and reload. The newest eight recent tables stay loaded so lookups started
+/// just before a swap, or while a new base is still loading, can finish.
+fn watch(roots: Vec<(PathBuf, PublicationSet, usize)>, pool: rayon::ThreadPool) {
     loop {
-        if let Ok(target) = fs::canonicalize(root.join("current")) {
-            let loaded = set.read().unwrap().last().map(|r| r.target.clone());
-            if loaded.as_ref() != Some(&target) {
-                let start = Instant::now();
-                match Recent::load(&target, &pool) {
-                    Ok(recent) => {
-                        eprintln!("{}", json!({"recentLoaded":target.display().to_string(),"id":recent.id,"seconds":start.elapsed().as_secs_f64()}));
-                        let mut set = set.write().unwrap();
-                        set.push(Arc::new(recent));
-                        let excess = set.len().saturating_sub(2);
-                        set.drain(..excess);
-                    }
-                    Err(error) => eprintln!("{}", json!({"recentLoadError":error,"target":target.display().to_string()})),
+        for (root, set, keep) in &roots {
+            let Ok(target) = fs::canonicalize(root.join("current")) else { continue };
+            if set.read().unwrap().iter().any(|p| p.target == target) {
+                continue;
+            }
+            let start = Instant::now();
+            match Publication::load(&target, &pool) {
+                Ok(publication) => {
+                    eprintln!("{}", json!({"loaded":target.display().to_string(),"id":publication.id,"tip":publication.tip,"seconds":start.elapsed().as_secs_f64()}));
+                    let mut set = set.write().unwrap();
+                    set.push(Arc::new(publication));
+                    let excess = set.len().saturating_sub(*keep);
+                    set.drain(..excess);
                 }
+                Err(error) => eprintln!("{}", json!({"loadError":error,"target":target.display().to_string()})),
             }
         }
         std::thread::sleep(std::time::Duration::from_secs(5));
@@ -532,10 +580,8 @@ fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: 
 
 /// Everything a connection thread needs; query work goes to the scheduler.
 struct Shared {
-    manifest: Vec<u8>,
-    main: Arc<Table>,
-    overflow: Arc<Table>,
-    recent: RecentSet,
+    base: PublicationSet,
+    recent: PublicationSet,
     web: Option<PathBuf>,
     jobs: Mutex<mpsc::Sender<Job>>,
 }
@@ -548,36 +594,38 @@ impl Shared {
         answer.recv().map_err(|_| "scheduler stopped".to_string())?
     }
 
+    fn current_base(&self) -> Option<Arc<Publication>> {
+        self.base.read().unwrap().last().cloned()
+    }
+
+    /// The newest recent table built on the current base.
+    fn current_recent(&self) -> Option<Arc<Publication>> {
+        let tip = self.current_base()?.tip;
+        self.recent.read().unwrap().iter().rev().find(|p| p.base_tip == Some(tip)).cloned()
+    }
+
     fn handle(&self, stream: &mut TcpStream) -> Result<(), String> {
         let (route, body) = read_request(stream)?;
-        let table = |name: &str| match name { "main" => Ok(self.main.clone()), "overflow" => Ok(self.overflow.clone()), _ => Err("unknown table".to_string()) };
+        let manifest = |stream: &mut TcpStream, p: Option<Arc<Publication>>| match p {
+            Some(p) => respond(stream, "200 OK", "application/json", &format!("X-Publication-Id: {}\r\nCache-Control: no-store\r\n", p.id), &p.manifest).map_err(io_err),
+            None => respond(stream, "404 Not Found", "text/plain", "", b"no publication").map_err(io_err),
+        };
         match route.as_str() {
-            "GET /manifest" => respond(stream, "200 OK", "application/json", "", &self.manifest).map_err(io_err),
-            r if r.starts_with("GET /publics/") => respond(stream, "200 OK", "application/octet-stream", "", &table(&r["GET /publics/".len()..])?.publics.concat()).map_err(io_err),
-            r if r.starts_with("GET /public/") => {
-                let mut parts = r["GET /public/".len()..].split('/');
-                let t = table(parts.next().unwrap_or(""))?;
-                let i: usize = parts.next().and_then(|p| p.parse().ok()).ok_or("bad instance")?;
-                respond(stream, "200 OK", "application/octet-stream", "", t.publics.get(i).ok_or("bad instance")?).map_err(io_err)
-            }
-            r if r.starts_with("POST /query/") => {
-                let (out, timing) = self.query(table(&r["POST /query/".len()..])?, &body)?;
-                respond(stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
-            }
-            "GET /recent/manifest" => match self.recent.read().unwrap().last() {
-                Some(current) => respond(stream, "200 OK", "application/json", "", &current.manifest).map_err(io_err),
-                None => respond(stream, "404 Not Found", "text/plain", "", b"no recent publication").map_err(io_err),
-            },
-            r if r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
-                let path = &r[r.find("/recent/").unwrap() + "/recent/".len()..];
-                let (id, rest) = path.split_once('/').ok_or("bad recent path")?;
-                let Some(publication) = self.recent.read().unwrap().iter().find(|p| p.id == id).cloned() else {
-                    return respond(stream, "410 Gone", "text/plain", "", b"recent publication replaced").map_err(io_err);
+            "GET /manifest" => manifest(stream, self.current_base()),
+            "GET /recent/manifest" => manifest(stream, self.current_recent()),
+            r if r.starts_with("GET /base/") || r.starts_with("POST /base/") || r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
+                let path = &r[r.find(' ').unwrap() + 2..];
+                let (set, rest) = path.split_once('/').ok_or("bad path")?;
+                let (id, rest) = rest.split_once('/').ok_or("bad path")?;
+                let set = if set == "base" { &self.base } else { &self.recent };
+                let Some(publication) = set.read().unwrap().iter().find(|p| p.id == id).cloned() else {
+                    return respond(stream, "410 Gone", "text/plain", "", b"publication replaced").map_err(io_err);
                 };
                 let table = |name: &str| match name { "main" => Ok(publication.main.clone()), "overflow" => Ok(publication.overflow.clone()), _ => Err("unknown table".to_string()) };
-                match (r.starts_with("POST"), rest.split_once('/')) {
-                    (false, Some(("publics", kind))) => respond(stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
-                    (true, Some(("query", kind))) => {
+                match (r.starts_with("POST"), rest.split_once('/').unwrap_or((rest, ""))) {
+                    (false, ("manifest.sig", "")) => respond(stream, "200 OK", "application/octet-stream", "", &publication.signature).map_err(io_err),
+                    (false, ("publics", kind)) => respond(stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
+                    (true, ("query", kind)) => {
                         let (out, timing) = self.query(table(kind)?, &body)?;
                         respond(stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
                     }
@@ -606,32 +654,31 @@ impl Shared {
     }
 }
 
-/// Most connections handled at once; further ones wait in the listen backlog.
+/// Most connections handled at once; further ones get 503.
 const MAX_CONNECTIONS: usize = 256;
 
-pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>, recent_root: Option<&Path>) -> Result<(), String> {
-    let manifest_bytes = fs::read(dir.join("manifest.json")).map_err(io_err)?;
-    let manifest: Value = serde_json::from_slice(&manifest_bytes).map_err(io_err)?;
+/// `base_root` and `recent_root` each hold a `current` symlink to a signed
+/// publication directory; both are followed and swapped without a restart.
+pub(super) fn serve(base_root: &Path, port: u16, threads: usize, web: Option<&Path>, recent_root: Option<&Path>) -> Result<(), String> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
-    let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad manifest");
-    let (main, main_load) = pool.install(|| Table::load(dir, "main", count("main", "instances")?, count("main", "rows")?))?;
-    let (overflow, overflow_load) =
-        pool.install(|| Table::load(dir, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
-    eprintln!("{}", json!({"loaded":[main_load, overflow_load],"threads":threads,"maxBatch":MAX_BATCH}));
-    let recent: RecentSet = Default::default();
+    let loader = rayon::ThreadPoolBuilder::new().num_threads(threads.min(4)).build().map_err(io_err)?;
+    let (base, recent): (PublicationSet, PublicationSet) = Default::default();
+    // The first base loads with every thread before the listener opens.
+    let first = fs::canonicalize(base_root.join("current")).map_err(|_| "base root has no current publication".to_string())?;
+    let start = Instant::now();
+    base.write().unwrap().push(Arc::new(Publication::load(&first, &pool)?));
+    eprintln!("{}", json!({"loaded":first.display().to_string(),"seconds":start.elapsed().as_secs_f64(),"threads":threads,"maxBatch":MAX_BATCH}));
+    let mut roots = vec![(base_root.to_owned(), base.clone(), 1)];
     if let Some(root) = recent_root {
-        let (root, set) = (root.to_owned(), recent.clone());
-        std::thread::spawn(move || watch_recent(root, set));
+        roots.push((root.to_owned(), recent.clone(), 8));
     }
+    std::thread::spawn(move || watch(roots, loader));
     let (sender, jobs) = mpsc::channel();
     std::thread::spawn(move || schedule(jobs, pool));
-    let shared = Arc::new(Shared {
-        manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main: Arc::new(main), overflow: Arc::new(overflow),
-        recent, web: web.map(Path::to_owned), jobs: Mutex::new(sender),
-    });
+    let shared = Arc::new(Shared { base, recent, web: web.map(Path::to_owned), jobs: Mutex::new(sender) });
     let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(io_err)?;
-    eprintln!("Private explorer test listening on http://127.0.0.1:{port}");
+    eprintln!("Private explorer listening on http://127.0.0.1:{port}");
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
         if active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= MAX_CONNECTIONS {
@@ -677,18 +724,17 @@ impl Http {
 }
 
 struct Remote {
+    kind: &'static str,
     profile: TableProfile,
     publics: Vec<Vec<u8>>,
-    rows: usize,
-    /// Route prefix: "" for the base publication, "/recent/<id>" for recent.
+    side: publication::Side,
+    /// Route prefix: "/base/<id>" or "/recent/<id>".
     prefix: String,
 }
 
 impl Remote {
-    fn fetch(http: &Http, cache: &Path, manifest: &Value, kind: &str, prefix: &str) -> Result<Self, String> {
-        let rows = manifest[kind]["rows"].as_u64().ok_or("bad manifest")? as usize;
-        let instances = manifest[kind]["instances"].as_u64().ok_or("bad manifest")? as usize;
-        let profile = profile_for(kind, rows)?;
+    fn fetch(http: &Http, cache: &Path, side: publication::Side, kind: &'static str, prefix: &str) -> Result<Self, String> {
+        let profile = profile_for(kind, side.rows)?;
         let path = cache.join(format!("{kind}.publics"));
         let bytes = match fs::read(&path) {
             Ok(bytes) => bytes,
@@ -699,22 +745,22 @@ impl Remote {
             }
         };
         let size = profile.scheme.public_bytes;
-        if bytes.len() != size * instances {
+        if bytes.len() != size * side.instances {
             return Err(format!("{kind} public parameters have the wrong length"));
         }
-        Ok(Remote { publics: bytes.chunks(size).map(<[u8]>::to_vec).collect(), profile, rows, prefix: prefix.to_owned() })
+        Ok(Remote { kind, publics: bytes.chunks(size).map(<[u8]>::to_vec).collect(), profile, side, prefix: prefix.to_owned() })
     }
 
-    /// Queries each local row of every instance with one shared upload per row.
+    /// Verified payloads of each local row of every instance, one shared
+    /// upload per row.
     fn rows(&self, http: &Http, label: &str, local_rows: &[usize], timing: &mut BTreeMap<String, u128>) -> Result<Vec<Vec<Vec<u8>>>, String> {
-        let kind = if label.ends_with("overflow") || label.ends_with("Overflow") { "overflow" } else { "main" };
         let start = Instant::now();
         let (secrets, uploads): (Vec<_>, Vec<_>) = local_rows.iter().map(|&r| self.profile.prepare(r)).collect::<Result<Vec<_>, _>>()?.into_iter().unzip();
         *timing.entry(format!("{label}ClientPrepareNs")).or_default() += start.elapsed().as_nanos();
         let start = Instant::now();
         let mut body = (uploads.len() as u32).to_le_bytes().to_vec();
         body.extend(uploads.concat());
-        let (reply, headers) = http.call("POST", &format!("{}/query/{kind}", self.prefix), &body)?;
+        let (reply, headers) = http.call("POST", &format!("{}/query/{}", self.prefix, self.kind), &body)?;
         *timing.entry(format!("{label}RoundTripNs")).or_default() += start.elapsed().as_nanos();
         for (name, header) in [("ServerNs", "x-server-ns"), ("ScanNs", "x-scan-ns"), ("PackNs", "x-pack-ns"), ("QueueNs", "x-queue-ns"), ("Batch", "x-batch")] {
             *timing.entry(format!("{label}{name}")).or_default() += headers.get(header).and_then(|v| v.parse().ok()).unwrap_or(0);
@@ -728,39 +774,50 @@ impl Remote {
         let start = Instant::now();
         let decoded = reply
             .chunks(size * self.publics.len())
-            .zip(&secrets)
-            .map(|(replies, secret)| replies.chunks(size).zip(&self.publics).map(|(r, p)| self.profile.decode(secret, p, r)).collect())
+            .zip(secrets.iter().zip(local_rows))
+            .map(|(replies, (secret, &row))| {
+                replies.chunks(size).zip(&self.publics).enumerate().map(|(instance, (r, p))| {
+                    let bytes = self.profile.decode(secret, p, r)?;
+                    Ok(layout::verify_row(self.kind, instance as u32, row as u32, &bytes, &self.side.roots[instance], self.side.depth)?.to_vec())
+                }).collect()
+            })
             .collect::<Result<Vec<Vec<_>>, String>>()?;
         *timing.entry(format!("{label}ClientDecodeNs")).or_default() += start.elapsed().as_nanos();
         Ok(decoded)
     }
 }
 
-/// A publication's two tables: the base snapshot, or the recent blocks.
-struct Publication {
+/// A signed publication's two tables: the base snapshot, or the recent blocks.
+struct RemotePublication {
     main: Remote,
     overflow: Remote,
     tip: u64,
 }
 
-impl Publication {
-    fn open(http: &Http, cache: &Path, manifest_bytes: &[u8], prefix: &str) -> Result<Self, String> {
-        let manifest: Value = serde_json::from_slice(manifest_bytes).map_err(io_err)?;
-        if manifest["schema"] != layout::SCHEMA_NAME {
-            return Err("unsupported private explorer manifest".into());
-        }
-        // Public parameters belong to one exact publication, not just its tip.
-        let cache = cache.join(hex::encode(&sha2::Sha256::digest(manifest_bytes)[..16]));
+impl RemotePublication {
+    /// Fetches `<set>` manifest and signature, verifies them, then the publics.
+    fn open(http: &Http, cache: &Path, set: &str) -> Result<Option<Self>, String> {
+        let path = if set == "base" { "/manifest" } else { "/recent/manifest" };
+        let manifest = match http.call("GET", path, &[]) {
+            Ok((bytes, _)) => bytes,
+            Err(error) if set == "recent" && error.contains(" 404 ") => return Ok(None),
+            Err(error) => return Err(error),
+        };
+        let id = publication_id(&manifest);
+        let prefix = format!("/{set}/{id}");
+        let (signature, _) = http.call("GET", &format!("{prefix}/manifest.sig"), &[])?;
+        let verified = publication::verify(&manifest, &signature)?;
+        let cache = cache.join(&id);
         fs::create_dir_all(&cache).map_err(io_err)?;
-        Ok(Publication {
-            main: Remote::fetch(http, &cache, &manifest, "main", prefix)?,
-            overflow: Remote::fetch(http, &cache, &manifest, "overflow", prefix)?,
-            tip: manifest["snapshotTip"].as_u64().ok_or("bad manifest")?,
-        })
+        Ok(Some(RemotePublication {
+            tip: verified.tip,
+            main: Remote::fetch(http, &cache, verified.main, "main", &prefix)?,
+            overflow: Remote::fetch(http, &cache, verified.overflow, "overflow", &prefix)?,
+        }))
     }
 
     fn bucket(&self, http: &Http, label: &str, txid: &[u8; 32], timing: &mut BTreeMap<String, u128>) -> Result<Vec<u8>, String> {
-        Ok(self.main.rows(http, label, &[row_of(txid, self.main.rows as u64) as usize], timing)?.remove(0).concat())
+        Ok(self.main.rows(http, label, &[row_of(txid, self.main.side.rows as u64) as usize], timing)?.remove(0).concat())
     }
 }
 
@@ -770,16 +827,9 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
     let http = Http { addr: addr.to_owned() };
     let mut timing = BTreeMap::new();
     let start = Instant::now();
-    let (base_manifest, _) = http.call("GET", "/manifest", &[])?;
-    let base = Publication::open(&http, cache, &base_manifest, "")?;
+    let base = RemotePublication::open(&http, cache, "base")?.ok_or("no base publication")?;
     // No recent publication yet is a normal state: every client then asks the base only.
-    let recent = match http.call("GET", "/recent/manifest", &[]) {
-        Ok((bytes, _)) => {
-            let id = serde_json::from_slice::<Value>(&bytes).map_err(io_err)?["id"].as_str().ok_or("recent manifest has no id")?.to_owned();
-            Some(Publication::open(&http, cache, &bytes, &format!("/recent/{id}"))?)
-        }
-        Err(_) => None,
-    };
+    let recent = RemotePublication::open(&http, cache, "recent")?;
     timing.insert("publicParamsNs".into(), start.elapsed().as_nanos());
     let tip = recent.as_ref().map_or(base.tip, |r| r.tip);
     // Every lookup asks both tables with the same shape, found or not.
@@ -806,7 +856,8 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
             let wanted: Vec<usize> = layout::overflow_rows(start, len).map(|g| g as usize).collect();
             let first = wanted[0];
             // Padding repeats the first row; the server cannot see which rows.
-            let mut asked: Vec<usize> = wanted.iter().map(|g| g % owner.overflow.rows).collect();
+            let rows = owner.overflow.side.rows;
+            let mut asked: Vec<usize> = wanted.iter().map(|g| g % rows).collect();
             asked.resize(layout::padded_rows(wanted.len()), asked[0]);
             // The other publication gets the same number of dummy queries, so
             // the server cannot tell an old large transaction from a recent one.
@@ -814,9 +865,9 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
                 other.overflow.rows(&http, "dummyOverflow", &vec![0; asked.len()], &mut timing)?;
             }
             let fetched = owner.overflow.rows(&http, "overflow", &asked, &mut timing)?;
-            let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / owner.overflow.rows].clone()).collect();
+            let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / rows].clone()).collect();
             timing.insert("overflowRows".into(), asked.len() as u128);
-            Some(bytes[start as usize - first * ROW_BYTES..][..len].to_vec())
+            Some(bytes[start as usize - first * PAYLOAD..][..len].to_vec())
         }
     };
     let result = match record {
@@ -829,6 +880,7 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
             let mut json = record.to_json();
             json["confirmations"] = json!(tip.saturating_sub(json["blockHeight"].as_u64().unwrap_or(0)) + 1);
             json["found"] = json!(true);
+            json["verified"] = json!(true);
             json["partial"] = json!(partial);
             json["fromRecent"] = json!(!std::ptr::eq(owner, &base));
             json["outputsSpentSinceBase"] = json!(spent_since);

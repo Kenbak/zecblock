@@ -64,7 +64,7 @@ function FlowCell({ tx }: { tx: Tx }) {
  * is public. A genuinely fully-shielded self-loop (spend and output in the
  * same pool, nothing else) has no public amount at all.
  */
-function knownAmountZec(tx: Tx): number | null {
+export function knownAmountZec(tx: Tx): number | null {
   const sap = Number(tx.value_balance_sapling) || 0;
   const orc = Number(tx.value_balance_orchard) || 0;
   const irn = Number(tx.value_balance_ironwood) || 0;

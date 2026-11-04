@@ -176,6 +176,11 @@ export function App() {
       if (data.type === 'tip') { setManifest(data.manifest ?? null); return; }
       if (data.type === 'publication-warning') return;
       if (data.requestId !== undefined && data.requestId !== requestRef.current) return;
+      // A short haptic tick when a private lookup has decrypted (phones that
+      // support it, after the visitor has interacted with the page).
+      if (data.type === 'result' || data.type === 'block' || data.type === 'address') {
+        try { navigator.vibrate?.(12); } catch { /* not supported */ }
+      }
       if (data.type === 'result') {
         setLoadingFull(false);
         const record = fullRecord(data.result?.record ?? data.result);
@@ -289,7 +294,7 @@ export function App() {
             <SearchForm hero placeholder={placeholder} value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} inputRef={inputRef} />
             <div className="search-examples mt-2 sm:mt-2.5 flex flex-wrap gap-1.5 sm:gap-2 items-center">
               <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
-              {EXAMPLES.filter(example => !HEIGHT.test(example.term) || manifest?.blocks).filter(example => !ADDRESS.test(example.term) || manifest?.addresses).map(example => <button key={example.term} type="button" className="example-tag example-tag-default" disabled={!ready || busy} onClick={() => { onQuery(example.term); start(example.term); }}>{example.label}</button>)}
+              {EXAMPLES.map(example => <button key={example.term} type="button" className="example-tag example-tag-default" disabled={!ready || busy} onClick={() => { onQuery(example.term); start(example.term); }}>{example.label}</button>)}
             </div>
             {inputError && <p className="text-xs text-danger mt-3" id="lookup-error" role="alert">{inputError}</p>}
             <p className="private-status" id="runtime-status" role="status" aria-live="polite">
@@ -301,7 +306,7 @@ export function App() {
           </div>
         </div>
       </section>
-      {feed && <HomeFeeds feed={feed} />}
+      <HomeFeeds feed={feed} />
       </div>}
 
       {view.kind === 'loading' && <div aria-busy="true">

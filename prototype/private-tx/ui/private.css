@@ -20,3 +20,9 @@ body { margin: 0; min-height: 100vh; display: flex; flex-direction: column; }
 @media (max-width: 640px) { .brand-logo { width: 98px; } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
 .home-command .private-status { justify-content: center; }
+
+/* Homepage feed placeholder: cipher text until the signed feed is verified. */
+.private-cipher-glyphs { color: color-mix(in srgb, var(--color-green) 55%, transparent); letter-spacing: .02em; }
+.private-cipher-status { padding: 10px 16px; border-top: 1px solid var(--color-border); color: var(--color-text-muted); font-family: var(--font-geist-mono), monospace; font-size: 11px; }
+.private-cursor { display: inline-block; width: 7px; height: 12px; margin-left: 4px; vertical-align: -1px; background: var(--color-green); animation: private-blink 1s steps(1) infinite; }
+@keyframes private-blink { 50% { opacity: 0; } }

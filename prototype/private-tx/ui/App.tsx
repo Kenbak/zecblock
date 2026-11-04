@@ -10,6 +10,7 @@ import { BlockView } from './BlockView';
 import { AddressView } from './AddressView';
 import type { PrivateAddress } from './AddressView';
 import type { BlockPartial, PrivateBlock } from './BlockView';
+import { HomeFeeds, type Feed } from './HomeFeeds';
 
 type Manifest = {
   schema?: string;
@@ -18,11 +19,6 @@ type Manifest = {
   sourceSummary?: { recordCount?: number };
   blocks?: boolean;
   addresses?: boolean;
-};
-type Feed = {
-  snapshotTip: number;
-  blocks: { height: number; hash: string; timestamp: number; transaction_count: number; size: number }[];
-  transactions: { txid: string; block_height: number; timestamp: number; is_coinbase: boolean; has_shielded: boolean; total_output: string | null }[];
 };
 type Measurements = { totalMs: number; [key: string]: number };
 type View =
@@ -39,31 +35,6 @@ const HEIGHT = /^\d{1,10}$/;
 const FRAGMENT = /^#(tx|block|address)=([a-f\d]{64}|\d{1,10}|t[13][1-9A-HJ-NP-Za-km-z]{33})$/i;
 const ADDRESS = /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/;
 
-function ago(seconds: number) {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - seconds));
-  return s < 60 ? `${s}s ago` : s < 3600 ? `${Math.floor(s / 60)}m ago` : s < 86400 ? `${Math.floor(s / 3600)}h ago` : `${Math.floor(s / 86400)}d ago`;
-}
-
-function FeedPanel({ feed, onOpen }: { feed: Feed; onOpen: (term: string) => void }) {
-  const row = 'w-full flex items-center justify-between gap-3 px-4 py-3 text-left border-t border-cipher-border first:border-t-0 hover:bg-cipher-hover transition-colors';
-  return <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-10 grid gap-4 md:grid-cols-2" aria-label="Latest activity">
-    <Card><CardBody className="p-0">
-      <h2 className="px-4 pt-4 pb-3 text-xs font-mono text-muted uppercase tracking-wider">Latest blocks</h2>
-      {feed.blocks.map(b => <button key={b.hash} type="button" className={row} onClick={() => onOpen(String(b.height))}>
-        <span className="font-mono text-sm text-primary">#{b.height.toLocaleString()}</span>
-        <span className="text-xs text-muted">{b.transaction_count.toLocaleString()} tx · {ago(b.timestamp)}</span>
-      </button>)}
-    </CardBody></Card>
-    <Card><CardBody className="p-0">
-      <h2 className="px-4 pt-4 pb-3 text-xs font-mono text-muted uppercase tracking-wider">Latest transactions</h2>
-      {feed.transactions.map(t => <button key={t.txid} type="button" className={row} onClick={() => onOpen(t.txid)}>
-        <span className="font-mono text-sm text-primary">{t.txid.slice(0, 10)}…{t.txid.slice(-6)}</span>
-        <span className="text-xs text-muted">{t.is_coinbase ? 'Coinbase' : t.has_shielded ? 'Shielded' : 'Transparent'} · {ago(t.timestamp)}</span>
-      </button>)}
-    </CardBody></Card>
-    <p className="md:col-span-2 text-xs text-muted">Everyone receives this same list, so viewing it reveals nothing. Opening an item is a private lookup.</p>
-  </section>;
-}
 const EXAMPLES = [
   { label: 'Large transaction', txid: '84dcfb4394c4420eed9de74444a875d4b8a2576e664d6a7ef9765458e96826d9' },
 ];
@@ -301,7 +272,7 @@ export function App() {
     </nav>
 
     <main id="main-content" className="private-main">
-      {view.kind === 'home' && <section className="home-hero-band">
+      {view.kind === 'home' && <div className="home-page"><section className="home-hero-band">
         <div className="home-hero relative z-30 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="home-introduction">
             <h1 className="text-primary">The Zcash Private Explorer</h1>
@@ -322,14 +293,14 @@ export function App() {
             </p>
           </div>
         </div>
-      </section>}
+      </section>
+      {feed && <HomeFeeds feed={feed} />}
+      </div>}
 
       {view.kind === 'loading' && <div aria-busy="true">
         <p className="sr-only" role="status">Searching privately</p>
         <TxLoadingSkeleton />
       </div>}
-
-      {view.kind === 'home' && feed && <FeedPanel feed={feed} onOpen={term => { setQuery(term); start(term); }} />}
 
       {view.kind === 'address' && <AddressView address={view.address} loadingMore={loadingFull} onLoadMore={loadMore} />}
 

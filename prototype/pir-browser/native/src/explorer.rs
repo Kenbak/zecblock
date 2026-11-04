@@ -15,7 +15,7 @@
 //! a preview's full lists touches the overflow table; that request is padded
 //! to a power-of-two row count and reveals the coarse size class.
 use super::chunk_spike::{parallel_multiply, parallel_multiply_batch, preprocess_blocks};
-use super::explorer_record::{AddressRecord, AddressTx, BLOCK_POINTER, BLOCK_VERSION, BlockRecord, Record, block_height_key, parse_address_line, parse_block_line, parse_export_line, publication};
+use super::explorer_record::{AddressRecord, AddressTx, BLOCK_POINTER, BLOCK_VERSION, BlockRecord, BlockTx, Record, block_height_key, parse_address_line, parse_block_line, parse_export_line, publication};
 use super::*;
 use memmap2::{Mmap, MmapMut};
 use rayon::prelude::*;
@@ -492,13 +492,25 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             })
             .collect::<Result<_, _>>()?;
         latest.sort_unstable_by(|a, b| b.height.cmp(&a.height));
-        latest.truncate(10);
-        let blocks: Vec<Value> = latest.iter().map(|b| json!({"height":b.height,"hash":hex::encode(b.hash),"timestamp":b.time,
+        // Newest blocks first; shielded activity looks further back.
+        latest.truncate(2000);
+        let blocks: Vec<Value> = latest.iter().take(10).map(|b| json!({"height":b.height,"hash":hex::encode(b.hash),"timestamp":b.time,
             "transaction_count":b.tx_count,"size":b.size,"total_fees":b.total_fees.map(|f| f.to_string()),"miner_address":b.miner_address})).collect();
-        let txs: Vec<Value> = latest.iter().flat_map(|b| b.txs.iter().rev().map(move |t| (b, t))).take(10).map(|(b, t)| json!({
-            "txid":hex::encode(t.txid),"block_height":b.height,"timestamp":b.time,"is_coinbase":t.flags & 1 != 0,
-            "has_shielded":t.flags & 0b11110 != 0,"total_output":t.total_output.map(|v| v.to_string()),"fee":t.fee.map(|v| v.to_string())})).collect();
-        let bytes = serde_json::to_vec(&json!({"snapshotTip":snapshot_tip,"blocks":blocks,"transactions":txs})).map_err(io_err)?;
+        // Transactions newest first (block height, then position), in the
+        // public transaction-list shape; amounts are zatoshi strings.
+        let newest = || latest.iter().flat_map(|b| b.txs.iter().enumerate().rev().map(move |(i, t)| (b, i, t)));
+        let tx_json = |(b, i, t): (&BlockRecord, usize, &BlockTx)| json!({
+            "txid":hex::encode(t.txid),"block_height":b.height,"block_time":b.time,"timestamp":b.time,"tx_index":i,
+            "vin_count":t.vin_count,"vout_count":t.vout_count,"is_coinbase":t.flags & 1 != 0,"has_sapling":t.flags & 2 != 0,
+            "has_orchard":t.flags & 4 != 0,"has_ironwood":t.flags & 8 != 0,"has_sprout":t.flags & 16 != 0,"has_shielded":t.flags & 0b11110 != 0,
+            "sapling_spend_count":t.sapling_spends,"sapling_output_count":t.sapling_outputs,"orchard_actions":t.orchard_actions,"ironwood_actions":t.ironwood_actions,
+            "value_balance_sapling":t.value_balance_sapling.map(|v| v.to_string()),"value_balance_orchard":t.value_balance_orchard.map(|v| v.to_string()),
+            "value_balance_ironwood":t.value_balance_ironwood.map(|v| v.to_string()),"total_output":t.total_output.map(|v| v.to_string()),
+            "fee":t.fee.map(|v| v.to_string())});
+        let txs: Vec<Value> = newest().take(10).map(tx_json).collect();
+        // Same rule as the public shielded summary: any Sapling, Orchard or Ironwood part.
+        let shielded: Vec<Value> = newest().filter(|(_, _, t)| t.flags & 0b1110 != 0).take(10).map(tx_json).collect();
+        let bytes = serde_json::to_vec(&json!({"snapshotTip":snapshot_tip,"blocks":blocks,"transactions":txs,"shielded":shielded})).map_err(io_err)?;
         Some(bytes)
     } else {
         None

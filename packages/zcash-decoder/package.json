@@ -8,14 +8,18 @@
   "files": [
     "dist",
     "wasm",
-    "scripts",
     "examples",
-    "README.md"
+    "README.md",
+    "LICENSE-MIT",
+    "LICENSE-APACHE"
   ],
   "scripts": {
     "build": "tsc",
-    "prepublishOnly": "npm run build",
-    "postinstall": "node scripts/postinstall.js || true"
+    "prepublishOnly": "npm run build:wasm && npm test",
+    "test": "npm run build && npm run test:types && node --test test/*.test.mjs",
+    "build:wasm": "node scripts/build-wasm.mjs",
+    "test:browser": "npm run build && node test/browser.mjs",
+    "test:types": "tsc --noEmit --ignoreConfig --lib es2022 --types node --strict --module nodenext --target es2022 test/types.mts"
   },
   "keywords": [
     "zcash",
@@ -33,20 +37,20 @@
   "license": "(MIT OR Apache-2.0)",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Kenbak/cipherscan.git",
+    "url": "https://github.com/Kenbak/zecblock.git",
     "directory": "packages/zcash-decoder"
   },
   "bugs": {
-    "url": "https://github.com/Kenbak/cipherscan/issues"
+    "url": "https://github.com/Kenbak/zecblock/issues"
   },
-  "homepage": "https://github.com/Kenbak/cipherscan/tree/main/packages/zcash-decoder#readme",
+  "homepage": "https://github.com/Kenbak/zecblock/tree/main/packages/zcash-decoder#readme",
   "devDependencies": {
-    "@types/node": "^20.0.0",
-    "typescript": "^5.0.0"
+    "@types/node": "22.20.5",
+    "typescript": "7.0.2",
+    "playwright": "1.63.0"
   },
   "peerDependencies": {},
   "publishConfig": {
     "access": "public"
   }
 }
-

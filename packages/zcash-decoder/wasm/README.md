@@ -1,78 +1,34 @@
-# 🦀 Zcash WASM - Client-Side Memo Decryption
+# Zcash WASM decoder
 
-WebAssembly module for decrypting Zcash shielded transaction memos **entirely in the browser**.
+Local Orchard and Ironwood trial decryption with an Orchard UFVK, using
+Zakura Common 4.0.0 and wasm-bindgen 0.2.127. The pools share key material and
+use distinct note-encryption domains. Sapling decryption is unsupported.
 
-## 🎯 Features
+The maintained Common transaction parser handles complete v5/v6 encodings and
+known NU7 branch IDs without rewriting bytes. Transparent signing and circuits
+are disabled; optional secp256k1 is not compiled into this WASM artifact.
+Decoding does not verify transaction proofs, signatures or consensus validity.
 
-- ✅ **100% Client-Side** - Viewing keys never leave your device
-- ✅ **Orchard Support** - Decrypt Orchard shielded memos
-- ✅ **Ironwood Support** - Decrypt Ironwood shielded memos (same domain/keys as Orchard)
-- ❌ **No Sapling Support** - Sapling decryption needs `zcash_primitives`/`sapling-crypto`, which pull in `secp256k1` (C code) via `zcash_transparent` and cannot compile to `wasm32`. This crate deliberately depends on `zakura-orchard` only (see `Cargo.toml`) to keep the wasm32 build lean.
-- ✅ **Unified Viewing Keys** - Support for UFVK (Orchard component)
-- ✅ **Privacy-Preserving** - Zero server-side processing
+From the repository's `packages/zcash-decoder` directory, run
+`npm run build:wasm` to rebuild the npm artifact with the pinned Rust toolchain,
+locked dependencies and source path remapping. `build-info.json` records the
+source and generated artifact SHA-256 hashes. Root `wasm/BUILD.md` contains the
+historical scanner benchmark and integration notes.
 
-## 🚀 Building
+`new ScanSession(ufvk)` prepares external/internal incoming keys. Use
+`filter_compact(Uint8Array)` for fixed 149-byte records and
+`decrypt_memos(txHex)` for readable text memos plus integer `amount_zatoshis`.
+Call `free()` when finished. This releases the Rust allocation; applications
+must manage their own copies of viewing keys and decrypted data.
+The legacy `decrypt_memo` API retains `{memo, amount}` with ZEC display units.
 
-### Prerequisites
+Transaction input is capped at 2,000,000 bytes. Each compact call accepts at most
+4,096 records; the JSON compatibility API additionally caps input at 4,000,000
+bytes. Decryption makes no network requests or key logs. Initial browser loading
+fetches the static WASM artifact. Use a Web Worker for large scans.
 
-```bash
-# Install Rust
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
+Run `cargo test --manifest-path wasm/Cargo.toml --lib --locked` at the repository
+root for parser/decryption regressions. Tests use public synthetic keys and a
+public ZIP 244 vector, not private wallets.
 
-# Install wasm-pack
-cargo install wasm-pack
-```
-
-### Build for Web
-
-```bash
-# Development build
-wasm-pack build --target web --dev
-
-# Production build (optimized for size)
-wasm-pack build --target web --release
-```
-
-This will generate files in `pkg/`:
-- `zcash_wasm.js` - JavaScript bindings
-- `zcash_wasm_bg.wasm` - WebAssembly binary
-- `zcash_wasm.d.ts` - TypeScript definitions
-
-## 📦 Usage in Next.js
-
-```typescript
-import init, { decrypt_memo } from '@/wasm/pkg/zcash_wasm';
-
-// Initialize WASM
-await init();
-
-// Decrypt memo
-const memo = decrypt_memo(txHex, viewingKey);
-console.log('Decrypted memo:', memo);
-```
-
-## 🧪 Testing
-
-```bash
-cargo test
-```
-
-## 📊 Bundle Size
-
-- **WASM binary:** ~200-500 KB (gzipped)
-- **JS bindings:** ~10 KB
-
-## 🔐 Security
-
-- Viewing keys are processed entirely in the browser's memory
-- No network calls are made during decryption
-- Memory is cleared after decryption completes
-
-## 📝 License
-
-MIT
-
-## 🙏 Credits
-
-Built with [librustzcash](https://github.com/zcash/librustzcash) by the Zcash Foundation.
-
+MIT OR Apache-2.0.

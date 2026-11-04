@@ -60,7 +60,7 @@
   {
     "method": "POST",
     "path": "/v1/ask/chat",
-    "description": "Contextual mainnet questions with reviewed public sources, supported language selection and bounded recent questions. Paid answers require bot verification and shared spend limits.",
+    "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
     "category": "ask",
     "query": [],
     "listKey": null,
@@ -90,6 +90,8 @@
             "pulse",
             "miner_zodl",
             "network",
+            "network_upgrades",
+            "block_speed",
             "addresses",
             "mempool",
             "nodes",
@@ -282,6 +284,245 @@
             "maxLength": 1000
           }
         },
+        "currentAnalytics": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "number",
+              "const": 2
+            },
+            "dataset": {
+              "type": "string",
+              "enum": [
+                "daily",
+                "blocks",
+                "transactions",
+                "flows",
+                "swaps"
+              ]
+            },
+            "start": {
+              "type": "string",
+              "pattern": "^20\\d{2}-\\d{2}-\\d{2}$"
+            },
+            "end": {
+              "type": "string",
+              "pattern": "^20\\d{2}-\\d{2}-\\d{2}$"
+            },
+            "bucket": {
+              "type": "string",
+              "enum": [
+                "none",
+                "day",
+                "week",
+                "month"
+              ]
+            },
+            "dimensions": {
+              "maxItems": 2,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z_]{0,31}$"
+              }
+            },
+            "filters": {
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z_]{0,31}$"
+                  },
+                  "op": {
+                    "type": "string",
+                    "enum": [
+                      "eq",
+                      "ne",
+                      "gte",
+                      "lte"
+                    ]
+                  },
+                  "value": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 128
+                  }
+                },
+                "required": [
+                  "field",
+                  "op",
+                  "value"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "measures": {
+              "minItems": 1,
+              "maxItems": 4,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "field": {
+                    "type": "string",
+                    "pattern": "^[a-z][a-z_]{0,31}$"
+                  },
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "count",
+                      "sum",
+                      "avg",
+                      "min",
+                      "max",
+                      "last"
+                    ]
+                  },
+                  "filters": {
+                    "maxItems": 2,
+                    "type": "array",
+                    "items": {
+                      "type": "object",
+                      "properties": {
+                        "field": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z_]{0,31}$"
+                        },
+                        "op": {
+                          "type": "string",
+                          "enum": [
+                            "eq",
+                            "ne",
+                            "gte",
+                            "lte"
+                          ]
+                        },
+                        "value": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 128
+                        }
+                      },
+                      "required": [
+                        "field",
+                        "op",
+                        "value"
+                      ],
+                      "additionalProperties": false
+                    }
+                  }
+                },
+                "required": [
+                  "field",
+                  "operation",
+                  "filters"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "calculations": {
+              "maxItems": 2,
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "operation": {
+                    "type": "string",
+                    "enum": [
+                      "ratio",
+                      "difference"
+                    ]
+                  },
+                  "left": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3
+                  },
+                  "right": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 3
+                  }
+                },
+                "required": [
+                  "operation",
+                  "left",
+                  "right"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "order": {
+              "type": "object",
+              "properties": {
+                "column": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 8
+                },
+                "direction": {
+                  "type": "string",
+                  "enum": [
+                    "asc",
+                    "desc"
+                  ]
+                }
+              },
+              "required": [
+                "column",
+                "direction"
+              ],
+              "additionalProperties": false
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25
+            }
+          },
+          "required": [
+            "version",
+            "dataset",
+            "start",
+            "end",
+            "bucket",
+            "dimensions",
+            "filters",
+            "measures",
+            "calculations",
+            "order",
+            "limit"
+          ],
+          "additionalProperties": false
+        },
+        "currentResearch": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "number",
+              "const": 3
+            },
+            "sql": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 8192
+            },
+            "limit": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          "required": [
+            "version",
+            "sql",
+            "limit"
+          ],
+          "additionalProperties": false
+        },
         "challenge": {
           "type": "string",
           "maxLength": 2048
@@ -405,6 +646,87 @@
       "required": [
         "spec",
         "evidenceKey"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/v1/ask/research/plan",
+    "description": "Feature-gated mainnet research: draft reviewed read-only PostgreSQL over three public datasets. Requires AI, challenge and shared spend admission. Returns validated SQL; execute=true runs it through the same isolated read-only worker in one admitted request.",
+    "category": "ask",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": null,
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": {
+      "type": "object",
+      "properties": {
+        "question": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "challenge": {
+          "type": "string",
+          "maxLength": 2048
+        },
+        "execute": {
+          "default": false,
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "question",
+        "challenge",
+        "execute"
+      ],
+      "additionalProperties": false
+    }
+  },
+  {
+    "method": "POST",
+    "path": "/v1/ask/research/query",
+    "description": "Feature-gated mainnet research: validated SELECT with joins, nonrecursive CTEs and windows over blocks, transactions and public flows. Challenge/IP and worker quotas apply; manual execution does not call AI. Exact decimal strings, 200 rows and 256 KiB maximum. No writes, private tables or arbitrary functions.",
+    "category": "ask",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": null,
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": {
+      "type": "object",
+      "properties": {
+        "version": {
+          "type": "number",
+          "const": 3
+        },
+        "sql": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "challenge": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2048
+        }
+      },
+      "required": [
+        "version",
+        "sql",
+        "limit",
+        "challenge"
       ],
       "additionalProperties": false
     }
@@ -1026,6 +1348,38 @@
   },
   {
     "method": "GET",
+    "path": "/v1/search/prefix",
+    "description": "Resolve a shortened transaction id or block hash to complete identifiers.",
+    "category": "search",
+    "query": [
+      "q"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "q is a hex prefix of 8–63 characters, or a displayed shortened id (prefix of at least 6 and suffix of at least 4 hex characters joined by ... or …). Returns at most 5 indexed transactions and 5 canonical blocks ordered by identifier; truncated is true when more matches exist. Mempool transactions and orphaned blocks are not searched. Empty results are cached for at most 5 seconds.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "q",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "minLength": 8,
+          "maxLength": 140,
+          "examples": [
+            "5b34c8b44d",
+            "5b34c8b44d...ec9e77"
+          ]
+        },
+        "description": "Hex prefix of 8–63 characters, or a shortened id: a prefix of at least 6 and a suffix of at least 4 hex characters joined by ... or …. Case-insensitive."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/blocks/:hashOrHeight/archive",
     "description": "Orphaned/non-canonical block archive lookup.",
     "category": "blocks",
@@ -1078,6 +1432,20 @@
         "description": "Trailing block-header observation window."
       }
     ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/network/block-speed",
+    "description": "Daily block-interval history and seven-day summaries from canonical block headers, split at node-announced NU7 activation.",
+    "category": "network",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Height-bounded 30-day history; incomplete boundary days remain complete:false. The latest seven-day summary is null when scan coverage is insufficient; after activation it intentionally covers only the active era. Values use consecutive canonical block-header intervals and serving-node targets.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
     "requestBody": null
   },
   {
@@ -1249,7 +1617,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "In census v3, torNodes is an integer only when torClassificationAvailable is true; otherwise it is null. Classification requires a valid nonempty Tor exit list and a matching committed census snapshot no older than 600 seconds. torClassificationCheckedAt is an ISO timestamp or null. Missing, failed, stale or mismatched classification is unavailable, never a measured zero. This count covers known exit IPs and hidden-service destinations, not all Tor users. Crawl-mode responses use Cache-Control: no-store; other census aggregates retain their internal cache.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
@@ -1265,7 +1633,7 @@
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "In census v3, each sample exposes nullable torNodes and torClassificationAvailable. A Tor count is returned only for the exact snapshot with a fresh matching classification status; older samples have no persisted availability evidence and return null rather than an invented historical zero. Crawl-mode responses use Cache-Control: no-store.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -1339,7 +1707,7 @@
   {
     "method": "GET",
     "path": "/v1/network/topology",
-    "description": "Peer topology graph.",
+    "description": "Observed address-advertisement graph. In mainnet crawl mode, directed links require fresh same-session Zcash checkpoint proof from the advertiser; advertised targets are not independently verified active nodes. Synthetic IDs omit endpoints. Missing or stale provenance returns topologyAvailable=false; supported empty snapshots return true with no links. observedAt records the collector snapshot and expiresAt bounds its display; truncated marks bounded partial output. Degree counts incident advertisements, while centrality and connectivity scores remain unavailable.",
     "category": "network",
     "query": [],
     "listKey": null,
@@ -1442,7 +1810,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "readinessPct is the share of active census nodes advertising latestProtocol or newer. referenceUpgrade names the upgrade that protocol follows: NU7 uses the ZIP 204 peer protocol 170190 on mainnet and 170180 on testnet; Crosslink keeps NU6.3 (170160). Protocol versions are self-reported and do not prove a node carries the activation height.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
@@ -1515,12 +1883,26 @@
   {
     "method": "GET",
     "path": "/v1/mining/orphan-rates",
-    "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+    "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
     "category": "mining",
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Observed unique non-canonical blocks from indexer reorg archives and node-validated competing-block capture / (current canonical blocks + observed losses), using shared half-open UTC block-header timestamp windows and one database snapshot. External reports, explicitly invalid archives, and hashes currently canonical are excluded. Hashes are deduplicated across both sources; capture at heights not yet indexed is excluded. Method observed-block-capture-v2 adds capture startedAt, heartbeatAt, observers, healthyObservers and status; these report observer availability, never network-wide completeness. Pool labels group public payout/tag attribution; Unknown remains included. Coverage is unverified, collectionStart is null, and uptimeVerified is false: this is not a complete network-wide or true per-pool orphan rate. Rates are fractions or null when canonical history is incomplete or there are no canonical blocks; observed zero stays zero. Includes asOf and indexed tip height/hash/header timestamp. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "note": "Observed unique non-canonical blocks from indexer reorg archives and node-validated competing-block capture / (current canonical blocks + observed losses), using shared half-open UTC block-header timestamp windows and one database snapshot. External reports, explicitly invalid archives, and hashes currently canonical are excluded. Hashes are deduplicated across both sources; capture at heights not yet indexed is excluded. Method observed-block-capture-v2 adds capture startedAt, heartbeatAt, observers, healthyObservers and status; these report observer availability, never network-wide completeness. Pool labels group public payout/tag attribution; Unknown remains included. Coverage is unverified, collectionStart is null, and uptimeVerified is false: this is not a complete network-wide or true per-pool orphan rate. Rates are fractions or null when canonical history is incomplete or there are no canonical blocks; observed zero stays zero. Includes asOf and indexed tip height/hash/header timestamp. Additive nu7 is null until the serving node reports an NU7 height and its activation block is indexed; then it has activationHeight, activationTimestamp and before/since windows in the same shape as periods. before covers up to 30 days before the activation header time and starts no earlier than competing-block capture; if capture began after activation its rate is null with unavailableReason capture-began-after-activation. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/mining/observation-lag",
+    "description": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Lag is the earliest ZecBlock receipt from its local node (block stream or 1s best-tip poll) minus the miner-provided header timestamp, in seconds. Windows use header timestamps; blocks without an observation stay in blocks but not observed. Median and p90 are null below minSample observed blocks. Negative lag means the header time is later than first observation. This is not peer-arrival or network propagation time.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
@@ -1687,6 +2069,357 @@
           "type": "string"
         },
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/crosschain/venues/analytics",
+    "description": "Indexed Maya or THORChain native-ZEC analytics: history, volume, routes, outcomes and explicit traversal coverage.",
+    "category": "crosschain",
+    "query": [
+      "granularity",
+      "period",
+      "venue"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Requires venue=maya|thorchain and explicit reader activation. Independent additive venue tables and resumable backfill; no writes to NEAR history. Exact decimal-string amounts; USD derives from amount times provider-reported first-stream-interval asset price, with missing values counted. Retained-provider traversal is not proof of all protocol history. Venue totals are separate observations and must not be summed as a unique global total. Partial refunds are separate outcomes with no duplicate successful volume. Returns 503 when unavailable; never a successful fabricated zero.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "granularity",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "hour",
+            "day"
+          ],
+          "description": "Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d."
+        },
+        "description": "Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d."
+      },
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "24h",
+            "7d",
+            "30d",
+            "90d",
+            "1y",
+            "all"
+          ],
+          "default": "30d",
+          "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+        },
+        "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+      },
+      {
+        "name": "venue",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "maya",
+            "thorchain"
+          ]
+        },
+        "description": "Independent indexed venue dataset."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/crosschain/venues/swaps",
+    "description": "Filter and paginate indexed Maya or THORChain actions, retaining exact native legs, refund details and source identity.",
+    "category": "crosschain",
+    "query": [
+      "chain",
+      "cursor",
+      "destAsset",
+      "direction",
+      "from",
+      "limit",
+      "maxUsd",
+      "minUsd",
+      "period",
+      "referral",
+      "search",
+      "sourceAsset",
+      "status",
+      "to",
+      "token",
+      "venue"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Requires venue=maya|thorchain. data.nextCursor is bound to venue, filters and its time snapshot. Native token atomic units carry explicit decimals; ZEC amounts remain exact. Full providerRecord inputs/outputs retain affiliate and refund legs. No viewing keys, private data or unknown-as-zero conversion.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "chain",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,32}$"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 8192,
+          "description": "Opaque data.nextCursor. Bound to filters and the original time window; do not construct or edit."
+        },
+        "description": "Opaque data.nextCursor. Bound to filters and the original time window; do not construct or edit."
+      },
+      {
+        "name": "destAsset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Exact upstream destinationAsset identifier."
+        },
+        "description": "Exact upstream destinationAsset identifier."
+      },
+      {
+        "name": "direction",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "inflow",
+            "outflow",
+            "internal"
+          ],
+          "description": "Native ZEC asset acquired, exchanged or ZEC-to-ZEC. Asset direction does not prove an on-chain transfer."
+        },
+        "description": "Native ZEC asset acquired, exchanged or ZEC-to-ZEC. Asset direction does not prove an on-chain transfer."
+      },
+      {
+        "name": "from",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Inclusive UTC ISO timestamp, overrides the period start."
+        },
+        "description": "Inclusive UTC ISO timestamp, overrides the period start."
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100,
+          "default": 25
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "maxUsd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000,
+          "description": "Inclusive source-side USD maximum (up to 8 decimal places)."
+        },
+        "description": "Inclusive source-side USD maximum (up to 8 decimal places)."
+      },
+      {
+        "name": "minUsd",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1000000000000,
+          "description": "Inclusive source-side USD minimum (up to 8 decimal places)."
+        },
+        "description": "Inclusive source-side USD minimum (up to 8 decimal places)."
+      },
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "24h",
+            "7d",
+            "30d",
+            "90d",
+            "1y",
+            "all"
+          ],
+          "default": "30d",
+          "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+        },
+        "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+      },
+      {
+        "name": "referral",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Exact upstream referral value."
+        },
+        "description": "Exact upstream referral value."
+      },
+      {
+        "name": "search",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 200,
+          "description": "Exact deposit, recipient or sender address, or source/destination transaction hash."
+        },
+        "description": "Exact deposit, recipient or sender address, or source/destination transaction hash."
+      },
+      {
+        "name": "sourceAsset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 256,
+          "description": "Exact upstream originAsset identifier."
+        },
+        "description": "Exact upstream originAsset identifier."
+      },
+      {
+        "name": "status",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "SUCCESS",
+            "FAILED",
+            "REFUNDED",
+            "PROCESSING",
+            "PENDING_DEPOSIT",
+            "INCOMPLETE_DEPOSIT"
+          ]
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "to",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Exclusive UTC ISO timestamp, fixes the end of the window."
+        },
+        "description": "Exclusive UTC ISO timestamp, fixes the end of the window."
+      },
+      {
+        "name": "token",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "venue",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "maya",
+            "thorchain"
+          ]
+        },
+        "description": "Independent indexed venue dataset."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/crosschain/venues",
+    "description": "Recent native-ZEC Maya or THORChain swaps with exact full transaction legs, provider observation time and cursor pagination.",
+    "category": "crosschain",
+    "query": [
+      "cursor",
+      "limit",
+      "venue"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Requires venue=maya|thorchain. Read-only Midgard observations, cached for 60 seconds with an explicitly stale fallback up to five minutes; unavailable sources return 503. data.nextCursor is opaque and venue-bound. Amounts are exact decimal strings. Each coin exposes amountBaseUnits and decimals: external Midgard assets use 8 decimals; native Maya CACAO uses 10 and native MAYA uses 4. Refund actions carry refundKind=partial|full and summarize returned source assets; all associated payout legs remain visible, without recounting successful volume. Successful streaming actions can contain partial refunds; preserve observedStatus, zecAmountBasis and every leg. This recent feed is not complete historical coverage, not a combined venue total, and is never added to indexed NEAR analytics.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "cursor",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "maxLength": 2048,
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "description": "Opaque data.nextCursor from this venue; do not construct or edit."
+        },
+        "description": "Opaque data.nextCursor from this venue; do not construct or edit."
+      },
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 25,
+          "default": 10
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "venue",
+        "in": "query",
+        "required": true,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "maya",
+            "thorchain"
+          ],
+          "description": "One native-ZEC venue. Required; providers have independent observation and availability states."
+        },
+        "description": "One native-ZEC venue. Required; providers have independent observation and availability states."
       }
     ],
     "requestBody": null
@@ -3300,6 +4033,39 @@
           "type": "string"
         },
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/shielded-pools/activity",
+    "description": "Daily canonical non-coinbase transaction counts by shielded pool.",
+    "category": "shielded-pools",
+    "query": [
+      "period"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Trailing complete UTC days, excluding today. Counts each transaction once in every pool it touches, so pool counts overlap. The percentage denominator is all canonical confirmed non-coinbase transactions, including ordinary mining-payout and ZCG activity. Missing blocks or incomplete transaction indexing produce null day counts and null period totals; zero activity is preserved. Results are cached for up to 300 seconds. No monetary values or unique-user counts.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "7d",
+            "30d",
+            "90d",
+            "1y"
+          ],
+          "default": "30d"
+        },
+        "description": "Trailing complete UTC calendar days, excluding today. One year means 365 days."
       }
     ],
     "requestBody": null

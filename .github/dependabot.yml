@@ -8,7 +8,7 @@ updates:
   - package-ecosystem: npm
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 5
     labels:
       - dependencies
@@ -26,7 +26,7 @@ updates:
   - package-ecosystem: npm
     directory: "/server/api"
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 5
     labels:
       - dependencies
@@ -44,7 +44,7 @@ updates:
   - package-ecosystem: npm
     directory: "/packages/zcash-decoder"
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 3
     labels:
       - dependencies
@@ -57,7 +57,7 @@ updates:
   - package-ecosystem: pip
     directory: "/server/jobs"
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 3
     labels:
       - dependencies
@@ -70,8 +70,34 @@ updates:
   - package-ecosystem: github-actions
     directory: "/"
     schedule:
-      interval: monthly
+      interval: weekly
     open-pull-requests-limit: 3
     labels:
       - dependencies
       - ci
+
+  # ----- npm: legacy indexer utilities (still supported scripts) -----
+  - package-ecosystem: npm
+    directory: "/server/indexer"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - backend
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+
+  # ----- cargo: browser decoder -----
+  - package-ecosystem: cargo
+    directory: "/wasm"
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 3
+    labels:
+      - dependencies
+      - zcash-decoder
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]

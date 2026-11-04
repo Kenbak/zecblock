@@ -12,7 +12,7 @@ See also: [server infrastructure wiki](https://github.com/Kenbak/cipherscan) and
 
 | Component | Version / Notes |
 |-----------|----------------|
-| **Node.js** | 22.14.x (pinned in `.node-version`) |
+| **Node.js** | 22.23.4 or newer within Node 22 (development/CI pin in `.node-version`) |
 | **npm** | 9+ |
 | **PostgreSQL** | 16+ with `zcash_explorer_mainnet` or `zcash_explorer_testnet` database |
 | **Redis** | 6+ (pub/sub for multi-worker WebSocket; API response caching) |
@@ -20,6 +20,13 @@ See also: [server infrastructure wiki](https://github.com/Kenbak/cipherscan) and
 | **cipherscan-rust** | Rust indexer writing to the same PostgreSQL database (separate repo, `github.com/Kenbak/cipherscan-rust`) |
 | **lightwalletd** | Optional — gRPC light client interface backed by Zebra (mainnet only) |
 | **Caddy** (mainnet) / **nginx** (testnet) | Reverse proxy with TLS |
+
+Node 22.23.4 is the minimum supported patch for the October 2026 Node security
+fixes. Update the executable used by each API, bot and scheduled job, then restart
+long-running processes and verify their running runtime. Docker deployments need
+rebuilt images and recreated containers; updating the host does not update them.
+Vercel manages its runtime separately from `.node-version`; verify the deployed
+runtime and redeploy affected projects after the platform patch is available.
 
 ---
 

@@ -24,7 +24,10 @@ const { log, loadEnv, withAdvisoryLock } = require('../lib/job-utils');
 const { getPool } = require('../lib/db-pool');
 const { callZebraRPC } = require('../lib/zebra-rpc');
 const { parsePeerClient, parsePeerAddress } = require('../lib/peer-client');
-const { CENSUS_VERSION, validateCrawlSnapshot, mergeVerifiedNodes, livePeerNodes, COMBINED_ELIGIBILITY } = require('../lib/node-census');
+const { CENSUS_VERSION, validateCrawlSnapshot, mergeVerifiedNodes, livePeerNodes, COMBINED_ELIGIBILITY, CRAWL_PROOF_MATCH, CRAWL_ELIGIBILITY, CENSUS_OBSERVED_AT } = require('../lib/node-census');
+const { parseTorExitList, publishTorClassificationStatus } = require('../lib/tor-classification');
+const { validateTopologySnapshots } = require('../lib/node-topology');
+const { persistTopologySnapshot } = require('../lib/node-topology-store');
 
 const execFileAsync = promisify(execFile);
 
@@ -103,27 +106,43 @@ async function runCruncher(crawlJson) {
 /**
  * Fetch known Tor exit node IPs from the Tor Project's bulk exit list.
  */
-function fetchTorExitNodes() {
+function fetchTorExitNodes({ get = https.get, now = Date.now } = {}) {
   return new Promise((resolve) => {
-    const req = https.get('https://check.torproject.org/torbulkexitlist', { timeout: 8000 }, (res) => {
-      if (res.statusCode !== 200) { res.resume(); resolve(new Set()); return; }
-      res.on('error', () => resolve(new Set()));
+    let settled = false;
+    let deadline;
+    const finish = result => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(deadline);
+      resolve(result);
+    };
+    const unavailable = () => finish({ available: false, ips: new Set(), checkedAtMs: now() });
+    const req = get('https://check.torproject.org/torbulkexitlist', { timeout: 8000 }, (res) => {
+      if (res.statusCode !== 200) { unavailable(); res.destroy(); return; }
+      res.on('error', unavailable);
+      res.on('aborted', unavailable);
       let data = '';
-      res.on('data', (chunk) => { data += chunk; });
+      res.on('data', (chunk) => {
+        if (settled) return;
+        data += chunk;
+        if (Buffer.byteLength(data) > 1024 * 1024) { unavailable(); res.destroy(); }
+      });
       res.on('end', () => {
-        const ips = new Set(
-          data.split('\n')
-            .map(line => line.trim())
-            .filter(line => line && !line.startsWith('#'))
-        );
+        if (settled) return;
+        const ips = parseTorExitList(data);
+        if (!ips) { log('Tor exit list unavailable: empty or invalid response'); unavailable(); return; }
         log(`Fetched ${ips.size} Tor exit node IPs`);
-        resolve(ips);
+        finish({ available: true, ips, checkedAtMs: now() });
       });
     }).on('error', (err) => {
       log(`Could not fetch Tor exit list: ${err.message}`);
-      resolve(new Set());
+      unavailable();
     });
     req.on('timeout', () => req.destroy(new Error('Tor exit-list timeout')));
+    if (!settled) deadline = setTimeout(() => {
+      unavailable();
+      req.destroy(new Error('Tor exit-list deadline'));
+    }, 8000);
   });
 }
 
@@ -138,7 +157,7 @@ function getTargetTable() {
 /**
  * Main ingestion logic.
  */
-async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now = Date.now, crunch = runCruncher, torExits = fetchTorExitNodes, dbPool = pool } = {}) {
+async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now = Date.now, crunch = runCruncher, torExits = fetchTorExitNodes, dbPool = pool, classificationPublisher = publishTorClassificationStatus } = {}) {
   const startTime = Date.now();
   const targetTable = getTargetTable();
   log(`Starting crawl ingestion (target: ${targetTable}, dry-run: ${DRY_RUN})`);
@@ -151,6 +170,8 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
     peerRpc('getpeerinfo', [], { timeout: 8000 }).then(peers => livePeerNodes(peers, now())),
   ]);
   const snapshots = sources.slice(0, 2).filter(s => s.status === 'fulfilled').map(s => s.value);
+  const qualifiedTopology = validateTopologySnapshots(sources.slice(0, 2).flatMap((source, index) =>
+    source.status === 'fulfilled' ? [{ source: index === 0 ? 'direct' : 'tor', metrics: source.value }] : []), now());
   const peers = sources[2].status === 'fulfilled' ? sources[2].value : [];
   sources.forEach((source, i) => {
     if (source.status === 'rejected') log(`${['Direct crawler', 'Tor crawler', 'Live peers'][i]} unavailable (not refreshed)`);
@@ -179,15 +200,41 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
   metrics.node_addrs = verified.map(node => node.addr);
   metrics.num_good_nodes = verified.length;
   metrics.node_network_types = verified.map(() => 'Zcash');
+  // Legacy all_* snapshots have no chain-qualified advertiser provenance. Even
+  // after filtering node_info, passing them through would retain Flux as grey
+  // "off" vertices and contaminate centrality. Quarantine that whole graph.
+  // The qualified core's filtered nodes_indices may retain real gossip links.
+  metrics.all_node_addrs = [];
+  metrics.all_nodes_indices = [];
+  metrics.all_node_reachable = [];
 
   const enriched = await crunch(metrics);
   if (!enriched || !Array.isArray(enriched.nodes)) {
     throw new Error('Cruncher returned invalid output');
   }
+  // Qualified node membership does not establish the old graph's provenance.
+  // Keep geography/client enrichment, but publish no connectivity measurements.
+  enriched.edges = [];
+  enriched.topo_nodes = [];
+  enriched.topo_edges = [];
+  for (const node of enriched.nodes) {
+    node.betweenness = null;
+    node.closeness = null;
+    node.degree = null;
+  }
 
   log(`Cruncher enriched ${enriched.nodes.length} nodes`);
 
-  const torExitIPs = await torExits();
+  let torResult;
+  try { torResult = await torExits(); } catch { torResult = null; }
+  // Injected legacy Set providers remain supported; an empty set is unknown.
+  if (torResult instanceof Set) torResult = { available: torResult.size > 0, ips: torResult, checkedAtMs: now() };
+  const parsedTorIPs = torResult?.ips instanceof Set ? parseTorExitList([...torResult.ips].join('\n')) : null;
+  const torAvailable = torResult?.available === true && !!parsedTorIPs
+    && Number.isSafeInteger(torResult.checkedAtMs) && torResult.checkedAtMs <= now()
+    && now() - torResult.checkedAtMs <= 600000;
+  const torExitIPs = torAvailable ? parsedTorIPs : new Set();
+  const checkedAtMs = torResult?.checkedAtMs <= now() && Number.isSafeInteger(torResult.checkedAtMs) ? torResult.checkedAtMs : now();
 
   const client = await dbPool.connect();
   try {
@@ -212,14 +259,21 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
         const peerObservation = peerByHost.get(ip);
         if (!crawlObservation && !peerObservation) continue;
         const crawlTime = crawlObservation?.last_verified_at_ms;
+        const chainTime = crawlObservation?.chain_verified_at_ms;
         const peerTime = peerObservation?.last_peer_seen_at_ms;
-        const observedAt = Math.max(crawlTime || 0, peerTime || 0);
+        const observedAt = Math.max(chainTime || 0, peerTime || 0);
         const port = parseInt(portStr) || 8233;
         const isOnion = ip.endsWith('.onion');
         const isTor = isOnion || torExitIPs.has(ip);
         const torType = isOnion ? 'relay' : (isTor ? 'exit' : null);
 
         const parsed = parsePeerClient(node.user_agent || '');
+        const previousObservation = `GREATEST(${targetTable}.last_chain_verified_at, ${targetTable}.last_peer_seen_at)`;
+        const latestObservation = `(${previousObservation} IS NULL OR EXCLUDED.last_seen >= ${previousObservation})`;
+        const latestProof = `EXCLUDED.last_chain_verified_at IS NOT NULL AND (${targetTable}.last_chain_verified_at IS NULL OR EXCLUDED.last_chain_verified_at >= ${targetTable}.last_chain_verified_at)`;
+        const preservePeerIdentity = `EXCLUDED.user_agent IS NULL AND EXCLUDED.last_peer_seen_at IS NULL AND ${targetTable}.observed_via = 'peer'
+          AND ${targetTable}.last_peer_seen_at > NOW() - INTERVAL '15 minutes' AND ${targetTable}.last_peer_seen_at <= NOW()`;
+        const replaceIdentity = `${latestObservation} AND NOT COALESCE((${preservePeerIdentity}), FALSE)`;
 
         const result = await client.query(`
           INSERT INTO ${targetTable} (
@@ -227,48 +281,51 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
             ping_ms, is_tor, is_active, user_agent, client_impl,
             client_version, protocol_version, observed_via, onion_address,
             tor_type, betweenness, closeness, degree, network_type,
-            start_height, services, crawl_seen_count, last_verified_at, last_seen, last_peer_seen_at, inbound
+            start_height, services, crawl_seen_count, last_verified_at, last_seen, last_peer_seen_at, inbound,
+            last_chain_verified_at, chain_block_hash, chain_proof
           )
           VALUES (
             $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, TRUE,
             $11, $12, $13, $14, $27, $15, $16, $17, $18, $19, $20,
-            $21, $22, CASE WHEN $23::timestamptz IS NULL THEN 0 ELSE 1 END, $23, $24, $25, $26
+            $21, $22, CASE WHEN $23::timestamptz IS NULL THEN 0 ELSE 1 END, $23, $24, $25, $26,
+            $28, $29, $30
           )
           ON CONFLICT (ip) DO UPDATE SET
-            port = EXCLUDED.port,
+            port = CASE WHEN ${latestObservation} THEN EXCLUDED.port ELSE ${targetTable}.port END,
             country = COALESCE(EXCLUDED.country, ${targetTable}.country),
             country_code = COALESCE(EXCLUDED.country_code, ${targetTable}.country_code),
             city = COALESCE(EXCLUDED.city, ${targetTable}.city),
             lat = COALESCE(EXCLUDED.lat, ${targetTable}.lat),
             lon = COALESCE(EXCLUDED.lon, ${targetTable}.lon),
             isp = COALESCE(EXCLUDED.isp, ${targetTable}.isp),
-            ping_ms = EXCLUDED.ping_ms,
-            is_tor = EXCLUDED.is_tor,
+            ping_ms = CASE WHEN ${latestProof} THEN EXCLUDED.ping_ms ELSE ${targetTable}.ping_ms END,
+            is_tor = CASE WHEN $31 OR EXCLUDED.onion_address IS NOT NULL THEN EXCLUDED.is_tor ELSE ${targetTable}.is_tor END,
             is_active = TRUE,
-            user_agent = COALESCE(EXCLUDED.user_agent, ${targetTable}.user_agent),
-            client_impl = CASE WHEN EXCLUDED.user_agent IS NOT NULL THEN EXCLUDED.client_impl ELSE ${targetTable}.client_impl END,
-            client_version = CASE WHEN EXCLUDED.user_agent IS NOT NULL THEN EXCLUDED.client_version ELSE ${targetTable}.client_version END,
-            protocol_version = COALESCE(EXCLUDED.protocol_version, ${targetTable}.protocol_version),
-            observed_via = EXCLUDED.observed_via,
-            inbound = COALESCE(EXCLUDED.inbound, ${targetTable}.inbound),
+            user_agent = CASE WHEN ${replaceIdentity} THEN EXCLUDED.user_agent ELSE ${targetTable}.user_agent END,
+            client_impl = CASE WHEN ${replaceIdentity} THEN EXCLUDED.client_impl ELSE ${targetTable}.client_impl END,
+            client_version = CASE WHEN ${replaceIdentity} THEN EXCLUDED.client_version ELSE ${targetTable}.client_version END,
+            protocol_version = CASE WHEN ${latestObservation} THEN COALESCE(EXCLUDED.protocol_version, ${targetTable}.protocol_version) ELSE ${targetTable}.protocol_version END,
+            observed_via = CASE WHEN ${preservePeerIdentity} THEN ${targetTable}.observed_via WHEN ${latestObservation} THEN EXCLUDED.observed_via ELSE ${targetTable}.observed_via END,
+            inbound = CASE WHEN EXCLUDED.last_peer_seen_at >= ${targetTable}.last_peer_seen_at OR ${targetTable}.last_peer_seen_at IS NULL THEN COALESCE(EXCLUDED.inbound, ${targetTable}.inbound) ELSE ${targetTable}.inbound END,
             last_peer_seen_at = GREATEST(EXCLUDED.last_peer_seen_at, ${targetTable}.last_peer_seen_at),
-            last_seen = EXCLUDED.last_seen,
-            last_verified_at = GREATEST(EXCLUDED.last_verified_at, ${targetTable}.last_verified_at),
+            last_seen = GREATEST(EXCLUDED.last_seen, ${previousObservation}),
+            last_verified_at = CASE WHEN ${latestProof} THEN EXCLUDED.last_verified_at ELSE ${targetTable}.last_verified_at END,
+            last_chain_verified_at = CASE WHEN ${latestProof} THEN EXCLUDED.last_chain_verified_at ELSE ${targetTable}.last_chain_verified_at END,
+            chain_block_hash = CASE WHEN ${latestProof} THEN EXCLUDED.chain_block_hash ELSE ${targetTable}.chain_block_hash END,
+            chain_proof = CASE WHEN ${latestProof} THEN EXCLUDED.chain_proof ELSE ${targetTable}.chain_proof END,
             onion_address = COALESCE(EXCLUDED.onion_address, ${targetTable}.onion_address),
-            tor_type = COALESCE(EXCLUDED.tor_type, ${targetTable}.tor_type),
-            betweenness = EXCLUDED.betweenness,
-            closeness = EXCLUDED.closeness,
-            degree = EXCLUDED.degree,
-            network_type = EXCLUDED.network_type,
-            start_height = COALESCE(EXCLUDED.start_height, ${targetTable}.start_height),
-            services = COALESCE(EXCLUDED.services, ${targetTable}.services),
-            crawl_seen_count = CASE WHEN EXCLUDED.last_verified_at IS NULL THEN COALESCE(${targetTable}.crawl_seen_count, 0)
-              WHEN ${targetTable}.last_verified_at IS NULL THEN 1
-              WHEN EXCLUDED.last_verified_at > ${targetTable}.last_verified_at THEN COALESCE(${targetTable}.crawl_seen_count, 0) + 1
+            tor_type = CASE WHEN $31 OR EXCLUDED.onion_address IS NOT NULL THEN EXCLUDED.tor_type ELSE ${targetTable}.tor_type END,
+            betweenness = NULL,
+            closeness = NULL,
+            degree = NULL,
+            network_type = CASE WHEN ${latestObservation} THEN EXCLUDED.network_type ELSE ${targetTable}.network_type END,
+            start_height = CASE WHEN ${latestObservation} THEN COALESCE(EXCLUDED.start_height, ${targetTable}.start_height) ELSE ${targetTable}.start_height END,
+            services = CASE WHEN ${latestObservation} THEN COALESCE(EXCLUDED.services, ${targetTable}.services) ELSE ${targetTable}.services END,
+            crawl_seen_count = CASE WHEN EXCLUDED.last_chain_verified_at IS NULL THEN COALESCE(${targetTable}.crawl_seen_count, 0)
+              WHEN ${targetTable}.last_chain_verified_at IS NULL THEN 1
+              WHEN EXCLUDED.last_chain_verified_at > ${targetTable}.last_chain_verified_at THEN COALESCE(${targetTable}.crawl_seen_count, 0) + 1
               ELSE ${targetTable}.crawl_seen_count END,
-            crawl_miss_count = CASE WHEN ${targetTable}.last_verified_at IS NULL THEN 0 ELSE ${targetTable}.crawl_miss_count END
-          WHERE GREATEST(${targetTable}.last_verified_at, ${targetTable}.last_peer_seen_at) IS NULL
-            OR EXCLUDED.last_seen >= GREATEST(${targetTable}.last_verified_at, ${targetTable}.last_peer_seen_at)
+            crawl_miss_count = CASE WHEN EXCLUDED.last_chain_verified_at IS NOT NULL AND ${targetTable}.last_chain_verified_at IS NULL THEN 0 ELSE ${targetTable}.crawl_miss_count END
           RETURNING (xmax = 0) AS is_insert
         `, [
           ip, port,
@@ -297,6 +354,10 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
           peerTime ? new Date(peerTime) : null,
           peerObservation ? peerObservation.inbound : null,
           peerObservation ? 'peer' : 'crawl',
+          chainTime ? new Date(chainTime) : null,
+          crawlObservation?.chain_block_hash ?? null,
+          crawlObservation?.chain_proof ?? null,
+          torAvailable,
         ]);
 
         if (result.rows[0]?.is_insert) newNodes++;
@@ -322,23 +383,25 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
         }
       }
 
-      // Bulk Tor exit cross-reference — flag any active node whose IP is a known exit
-      if (torExitIPs.size > 0) {
+      // A valid provider observation reclassifies the entire active population.
+      // Failure preserves last-known flags, which are not a current public count.
+      if (torAvailable) {
         const torFlagged = await client.query(`
-          UPDATE ${targetTable} SET is_tor = TRUE, tor_type = COALESCE(tor_type, 'exit')
-          WHERE ip = ANY($1::varchar[]) AND is_active = TRUE AND is_tor = FALSE
+          UPDATE ${targetTable} SET is_tor = (onion_address IS NOT NULL OR ip = ANY($1::varchar[])),
+            tor_type = CASE WHEN onion_address IS NOT NULL THEN 'relay' WHEN ip = ANY($1::varchar[]) THEN 'exit' ELSE NULL END
+          WHERE is_active = TRUE
           RETURNING id
         `, [[...torExitIPs]]);
         if (torFlagged.rowCount > 0) {
-          log(`Flagged ${torFlagged.rowCount} nodes as Tor exit relays`);
+          log(`Refreshed Tor classification for ${torFlagged.rowCount} active nodes`);
         }
       }
 
       // Increment miss count for nodes not refreshed this crawl, then deactivate stale ones
       await client.query(`
         UPDATE ${targetTable} SET crawl_miss_count = COALESCE(crawl_miss_count, 0) + 1
-        WHERE is_active = TRUE AND last_verified_at IS NOT NULL
-          AND last_verified_at < NOW() - INTERVAL '6 minutes'
+        WHERE is_active = TRUE AND (${CRAWL_PROOF_MATCH})
+          AND last_chain_verified_at < NOW() - INTERVAL '6 minutes'
       `);
       await client.query(`
         UPDATE ${targetTable} SET is_active = FALSE
@@ -449,6 +512,15 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
         log(`Persisted topology: ${addrs.length} nodes (${reachCount} reachable, ${addrs.length - reachCount} off), ${enriched.topo_edges?.length || 0} edges`);
       }
 
+      // New directed receipts retain their original proof/receipt clocks. Legacy
+      // adjacency remains quarantined; advertised targets never enter nodes.
+      if (!DRY_RUN && NODE_SOURCE === 'crawl') {
+        const stored = await persistTopologySnapshot(client, qualifiedTopology);
+        log(stored
+          ? `Qualified gossip: ${qualifiedTopology.edges.length} receipts from ${qualifiedTopology.snapshots.length} supported sources`
+          : 'Qualified gossip unavailable: provenance schema not installed');
+      }
+
       // Record snapshot
       const stats = await client.query(`
         SELECT
@@ -459,7 +531,8 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
           COUNT(*) FILTER (WHERE is_active AND last_peer_seen_at > NOW() - INTERVAL '15 minutes' AND inbound = TRUE) AS inbound,
           COUNT(*) FILTER (WHERE is_active AND last_peer_seen_at > NOW() - INTERVAL '15 minutes' AND inbound = FALSE) AS outbound,
           COUNT(*) FILTER (WHERE is_active AND tor_type = 'relay') AS tor_hidden,
-          ROUND(AVG(ping_ms) FILTER (WHERE is_active AND ping_ms > 0)::numeric, 3) AS avg_ping
+          ROUND(AVG(ping_ms) FILTER (WHERE is_active AND (${CRAWL_ELIGIBILITY}) AND ping_ms > 0)::numeric, 3) AS avg_ping
+          , MAX(${CENSUS_OBSERVED_AT}) FILTER (WHERE is_active) AS source_observed_at
         FROM ${targetTable}
       `);
 
@@ -479,14 +552,16 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
         .filter(r => r.client_impl && r.client_impl !== 'Unknown')
         .reduce((sum, r) => sum + Number(r.node_count), 0);
 
+      let snapshotTimeMs = null;
       if (!DRY_RUN && NODE_SOURCE === 'crawl') {
-        await client.query(`
+        const snapshot = await client.query(`
           INSERT INTO node_snapshots (
             active_nodes, total_nodes, countries, tor_nodes,
             inbound_nodes, outbound_nodes, avg_ping_ms,
             identified_client_nodes, client_counts, tor_hidden_nodes, census_version
           )
           VALUES ($1, $2, $3, $4, $10, $11, $5, $6, $7, $8, $9)
+          RETURNING snapshot_time
         `, [
           parseInt(snap.active), parseInt(snap.total),
           parseInt(snap.countries), parseInt(snap.tor),
@@ -495,12 +570,24 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
           parseInt(snap.tor_hidden || 0), CENSUS_VERSION,
           parseInt(snap.inbound || 0), parseInt(snap.outbound || 0),
         ]);
+        snapshotTimeMs = snapshot.rows[0]?.snapshot_time?.getTime();
       }
 
       await client.query('COMMIT');
 
+      if (!DRY_RUN && NODE_SOURCE === 'crawl' && targetTable === 'nodes') {
+        let published = false;
+        try {
+          published = await classificationPublisher({ version: 1, available: torAvailable,
+            checkedAtMs, sourceObservedAtMs: snap.source_observed_at?.getTime() ?? null,
+            committedAtMs: now(), snapshotTimeMs,
+            classifiedTorNodes: torAvailable ? parseInt(snap.tor) : null });
+        } catch { /* The DB commit stands; API commit matching rejects older cache status. */ }
+        if (!published) log('Tor classification status unavailable: cache publication failed');
+      }
+
       const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-      log(`Ingestion complete in ${elapsed}s — ${newNodes} new, ${upserted} updated, ${snap.active} active, ${snap.countries} countries, ${snap.tor} Tor`);
+      log(`Ingestion complete in ${elapsed}s — ${newNodes} new, ${upserted} updated, ${snap.active} active, ${snap.countries} countries, ${torAvailable ? snap.tor : 'unavailable'} Tor`);
     });
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch {}
@@ -521,4 +608,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { ingestCrawl };
+module.exports = { ingestCrawl, fetchTorExitNodes };

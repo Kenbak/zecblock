@@ -20,3 +20,6 @@ f4832f8ca42208eb1b8a1066047dff615e4a563a:DEBUG_COMPACT_WASM.md:zcash-private-key
 f4832f8ca42208eb1b8a1066047dff615e4a563a:TEST_COMPACT_WASM_BROWSER.md:zcash-private-key:11
 f4832f8ca42208eb1b8a1066047dff615e4a563a:TEST_COMPACT_WASM_BROWSER.md:zcash-private-key:38
 c999a3d8eb6f03eb66caaa92d9d0a8f61006b6fc:test-lightwalletd-api.sh:zcash-private-key:11
+# IndexNow test fixture (fake key, replaced in the next commit).
+4203eb1c467a966c56f6cc5d0fbc4a13eb67656a:server/api/test/indexnow.test.js:generic-api-key:11
+4203eb1c467a966c56f6cc5d0fbc4a13eb67656a:server/tests/indexnow.test.js:generic-api-key:11

@@ -156,7 +156,7 @@ const schemas = {
   // POST /api/tx/raw/batch
   txRawBatch: {
     body: z.object({
-      txids: z.array(txidSchema).min(1).max(100),
+      txids: z.array(txidSchema).max(100).min(1),
     }),
   },
 

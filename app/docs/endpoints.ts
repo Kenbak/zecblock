@@ -42,7 +42,7 @@ export interface ApiEndpoint {
   bodyExample: string | null;
 }
 export const categoryNames: Record<string, string> = {
-  ask: 'Ask ZecBlock',
+  ask: 'Zift (Ask API)',
   blocks: 'Blocks', transactions: 'Transactions', address: 'Addresses', mempool: 'Mempool',
   network: 'Network', 'shielded-pools': 'Shielded pools', privacy: 'Privacy', mining: 'Mining',
   crosschain: 'Cross-chain', valuation: 'Valuation', analytics: 'Analytics', stats: 'Statistics',

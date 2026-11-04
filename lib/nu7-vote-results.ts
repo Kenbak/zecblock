@@ -22,12 +22,12 @@ const summarySchema = z.object({
   vote_round_id: z.literal(ROUND_BASE64), status: integer,
   vote_end_time: z.literal(1789412400),
   proposals: z.array(z.object({ id: integer, title: z.string().min(1),
-    description: z.string(), options: z.array(optionSchema) })),
+    description: z.string(), options: z.array(optionSchema).max(4) })).max(5),
 });
 const tallySchema = z.object({ results: z.array(z.object({
   vote_round_id: z.literal(ROUND_BASE64), proposal_id: integer,
   vote_decision: integer.default(0), total_value: integer.default(0),
-})) });
+})).max(19) });
 export interface VoteResults {
   state: 'published' | 'pending' | 'unavailable';
   proposals: z.infer<typeof summarySchema>['proposals'];

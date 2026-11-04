@@ -1,0 +1,220 @@
+{
+  "checkedDate": "2026-10-29",
+  "dateTimezone": "America/Mexico_City",
+  "maya": {
+    "source": "https://midgard.mayachain.info/v2/actions?asset=ZEC.ZEC&type=swap&limit=5",
+    "nativeCheck": {
+      "data": {
+        "txid": "ab55c1891ec36c12e52cdd909513a2d11502095ff06ef64be7b959559fd93d08",
+        "blockHeight": "3534370",
+        "blockHash": "00000000001ce2f27ea7ef2d11a151fc2ca697e638ab157347a665bd3959b056",
+        "blockTime": "1793251759",
+        "confirmations": 97,
+        "isCanonical": true,
+        "status": "confirmed",
+        "size": 9200,
+        "version": 6,
+        "locktime": "0",
+        "expiryHeight": 3534409,
+        "valueBalance": 0.10015,
+        "valueBalanceZat": "10015000",
+        "valueBalanceSapling": 0,
+        "valueBalanceSaplingZat": "0",
+        "valueBalanceOrchard": 0,
+        "valueBalanceOrchardZat": "0",
+        "valueBalanceIronwood": 0.10015,
+        "valueBalanceIronwoodZat": "10015000",
+        "fee": 0.00015,
+        "feeZat": "15000",
+        "totalInput": 0,
+        "totalInputZat": "0",
+        "totalOutput": 0.1,
+        "totalOutputZat": "10000000",
+        "isCoinbase": false,
+        "hasSapling": false,
+        "hasOrchard": false,
+        "hasIronwood": true,
+        "hasSprout": false,
+        "orchardActions": 0,
+        "ironwoodActions": 2,
+        "saplingSpendCount": 0,
+        "saplingOutputCount": 0,
+        "inputs": [],
+        "outputs": [
+          {
+            "address": "t1UCfijFK1xykyuFFwZSPn5AN8W2vDLFRpK",
+            "value": "10000000",
+            "vout_index": 0,
+            "spent": false
+          }
+        ],
+        "inputCount": 0,
+        "outputCount": 1,
+        "coinbaseHex": null,
+        "coinbaseText": null,
+        "bridge": null,
+        "zip318": null,
+        "stakingAction": null
+      },
+      "meta": {
+        "requestId": "1f57572c-dbb8-4b5c-9484-a0503ae881e2",
+        "network": "mainnet",
+        "generatedAt": "2026-10-29T07:36:39.480Z",
+        "indexedHeight": 3534466,
+        "source": {
+          "indexedHeight": null,
+          "observedAt": null
+        },
+        "cache": {
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "freshness": {
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "units": {
+          "authoritativeMonetary": "zatoshi",
+          "authoritativeEncoding": "decimal-string",
+          "zatoshiPerZec": "100000000",
+          "legacyFormattedFields": "field-defined"
+        }
+      }
+    }
+  },
+  "thorchain": {
+    "source": "https://gateway.liquify.com/chain/thorchain_midgard/v2/actions?asset=ZEC.ZEC&type=swap&limit=5",
+    "nativeCheck": {
+      "data": {
+        "txid": "b245b1f975b6013c59edf60ac95c00d91baa6e5c7cee7f3f066d938fb0c81edf",
+        "blockHeight": "3534422",
+        "blockHash": "00000000002eb25e5a54e995934e1595efc1842cc766a74014911e04dd2360cf",
+        "blockTime": "1793255637",
+        "confirmations": 45,
+        "isCanonical": true,
+        "status": "confirmed",
+        "size": 763,
+        "version": 6,
+        "locktime": "0",
+        "expiryHeight": 3534461,
+        "valueBalance": 0,
+        "valueBalanceZat": "0",
+        "valueBalanceSapling": 0,
+        "valueBalanceSaplingZat": "0",
+        "valueBalanceOrchard": 0,
+        "valueBalanceOrchardZat": "0",
+        "valueBalanceIronwood": 0,
+        "valueBalanceIronwoodZat": "0",
+        "fee": 0.00025,
+        "feeZat": "25000",
+        "totalInput": 4.84351114,
+        "totalInputZat": "484351114",
+        "totalOutput": 4.84326114,
+        "totalOutputZat": "484326114",
+        "isCoinbase": false,
+        "hasSapling": false,
+        "hasOrchard": false,
+        "hasIronwood": false,
+        "hasSprout": false,
+        "orchardActions": 0,
+        "ironwoodActions": 0,
+        "saplingSpendCount": 0,
+        "saplingOutputCount": 0,
+        "inputs": [
+          {
+            "prev_txid": "03585163c4fb2d2d1b1eef7ed944e69c5310e0bbca141c1ea5b478b39469a60b",
+            "prev_vout": 1,
+            "address": "t1g7LkZYWTxDAyc6GTqyNNhsQrofniXJqM7",
+            "value": "25652638",
+            "vout_index": 0
+          },
+          {
+            "prev_txid": "85e8e5dd100bc358ca801c24bc73ba8f2d36e10c9a9add641c5d0b106ce038b9",
+            "prev_vout": 0,
+            "address": "t1g7LkZYWTxDAyc6GTqyNNhsQrofniXJqM7",
+            "value": "150589058",
+            "vout_index": 1
+          },
+          {
+            "prev_txid": "977285072c3e2cb9af526e9f0cb2cf0bb539189f7ff5ce23b8fe4de8588b3ae0",
+            "prev_vout": 0,
+            "address": "t1g7LkZYWTxDAyc6GTqyNNhsQrofniXJqM7",
+            "value": "155342380",
+            "vout_index": 2
+          },
+          {
+            "prev_txid": "784b3262aa76285605132a518d66ccb12fd9d7543f8f83456d70af6d76569e9c",
+            "prev_vout": 0,
+            "address": "t1g7LkZYWTxDAyc6GTqyNNhsQrofniXJqM7",
+            "value": "152767038",
+            "vout_index": 3
+          }
+        ],
+        "outputs": [
+          {
+            "address": "t1ah4wknatZ86cAVMJBqqvfHjRMqkVccKi8",
+            "value": "354467309",
+            "vout_index": 0,
+            "spent": true
+          },
+          {
+            "address": "t1g7LkZYWTxDAyc6GTqyNNhsQrofniXJqM7",
+            "value": "129858805",
+            "vout_index": 1,
+            "spent": false
+          },
+          {
+            "address": null,
+            "value": "0",
+            "vout_index": 2,
+            "spent": false
+          }
+        ],
+        "inputCount": 4,
+        "outputCount": 3,
+        "coinbaseHex": null,
+        "coinbaseText": null,
+        "bridge": null,
+        "zip318": null,
+        "stakingAction": null
+      },
+      "meta": {
+        "requestId": "5386aabb-d8fe-4c5e-a67e-7b4b37f91ec3",
+        "network": "mainnet",
+        "generatedAt": "2026-10-29T07:36:39.480Z",
+        "indexedHeight": 3534466,
+        "source": {
+          "indexedHeight": null,
+          "observedAt": null
+        },
+        "cache": {
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "freshness": {
+          "status": "unknown",
+          "ageSeconds": null
+        },
+        "units": {
+          "authoritativeMonetary": "zatoshi",
+          "authoritativeEncoding": "decimal-string",
+          "zatoshiPerZec": "100000000",
+          "legacyFormattedFields": "field-defined"
+        }
+      }
+    }
+  },
+  "limits": [
+    "Representative read-only mainnet samples, not a historical-completeness or provider-accuracy guarantee.",
+    "Midgard external assets use e8; native Maya CACAO uses e10 and MAYA uses e4. Action dates use nanosecond strings.",
+    "No native leg is inferred from synthetic or trade pool references."
+  ],
+  "unitAuthority": {
+    "cacao": "https://docs.mayaprotocol.com/node-docs/mayanodes/pooled-mayanodes",
+    "maya": "https://gitlab.com/mayachain/midgard/-/raw/develop/openapi/openapi.yaml",
+    "cacaoDecimals": 10,
+    "mayaDecimals": 4,
+    "externalAssetDecimals": 8,
+    "schemaCaveat": "The generic inherited Coin schema says e8, but Maya protocol docs and the /v2/history/maya description establish native CACAO e10 and MAYA e4."
+  }
+}

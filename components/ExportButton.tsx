@@ -2,6 +2,7 @@
 
 import { useState, useRef, useCallback, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { toCsv } from '@/lib/csv';
 
 interface ExportButtonProps {
   data: any;
@@ -82,11 +83,7 @@ export function ExportButton({
     // Use csvData if provided, otherwise fall back to data
     const sourceData = csvData !== undefined ? csvData : data;
     const items = Array.isArray(sourceData) ? sourceData : [sourceData];
-    const rows = items.map(csvMapper);
-    const csvContent = [
-      csvHeaders.join(','),
-      ...rows.map(row => row.map(cell => `"${String(cell).replace(/"/g, '""')}"`).join(','))
-    ].join('\n');
+    const csvContent = toCsv(csvHeaders, items.map(csvMapper));
 
     downloadFile(csvContent, 'csv', 'text/csv');
     setIsOpen(false);

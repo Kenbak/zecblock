@@ -9,7 +9,7 @@ const percentage = (numerator, denominator) => denominator > 0n
   ? ((abs(numerator) * 10000n + denominator / 2n) / denominator) * (numerator < 0n ? -1n : 1n) : null;
 const dateBefore = (date, days) => new Date(Date.parse(date) - days * DAY).toISOString().slice(0, 10);
 
-const analysisGuidance = `For transaction busiest-day or daily-ranking questions use dailyRanking when present, naming its metric and completed UTC-day scope. Never add separate category peaks, which may occur on different dates. If missingDays is nonzero, describe the largest observed day and mention the incomplete requested window instead of claiming a definitive full-period maximum. For transaction rankings state that mining reward transactions are excluded. Answer top-five requests from the ranked rows, not a single peak. For data questions, lead with the strongest relevant finding and explain its significance, not a list of ending values. Use the supplied analysis: comparisons, changes in share, peak concentration, observed timing and recent pace. Choose at most two supporting observations that add different information. For an Orchard/Ironwood comparison, open with the shift in dominance and the combined percentage growth, using the two-pool denominator. Put at most one timing or pace finding next. Do not open by listing each pool's absolute movement when these stronger comparisons are available. Explain significance in plain language. Avoid analyst boilerplate such as "returned daily snapshot", "supplied window", or "not an exact crossing time"; say "first led in the daily records". Keep the whole answer around one hundred words. Name the denominator naturally, for example 'across Orchard and Ironwood' or 'across the selected pools'; do not follow an already explicit denominator with an exclusion disclaimer. Balance growth beyond an offsetting decline means redistribution alone cannot explain the combined change; it does not prove new capital, buying or an exact transfer route. A first-observed lead is a daily snapshot in this window, not a protocol activation date or an exact transfer time. Recent pace compares the two explicitly dated windows; it is not a forecast. When numeric change starts with a sign, prefer the unsigned movement fact with the supplied direction ("rose by", not "rose by +"). Use calendar coverage and null counts to qualify incomplete results. Do not call source observations current without a known observation date. Put any necessary methodological qualification in the limitation field only, never repeat cautions across summary and observations. Name denominators naturally in the finding rather than adding a separate exclusion disclaimer. Leave limitation empty by default. Add a single short, relevant caveat only when an actual coverage issue or a causal question changes the interpretation; do not repeat generic statements about private wallets, identities, or missing causes. Do not say "the supplied data/documents" or narrate internal tools. If asked why, distinguish what the data demonstrates from causes that would need other evidence. Never invent a cause, trace private transfers, or calculate new numerical claims in prose. If an insight is unavailable, omit it rather than inventing one.`;
+const analysisGuidance = `For transaction busiest-day or daily-ranking questions use dailyRanking when present, naming its metric and completed UTC-day scope. Never add separate category peaks, which may occur on different dates. If missingDays is nonzero, describe the largest observed day and mention the incomplete requested window instead of claiming a definitive full-period maximum. For transaction rankings state that mining reward transactions are excluded. Answer top-five requests from the ranked rows, not a single peak. For data questions, lead with the strongest relevant finding and explain its significance, not a list of ending values. Use the supplied analysis: comparisons, changes in share, peak concentration, observed timing and recent pace. Choose at most two supporting observations that add different information. For an Orchard/Ironwood comparison, open with the shift in dominance and the combined percentage growth, using the two-pool denominator. Put at most one timing or pace finding next. Do not open by listing each pool's absolute movement when these stronger comparisons are available. Explain significance in plain language. Avoid analyst boilerplate such as "returned daily snapshot", "supplied window", or "not an exact crossing time"; say "first led in the daily records". Keep the whole answer around one hundred words. Name the denominator naturally, for example 'across Orchard and Ironwood' or 'across the selected pools'; do not follow an already explicit denominator with an exclusion disclaimer. Balance growth beyond an offsetting decline means redistribution alone cannot explain the combined change; it does not prove new capital, buying or an exact transfer route. A first-observed lead is a daily snapshot in this window, not a protocol activation date or an exact transfer time. Recent pace compares the two explicitly dated windows; it is not a forecast. When asked whether balances will rise or fall, answer that forward-looking question: distinguish the observed historical direction from a conditional outlook. If the latest complete combined-pool interval increased, continued net additions would support further growth; if it decreased, continued net withdrawals would support contraction. State that the continuation is uncertain, not a prediction. Do not replace a future question with only a historical summary or invent missing data. For overall shielded trends use selectedPools and its recentComparison; offsetting shifts between individual pools do not establish overall growth or contraction. Coverage.observedDays and series.hasObservedValues describe actual data availability; a forecast being unavailable does not mean historical observations are unavailable. When numeric change starts with a sign, prefer the unsigned movement fact with the supplied direction ("rose by", not "rose by +"). Use calendar coverage and null counts to qualify incomplete results. Do not call source observations current without a known observation date. Put any necessary methodological qualification in the limitation field only, never repeat cautions across summary and observations. Name denominators naturally in the finding rather than adding a separate exclusion disclaimer. Leave limitation empty by default. Add a single short, relevant caveat only when an actual coverage issue or a causal question changes the interpretation; do not repeat generic statements about private wallets, identities, or missing causes. Do not say "the supplied data/documents" or narrate internal tools. If asked why, distinguish what the data demonstrates from causes that would need other evidence. Never invent a cause, trace private transfers, or calculate new numerical claims in prose. If an insight is unavailable, omit it rather than inventing one.`;
 
 function buildInsights(evidence, spec, summary) {
   const facts = {};
@@ -36,6 +36,7 @@ function buildInsights(evidence, spec, summary) {
     calendarDays: fact('calendar_days', String(calendarDays)),
     missingDates: fact('missing_dates', String(calendarDays - points.length)),
     completeDates: calendarDays === points.length,
+    observedDays: points.length,
     scope: 'Returned observation window. Missing dates and null values are unknown, never zero. The latest day may be partial; the observation date is not an indexer refresh timestamp.',
   };
   function interval(key, end, days) {
@@ -43,7 +44,11 @@ function buildInsights(evidence, spec, summary) {
     const start = dateBefore(end, snapshot ? days : days - 1);
     const values = [];
     for (let date = start; date <= end; date = dateBefore(date, -1)) {
-      const value = byDate.get(date)?.values[key];
+      const point = byDate.get(date);
+      const value = key === '__selected_pools'
+        ? point && series.every(item => point.values[item.key] != null)
+          ? series.reduce((sum, item) => sum + BigInt(point.values[item.key]), 0n).toString() : null
+        : point?.values[key];
       if (value === null || value === undefined) return null;
       values.push(BigInt(value));
     }
@@ -56,6 +61,8 @@ function buildInsights(evidence, spec, summary) {
     const change = first !== null && last !== null && points.length > 1 ? BigInt(last) - BigInt(first) : null;
     const detail = {
       label,
+      observedValues: valid.length,
+      hasObservedValues: valid.length > 0,
       missingValues: fact(`${key}_missing`, String(points.length - valid.length)),
       startValue: first === null ? null : quantity(`${key}_start`, BigInt(first)),
       ...(snapshot && change !== null ? {
@@ -159,6 +166,15 @@ function buildInsights(evidence, spec, summary) {
         leadingShare: percent('selected_pools_leader_share', percentage(BigInt(last.values[leader.key]), final)),
         scope: 'Selected pools only. Balance changes are not trading volume, unique users or proof of a transfer route.',
       };
+      const recent = interval('__selected_pools', summary.end, 7);
+      const previous = interval('__selected_pools', dateBefore(summary.end, 7), 7);
+      if (recent && previous) {
+        const expose = (window, suffix) => ({
+          start: fact(`selected_pools_${suffix}_start`, window.start), end: fact(`selected_pools_${suffix}_end`, window.end),
+          movement: movement(`selected_pools_${suffix}_movement`, window.value), direction: direction(window.value),
+        });
+        selectedPools.recentComparison = { recent: expose(recent, 'recent'), previous: expose(previous, 'previous'), measure: 'Combined selected-pool net balance changes over adjacent seven-day intervals; internal pool redistribution cancels out. Not a forecast.' };
+      }
     }
   }
   return { facts, analysis: { coverage, series: details, comparison, selectedPools, dailyRanking } };

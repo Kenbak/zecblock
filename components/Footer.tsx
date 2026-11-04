@@ -119,7 +119,7 @@ export function Footer() {
             <nav aria-label="Legal and service information" className="flex flex-wrap items-center gap-x-5 sm:order-first text-caption font-mono">
               <Link href="/privacy-policy" className="footer-link inline-flex min-h-11 items-center">Privacy Policy</Link>
               <Link href="/terms" className="footer-link inline-flex min-h-11 items-center">Terms</Link>
-              <a href="https://status.cipherscan.app" target="_blank" rel="noopener noreferrer" className="footer-link inline-flex min-h-11 items-center" aria-label="Service status (opens in a new tab)">Status ↗</a>
+              <a href="https://status.zecblock.com" target="_blank" rel="noopener noreferrer" className="footer-link inline-flex min-h-11 items-center" aria-label="Service status (opens in a new tab)">Status ↗</a>
             </nav>
           </div>
 

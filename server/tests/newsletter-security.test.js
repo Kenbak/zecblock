@@ -15,8 +15,35 @@ function load(file, dependencies = {}, environment = process) {
 function newsletters(filesystem = fs) {
   return load('lib/newsletter/index.ts', {
     fs: filesystem, './parser': {}, './inline': {}, './tables': {},
+    './frontmatter': load('lib/newsletter/frontmatter.ts'),
   });
 }
+
+test('newsletter YAML preserves metadata, multiline summaries and body separators', () => {
+  const { parseNewsletterSource } = load('lib/newsletter/frontmatter.ts');
+  const source = '\uFEFF---\r\ntitle: "Privacy: an update"\r\nsummary: >-\r\n  First line\r\n  second line\r\ndate: 2026-10-23\r\nissue: 31\r\n---\r\n\r\n## Story\r\n\r\n---\r\nBody\r\n';
+  const { data, content } = parseNewsletterSource(source);
+  assert.equal(data.title, 'Privacy: an update');
+  assert.equal(data.summary, 'First line second line');
+  assert.equal(data.date, '2026-10-23');
+  assert.equal(data.issue, 31);
+  assert.equal(content, '\r\n## Story\r\n\r\n---\r\nBody\r\n');
+  assert.equal(parseNewsletterSource('Body without metadata').content, 'Body without metadata');
+});
+
+test('newsletter front matter rejects executable tags, malformed metadata and excessive aliases', () => {
+  const { parseNewsletterSource } = load('lib/newsletter/frontmatter.ts');
+  for (const source of [
+    '---javascript\n({title: process.exit(1)})\n---\nBody',
+    '---\ntitle: !!js/function "function () { return 1; }"\n---\nBody',
+    '---\ntitle: Unclosed',
+    '---\n- unexpected sequence\n---\nBody',
+    '---\ntitle: 42\n---\nBody',
+    '---\nissue: 1.5\n---\nBody',
+    '---\ntitle: first\ntitle: duplicate\n---\nBody',
+    '---\na: &a [1, 2]\nb: &b [*a, *a, *a, *a, *a, *a, *a, *a, *a, *a]\nc: [*b, *b, *b, *b, *b, *b, *b, *b, *b, *b, *b]\n---\nBody',
+  ]) assert.throws(() => parseNewsletterSource(source));
+});
 
 test('newsletter lookup rejects traversal and encoded separators before filesystem access', () => {
   const fail = () => assert.fail('invalid slug must not touch the filesystem');

@@ -2,11 +2,13 @@ import { CopyableValue, CopyableCommand } from '../CopyableValue';
 import { notFound, permanentRedirect } from 'next/navigation';
 import { buildPageMetadata, getNetwork } from '@/lib/seo';
 import { getGovernanceCatalog } from '@/lib/governance-data';
-import { GOVERNANCE_API, GRANTS, isGrantsRound, roundHex } from '@/lib/governance';
+import { GOVERNANCE_API, GRANTS, catalogDirectoryIsStale, isGrantsRound, roundHex } from '@/lib/governance';
 import { NU7_ROUND_ID } from '@/lib/nu7-vote-results';
 import { GovernanceShell, Status, Freshness, SourceNote } from '../GovernanceUI';
 import { ProposalList } from '../ProposalList';
 import { HowToVote } from '../HowToVote';
+
+export const revalidate = 60;
 
 type Props = { params: Promise<{ slug: string }> };
 const validSlug = (slug: string) => slug === GRANTS.slug || /^[a-f0-9]{64}$/.test(slug);
@@ -22,7 +24,7 @@ export async function generateMetadata({ params }: Props) {
   const { slug } = await params;
   if (!validSlug(slug) || getNetwork() !== 'mainnet') return buildPageMetadata({ title: 'Vote Not Found | ZecBlock', description: 'This vote could not be found.', path: '/governance', canonical: false, index: false });
   const { vote, catalog } = await resolve(slug);
-  if (!vote && slug !== GRANTS.slug && !catalog.unavailable) notFound();
+  if (!vote && slug !== GRANTS.slug && !catalogDirectoryIsStale(catalog, Date.now())) notFound();
   const title = vote?.title ?? (slug === GRANTS.slug ? GRANTS.title : 'Vote temporarily unavailable');
   return buildPageMetadata({ title: `${title} — Voting & Results | ZecBlock`, description: vote ? (vote.description.slice(0, 220) || `Explore ${vote.title}: ballot options, published results, and independent tally verification.`) : slug === GRANTS.slug ? GRANTS.description : 'Vote data is temporarily unavailable.', path: vote?.href ?? `/governance/${slug}`, index: Boolean(vote) || slug === GRANTS.slug, networks: ['mainnet'] });
 }
@@ -35,7 +37,7 @@ export default async function VotePage({ params }: Props) {
   const { catalog, vote } = await resolve(slug);
   if (vote && vote.href !== `/governance/${slug}`) permanentRedirect(vote.href);
   if (!vote && slug !== GRANTS.slug) {
-    if (!catalog.unavailable) notFound();
+    if (!catalogDirectoryIsStale(catalog, Date.now())) notFound();
     return <GovernanceShell title="Vote temporarily unavailable" description="The voting directory could not be reached. Please try again shortly." path={`/governance/${slug}`}><p className="break-all font-mono text-xs text-muted">Round {slug}</p><Freshness catalog={catalog} /></GovernanceShell>;
   }
   if (!vote) {
@@ -46,7 +48,7 @@ export default async function VotePage({ params }: Props) {
         <div className="mt-5 grid gap-4 sm:grid-cols-3">
           {[["Review closes", 'September 16 · 20:00 UTC'], ['Scheduled voting', 'September 17–29, 2026'], ['Proposals', '37 grant applications']].map(([label, value]) => <div key={label}><p className="font-mono text-caption uppercase tracking-wider text-muted">{label}</p><p className="mt-1 text-sm font-medium text-primary">{value}</p></div>)}
         </div>
-        <p className="mt-5 max-w-3xl text-sm leading-relaxed text-secondary">The organizer has announced the schedule. A matching endorsed round is not yet available here. Snapshot details, exact voting times, and results will appear once confirmed by the voting chain. No result publication date has been announced.</p>
+        <p className="mt-5 max-w-3xl text-sm leading-relaxed text-secondary">{catalogDirectoryIsStale(catalog, Date.now()) ? 'The voting directory is temporarily unavailable, so a matching endorsed round could not be checked.' : 'The organizer has announced the schedule. A matching endorsed round is not yet available here.'} Snapshot details, exact voting times, and results will appear once confirmed by the voting chain. No result publication date has been announced.</p>
         <div className="mt-4 flex flex-wrap gap-4 text-sm"><a href={GRANTS.source} target="_blank" rel="noopener noreferrer" className="text-brand-gold hover:underline">Review all proposals ↗</a><a href={GRANTS.calendar} target="_blank" rel="noopener noreferrer" className="text-secondary hover:underline">Governance calendar ↗</a></div>
       </div>
       <div className="mt-6 grid gap-5 lg:grid-cols-2">

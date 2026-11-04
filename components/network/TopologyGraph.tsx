@@ -1,8 +1,7 @@
 'use client';
 
-import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls, Instances, Instance } from '@react-three/drei';
 import * as THREE from 'three';
@@ -18,7 +17,7 @@ import {
   type SimulationNode,
 } from 'd3-force-3d';
 import { useTheme } from '@/contexts/ThemeContext';
-import { getApiUrl } from '@/lib/api-config';
+import { useApiQuery } from '@/hooks/useApiQuery';
 import { clientColor as sharedClientColor, clientLabel as sharedClientLabel, CLIENT_COLORS } from '@/lib/network-colors';
 
 interface ApiNode {
@@ -35,6 +34,59 @@ interface ApiNode {
 interface ApiEdge {
   source: number;
   target: number;
+}
+
+interface TopologyResponse {
+  topologyAvailable?: boolean;
+  gossipProvenance?: string | null;
+  observedAt?: string | null;
+  expiresAt?: string | null;
+  truncated?: boolean;
+  nodes: ApiNode[];
+  edges: ApiEdge[];
+  counts?: { total: number; reachable: number; off: number; edges: number };
+}
+
+export const MAX_LAYOUT_NODES = 600;
+export const MAX_LAYOUT_EDGES = 2000;
+const LAYOUT_TICKS = 120;
+const GOSSIP_PROVENANCE = 'zcash-mainnet-qualified-addr-v1';
+const MIN_EXPIRY_REFRESH_MS = 30_000;
+
+function subscribeVisibility(callback: () => void) {
+  document.addEventListener('visibilitychange', callback);
+  return () => document.removeEventListener('visibilitychange', callback);
+}
+const getPageVisible = () => document.visibilityState !== 'hidden';
+const getServerVisible = () => false;
+
+/** New gossip observations must expire even if a refresh fails or is paused. */
+export function topologyIsFresh(data: TopologyResponse | null, now: number): boolean {
+  if (!data || data.topologyAvailable === false) return false;
+  // Peer-mode legacy responses have no qualified-gossip capability contract.
+  if (!Object.hasOwn(data, 'gossipProvenance')) return true;
+  const expiresAt = typeof data.expiresAt === 'string' ? Date.parse(data.expiresAt) : NaN;
+  return data.topologyAvailable === true && data.gossipProvenance === GOSSIP_PROVENANCE
+    && Number.isFinite(expiresAt) && expiresAt > now;
+}
+
+/** Keep the layout bounded; full API counts are reported separately below. */
+export function selectTopologyLayout(data: TopologyResponse) {
+  const unique = new Map<number, ApiNode>();
+  for (const node of Array.isArray(data.nodes) ? data.nodes : []) {
+    if (node && Number.isSafeInteger(node.id) && node.id >= 0 && !unique.has(node.id)) unique.set(node.id, node);
+  }
+  const nodes = [...unique.values()].sort((a, b) => Number(b.reachable) - Number(a.reachable)
+    || (b.degree || 0) - (a.degree || 0) || a.id - b.id).slice(0, MAX_LAYOUT_NODES);
+  const ids = new Set(nodes.map(node => node.id));
+  const edges: ApiEdge[] = [];
+  for (const edge of Array.isArray(data.edges) ? data.edges : []) {
+    if (edge && ids.has(edge.source) && ids.has(edge.target) && edge.source !== edge.target) {
+      edges.push({ source: edge.source, target: edge.target });
+      if (edges.length === MAX_LAYOUT_EDGES) break;
+    }
+  }
+  return { nodes, edges, subset: nodes.length < unique.size || edges.length < (data.edges?.length || 0) };
 }
 
 interface SimNode extends SimulationNode {
@@ -56,9 +108,11 @@ interface PositionedNode extends SimNode {
   color: string;
 }
 
+const EMPTY_NODES: PositionedNode[] = [];
+const EMPTY_PAIRS: [number, number][] = [];
+
 const TOR_COLOR = '#B6A0E0';
-// Known-but-unreachable ("off") nodes: lighter slate so they're visible against
-// the dark background while still clearly secondary to the reachable core.
+// Advertised addresses have no independent active-source observation here.
 const OFF_COLOR = '#6B7FA0';
 
 function nodeColor(n: { client: string | null; isTor: boolean; reachable: boolean }) {
@@ -68,7 +122,7 @@ function nodeColor(n: { client: string | null; isTor: boolean; reachable: boolea
 }
 
 function clientLabel(client: string | null, reachable = true) {
-  if (!reachable) return 'Not recently observed';
+  if (!reachable) return 'Advertised only';
   return sharedClientLabel(client);
 }
 
@@ -248,7 +302,7 @@ function Scene({
         </Instances>
       )}
 
-      {/* Known-but-unreachable ("off") nodes — dim, semi-transparent, matte. */}
+      {/* Advertised-only addresses remain distinct from active-source IPs. */}
       {offVisible.length > 0 && (
         <Instances limit={offVisible.length} range={offVisible.length}>
           <sphereGeometry args={[1, 8, 8]} />
@@ -288,11 +342,49 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
     });
     return () => cancelAnimationFrame(frame);
   }, [theme]);
-  const [loading, setLoading] = useState(true);
-  const [nodes, setNodes] = useState<PositionedNode[]>([]);
-  const [edgePairs, setEdgePairs] = useState<[number, number][]>([]);
-  const [edgeCount, setEdgeCount] = useState(0);
-  const [counts, setCounts] = useState<{ total: number; reachable: number; off: number; edges: number } | null>(null);
+  const pageVisible = useSyncExternalStore(subscribeVisibility, getPageVisible, getServerVisible);
+  const topology = useApiQuery<TopologyResponse>('/v1/network/topology', undefined,
+    { enabled: active && pageVisible, refreshInterval: 300_000 });
+  const data = topology.data;
+  const [clock, setClock] = useState(() => Date.now());
+  const topologyAvailable = topologyIsFresh(data, Math.max(clock, Date.now()));
+  const selectedLayout = useMemo(() => data && topologyAvailable ? selectTopologyLayout(data) : null, [data, topologyAvailable]);
+  const [layout, setLayout] = useState<{ source: TopologyResponse | null; nodes: PositionedNode[]; pairs: [number, number][] }>({ source: null, nodes: [], pairs: [] });
+  const layoutReady = layout.source === data;
+  const nodes = layoutReady ? layout.nodes : EMPTY_NODES;
+  const edgePairs = layoutReady ? layout.pairs : EMPTY_PAIRS;
+  const counts = data?.counts;
+  const edgeCount = counts?.edges ?? data?.edges?.length ?? 0;
+  const loading = topology.loading || (topologyAvailable && !layoutReady);
+  const expiresAt = data?.expiresAt;
+  const observedAt = data?.observedAt;
+  const attemptedExpiry = useRef<string | null>(null);
+  const lastExpiryRefreshAt = useRef(-Infinity);
+  const expiryEnabled = useRef(active && pageVisible);
+  expiryEnabled.current = active && pageVisible;
+  const { refetch, isRefreshing } = topology;
+  useEffect(() => {
+    const deadline = typeof expiresAt === 'string' ? Date.parse(expiresAt) : NaN;
+    if (!active || !pageVisible || !Number.isFinite(deadline)) return;
+    const identity = `${observedAt || ''}|${expiresAt}`;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    function expire() {
+      const now = Date.now();
+      setClock(now);
+      // Visibility can change before the subscription's next render/cleanup.
+      if (!expiryEnabled.current || !getPageVisible()) return;
+      if (attemptedExpiry.current === identity || isRefreshing) return;
+      const cooldown = lastExpiryRefreshAt.current + MIN_EXPIRY_REFRESH_MS - now;
+      if (cooldown > 0) { timer = setTimeout(expire, cooldown); return; }
+      // Mark before fetching: the same expired/error payload must not loop.
+      attemptedExpiry.current = identity;
+      lastExpiryRefreshAt.current = now;
+      void refetch();
+    }
+    if (deadline <= Date.now()) expire();
+    else timer = setTimeout(expire, Math.min(deadline - Date.now() + 1, 2_147_483_647));
+    return () => { if (timer !== undefined) clearTimeout(timer); };
+  }, [expiresAt, observedAt, active, pageVisible, refetch, isRefreshing]);
   const [hovered, setHovered] = useState<PositionedNode | null>(null);
   const [pinned, setPinned] = useState<PositionedNode | null>(null);
   const [query, setQuery] = useState('');
@@ -313,7 +405,7 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
   const searchResults = useMemo(() => {
     const q = query.trim().toLowerCase();
     return nodes.filter(node => !hidden.has(nodeCategory(node)) && (q
-      ? `${clientLabel(node.client)} ${node.countryCode || ''} #${node.id}`.toLowerCase().includes(q)
+      ? `${clientLabel(node.client, node.reachable)} ${node.countryCode || ''} #${node.id}`.toLowerCase().includes(q)
       : node.reachable))
       .sort((a, b) => (b.degree || 0) - (a.degree || 0)).slice(0, 6);
   }, [nodes, query, hidden]);
@@ -325,112 +417,91 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
   };
 
   useEffect(() => {
+    if (!data || !selectedLayout || !active || !pageVisible || layoutReady) return;
     let cancelled = false;
-    const apiUrl = getApiUrl();
-
-    async function run() {
-      try {
-        const res = await fetch(`${apiUrl}/v1/network/topology`);
-        if (!res.ok) { if (!cancelled) setLoading(false); return; }
-        const data = await readApiData(res);
-        if (!data.nodes?.length) { if (!cancelled) setLoading(false); return; }
-
-        const simNodes: SimNode[] = (data.nodes as ApiNode[]).map((n) => ({
-          id: n.id,
-          client: n.client,
-          reachable: n.reachable,
-          isTor: n.isTor,
-          countryCode: n.countryCode,
-          betweenness: n.betweenness,
-          closeness: n.closeness,
-          degree: n.degree,
-        }));
-
-        const maxDegree = Math.max(1, ...simNodes.map((n) => n.degree || 0));
-
-        const idSet = new Set(simNodes.map((n) => n.id));
-        const links = (data.edges as ApiEdge[])
-          .filter((e) => idSet.has(e.source) && idSet.has(e.target))
-          .map((e) => ({ source: e.source, target: e.target }));
-
-        // Degree-weighted pull toward the origin: well-connected hubs are drawn to
-        // the center ("core"), while low-degree / off nodes drift to the periphery.
-        // This makes spatial position match the visual size (peer count).
-        const centerPull = (n: SimNode) =>
-          0.015 + 0.16 * Math.pow((n.degree || 0) / maxDegree, 1.4);
-
-        const sim: Simulation<SimNode> = forceSimulation<SimNode>(simNodes, 3)
-          .force('link', forceLink<SimNode, { source: number; target: number }>(links)
-            .id((d: SimNode) => d.id)
-            .distance(18)
-            .strength(0.35))
-          .force('charge', forceManyBody<SimNode>().strength(-18).distanceMax(220))
-          .force('center', forceCenter<SimNode>(0, 0, 0))
-          .force('x', forceX<SimNode>(0).strength(centerPull))
-          .force('y', forceY<SimNode>(0).strength(centerPull))
-          .force('z', forceZ<SimNode>(0).strength(centerPull))
-          .stop();
-
-        for (let i = 0; i < 320; i++) sim.tick();
-
-        const positioned: PositionedNode[] = simNodes.map((n) => {
-          // Reachable nodes scale with peer count; off nodes stay small (background).
-          const base = 0.4 + Math.pow((n.degree || 0) / maxDegree, 0.4) * 4.2;
-          return {
-            ...n,
-            x: n.x ?? 0,
-            y: n.y ?? 0,
-            z: n.z ?? 0,
-            radius: n.reachable ? base : Math.min(base * 0.6, 0.7),
-            color: nodeColor(n),
-          };
-        });
-
-        // After force simulation, d3 mutates link source/target into node objects.
-        // Extract the numeric IDs back for the Scene's geometry builder.
-        const pairs: [number, number][] = links.map((l) => [
-          typeof l.source === 'object' ? (l.source as SimNode).id : l.source,
-          typeof l.target === 'object' ? (l.target as SimNode).id : l.target,
-        ]);
-
-        if (!cancelled) {
-          setNodes(positioned);
-          setEdgePairs(pairs);
-          setEdgeCount(links.length);
-          setCounts(data.counts ?? null);
-          setLoading(false);
-        }
-      } catch (err) {
-        console.error('Failed to fetch topology:', err);
-        if (!cancelled) setLoading(false);
-      }
+    let frame = 0;
+    setHovered(null);
+    setPinned(null);
+    if (!selectedLayout.nodes.length) {
+      setLayout({ source: data, nodes: [], pairs: [] });
+      return;
     }
+    const simNodes: SimNode[] = selectedLayout.nodes.map(node => ({ ...node }));
+    const maxDegree = Math.max(1, ...simNodes.map(node => node.degree || 0));
+    const links = selectedLayout.edges.map(edge => ({ ...edge }));
+    const centerPull = (node: SimNode) => 0.015 + 0.16 * Math.pow((node.degree || 0) / maxDegree, 1.4);
+    const sim: Simulation<SimNode> = forceSimulation<SimNode>(simNodes, 3)
+      .force('link', forceLink<SimNode, { source: number; target: number }>(links)
+        .id((node: SimNode) => node.id).distance(18).strength(0.35))
+      .force('charge', forceManyBody<SimNode>().strength(-18).distanceMax(220))
+      .force('center', forceCenter<SimNode>(0, 0, 0))
+      .force('x', forceX<SimNode>(0).strength(centerPull))
+      .force('y', forceY<SimNode>(0).strength(centerPull))
+      .force('z', forceZ<SimNode>(0).strength(centerPull))
+      .alphaDecay(0.045).stop();
+    let ticks = 0;
+    function step() {
+      if (cancelled) return;
+      const started = performance.now();
+      let batch = 0;
+      do { sim.tick(); ticks++; batch++; }
+      while (ticks < LAYOUT_TICKS && batch < 3 && performance.now() - started < 8);
+      if (ticks < LAYOUT_TICKS) { frame = requestAnimationFrame(step); return; }
+      const positioned = simNodes.map(node => {
+        const radius = 0.4 + Math.pow((node.degree || 0) / maxDegree, 0.4) * 4.2;
+        return { ...node, x: node.x ?? 0, y: node.y ?? 0, z: node.z ?? 0,
+          radius: node.reachable ? radius : Math.min(radius * 0.6, 0.7), color: nodeColor(node) };
+      });
+      // d3 replaces endpoint IDs with objects; keep scene identities numeric.
+      const pairs: [number, number][] = links.map(link => [
+        typeof link.source === 'object' ? (link.source as SimNode).id : link.source,
+        typeof link.target === 'object' ? (link.target as SimNode).id : link.target,
+      ]);
+      if (!cancelled) setLayout({ source: data, nodes: positioned, pairs });
+    }
+    frame = requestAnimationFrame(step);
+    return () => { cancelled = true; cancelAnimationFrame(frame); sim.stop(); };
+  }, [data, selectedLayout, active, pageVisible, layoutReady]);
 
-    run();
-    return () => { cancelled = true; };
-  }, []);
+  const focusLinks = useMemo(() => ({
+    outgoing: focus ? edgePairs.filter(([source]) => source === focus.id).length : 0,
+    incoming: focus ? edgePairs.filter(([, target]) => target === focus.id).length : 0,
+  }), [focus, edgePairs]);
+  const formatTime = (value: string) => new Date(value).toLocaleString('en-GB', { timeZone: 'UTC' });
+
+  if (!loading && !topologyAvailable) {
+    return <div className="border border-cipher-border rounded-lg px-5 py-6">
+      <p className="text-sm text-secondary" role="status">Fresh verified gossip links are not available.</p>
+      <p className="text-caption text-muted mt-2">{counts ? `${counts.reachable} observed active IPs.` : 'Active IP counts are unavailable.'} Explore geography or the node directory for available observations.</p>
+      {expiresAt && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= Date.now() && <p className="text-caption text-muted mt-2">The previous snapshot expired at <time dateTime={expiresAt}>{formatTime(expiresAt)} UTC</time>.</p>}
+    </div>;
+  }
 
   return (
     <div>
       <div className="border border-cipher-border rounded-lg overflow-hidden">
         <div className="flex flex-wrap items-center justify-between gap-3 px-4 py-3 border-b border-cipher-border">
-          <p className="text-caption text-muted font-mono">{loading ? 'Loading graph observations…' : `${counts?.reachable ?? nodes.filter(node => node.reachable).length} active · ${counts?.off ?? nodes.filter(node => !node.reachable).length} not recently observed · ${edgeCount.toLocaleString()} links`}</p>
+          <p className="text-caption text-muted font-mono">{loading ? 'Loading graph observations…' : `${counts?.reachable ?? nodes.filter(node => node.reachable).length} observed active IPs · ${counts?.off ?? nodes.filter(node => !node.reachable).length} advertised only · ${edgeCount.toLocaleString()} advertisement links`}</p>
           <div className="flex gap-2">
             <button type="button" onClick={resetView} disabled={!nodes.length} className="px-3 py-2 rounded border border-cipher-border text-caption font-mono text-secondary hover:text-primary disabled:opacity-50">Reset view</button>
             <button type="button" aria-pressed={rotating} disabled={!nodes.length} onClick={() => setRotating(value => !value)} className="px-3 py-2 rounded border border-cipher-border text-caption font-mono text-secondary hover:text-primary disabled:opacity-50">{rotating ? 'Pause rotation' : 'Rotate view'}</button>
           </div>
         </div>
+        {observedAt && Number.isFinite(Date.parse(observedAt)) && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Snapshot: <time dateTime={observedAt}>{formatTime(observedAt)} UTC</time>{expiresAt && Number.isFinite(Date.parse(expiresAt)) && <> · Expires: <time dateTime={expiresAt}>{formatTime(expiresAt)} UTC</time></>}</p>}
+        {data?.truncated && <p className="px-4 py-2 text-caption text-warning border-b border-cipher-border">This observation is partial. Additional advertisements are omitted.</p>}
+        {selectedLayout?.subset && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Showing {selectedLayout.nodes.length.toLocaleString()} of {(data?.nodes.length ?? 0).toLocaleString()} nodes and {selectedLayout.edges.length.toLocaleString()} of {edgeCount.toLocaleString()} links to keep this view responsive.</p>}
+        {topology.error && <p role="status" className="px-4 py-2 text-caption text-warning border-b border-cipher-border">Refresh failed. Showing the last received snapshot{expiresAt ? ' until it expires' : ''}.</p>}
         <div className="grid lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="relative min-w-0 h-[360px] sm:h-[500px] bg-cipher-bg" aria-label="Interactive 3D graph of observed peer advertisements">
             {loading ? <div className="absolute inset-0 flex items-center justify-center"><span className="text-sm text-muted font-mono">Computing layout…</span></div>
-              : nodes.length === 0 ? <div className="absolute inset-0 flex items-center justify-center"><span className="text-sm text-muted">No topology data available yet.</span></div>
+              : nodes.length === 0 ? <div className="absolute inset-0 flex items-center justify-center"><span className="text-sm text-muted">No nodes in this snapshot.</span></div>
               : <Canvas
-                  frameloop={active ? rotating ? 'always' : 'demand' : 'never'}
+                  frameloop={active && pageVisible ? rotating ? 'always' : 'demand' : 'never'}
                   camera={{ position: [0, 0, 190], fov: 55, near: 0.1, far: 2000 }}
                   dpr={[1, 1.5]} gl={{ antialias: true, alpha: true }}
                   onPointerMissed={() => { setPinned(null); setHovered(null); }}
                 >
-                  <Scene palette={palette} rotating={rotating && active} resetKey={resetKey} nodes={nodes} edgePairs={edgePairs} focus={focus} pinned={pinned} hidden={hidden} onHover={setHovered} onPin={node => { if (node) selectNode(node); }} />
+                  <Scene palette={palette} rotating={rotating && active && pageVisible} resetKey={resetKey} nodes={nodes} edgePairs={edgePairs} focus={focus} pinned={pinned} hidden={hidden} onHover={setHovered} onPin={node => { if (node) selectNode(node); }} />
                   <OrbitControls makeDefault enablePan={false} enableDamping dampingFactor={0.08} rotateSpeed={0.6} minDistance={15} maxDistance={1200} />
                 </Canvas>}
             <ChartWatermark size="map" />
@@ -443,10 +514,12 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
               <div className="flex items-center justify-between gap-3 mb-4"><h3 className="font-mono text-sm text-primary">Node #{focus.id}</h3>{pinned && <button onClick={() => setPinned(null)} className="text-caption text-muted hover:text-primary underline underline-offset-4">Clear</button>}</div>
               <dl className="space-y-3 text-caption">
                 <Row label="Client" value={sharedClientLabel(focus.client)} />
-                <Row label="Status" value={focus.reachable ? 'Observed active' : 'Not recently observed'} />
+                <Row label="Status" value={focus.reachable ? 'Observed active' : 'Advertised only'} />
                 <Row label="Country" value={focus.countryCode || 'Unknown'} />
-                <Row label="Tor" value={focus.isTor ? 'Yes' : 'No'} />
-                <Row label="Gossip links" value={focus.degree != null ? String(focus.degree) : '—'} />
+                <Row label="Tor flag" value={focus.reachable ? focus.isTor ? 'Yes' : 'No' : 'Unknown'} />
+                <Row label="Observed advertisements" value={focus.degree != null ? String(focus.degree) : '—'} />
+                <Row label="Shown outgoing" value={String(focusLinks.outgoing)} />
+                <Row label="Shown incoming" value={String(focusLinks.incoming)} />
                 <Row label="Betweenness" value={focus.betweenness != null ? focus.betweenness.toFixed(4) : '—'} />
                 <Row label="Closeness" value={focus.closeness != null ? focus.closeness.toFixed(4) : '—'} />
               </dl>
@@ -493,11 +566,11 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
           className={`flex items-center gap-1.5 transition-opacity ${hidden.has('off') ? 'opacity-30 line-through' : 'opacity-100 hover:opacity-80'}`}
         >
           <span className="w-2 h-2 rounded-full" style={{ backgroundColor: palette.off }} />
-          Not recently observed
+          Advertised only
         </button>
 
       </div>
-      <p className="text-caption text-muted mt-3">Drag to orbit · scroll to zoom · select a node to inspect. Node size encodes gossip links; nodes not recently observed are shown smaller.</p>
+      <p className="text-caption text-muted mt-3">Drag to orbit · scroll to zoom · select a node to inspect. Links run from a verified advertiser to an advertised address; they do not establish remote connections. Advertised-only addresses are shown smaller. Positions are topological, not geographic.</p>
     </div>
   );
 }

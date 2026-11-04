@@ -1,10 +1,10 @@
 'use client';
 
-import { readApiData } from '@/lib/api-client';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { isCrosslink } from '@/lib/config';
 import { isCurrentCrosslinkBlockList } from '@/lib/crosslink-freshness';
+import { useApiQuery } from '@/hooks/useApiQuery';
 
 const STALE_THRESHOLD_SECONDS = 30 * 60; // 30 minutes
 const POLL_INTERVAL = 60_000;
@@ -13,17 +13,28 @@ export function MaintenanceBanner() {
   const [dismissed, setDismissed] = useState(false);
   const [status, setStatus] = useState<'checking' | 'fresh' | 'stale' | 'unavailable'>('checking');
   const [latestAge, setLatestAge] = useState<number | null>(null);
+  // Shares the stats bar's tip poll instead of requesting the same block again.
+  const blocksQuery = useApiQuery<Array<{ height: number | string; timestamp?: number }>>(
+    '/v1/blocks',
+    { limit: 1 },
+    { refreshInterval: 30_000 },
+  );
+  // Re-evaluate age between polls so an unchanged tip still becomes stale.
+  const [clock, setClock] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setClock(value => value + 1), POLL_INTERVAL);
+    return () => clearInterval(id);
+  }, []);
 
-  const checkStaleness = useCallback(async () => {
-    try {
-      const API_URL = getApiUrl();
-      const res = await fetch(`${API_URL}/v1/blocks?limit=1`);
-      if (!res.ok) {
+  useEffect(() => {
+    let cancelled = false;
+    const evaluate = async () => {
+      if (blocksQuery.error) {
         setStatus('unavailable');
         return;
       }
-      const data = await readApiData(res);
-      const latest = data?.[0];
+      const latest = blocksQuery.data?.[0];
+      if (!blocksQuery.data) return;
       if (!latest?.timestamp) {
         setStatus('unavailable');
         return;
@@ -34,26 +45,24 @@ export function MaintenanceBanner() {
         // Crosslink's persisted tip normally trails its live PoW tip by 100
         // blocks. Suppress this warning only when fresh health evidence proves
         // that the indexer and the displayed list match the durable state.
-        const healthResponse = await fetch(`${API_URL}/health/deep`);
-        if (healthResponse.ok) {
-          const health = await healthResponse.json();
-          if (isCurrentCrosslinkBlockList(health, latest.height)) {
-            setStatus('fresh');
-            return;
+        try {
+          const healthResponse = await fetch(`${getApiUrl()}/health/deep`);
+          if (healthResponse.ok) {
+            const health = await healthResponse.json();
+            if (isCurrentCrosslinkBlockList(health, Number(latest.height))) {
+              if (!cancelled) setStatus('fresh');
+              return;
+            }
           }
+        } catch {
+          // Fall through to the age-based state.
         }
       }
-      setStatus(ageSec > STALE_THRESHOLD_SECONDS ? 'stale' : 'fresh');
-    } catch {
-      setStatus('unavailable');
-    }
-  }, []);
-
-  useEffect(() => {
-    checkStaleness();
-    const id = setInterval(checkStaleness, POLL_INTERVAL);
-    return () => clearInterval(id);
-  }, [checkStaleness]);
+      if (!cancelled) setStatus(ageSec > STALE_THRESHOLD_SECONDS ? 'stale' : 'fresh');
+    };
+    void evaluate();
+    return () => { cancelled = true; };
+  }, [blocksQuery.data, blocksQuery.error, clock]);
 
   if ((status !== 'stale' && status !== 'unavailable') || dismissed) return null;
 

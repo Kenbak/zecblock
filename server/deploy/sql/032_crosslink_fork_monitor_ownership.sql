@@ -1,3 +1,4 @@
+-- networks: crosslink
 -- Crosslink legacy deployment reconciliation. Mainnet/testnet do not have
 -- this optional feature-net registry. Preserve registrations and TTLs.
 DO $$ BEGIN

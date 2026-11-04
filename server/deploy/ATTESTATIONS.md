@@ -31,7 +31,8 @@ Canary compatibility assessment: [CANARY-ASSESSMENT.md](CANARY-ASSESSMENT.md).
 
 ## Local preview with real data
 
-Requires Node 22.14+ and OpenSSL 3 (`openssl` on PATH). No API key or account.
+Requires Node 22.23.4 or newer within Node 22 and OpenSSL 3 (`openssl` on PATH).
+No API key or account.
 For the preview, install the frontend and API packages with `npm ci` and
 `npm ci --prefix server/api`. The collector itself has no npm dependencies.
 
@@ -71,8 +72,9 @@ directories 0755 and files 0644, from the reviewed main commit:
 - `server/jobs/check-attestations.mjs`
 - `server/vendor/tee-attestation-js/` (including license and provenance)
 
-Require `/usr/bin/node` version 22.14+ and `/usr/bin/openssl` version 3. Copy the
-service and timer files beside this document into `/etc/systemd/system`, then:
+Require `/usr/bin/node` version 22.23.4 or newer within Node 22 and
+`/usr/bin/openssl` version 3. Copy the service and timer files beside this
+document into `/etc/systemd/system`, then:
 
 ```sh
 sudo systemctl daemon-reload

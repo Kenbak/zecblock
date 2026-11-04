@@ -13,13 +13,14 @@ const log = {info(){},warn(){},error(){}};
 test('daily activity explains share in percentage points and counts once', () => {
   const days = series(0,0).map((r,i)=>({date:r.date,shielded:i===30?90:50,transparent:i===30?10:50,fully_shielded:20}));
   const c=p.dailyActivity({days},target);
-  assert.match(c.content,/^🟨 90.0% of Zcash transactions used a shielded pool on Sep 28\./);
+  assert.match(c.content,/^🟨 Zcash’s shielded transaction share hit a 31-day high\./);
+  assert.match(c.content,/90.0% on Sep 28/);
   assert.match(c.content,/40.0 percentage points above the 30-day average \(50.0%\)/);
-  assert.match(c.content,/The highest in 31 days/);
+  assert.equal(c.evidence.editorial.lens,'record_high');
   assert.equal(c.evidence.card.visual.values.length,31);
   assert.equal(p.dailyActivity({days:days.slice(1)},target),null);
   days.at(-1).shielded=NaN;
-  assert.equal(p.dailyActivity({days},target)?.evidence.metric,'fully');
+  assert.equal(p.dailyActivity({days},target),null);
 });
 
 test('flow rank uses same-direction samples, includes ties and never invents precision',()=>{
@@ -96,7 +97,8 @@ test('milestones are capped at one post per UTC day',()=>{
 
 test('MVRV and exchange signals explain context without price or selling claims',()=>{
   const c=p.signalStory('mvrv',series(2,3),target);
-  assert.match(c.content,/Zcash MVRV hit 3.00 on Sep 28, 50.0% above its 30-day average, the highest in 31 days\./);
+  assert.match(c.content,/Zcash’s MVRV reached a 31-day high\./);
+  assert.match(c.content,/Zcash MVRV hit 3.00 on Sep 28, 50.0% above its 30-day average\./);
   assert.match(c.content,/estimated realized cap/);assert.match(c.content,/not a forecast/);
   assert.doesNotMatch(c.content,/overvalu|undervalu|σ/);
   assert.equal(p.signalStory('mvrv',series(0,3),target),null);
@@ -122,14 +124,15 @@ test('hashrate records require continuous same-method windows and qualified ATH 
   h=hashes();h.points.at(-1).date='2026-09-28T00:00:00.000Z';assert.equal(p.hashStory(h,{target,genesisComplete:true}),null);
 });
 
-test('separate flow directions and exceptional swap capacity survive ordinary caps',()=>{
+test('combined flow allowance preserves exceptional swap capacity without four daily flow posts',()=>{
   const history=[1,2].map(i=>({dedup_key:`old${i}`,post_type:'flow_deshield',status:'posted',created_at:now,metadata:{}}));
   history.push({dedup_key:'oldswap',post_type:'swap',status:'posted',created_at:now,metadata:{slot:'am'}});
   const cs=[['flow_shield','s',{}],['flow_deshield','d',{}],['swap','ordinary',{}],['swap','exceptional',{exceptional:true}]]
     .map(([type,key,evidence])=>({type,key,evidence,score:1}));
   const result=p.select(cs,history,now);
-  assert.deepEqual(result.selected.map(c=>c.key),['exceptional','s']);
-  assert.equal(result.skipped.length,2);
+  assert.deepEqual(result.selected.map(c=>c.key),['exceptional']);
+  assert.equal(result.skipped.length,3);
+  assert.equal(result.skipped.filter(c=>c.reason==='flow-combined-daily-cap').length,2);
   assert.equal(p.select([cs[2]],history,new Date('2026-09-29T12:00:00Z')).selected.length,1);
 });
 

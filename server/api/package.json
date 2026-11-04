@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "node --watch server.js",
     "test": "node --test test/*.test.js",
-    "test:v1": "node --test test/v1/*.test.js",
+    "test:v1": "node --test --test-timeout=120000 test/v1/*.test.js",
     "test:redis": "node -e \"if (!process.env.TEST_REDIS_URL) throw new Error('TEST_REDIS_URL is required')\" && node --test test/list-cache.redis.test.js",
     "verify": "find . -name '*.js' -not -path './node_modules/*' -print0 | xargs -0 -n1 node --check && npm test && npm run test:v1"
   },
@@ -24,6 +24,7 @@
     "@cipherpay/x402": "^0.6.0",
     "@grpc/grpc-js": "^1.14.5",
     "@grpc/proto-loader": "^0.8.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "bech32": "^2.0.0",
     "cors": "^2.8.5",
     "dotenv": "^17.0.0",
@@ -31,15 +32,16 @@
     "express-rate-limit": "^8.7.0",
     "helmet": "^8.0.0",
     "pg": "^8.23.0",
+    "pgsql-parser": "18.2.9",
     "redis": "^6.2.1",
     "ws": "^8.21.3",
-    "zod": "^4.5.4"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "js-yaml": "^5.4.1"
   },
   "overrides": {
     "brace-expansion": ">=5.0.9",
-    "ip-address": "10.7.2"
+    "ip-address": "10.7.4"
   }
 }

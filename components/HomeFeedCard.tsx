@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { RecentBlocks } from '@/components/RecentBlocks';
@@ -13,15 +13,16 @@ import { IronwoodProgressCard } from '@/components/IronwoodProgressCard';
 import { ShieldedPoolMiniChart } from '@/components/ShieldedPoolMiniChart';
 import { SlidersIcon } from '@/components/icons/common';
 import { HomeFeedTableSkeleton } from '@/components/HomeFeedTableSkeleton';
+import { HOME_FEED_TYPES, homeFeedPendingAttribute, type HomeFeedType } from '@/lib/home-feed-preferences';
 
 // Mempool deliberately excluded: it renders an extra pending-count summary
 // row above its table (see RecentMempool), so it's taller than every other
 // feed here — swapping it into this slot breaks the fixed, no-scroll card
 // height every other option holds to. It stays available as its own
 // permanent section below instead of a Customize option.
-export type HomeFeedType = 'blocks' | 'shielded' | 'transactions' | 'reorgs' | 'miners' | 'software' | 'ironwood' | 'poolsChart';
+export type { HomeFeedType } from '@/lib/home-feed-preferences';
 
-const FEED_ORDER: HomeFeedType[] = ['blocks', 'shielded', 'transactions', 'reorgs', 'miners', 'software', 'ironwood', 'poolsChart'];
+const FEED_ORDER = HOME_FEED_TYPES;
 
 const FEED_META: Record<HomeFeedType, { sectionLabel: string; menuLabel: string; viewAllHref: string }> = {
   blocks: { sectionLabel: 'RECENT_BLOCKS', menuLabel: 'Recent Blocks', viewAllHref: '/blocks' },
@@ -46,8 +47,8 @@ const CheckIcon = () => (
  * "Customize" control on each of its Latest Blocks / Latest Transactions
  * cards), and deliberately only as a per-slot content swap, not a
  * draggable/reorderable layout: no position state to persist, no layout
- * shift risk. Defaults remain in server HTML and work without JavaScript;
- * a CSS loading state covers them until browser preferences are resolved.
+ * shift risk. Defaults remain visible in server HTML. Only an actual saved
+ * alternative gets a guarded loading state until preferences are resolved.
  */
 export function HomeFeedCard({
   storageKey,
@@ -63,10 +64,10 @@ export function HomeFeedCard({
   const [open, setOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
 
-  // Read the saved preference only after mount — the server (and the very
-  // first client render) use `defaultType` so hydration matches. CSS shows
-  // the placeholder before JavaScript runs, without a pre-paint script.
-  useEffect(() => {
+  // Match server markup, then resolve preferences before hydration's paint.
+  // The small head script prevents a saved alternative flashing during a
+  // hard navigation; on soft navigation this layout effect handles it.
+  useLayoutEffect(() => {
     try {
       const saved = localStorage.getItem(storageKey);
       if (saved && FEED_ORDER.includes(saved as HomeFeedType)) {
@@ -76,6 +77,9 @@ export function HomeFeedCard({
       // localStorage unavailable (private browsing, etc.) — just keep the default.
     } finally {
       setPreferencesReady(true);
+      const attribute = homeFeedPendingAttribute(storageKey);
+      if (attribute) document.documentElement.removeAttribute(attribute);
+      document.dispatchEvent(new Event('home-feed-ready'));
     }
   }, [storageKey]);
 
@@ -105,13 +109,7 @@ export function HomeFeedCard({
   );
 
   return (
-    <div className="home-feed min-w-0" data-preferences-ready={preferencesReady}>
-      <noscript>
-        <style>{`
-          .home-feed[data-preferences-ready="false"] > .home-feed-content { display: block; }
-          .home-feed[data-preferences-ready="false"] > .home-feed-placeholder { display: none; }
-        `}</style>
-      </noscript>
+    <div className="home-feed min-w-0" data-preference-key={storageKey} data-preferences-ready={preferencesReady}>
       <div className="home-feed-placeholder">
         <div className="relative" aria-hidden="true">
           <div className="invisible">

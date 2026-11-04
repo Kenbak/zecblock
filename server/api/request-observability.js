@@ -2,6 +2,7 @@
 
 const { randomUUID } = require('node:crypto');
 const { performance } = require('node:perf_hooks');
+const { setDataHeader } = require('./lib/data-headers');
 const {
   formatRequestTimings,
   runWithRequestTimings,
@@ -37,10 +38,10 @@ function createRequestObservability({
         const indexedHeight = finiteNonNegativeInteger(getIndexedHeight());
         const dataAgeBlocks = finiteNonNegativeInteger(getDataAgeBlocks());
         if (indexedHeight !== null) {
-          res.set('X-CipherScan-Indexed-Height', String(indexedHeight));
+          setDataHeader(res, 'Indexed-Height', String(indexedHeight));
         }
         if (dataAgeBlocks !== null) {
-          res.set('X-CipherScan-Data-Age-Blocks', String(dataAgeBlocks));
+          setDataHeader(res, 'Data-Age-Blocks', String(dataAgeBlocks));
         }
 
         const elapsedMs = Math.max(0, now() - started).toFixed(1);

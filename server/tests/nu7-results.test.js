@@ -18,6 +18,20 @@ const copyable = load('app/governance/CopyableValue.tsx', { '@/components/CopyBu
 const { VoteResults } = load('app/governance/nu7/VoteResults.tsx', { '@/lib/nu7-vote-results': moduleUnderTest, '../CopyableValue': copyable });
 const fixture = () => [structuredClone(require('./fixtures/nu7/summary.json')), structuredClone(require('./fixtures/nu7/tally.json'))];
 
+test('NU7 rejects oversized proposal, option and tally collections before walking elements', () => {
+  const oversized = maximum => {
+    const values = new Array(maximum + 1);
+    Object.defineProperty(values, 0, { get() { throw new Error('Oversized element was visited'); } });
+    return values;
+  };
+  const [summary, tally] = fixture();
+  for (const [s, t] of [
+    [{ ...summary, proposals: oversized(5) }, tally],
+    [{ ...summary, proposals: [{ ...summary.proposals[0], options: oversized(4) }] }, tally],
+    [summary, { results: oversized(19) }],
+  ]) assert.equal(parseVoteResults(s, t).state, 'unavailable');
+});
+
 test('published NU7 API data produces 19 results with exact quantized ZEC units', () => {
   const results = parseVoteResults(...fixture());
   assert.equal(results.state, 'published');
@@ -98,6 +112,8 @@ test('NU7 page remains unavailable on testnet and Crosslink before any upstream 
       '@/lib/api-client': { readApiData: () => { throw new Error('Unexpected API decode'); } },
       '@/lib/nu7-vote-config': {}, '@/lib/nu7-vote-results': moduleUnderTest,
       '@/lib/server-fetch': { fetchWithDeadline: () => { throw new Error('Unexpected fetch'); } },
+      '@/lib/bounded-json': require('../../lib/bounded-json'),
+      'next/cache': { unstable_cache: fn => fn },
       'next/navigation': { notFound: () => { throw new Error('NOT_FOUND'); } },
     });
     await assert.rejects(Page(), /NOT_FOUND/);

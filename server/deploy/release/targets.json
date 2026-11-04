@@ -1,0 +1,41 @@
+{
+  "description": "Desired state for every explorer API host. The deploy workflow and drift report both read this file; `ssh` names an alias defined in ~/.ssh/config (CI writes the same aliases from secrets).",
+  "targets": [
+    {
+      "name": "mainnet-primary",
+      "ssh": "zcash-mainnet",
+      "hostSecret": "PRIMARY_HOST",
+      "network": "mainnet",
+      "role": "serving",
+      "service": "zcash-api-mainnet.service",
+      "port": 3001,
+      "alsoRestart": ["cipherscan-bot.service"],
+      "deploy": true
+    },
+    {
+      "name": "mainnet-standby",
+      "ssh": "zcash-standby",
+      "hostSecret": "STANDBY_HOST",
+      "network": "mainnet",
+      "role": "passive",
+      "service": "zcash-api-mainnet.service",
+      "port": 3001,
+      "alsoRestart": [],
+      "deploy": true
+    },
+    {
+      "name": "testnet",
+      "ssh": "zcash-testnet",
+      "hostSecret": "TESTNET_HOST",
+      "network": "testnet",
+      "role": "serving",
+      "service": "zcash-api.service",
+      "port": 3001,
+      "alsoRestart": [],
+      "deploy": true
+    }
+  ],
+  "excluded": {
+    "crosslink": "Separate feature-net release bundle (no Git checkout, no schema_migrations table, two applicable 032 files). Reconcile its schema before adding it here."
+  }
+}

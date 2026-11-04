@@ -14,7 +14,7 @@ import BlockPageClient, { type BlockPageSummary } from './BlockPageClient';
 import { FutureBlockView } from './FutureBlockView';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
 import { getUpgradeStats } from '@/lib/network-upgrades-server';
-import { readUpgradeSnapshot, getBlockUpgrade } from '@/lib/network-upgrades';
+import { readUpgradeSnapshot, getFutureBlockUpgrade } from '@/lib/network-upgrades';
 
 function blockDescription(block: BlockRecord, height: number, hash: string): string {
   const transactionCount = Number(
@@ -59,7 +59,7 @@ export default async function BlockPage({
       const tipHeight = await getCurrentTipHeight();
       if (requestedHeight > tipHeight) {
         const initialStats = await getUpgradeStats();
-        const upgrade = getBlockUpgrade(requestedHeight, getNetwork(), readUpgradeSnapshot(initialStats, getNetwork()));
+        const upgrade = getFutureBlockUpgrade(requestedHeight, getNetwork(), readUpgradeSnapshot(initialStats, getNetwork()));
         const url = `${getBaseUrl()}/block/${requestedHeight}`;
         const name = `${upgrade?.name ?? 'Future Zcash block'} #${requestedHeight.toLocaleString('en-US')}`;
         const description = `${name} on Zcash ${getNetwork()}. This block is pending, ${Math.max(0, requestedHeight - tipHeight).toLocaleString('en-US')} blocks beyond the verified chain tip. ${upgrade?.description ?? 'Arrival time is an estimate.'}`;

@@ -116,7 +116,7 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
     // concurrently instead of five sequential round trips. The bridge lookup
     // keeps its own error boundary (non-critical, matches prior behavior of
     // never failing the whole request on a bridge-table error).
-    const [txResult, inputsResult, outputsResult, currentHeightResult, bridgeResult] = await Promise.all([
+    const [txResult, inputsResult, outputsResult, currentHeightResult, bridgeResult, venueResult] = await Promise.all([
       deps.pool.query(
         `SELECT
           t.txid,
@@ -186,6 +186,23 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
         [txid]
       ).catch((bridgeErr) => {
         logSafeError('❌ [TX] Bridge lookup error:', bridgeErr);
+        return { rows: [] };
+      }),
+      // Maya/THORChain: only successful swaps, matched on the Zcash leg's txid.
+      // Refund and pending actions are not described as completed bridges.
+      isNonMainnet() || process.env.CROSSCHAIN_VENUES_READ_ENABLED !== '1' ? Promise.resolve({ rows: [] }) : deps.pool.query(
+        `SELECT venue, source_chain, source_token, source_amount, source_amount_usd,
+                source_tx_hashes, dest_chain, dest_token, dest_amount, dest_amount_usd,
+                dest_tx_hashes, swap_created_at, zec_amount_zat
+         FROM crosschain_venue_actions
+         WHERE action_type = 'swap' AND status = 'SUCCESS'
+           AND ((source_chain = 'zec' AND source_tx_hashes @> ARRAY[$1]::text[])
+             OR (dest_chain = 'zec' AND dest_tx_hashes @> ARRAY[$1]::text[]))
+         ORDER BY swap_created_at, venue, id
+         LIMIT 20`,
+        [txid]
+      ).catch((venueErr) => {
+        logSafeError('❌ [TX] Venue bridge lookup error:', venueErr);
         return { rows: [] };
       }),
     ]);
@@ -267,6 +284,38 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
           swapTimestamp: b.swap_created_at,
           zecAmount,
           zecAddress: b.zec_address,
+          venue: 'near',
+        });
+      }
+      // Midgard reports EVM hashes without the 0x prefix.
+      const evmChains = new Set(['eth', 'arb', 'base', 'avax', 'bsc', 'op', 'pol']);
+      for (const b of venueResult.rows) {
+        const isInflow = b.dest_chain === 'zec';
+        const otherChain = isInflow ? b.source_chain : b.dest_chain;
+        const otherHashes = isInflow ? (b.source_tx_hashes || []) : (b.dest_tx_hashes || []);
+        const rawHash = otherHashes.length > 0 ? otherHashes[0] : null;
+        const otherHash = rawHash && evmChains.has(otherChain) && !rawHash.startsWith('0x') ? `0x${rawHash}` : rawHash;
+        const otherAmount = parseFloat(isInflow ? b.source_amount : b.dest_amount);
+        const otherAmountUsd = parseFloat(isInflow ? b.source_amount_usd : b.dest_amount_usd);
+        bridges.push({
+          direction: isInflow ? 'entry' : 'exit',
+          sourceChain: b.source_chain,
+          sourceToken: b.source_token,
+          sourceAmount: isInflow ? otherAmount : null,
+          destChain: b.dest_chain,
+          destToken: b.dest_token,
+          destAmount: isInflow ? null : otherAmount,
+          otherChain,
+          otherToken: isInflow ? b.source_token : b.dest_token,
+          otherAmount,
+          otherAmountUsd: Number.isFinite(otherAmountUsd) ? otherAmountUsd : 0,
+          otherTxHash: otherHash,
+          explorerUrl: otherHash && explorerUrls[otherChain] ? explorerUrls[otherChain] + otherHash : null,
+          swapTimestamp: b.swap_created_at,
+          // Exact zatoshis from the provider's native ZEC leg.
+          zecAmount: b.zec_amount_zat == null ? undefined : Number(b.zec_amount_zat) / 100000000,
+          zecAddress: null,
+          venue: b.venue,
         });
       }
       if (bridges.length > 0) bridge = bridges[0];

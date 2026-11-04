@@ -15,6 +15,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
 import { ChartCard } from "@/components/network/ChartCard";
 import { formatMinutes } from "@/components/crosschain/format";
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 export interface LatencyStat {
   chain: string;
@@ -221,7 +222,7 @@ export function LatencyComparisonChart({
   if (rows.length === 0) return null;
 
   return (
-    <ChartCard title="Zcash confirmation times" height={chartHeight}>
+    <ChartCard title="Zcash confirmation times" height={chartHeight} share={{ title: 'Zcash cross-chain confirmation times', fileName: 'zecblock-crosschain-confirmation-times', csv: () => objectRowsCsv(displayRows) }}>
       <p className="text-xs text-muted mb-3 max-w-2xl">
         Median time from swap creation to Zcash confirmation.
       </p>

@@ -8,6 +8,7 @@ const { analysisSchema, requestSchema, starters, resolveShortcut } = require('..
 const sample = starters[0].spec;
 const { explainRequestSchema, loadExplanationEvidence, renderExplanation } = require('../../v1/lib/ask-explanation');
 const createV1Router = require('../../v1');
+const { ADMIT, ADMIT_WORK, RESERVE } = require('../../v1/lib/ask-budget');
 
 test('Ask rejects oversized JSON before interpretation in standalone and already-parsed hosts', async t => {
   for (const parentParses of [false, true]) {
@@ -54,12 +55,25 @@ test('paid interpretation fails closed unless provider, model and explicit daily
   assert.equal(providerConfig(env).dailyCalls, 5);
 });
 
+test('planning reasoning can be turned off, and prose tasks keep the base effort', async () => {
+  const { z } = require('zod');
+  for (const [envExtra, task, effort, cap] of [[{ ASK_PLANNING_REASONING_EFFORT: 'none' }, undefined, 'none', 500], [{}, { name: 'research_caption', instruction: 'x', schema: { type: 'object' }, validator: z.object({}).passthrough() }, 'none', 500]]) {
+    await interpret(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none', ...envExtra }), { question: 'show pools', context: null }, new AbortController().signal, async (url, init) => {
+      const body = JSON.parse(init.body);
+      assert.equal(body.reasoning_effort, effort); assert.equal(body.max_completion_tokens, cap);
+      return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify(task ? {} : { spec: sample }) } }] });
+    }, task);
+  }
+  assert.equal(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none', ASK_PLANNING_REASONING_EFFORT: 'unbounded' }), null);
+});
+
 test('provider output is validated and only the bounded interpretation request is sent', async () => {
   const result = await interpret(providerConfig({ ...env, ASK_REASONING_EFFORT: 'none' }), { question: 'show pools', context: null }, new AbortController().signal, async (url, init) => {
     assert.equal(url, 'https://api.openai.com/v1/chat/completions');
     const body = JSON.parse(init.body);
-    assert.equal(body.store, false); assert.equal(body.max_completion_tokens, 500);
-    assert.equal(body.reasoning_effort, 'none');
+    // Routing is a planning task: it reasons at low effort with room for reasoning tokens.
+    assert.equal(body.store, false); assert.equal(body.service_tier, 'default'); assert.equal(body.max_completion_tokens, 2500);
+    assert.equal(body.reasoning_effort, 'low');
     assert.equal(body.messages.length, 2); assert.equal(body.response_format.json_schema.strict, true);
     return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ spec: sample }) } }] });
   });
@@ -112,7 +126,7 @@ test('testnet and Crosslink cannot expose Ask', async t => {
 test('shared quota denial or Redis failure cannot reach the paid provider', async t => {
   let calls = 0;
   for (const failure of ['quota', 'redis']) {
-    const api = await serve(t, 'mainnet', env, { redis: { isReady: true, eval: async () => { if (failure === 'redis') throw new Error('redis down'); return 0; } }, fetch: async () => { calls++; } });
+    const api = await serve(t, 'mainnet', env, { redis: { isReady: true, eval: async script => { assert.equal(script, ADMIT); if (failure === 'redis') throw new Error('redis down'); return -1; } }, fetch: async () => { calls++; } });
     const result = await api.post({ question: 'show my supported dataset', context: null });
     assert.equal(result.status, failure === 'quota' ? 429 : 503);
   }
@@ -120,14 +134,14 @@ test('shared quota denial or Redis failure cannot reach the paid provider', asyn
 });
 
 test('paid requests reserve a shared daily slot, release concurrency and retain the consumed reservation', async t => {
-  let removed = false; let reserved = false;
+  let removed = false; let reserved = false; const admissions = { request: 0, ai: 0 };
   const api = await serve(t, 'mainnet', env, {
-    redis: { isReady: true, eval: async (script, options) => { if (!script.includes('ZCARD')) return 1; assert.ok(script.includes('ZCARD')); assert.ok(script.includes('INCR')); assert.equal(options.arguments[2], '5'); reserved = true; return 1; }, zRem: async () => { removed = true; } },
+    redis: { isReady: true, eval: async (script, options) => { if (script === ADMIT) { admissions.request++; assert.equal(options.keys.length, 4); return 1; } if (script === ADMIT_WORK) { assert.match(options.keys[0], /:work:ai:/); admissions.ai++; return 1; } assert.equal(script, RESERVE); assert.equal(options.arguments[2], '5'); reserved = true; return 1; }, zRem: async () => { removed = true; } },
     fetch: async () => { assert.equal(reserved, true); return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ spec: sample }) } }] }); },
   });
   const result = await api.post({ question: 'interpret this question', context: null });
   assert.equal(result.status, 200); assert.deepEqual((await result.json()).data.spec, sample);
-  assert.equal(removed, true);
+  assert.equal(removed, true); assert.deepEqual(admissions, { request: 1, ai: 1 });
 });
 
 test('explanations use server-fetched evidence with fingerprints tied to dates, pool and observations', async () => {
@@ -151,7 +165,7 @@ test('explanations use server-fetched evidence with fingerprints tied to dates, 
 test('a changed evidence snapshot cannot trigger a provider explanation for an old chart', async t => {
   let calls = 0;
   const api = await serve(t, 'mainnet', env, {
-    redis: { isReady: true, eval: async () => 1, zRem: async () => {}, get: async () => null, set: async () => {} },
+    redis: { isReady: true, eval: async script => { assert.equal(script, ADMIT); return 1; }, zRem: async () => {}, get: async () => null, set: async () => {} },
     internalClient: { dispatch: async () => ({ ok: true, body: { points: [{ date: '2026-08-01', orchardZat: '100000000', hasPoolBreakdown: true }] } }) },
     fetch: async () => { calls++; },
   });
@@ -164,8 +178,9 @@ test('an explanation response contains only validated narrative for the exact ch
   const internalClient = { dispatch: async () => ({ ok: true, body: { points: [{ date: '2026-08-01', orchardZat: '100000000', hasPoolBreakdown: true }] } }) };
   const spec = { ...sample, pool: 'orchard' };
   const evidence = await loadExplanationEvidence(spec, internalClient, new AbortController().signal);
+  const admissions = { request: 0, ai: 0, paid: 0 };
   const api = await serve(t, 'mainnet', env, {
-    redis: { isReady: true, eval: async () => 1, zRem: async () => {}, get: async () => null, set: async () => {} }, internalClient,
+    redis: { isReady: true, eval: async (script,options) => { if (script === ADMIT) admissions.request++; else if (script === ADMIT_WORK) { assert.match(options.keys[0], /:work:ai:/); admissions.ai++; } else { assert.equal(script, RESERVE); admissions.paid++; } return 1; }, zRem: async () => {}, get: async () => null, set: async () => {} }, internalClient,
     fetch: async (url, init) => {
       const body = JSON.parse(init.body); assert.equal(body.response_format.json_schema.name, 'explain_analysis');
       assert.equal(JSON.parse(body.messages[1].content).facts.orchard_value, '1.00 ZEC');
@@ -175,4 +190,37 @@ test('an explanation response contains only validated narrative for the exact ch
   const response = await fetch(`${api.url}/explain`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ spec, evidenceKey: evidence.evidenceKey, challenge: 'test-token' }) });
   assert.equal(response.status, 200); assert.equal(response.headers.get('cache-control'), 'private, no-store');
   const body = await response.json(); assert.equal(body.data.explanation.summary, 'The observed Orchard balance was 1.00 ZEC.'); assert.equal(body.data.evidenceKey, evidence.evidenceKey);
+  assert.deepEqual(admissions, { request: 1, ai: 1, paid: 1 });
+});
+
+
+test('connection admission reports its actual minute/day reset without reaching provider or relaxing limits', async t => {
+  const now = Date.parse('2026-10-06T23:42:32Z'); t.mock.method(Date, 'now', () => now);
+  let providerCalls=0;
+  for (const [denial,code,seconds] of [[-2,'ask-request-day','1048'],[-1,'ask-request-minute','28']]) {
+    const api=await serve(t,'mainnet',env,{redis:{isReady:true,eval:async script=>{assert.equal(script,ADMIT);return denial;}},fetch:async()=>{providerCalls++;}});
+    const response=await api.post({question:'Rank the latest blocks',context:null});
+    assert.equal(response.status,429);assert.equal(response.headers.get('retry-after'),seconds);assert.equal((await response.json()).code,code);
+  }
+  assert.equal(providerCalls,0);
+});
+
+test('SQL drafting gets a bounded larger output allowance reserved before either provider call',async()=>{
+ const {selectionTask}=require('../../v1/lib/ask-chat');
+ const {maximumCost}=require('../../v1/lib/ask-budget');
+ const {z}=require('zod');
+ const researchSelection=selectionTask('',{researchEnabled:true});
+ const selection={intent:'clarify_growth',sql:null,spec:null,blockQuery:null,transactionQuery:null,flowQuery:null,topics:[],locale:'en'};
+ const planValidator=z.object({sql:z.string().nullable()}).strict();
+ const draft={name:'research_sql',instruction:'Draft bounded SQL',schema:z.toJSONSchema(planValidator),validator:planValidator};
+ for(const provider of ['openai','anthropic'])for(const [task,result] of [[researchSelection,selection],[draft,{sql:'SELECT height FROM blocks LIMIT 1'}]]){
+  const config=providerConfig({...env,ASK_PROVIDER:provider});let reserved=false;
+  await interpret(config,{},new AbortController().signal,async(url,init)=>{
+   assert.equal(reserved,true);const body=JSON.parse(init.body);assert.equal(body.max_completion_tokens??body.max_tokens,1500);
+   return provider==='openai'?Response.json({choices:[{finish_reason:'stop',message:{content:JSON.stringify(result)}}]}):Response.json({stop_reason:'tool_use',content:[{type:'tool_use',name:task.name,input:result}]});
+  },task,async body=>{assert.equal(maximumCost(config,body),Math.ceil((Buffer.byteLength(body)+4096)*config.inputRate+1500*config.outputRate));reserved=true;return async()=>{};});
+ }
+ const config=providerConfig(env);
+ for(const cap of [0,4001,-1,'1500',1.5])assert.throws(()=>maximumCost(config,JSON.stringify({max_completion_tokens:cap})),/output allowance/);
+ assert.equal(maximumCost(config,JSON.stringify({max_tokens:1500,max_completion_tokens:500})),Math.ceil((Buffer.byteLength(JSON.stringify({max_tokens:1500,max_completion_tokens:500}))+4096)*config.inputRate+1500*config.outputRate));
 });

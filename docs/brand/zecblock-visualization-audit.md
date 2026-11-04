@@ -55,7 +55,6 @@ Searched app and components for Recharts, Visx, SVG/canvas, D3, React Three Fibe
 - `privacy/PrivacyTrendsSection`: adoption line, shielded/transparent activity bars, pool growth areas. Keep as three related questions, with shared time range but separate units. Catalog previews should reuse these definitions.
 - `privacy/AnonymitySetChart`: potential matching sources by amount. Keep distribution, expose population/window and caveats; never label the estimate “probability of anonymity.”
 - `privacy/ShieldingDistributionChart`: shield/deshield amount-bucket histogram. Keep true bin boundaries and counts; compare directions consistently. Highly skewed bins may warrant an explicit log-scale option, not an undisclosed transform.
-- `PrivacyTimelineChart`: time/amount scatter of candidate linkage observations. Keep distinct markers for role/confidence; preserve clear evidence caveats and absolute-time access.
 - `PrivacyLinkGraph`, `RiskyTxCard`, `BatchPatternCard`: evidence/candidate graph and relationship summaries. Keep graph for actual relationships and uncertainty, not a graph for every alert. Provide accompanying ordered facts and selectable nodes.
 - `app/address/[address]/components/AddressBubbleMap`: address transaction relationships and amount layout. Useful exploratory view; exact history table remains primary. Unknown shielded destinations must not become inferred recipients.
 - `app/tx/[txid]/components/TxHeroFlow`, `FlowChain`, `InputsSection`, `OutputsSection`: transaction public input/output structure. Preserve clear public/shielded boundaries. Recommended one planar flow with aligned counts/amounts, not nested cards and redundant arrows. No drawn linkage across hidden shielded internals.
@@ -64,10 +63,7 @@ Searched app and components for Recharts, Visx, SVG/canvas, D3, React Three Fibe
 
 ## Crosschain
 
-- `crosschain/VolumeTrendsChart`: inbound/outbound volume over time. Keep directional series with consistent units and actual period; do not conflate USD and ZEC after toggle.
-- `crosschain/ChainFlowTable`: per-chain volume bars. Ranked horizontal bars are appropriate; exact values and count accompany marks. Keep stable categorical identity across its table and plots.
 - `crosschain/LatencyComparisonChart`: per-chain latency distributions. Keep comparison by median/quantiles; label seconds/minutes and sample size. An average alone hides long tails.
-- `crosschain/SwapSizeDistribution`: size-bucket histogram. Keep; explicit bucket bounds and ZEC/USD units. Zero count and unavailable data differ.
 - `crosschain/WrappedZecTracker`: wrapped balances, reserves and progress. Prefer compact exact ledger and coverage indicator. Backing claims must be scoped to data authority, not implied by a green bar.
 
 ## Valuation and temporal patterns

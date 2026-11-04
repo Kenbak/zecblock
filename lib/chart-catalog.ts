@@ -3,7 +3,7 @@ import type { getChartColors } from './chart-theme';
 
 export type ChartColor = keyof ReturnType<typeof getChartColors>;
 export type ChartRow = { x: string | number; [key: string]: string | number | null };
-export interface CatalogSeries { key: string; label: string; color: ChartColor; field?: string; scale?: number }
+export interface CatalogSeries { key: string; label: string; color: ChartColor; field?: string; scale?: number; marker?: 'diamond'; strokeWidth?: number; summary?: { primary: string; secondary: string } }
 export interface CatalogChart {
   id: string; title: string; category: string; description: string; href: string;
   endpoint: string; rows: string; x: string; window: string; unit: string;

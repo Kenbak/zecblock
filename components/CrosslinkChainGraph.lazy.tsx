@@ -29,7 +29,7 @@ const LazyCrosslinkChainGraph = dynamic(
 /**
  * Dynamically-imported wrapper for `CrosslinkChainGraph`.
  *
- * `CrosslinkChainGraph` pulls in `@xyflow/react` + `d3-force` — meaningful
+ * `CrosslinkChainGraph` pulls in `@xyflow/react` — meaningful
  * bundle weight that most deployments (mainnet, testnet) never exercise,
  * since Crosslink runs as its own dedicated network deployment. Importing
  * the real component statically from the homepage meant every mainnet/

@@ -11,6 +11,8 @@ export interface ChartShareControlProps {
   fileName?: string;
   capture: () => Promise<Blob>;
   csvData?: ChartExportData;
+  /** CSV for panels outside the chart catalog. */
+  csvText?: () => string;
   disabled?: boolean;
   expanded?: boolean;
 }
@@ -19,7 +21,7 @@ function download(blob: Blob, fileName: string) {
   const link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, csvData, disabled = false, expanded = false }: ChartShareControlProps) {
+export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, csvData, csvText, disabled = false, expanded = false }: ChartShareControlProps) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState('');
   const [nativeFile, setNativeFile] = useState<File | null>(null);
   const [nativeSupported, setNativeSupported] = useState(false);
@@ -57,7 +59,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
         setStatus('Image copied.');
       } else if (action === 'png') { download(await capture(), fileName); setStatus('PNG downloaded.'); }
       else if (action === 'link') { await navigator.clipboard.writeText(shareUrl); setStatus('Chart link copied.'); }
-      else if (csvData) { download(new Blob([chartCsv(csvData)], { type: 'text/csv;charset=utf-8' }), fileName.replace(/\.png$/i, '.csv')); setStatus('CSV downloaded.'); }
+      else if (csvData || csvText) { download(new Blob([csvData ? chartCsv(csvData) : csvText!()], { type: 'text/csv;charset=utf-8' }), fileName.replace(/\.png$/i, '.csv')); setStatus('CSV downloaded.'); }
     } catch { setStatus(action === 'copy' ? 'Copy unavailable. Use Download PNG instead.' : 'Could not complete this action. Please try again.'); }
     finally { setBusy(false); setOpen(false); }
   };
@@ -67,7 +69,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
     <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('png')}>Download PNG</button>
     <button type="button" className={itemClass} disabled={busy} onClick={() => void run('link')}>Copy link</button>
     <a className={itemClass} href={`https://twitter.com/intent/tweet?${new URLSearchParams({ text: shareText.replace(/https?:\/\/\S+/g, '').trim(), url: shareUrl })}`} target="_blank" rel="noopener noreferrer">Share on X ↗</a>
-    {csvData && <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('csv')}>Download CSV</button>}
+    {(csvData || csvText) && <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('csv')}>Download CSV</button>}
     {nativeSupported && <button type="button" className={itemClass} disabled={!nativeFile || busy || disabled} onClick={() => {
       if (!nativeFile) return;
       void navigator.share({ files: [nativeFile], title, text: title, url: shareUrl }).catch(error => { if (error?.name !== 'AbortError') setStatus('Native sharing unavailable. Use Download PNG instead.'); });

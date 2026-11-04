@@ -15,6 +15,8 @@ export interface BridgeData {
   swapTimestamp: string;
   zecAmount?: number;
   zecAddress?: string | null;
+  /** Cross-chain venue that reported the swap; absent on older responses (NEAR). */
+  venue?: 'near' | 'maya' | 'thorchain';
 }
 
 export interface TransactionData {

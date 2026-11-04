@@ -6,13 +6,13 @@ import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 export const metadata = buildPageMetadata({
   title: 'Press Kit & Brand Assets | ZecBlock',
   description:
-    'Download ZecBlock logos, brand colors, and media copy. Press resources for journalists and brand assets for partners.',
+    'Download ZecBlock logos, brand colors and media copy. Press resources for the Zcash explorer formerly known as CipherScan.',
   path: '/press',
   networks: ['mainnet'],
 });
 
 const BOILERPLATE =
-  'ZecBlock is a privacy-first Zcash blockchain explorer built by Atmosphere Labs. It makes public pool flows, supply verification and network observations easier to inspect. Shielded transfer details remain private; optional viewing-key decryption runs in the browser. Live at zecblock.com.';
+  'ZecBlock, formerly CipherScan, is a privacy-first Zcash blockchain explorer built by Atmosphere Labs. It makes public pool flows, supply verification and network observations easier to inspect. Shielded transfer details remain private; optional viewing-key decryption runs in the browser. The explorer moved to zecblock.com on October 1, 2026.';
 
 /** Core ZecBlock brand colors — logo + wordmark */
 const COLORS = [

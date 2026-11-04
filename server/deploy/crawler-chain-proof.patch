@@ -1,0 +1,1615 @@
+From d388d4cba86f05b1c62906a38adb46119554e6d0 Mon Sep 17 00:00:00 2001
+From: Antoine Serval <k6nb4k@gmail.com>
+Date: Mon, 19 Oct 2026 09:50:21 +0900
+Subject: [PATCH 1/2] Require pinned Zcash chain proof before counting crawler
+ peers
+
+---
+ src/protocol/message/mod.rs                   |  33 +-
+ src/tools/crawler/README.md                   |   8 +-
+ src/tools/crawler/fixtures/README.md          |  22 ++
+ .../fixtures/checkpoint-3520000-source.json   |   7 +
+ .../fixtures/mainnet-block1-header.hex        |   1 +
+ .../mainnet-checkpoint-3520000-header.hex     |   1 +
+ src/tools/crawler/main.rs                     |   9 +-
+ src/tools/crawler/metrics.rs                  |  82 +---
+ src/tools/crawler/network.rs                  |  77 +++-
+ src/tools/crawler/protocol.rs                 | 357 ++++++++++++++++--
+ src/tools/synthetic_node.rs                   | 341 +++++++++++++++--
+ 11 files changed, 807 insertions(+), 131 deletions(-)
+ create mode 100644 src/tools/crawler/fixtures/README.md
+ create mode 100644 src/tools/crawler/fixtures/checkpoint-3520000-source.json
+ create mode 100644 src/tools/crawler/fixtures/mainnet-block1-header.hex
+ create mode 100644 src/tools/crawler/fixtures/mainnet-checkpoint-3520000-header.hex
+
+diff --git a/src/protocol/message/mod.rs b/src/protocol/message/mod.rs
+index 5ce7f4c..4253134 100644
+--- a/src/protocol/message/mod.rs
++++ b/src/protocol/message/mod.rs
+@@ -182,6 +182,30 @@ impl Message {
+         Ok(())
+     }
+ 
++    /// Whether the message body has a supported parser.
++    pub(crate) fn supports_command(command: [u8; COMMAND_LEN]) -> bool {
++        matches!(
++            command,
++            VERSION_COMMAND
++                | VERACK_COMMAND
++                | PING_COMMAND
++                | PONG_COMMAND
++                | GETADDR_COMMAND
++                | ADDR_COMMAND
++                | GETHEADERS_COMMAND
++                | HEADERS_COMMAND
++                | GETBLOCKS_COMMAND
++                | BLOCK_COMMAND
++                | GETDATA_COMMAND
++                | INV_COMMAND
++                | NOTFOUND_COMMAND
++                | MEMPOOL_COMMAND
++                | TX_COMMAND
++                | REJECT_COMMAND
++                | ALERT_COMMAND
++        )
++    }
++
+     /// Decodes the bytes into a message.
+     pub fn decode<B: Buf>(command: [u8; 12], bytes: &mut B) -> io::Result<Self> {
+         let message = match command {
+@@ -214,6 +238,13 @@ impl Message {
+             }
+         };
+ 
++        if bytes.has_remaining() {
++            return Err(io::Error::new(
++                io::ErrorKind::InvalidData,
++                "trailing bytes in message body",
++            ));
++        }
++
+         Ok(message)
+     }
+ }
+@@ -245,7 +276,7 @@ impl std::fmt::Display for Message {
+     }
+ }
+ 
+-fn checksum(bytes: &[u8]) -> u32 {
++pub(crate) fn checksum(bytes: &[u8]) -> u32 {
+     let sha2 = Sha256::digest(bytes);
+     let sha2d = Sha256::digest(sha2);
+ 
+diff --git a/src/tools/crawler/README.md b/src/tools/crawler/README.md
+index 321db78..48949f8 100644
+--- a/src/tools/crawler/README.md
++++ b/src/tools/crawler/README.md
+@@ -43,7 +43,13 @@ tmetrics", "params": [] }' -H 'content-type: application/json'
+  http://127.0.0.1:54321/ | jq .result
+ ```
+ 
+-A sample of the data we collect and metrics we compute (obtained via RPC):
++Reachable counts (`num_good_nodes`, `node_addrs`, `node_info`, and `all_node_reachable`) require both a completed version/verack handshake and a successful same-session Zcash mainnet header challenge. The crawler sends `getheaders` with the pinned mainnet height 3,520,000 parent locator and checkpoint stop hash, verifies exactly the expected header hash and parent, and only then requests and accepts address gossip. Protocol magic, ports, advertised chain heights, and software names do not establish chain identity. Client and protocol breakdowns use this same qualified population.
++
++Each qualified `node_info` entry exports the actual handshake `last_verified_at_ms`, actual header proof `chain_verified_at_ms`, pinned `chain_block_hash`, and versioned `chain_proof` marker. A new connection attempt clears prior chain eligibility; unsolicited or repeated headers cannot refresh it. Proofs expire after one hour, and unanswered challenges time out after 30 seconds. A non-answer remains unverified rather than being labeled a different chain. Initial-sync nodes can decline header requests, and pruning does not remove retained headers.
++
++This census measures recently observed reachable endpoints with the pinned mainnet history through height 3,520,000. Known shared-history forks that diverged before this checkpoint fail the challenge; future forks sharing it require a reviewed checkpoint update in both crawler and consumers. It does not establish current tip synchronization, honest behavior, unique physical nodes, Tor onion coverage, or complete network coverage. Historical handshake-only snapshots are incompatible with the new census and must not be used as trend baselines.
++
++The following legacy sample illustrates the RPC shape; its values predate chain-proof qualification and are not current measurements:
+ 
+ ```json
+ {
+diff --git a/src/tools/crawler/fixtures/README.md b/src/tools/crawler/fixtures/README.md
+new file mode 100644
+index 0000000..ee914d2
+--- /dev/null
++++ b/src/tools/crawler/fixtures/README.md
+@@ -0,0 +1,22 @@
++# Pinned mainnet identity checkpoint
++
++`mainnet-checkpoint-3520000-header.hex` contains the serialized Zcash mainnet header at height 3,520,000, followed by the zero transaction count used in `headers` P2P messages. The fixture records the header pinned by the production identity challenge, and regression tests verify the production hash and parent constants against these bytes.
++
++Source: CipherScan's trusted serving Zcash mainnet RPC, `getblockhash 3520000` and `getblockheader <hash> false`, observed on 2026-10-19 at 00:48:57.588 UTC. The independent header hash and parent bytes were verified locally. It had 2,682 confirmations at observation. The recorded source metadata is in `checkpoint-3520000-source.json`.
++
++Header double-SHA256 (display order): `00000000001cfe8c0d46d5f8a7f107546d56168fb5ab1cd66c8033390de10418`.
++Parent (display order): `00000000004cdd2c00f60266d185a2e0992ae8ab0a23d1896982bcf35bb720d6`.
++Proof marker: `zcash-mainnet-checkpoint-v1`.
++
++The post-fork checkpoint prevents known forks sharing Zcash's genesis and early history from qualifying. It does not demonstrate current synchronization, honest behavior, unique physical nodes, or comprehensive network discovery. A node that has not synchronized through this height remains unverified. A future fork sharing this checkpoint is outside this proof's scope; change the pin through a reviewed crawler/consumer release when needed.
++
++## Historical-origin rejection fixture
++
++`mainnet-block1-header.hex` contains the serialized Zcash mainnet block at height 1 header, followed by the zero transaction count used in `headers` P2P messages.
++
++Source: [Zebra fixture at commit `5ab556b0bdf7d6802f14ce88c2e56ce656755ce9`](https://github.com/ZcashFoundation/zebra/blob/5ab556b0bdf7d6802f14ce88c2e56ce656755ce9/zebra-test/src/vectors/block-main-0-000-001.txt). The source block's first 1,487 bytes are the header; the fixture appends `00`.
++
++Header double-SHA256 (display order): `0007bc227e1c57a4a70e237cad00e7b7ce565155ab49166bc57397a26d339283`.
++Parent (mainnet genesis, display order): `00040fe8ec8471911baa1db1266ea15dd06b4a8a5c453883c000b031973dce08`.
++
++This early header is deliberately insufficient for the current identity proof because shared-history forks can possess it. Tests reject it under mainnet P2P framing.
+diff --git a/src/tools/crawler/fixtures/checkpoint-3520000-source.json b/src/tools/crawler/fixtures/checkpoint-3520000-source.json
+new file mode 100644
+index 0000000..a29a62e
+--- /dev/null
++++ b/src/tools/crawler/fixtures/checkpoint-3520000-source.json
+@@ -0,0 +1,7 @@
++{
++  "observedAt": "2026-10-19T00:48:57.588Z",
++  "height": 3520000,
++  "hash": "00000000001cfe8c0d46d5f8a7f107546d56168fb5ab1cd66c8033390de10418",
++  "parent": "00000000004cdd2c00f60266d185a2e0992ae8ab0a23d1896982bcf35bb720d6",
++  "confirmations": 2682
++}
+diff --git a/src/tools/crawler/fixtures/mainnet-block1-header.hex b/src/tools/crawler/fixtures/mainnet-block1-header.hex
+new file mode 100644
+index 0000000..d20a362
+--- /dev/null
++++ b/src/tools/crawler/fixtures/mainnet-block1-header.hex
+@@ -0,0 +1 @@
++0400000008ce3d9731b000c08338455c8a4a6bd05da16e26b11daa1b917184ece80f04000946edb9c083c9942d92305444527765fad789c438c717783276a9f7fbf61b850000000000000000000000000000000000000000000000000000000000000000ac7a1358ffff071f7534e8cf161ff2e49d54bdb3bfbcde8cdbf2fc5963c9ec7d86aed4a67e975790fd4005002b2ee0d2f5d0c1ebf5a265b6f5b428f2fdc9aaea07078a6c5cab4f1bbfcd56489863deae6ea3fd8d3d0762e8e5295ff2670c9e90d8e8c68a54a40927e82a65e1d44ced20d835818e172d7b7f5ffe0245d0c3860a3f11af5658d68b6a7253b4684ffef5242fefa77a0bfc3437e8d94df9dc57510f5a128e676dd9ddf23f0ef75b460090f507499585541ab53a470c547ea02723d3a979930941157792c4362e42d3b9faca342a5c05a56909b046b5e92e2870fca7c932ae2c2fdd97d75b6e0ecb501701c1250246093c73efc5ec2838aeb80b59577741aa5ccdf4a631b79f70fc419e28714fa22108d991c29052b2f5f72294c355b57504369313470ecdd8e0ae97fc48e243a38c2ee7315bb05b7de9602047e97449c81e46746513221738dc729d7077a1771cea858865d85261e71e82003ccfbba2416358f023251206d6ef4c5596bc35b2b5bce3e9351798aa2c9904723034e5815c7512d260cc957df5db6adf9ed7272483312d1e68c60955a944e713355089876a704aef06359238f6de5a618f7bd0b4552ba72d05a6165e582f62d55ff2e1b76991971689ba3bee16a520fd85380a6e5a31de4dd4654d561101ce0ca390862d5774921eae2c284008692e9e08562144e8aa1f399a9d3fab0c4559c1f12bc945e626f7a89668613e8829767f4116ee9a4f832cf7c3ade3a7aba8cb04de39edd94d0d05093ed642adf9fbd9d373a80832ffd1c62034e4341546b3515f0e42e6d8570393c6754be5cdb7753b4709527d3f164aebf3d315934f7b3736a1b31052f6cc5699758950331163b3df05b9772e9bf99c8c77f8960e10a15edb06200106f45742d740c422c86b7e4f5a52d3732aa79ee54cfc92f76e03c268ae226477c19924e733caf95b8f350233a5312f4ed349d3ad76f032358f83a6d0d6f83b2a456742aad7f3e615fa72286300f0ea1c9793831ef3a5a4ae08640a6e32f53d1cba0be284b25e923d0d110ba227e54725632efcbbe17c05a9cde976504f6aece0c461b562cfae1b85d5f6782ee27b3e332ac0775f681682ce524b32889f1dc4231226f1aada0703beaf8d41732c9647a0a940a86f8a1be7f239c44fcaa7ed7a055506bdbe1df848f9e047226bee1b6d788a03f6e352eead99b419cfc41741942dbeb7a5c55788d5a3e636d8aab7b36b4db71d16700373bbc1cdeba8f9b1db10bf39a621bc737ea4f4e333698d6e09b51ac7a97fb6fd117ccad1d6b6b3a7451699d5bfe448650396d7b58867b3b0872be13ad0b43da267df0ad77025155f04e20c56d6a9befb3e9c7d23b82cbf3a534295ebda540682cc81be9273781b92519c858f9c25294fbacf75c3b3c15bda6d36de1c83336f93e96910dbdcb190d6ef123c98565ff6df1e903f57d4e4df167ba6b829d6d9713eb2126b0cf869940204137babcc6a1b7cb2f0b94318a7460e5d1a605c249bd2e72123ebad332332c18adcb285ed8874dbde084ebcd4f744465350d57110f037fffed1569d642c258749e65b0d13e117eaa37014a769b5ab479b7c77178880e77099f999abe712e543dbbf626ca9bcfddc42ff2f109d21c8bd464894e55ae504fdf81e1a7694180225da7dac8879abd1036cf26bb50532b8cf138b337a1a1bd1a43f8dd70b7399e2690c8e7a5a1fe099026b8f2a6f65fc0dbedda15ba65e0abd66c7176fb426980549892b4817de78e345a7aeab05744c3def4a2f283b4255b02c91c1af7354a368c67a11703c642a385c7453131ce3a78b24c5e22ab7e136a38498ce82082181884418cb4d6c2920f258a3ad20cfbe7104af1c6c6cb5e58bf29a9901721ad19c0a260cd09a3a772443a45aea4a5c439a95834ef5dc2e26343278947b7b796f796ae9bcadb29e2899a1d7313e6f7bfb6f8b00
+diff --git a/src/tools/crawler/fixtures/mainnet-checkpoint-3520000-header.hex b/src/tools/crawler/fixtures/mainnet-checkpoint-3520000-header.hex
+new file mode 100644
+index 0000000..f14f076
+--- /dev/null
++++ b/src/tools/crawler/fixtures/mainnet-checkpoint-3520000-header.hex
+@@ -0,0 +1 @@
++04000000d620b75bf3bc826989d1230aabe82a99e0a285d16602f6002cdd4c0000000000c964e6e1b2f7ce892c4e5a165fdca611740e32ba946606f018050a823ce6a002ae34af5fe6290c3f71346d6bba8e61b75e54e5e9cf66fe484c9ad2a4b84ce4137953d26a350c6c1b2892c3c00000000000000000000000000000020000000000000000000002b9a4fd4005000e7aeedef50f1db74300097d602f5cf1863fdfe9240a65ea84544e1b9b8ce3996c3b4595bb1f7a3af30d60c22bfad8bc73dcb3a3195a6554b6fc3d59c20c4a7344018c1f66bb6764365a3078e6c37d4c7e2a95015c68d89cc2e1c95e6bb52fb2dea9cde881be162b145e83bf9e067c065610f7168ee74ea38790feb01d2207c301c7ccd91d4e5e56832e71e43b6859debef4444415befda3e9d56954261d8bf86de9cf88745bc70056a963ec0f98150c0661c9eb9e903dd8f3fb6361074b64a13dcc677cc7cd723689b61d1d9c846d2c350b2ba5cf3dce652fde6aa62af8bcdaf616ed3e72c5346a9ac17f186d86c8c753ff8472ec96cfeb7e35f712d8d631e07331eff01341e38bd0261e29dd9d916b24650a2feb8dd9c69cecc2e05b284d2118f3ef70171a9466350bce065d6fc784dcdfea7fd155426d106e2182bf7e3e4f16b370d803809969d3027e5e75999a039ced7900a2c4537e9276455374ff2681c2954d2c0ad0b98d30a3dfd53b19764204d743019a6edec1ac1f466a5ac8493c90e85ff5d4dccbfd4ddbdf78797935e3ef33ed4f741b5abbf3af39bd70ddb5514ddbef07e3b56e788fc9d7408500bd3210a154fae9d295ac31f2e5aae3924bb4b3d3147551b2dad9e8471dfa5f1d7712ed928e0d53b860d34f72dadc4e21e2ff0c562cb786abd5dd75d318c9d3e970f51da238635d8faa051bf2b5164a1cc3951aa263c4a48d4969a4fd32a3121e0d2aff2d1ddbb6c4c2de03eedc55e8503bf4ef0a9c1955e70dd48bf02b41b89d911dd1056dd054f32e46cea707d21040d1f98bf7d0fa01cfeac5dff28c05ace9d781114db32742d38fe54e1385dd24fa570e1ef8e233eaa73d2f6df5ea3020e99626e9b3f7c14d3296e1a076168e30c44b242c3a79cbc2a31897d7fc527c2ee9cbe7e035b46836eaffffbc6ad7c5574e42013a93beef494a15959022e0c8ce4032cc2a5e46f02eaaedb8a74e7001d88109ba4f57abb28645f67c971397f6870de498bfe7edf338d54e83c1598fb48452179c58bd0618f5b33f5d6d68edeed483e1641f279703e8893d1791424d3d1d30654d8e3a7796b85f231644b083124f2b1981a87ea67c38dd0252e692f7c5ee0d6f07910f99f861ba962b639e79d9d2f4e55a113b12c3dad6262d07bdc7bb32385acf04eae782fb768e0397614d3102d579e499d3d8eb5b0179942fcdf9f01938dd7542988dbceb48852f2cfd643a17dab3c1d705057833b4f62b01d1c4a6b6d0578f1dbb6a1a63ee0a20538c09535c136254631b5b2c7a1a18e43d7c940860a58f76912511c37d94cec4b9df49dccab6829f4cd66268fe20a52f6aa23623a4b9991db7541341190cd0ab29fa0c59ccc53af179fd32865e1a799c98901b0ca95f81317467924581eafcc6afcd96fbcff19c0988c3dd5792c8dbdfc8036a41570ced2d151ec2bb419bc29e5d19322b4bb047f6f1c6645eab7e7889320dcd99425385d27cbc6bc6c4446c8f7f30ce9cd7cf142ba3ff9ba2a39fa785a1e6b03721f670509c3ecc09a046612947390b43f1a167684bb3f268de78947412954ac222590aa7cda4e4bbc850d2c2e469d9d269119471d9591a6c718ec551fe1014df1af9b5bcc185164e8c4a51951151d60f1a9da57f7f03aa4dffda380a5cbe9c2ec930dc9152378ba1dc96fa12613dbffa31490a8230da567f9a1e13ce4bc03b06f7d4fd16e21220821b92af787f91dc36c10ac1070b84db3fde501d5e928d36204d7303716833f1dc88ce625df6f3b60f6f834576e7becdcc9fa58dc5c39a0d78bc98a0db100adaac69a37e5bdf9ab2cdc9a2522db28f6f142d29efdecab95d2b47c46b67c2005750a69cccff36753610dddf589da75318feb5f56fd6b6fa4a1e9a1e6c00
+diff --git a/src/tools/crawler/main.rs b/src/tools/crawler/main.rs
+index 20e8500..2dc7c4e 100644
+--- a/src/tools/crawler/main.rs
++++ b/src/tools/crawler/main.rs
+@@ -193,6 +193,9 @@ async fn main() {
+                 .into_iter()
+                 .filter(|(_, node)| {
+                     if node.state == ConnectionState::Connected {
++                        if node.chain_proof_timed_out() {
++                            return true;
++                        }
+                         if let Some(i) = node.last_connected {
+                             i.elapsed().as_secs() >= MAX_WAIT_FOR_ADDR_SECS
+                         } else {
+@@ -203,7 +206,7 @@ async fn main() {
+                     }
+                 })
+             {
+-                warn!(parent: crawler.node().span(), "disconnecting from node {} because it didn't send us proper addr message", addr);
++                warn!(parent: crawler.node().span(), "disconnecting from node {} because its chain proof or address response timed out", addr);
+                 crawler.node().disconnect(addr).await;
+                 crawler
+                     .known_network
+@@ -227,8 +230,8 @@ async fn main() {
+                 if crawler.should_connect(addr) {
+                     let crawler_clone = crawler.clone();
+                     attempts.spawn(async move {
+-                        // Once the Version message is received in the process_message function,
+-                        // GetAddr will be requested from the peer
++                        // Request addresses only after the same-session handshake
++                        // and pinned Zcash mainnet header challenge both succeed.
+                         let _ = crawler_clone.connect(addr).await;
+                     });
+                 }
+diff --git a/src/tools/crawler/metrics.rs b/src/tools/crawler/metrics.rs
+index 243c0d6..fb4ef8d 100644
+--- a/src/tools/crawler/metrics.rs
++++ b/src/tools/crawler/metrics.rs
+@@ -1,24 +1,24 @@
+ use std::{collections::HashMap, net::SocketAddr};
+ 
+-use regex::Regex;
+ use serde::Serialize;
+ use spectre::{edge::Edge, graph::Graph};
+ use ziggurat_core_crawler::summary::{NetworkSummary, NetworkType};
+ 
+ use crate::{
+-    network::{unix_ms, KnownNode, LAST_SEEN_CUTOFF},
++    network::{unix_ms, KnownNode, CHAIN_BLOCK_HASH, CHAIN_PROOF, LAST_SEEN_CUTOFF},
+     Crawler,
+ };
+ 
+-const MIN_BLOCK_HEIGHT: i32 = 2_000_000;
+ pub const ZCASH_P2P_DEFAULT_MAINNET_PORT: u16 = 8233;
+-pub const ZCASH_P2P_DEFAULT_TESTNET_PORT: u16 = 18233;
+ 
+ /// Per-node info exposed in the extended summary for the cruncher.
+ #[derive(Debug, Clone, Serialize)]
+ pub struct NodeInfo {
+     pub addr: String,
+     pub last_verified_at_ms: Option<u64>,
++    pub chain_verified_at_ms: Option<u64>,
++    pub chain_block_hash: &'static str,
++    pub chain_proof: &'static str,
+     pub user_agent: Option<String>,
+     pub protocol_version: Option<u32>,
+     pub start_height: Option<i32>,
+@@ -29,7 +29,7 @@ pub struct NodeInfo {
+ /// Extended summary that includes per-node metadata alongside the standard NetworkSummary.
+ ///
+ /// The standard `summary` (node_addrs / nodes_indices) is filtered to *good*
+-/// (reachable, handshake-completed) nodes only. The `all_*` fields below expose
++/// (reachable, handshake- and chain-verified) nodes only. The `all_*` fields below expose
+ /// the FULL known-network graph — every address the crawler has heard about via
+ /// gossip, including nodes it could not reach — so downstream consumers can render
+ /// the reachable core plus the wider known-address space ("off"/unreachable nodes).
+@@ -43,7 +43,7 @@ pub struct ExtendedSummary {
+     pub all_node_addrs: Vec<String>,
+     /// Adjacency list over `all_node_addrs` (indices refer to positions in that vec).
+     pub all_nodes_indices: Vec<Vec<usize>>,
+-    /// Parallel to `all_node_addrs`: true if the node completed a handshake (reachable).
++    /// Parallel to `all_node_addrs`: true if a recent same-session handshake and Zcash chain proof succeeded.
+     pub all_node_reachable: Vec<bool>,
+ }
+ 
+@@ -78,6 +78,9 @@ impl NetworkMetrics {
+                 NodeInfo {
+                     addr: addr.to_string(),
+                     last_verified_at_ms: known.and_then(|n| n.last_verified_at_ms),
++                    chain_verified_at_ms: known.and_then(|n| n.chain_verified_at_ms),
++                    chain_block_hash: CHAIN_BLOCK_HASH,
++                    chain_proof: CHAIN_PROOF,
+                     user_agent: known.and_then(|n| n.user_agent.as_ref().map(|v| v.0.clone())),
+                     protocol_version: known.and_then(|n| n.protocol_version.map(|v| v.0)),
+                     start_height: known.and_then(|n| n.start_height),
+@@ -111,64 +114,10 @@ impl NetworkMetrics {
+     }
+ }
+ 
+-// Recognize network types with fixes for current mainnet:
+-// - MagicBean major version 6+ is zcashd (NOT Flux — Flux uses different identifiers now)
+-// - Zakura nodes are explicitly recognized
+-// - Zebra regex updated for multi-digit versions (e.g. Zebra:6.3.0)
+-fn recognize_network_types(
+-    nodes: &HashMap<SocketAddr, KnownNode>,
+-    good_nodes: &Vec<SocketAddr>,
+-) -> Vec<NetworkType> {
+-    let num_good_nodes = good_nodes.len();
+-    let mut node_network_types = Vec::with_capacity(num_good_nodes);
+-
+-    let zcash_regex = Regex::new(r"^/MagicBean:(\d+)\.(\d+)\.(\d+)[^/]*/$").unwrap();
+-    let zebra_regex = Regex::new(r"^/Zebra:(\d+)\.(\d+)\.(\d+)").unwrap();
+-    let zakura_regex = Regex::new(r"^/Zakura:(\d+)\.(\d+)\.(\d+)").unwrap();
+-
+-    for node in good_nodes {
+-        let mut agent_matches = false;
+-
+-        let port_matches = node.port() == ZCASH_P2P_DEFAULT_MAINNET_PORT
+-            || node.port() == ZCASH_P2P_DEFAULT_TESTNET_PORT;
+-
+-        let agent = if let Some(agent) = &nodes[node].user_agent {
+-            agent.0.clone()
+-        } else {
+-            "".to_string()
+-        };
+-
+-        // Zakura (Zcash implementation by Shielded Labs)
+-        if zakura_regex.is_match(&agent) {
+-            agent_matches = true;
+-        }
+-
+-        // Zebra (Zcash Foundation Rust implementation)
+-        if zebra_regex.is_match(&agent) {
+-            agent_matches = true;
+-        }
+-
+-        // zcashd / MagicBean — all versions are valid Zcash nodes
+-        // (Flux no longer uses this identifier pattern on mainnet)
+-        if zcash_regex.is_match(&agent) {
+-            agent_matches = true;
+-        }
+-
+-        // Check block height — mandatory for any Zcash node
+-        let height = nodes[node].start_height.unwrap_or(0);
+-        if height < MIN_BLOCK_HEIGHT {
+-            node_network_types.push(NetworkType::Unknown);
+-            continue;
+-        }
+-
+-        if port_matches || agent_matches {
+-            node_network_types.push(NetworkType::Zcash);
+-        } else {
+-            node_network_types.push(NetworkType::Unknown);
+-        }
+-    }
+-
+-    node_network_types
++// Every good node has answered the pinned Zcash mainnet chain challenge.
++// Ports, software names, and advertised heights are descriptive, not identity.
++fn recognize_network_types(good_nodes: &[SocketAddr]) -> Vec<NetworkType> {
++    vec![NetworkType::Zcash; good_nodes.len()]
+ }
+ 
+ /// Constructs a new NetworkSummary from given nodes.
+@@ -195,7 +144,8 @@ pub fn new_network_summary(
+     let mut protocol_versions = HashMap::with_capacity(num_known_nodes);
+     let mut user_agents = HashMap::with_capacity(num_known_nodes);
+ 
+-    for (_, node) in nodes.iter() {
++    for addr in &good_nodes {
++        let node = &nodes[addr];
+         if node.protocol_version.is_some() {
+             protocol_versions
+                 .entry(node.protocol_version.unwrap().0)
+@@ -208,7 +158,7 @@ pub fn new_network_summary(
+         }
+     }
+ 
+-    let node_network_types = recognize_network_types(nodes, &good_nodes);
++    let node_network_types = recognize_network_types(&good_nodes);
+ 
+     let num_versions = protocol_versions.values().sum();
+     let nodes_indices = graph.get_filtered_adjacency_indices(&good_nodes);
+diff --git a/src/tools/crawler/network.rs b/src/tools/crawler/network.rs
+index 34035b7..14adf56 100644
+--- a/src/tools/crawler/network.rs
++++ b/src/tools/crawler/network.rs
+@@ -11,6 +11,10 @@ use ziggurat_zcash::protocol::payload::{ProtocolVersion, VarStr};
+ /// The elapsed time before a connection should be regarded as inactive.
+ pub const LAST_SEEN_CUTOFF: u64 = 10 * 60;
+ pub const VERIFIED_WINDOW_SECS: u64 = 60 * 60;
++pub const CHAIN_PROOF_TIMEOUT_SECS: u64 = 30;
++pub const CHAIN_PROOF: &str = "zcash-mainnet-checkpoint-v1";
++pub const CHAIN_BLOCK_HASH: &str =
++    "00000000001cfe8c0d46d5f8a7f107546d56168fb5ab1cd66c8033390de10418";
+ 
+ pub fn unix_ms() -> u64 {
+     SystemTime::now()
+@@ -39,6 +43,11 @@ pub struct KnownNode {
+     pub verack_received: bool,
+     pub last_verified: Option<Instant>,
+     pub last_verified_at_ms: Option<u64>,
++    /// A proof is scoped to the current TCP session, never inferred from a user agent or port.
++    pub chain_proof_requested_at: Option<Instant>,
++    pub chain_proof_completed: bool,
++    pub last_chain_verified: Option<Instant>,
++    pub chain_verified_at_ms: Option<u64>,
+     /// The time it took to complete a connection.
+     pub handshake_time: Option<Duration>,
+     /// The node's protocol version.
+@@ -56,17 +65,75 @@ pub struct KnownNode {
+ }
+ 
+ impl KnownNode {
++    /// Discard prior session evidence before attempting a new connection. A failed
++    /// or wrong-chain reconnect must not inherit an endpoint's old qualification.
++    pub fn begin_attempt(&mut self, now: Instant) {
++        self.last_attempt = Some(now);
++        self.version_received = false;
++        self.verack_received = false;
++        self.invalidate_chain_proof();
++    }
++
++    pub fn invalidate_chain_proof(&mut self) {
++        self.chain_proof_requested_at = None;
++        self.chain_proof_completed = false;
++        self.last_chain_verified = None;
++        self.chain_verified_at_ms = None;
++    }
++
+     pub fn recently_verified(&self) -> bool {
+-        self.last_verified
+-            .is_some_and(|t| t.elapsed().as_secs() < VERIFIED_WINDOW_SECS)
++        self.chain_proof_completed
++            && self
++                .last_verified
++                .is_some_and(|t| t.elapsed().as_secs() < VERIFIED_WINDOW_SECS)
++            && self
++                .last_chain_verified
++                .is_some_and(|t| t.elapsed().as_secs() < VERIFIED_WINDOW_SECS)
+     }
+ 
+-    pub fn record_verification(&mut self) {
+-        if self.version_received && self.verack_received {
++    /// Record the actual version/verack time once, and request one chain proof.
++    /// Returns true only when this session has newly completed its handshake.
++    pub fn record_verification(&mut self) -> bool {
++        if self.version_received
++            && self.verack_received
++            && self.chain_proof_requested_at.is_none()
++            && !self.chain_proof_completed
++        {
+             self.handshake_time = self.last_attempt.map(|t| t.elapsed());
+-            self.last_verified = Some(Instant::now());
++            let now = Instant::now();
++            self.last_verified = Some(now);
+             self.last_verified_at_ms = Some(unix_ms());
++            self.chain_proof_requested_at = Some(now);
++            return true;
++        }
++        false
++    }
++
++    pub fn chain_proof_pending(&self) -> bool {
++        self.version_received
++            && self.verack_received
++            && self
++                .chain_proof_requested_at
++                .is_some_and(|t| t.elapsed().as_secs() < CHAIN_PROOF_TIMEOUT_SECS)
++            && !self.chain_proof_completed
++    }
++
++    pub fn chain_proof_timed_out(&self) -> bool {
++        self.chain_proof_requested_at.is_some_and(|t| {
++            !self.chain_proof_completed && t.elapsed().as_secs() >= CHAIN_PROOF_TIMEOUT_SECS
++        })
++    }
++
++    /// Called only after the requested header's hash and parent were checked.
++    /// An unsolicited, duplicate, or late response cannot extend freshness.
++    pub fn record_chain_verification(&mut self) -> bool {
++        if !self.chain_proof_pending() {
++            return false;
+         }
++        self.last_chain_verified = Some(Instant::now());
++        self.chain_verified_at_ms = Some(unix_ms());
++        self.chain_proof_completed = true;
++        true
+     }
+ }
+ 
+diff --git a/src/tools/crawler/protocol.rs b/src/tools/crawler/protocol.rs
+index 735151a..45df0a1 100644
+--- a/src/tools/crawler/protocol.rs
++++ b/src/tools/crawler/protocol.rs
+@@ -16,13 +16,16 @@ use tracing::*;
+ use ziggurat_zcash::{
+     protocol::{
+         message::Message,
+-        payload::{block::Headers, Addr, Version},
++        payload::{
++            block::{Headers, LocatorHashes},
++            Addr, Hash, Version,
++        },
+     },
+     tools::synthetic_node::MessageCodec,
+ };
+ 
+ use super::network::KnownNetwork;
+-use crate::network::ConnectionState;
++use crate::network::{ConnectionState, CHAIN_BLOCK_HASH};
+ 
+ pub const NUM_CONN_ATTEMPTS_PERIODIC: usize = 500;
+ pub const MAX_CONCURRENT_CONNECTIONS: u16 = 1200;
+@@ -73,9 +76,7 @@ impl Crawler {
+         let timestamp = Instant::now();
+ 
+         if let Some(node) = self.known_network.nodes.write().get_mut(&addr) {
+-            node.last_attempt = Some(timestamp);
+-            node.version_received = false;
+-            node.verack_received = false;
++            node.begin_attempt(timestamp);
+         }
+         let connect = async {
+             if let Some(proxy) = self.socks5_proxy {
+@@ -124,6 +125,19 @@ impl Crawler {
+         result
+     }
+ 
++    /// Ask for the pinned Zcash mainnet height 3,520,000 header. Both zcashd
++    /// and Zebra serve headers independently of block pruning; empty locator
++    /// semantics differ, so use its exact parent locator and checkpoint stop.
++    /// The post-fork checkpoint prevents shared-history forks from qualifying.
++    async fn request_chain_proof(&self, source: SocketAddr) -> io::Result<()> {
++        let request = Message::GetHeaders(LocatorHashes::new(
++            vec![checkpoint_parent_hash()],
++            expected_chain_block_hash(),
++        ));
++        let _ = self.unicast(source, request)?.await;
++        Ok(())
++    }
++
+     /// Checks to see if crawler should connect to the given address.
+     pub fn should_connect(&self, addr: SocketAddr) -> bool {
+         if self.known_network.nodes().get(&addr).is_some() {
+@@ -146,6 +160,30 @@ impl Crawler {
+     }
+ }
+ 
++/// Hash literals use display order; P2P hashes are serialized little endian.
++fn display_hash(hash: &str) -> Hash {
++    let mut bytes: [u8; 32] = hex::decode(hash)
++        .expect("valid pinned hash")
++        .try_into()
++        .unwrap();
++    bytes.reverse();
++    Hash::new(bytes)
++}
++
++fn checkpoint_parent_hash() -> Hash {
++    display_hash("00000000004cdd2c00f60266d185a2e0992ae8ab0a23d1896982bcf35bb720d6")
++}
++
++fn expected_chain_block_hash() -> Hash {
++    display_hash(CHAIN_BLOCK_HASH)
++}
++
++fn matches_chain_proof(headers: &Headers) -> bool {
++    matches!(headers.headers.as_slice(), [header]
++        if header.prev_block == checkpoint_parent_hash()
++            && header.double_sha256().ok() == Some(expected_chain_block_hash()))
++}
++
+ #[async_trait::async_trait]
+ impl Handshake for Crawler {
+     // Set handshake timeout to 300ms
+@@ -154,7 +192,7 @@ impl Handshake for Crawler {
+     async fn perform_handshake(&self, mut conn: Connection) -> io::Result<Connection> {
+         let conn_addr = conn.addr();
+         let own_listening_addr: SocketAddr = ([127, 0, 0, 1], 0).into();
+-        let mut framed_stream = Framed::new(self.borrow_stream(&mut conn), MessageCodec::default());
++        let mut framed_stream = Framed::new(self.borrow_stream(&mut conn), MessageCodec::crawler());
+ 
+         let own_version = Message::Version(Version::new(conn_addr, own_listening_addr));
+         framed_stream.send(own_version).await?;
+@@ -173,12 +211,23 @@ impl Reading for Crawler {
+     type Codec = MessageCodec;
+ 
+     fn codec(&self, _addr: SocketAddr, _side: ConnectionSide) -> Self::Codec {
+-        Default::default()
++        MessageCodec::crawler()
+     }
+ 
+     async fn process_message(&self, source: SocketAddr, message: Self::Message) -> io::Result<()> {
+         match message {
+             Message::Addr(addr) => {
++                // Unqualified peers cannot seed the crawl graph or cause an early
++                // disconnect before their chain challenge has completed.
++                if !self
++                    .known_network
++                    .nodes
++                    .read()
++                    .get(&source)
++                    .is_some_and(|node| node.chain_proof_completed)
++                {
++                    return Ok(());
++                }
+                 let len = addr.addrs.len();
+                 info!(parent: self.node().span(), "got {} address(es) from {}", len, source);
+ 
+@@ -215,34 +264,80 @@ impl Reading for Crawler {
+                 let _ = self.unicast(source, Message::NotFound(inv.clone()))?.await;
+             }
+             Message::Verack => {
+-                if let Some(node) = self.known_network.nodes.write().get_mut(&source) {
+-                    node.verack_received = true;
+-                    node.record_verification();
++                let request_proof =
++                    if let Some(node) = self.known_network.nodes.write().get_mut(&source) {
++                        if node.verack_received {
++                            return Err(io::Error::new(
++                                io::ErrorKind::InvalidData,
++                                "duplicate verack",
++                            ));
++                        }
++                        node.verack_received = true;
++                        node.record_verification()
++                    } else {
++                        false
++                    };
++                if request_proof {
++                    self.request_chain_proof(source).await?;
+                 }
+             }
+             Message::Version(ver) => {
+-                // Update source node with information from version.
+-                if let Some(known_node) = self.known_network.nodes.write().get_mut(&source) {
+-                    known_node.protocol_version = Some(ver.version);
+-                    known_node.user_agent = Some(ver.user_agent);
+-                    known_node.services = Some(ver.services);
+-                    known_node.start_height = Some(ver.start_height);
+-                    known_node.version_received = true;
+-                    known_node.record_verification();
+-                }
+-
++                let request_proof =
++                    if let Some(node) = self.known_network.nodes.write().get_mut(&source) {
++                        if node.version_received {
++                            return Err(io::Error::new(
++                                io::ErrorKind::InvalidData,
++                                "duplicate version",
++                            ));
++                        }
++                        node.protocol_version = Some(ver.version);
++                        node.user_agent = Some(ver.user_agent);
++                        node.services = Some(ver.services);
++                        node.start_height = Some(ver.start_height);
++                        node.version_received = true;
++                        node.record_verification()
++                    } else {
++                        false
++                    };
+                 let _ = self.unicast(source, Message::Verack)?.await;
+-
+-                // Send GetAddr as soon as we get version message from the peer.
+-                // In fact, this part should be done during the handshake but it would increase
+-                // handshake time and there are some nodes that do not send version message
+-                // quickly (we know that zebra can delay sending version message for over 30 seconds).
+-                // Sending GetAddr before receiving the version results in dropping this message by
+-                // the remote peer, so we're stuck waiting for a reply that will never come that's why we
+-                // need to wait for the remote version message response.
+-                // Extra background: Sending GetAddr message was moved to this place,
+-                // and it's not sent anymore directly from the main module.
+-                let _ = self.unicast(source, Message::GetAddr)?.await;
++                if request_proof {
++                    self.request_chain_proof(source).await?;
++                }
++            }
++            Message::Headers(headers) => {
++                let pending = self
++                    .known_network
++                    .nodes
++                    .read()
++                    .get(&source)
++                    .is_some_and(|node| node.chain_proof_pending());
++                if !pending {
++                    // Ordinary unsolicited header announcements are not evidence
++                    // of a fresh response to this session's challenge.
++                    return Ok(());
++                }
++                if !matches_chain_proof(&headers) {
++                    if let Some(node) = self.known_network.nodes.write().get_mut(&source) {
++                        node.invalidate_chain_proof();
++                        node.state = ConnectionState::Disconnected;
++                    }
++                    // pea2pea logs process_message errors without closing the socket,
++                    // so a failed proof needs an explicit disconnect here.
++                    self.node().disconnect(source).await;
++                    return Err(io::Error::new(
++                        io::ErrorKind::InvalidData,
++                        "peer did not supply the requested Zcash mainnet header",
++                    ));
++                }
++                let verified = self
++                    .known_network
++                    .nodes
++                    .write()
++                    .get_mut(&source)
++                    .is_some_and(|node| node.record_chain_verification());
++                if verified {
++                    let _ = self.unicast(source, Message::GetAddr)?.await;
++                }
+             }
+             _ => {}
+         }
+@@ -256,7 +351,7 @@ impl Writing for Crawler {
+     type Codec = MessageCodec;
+ 
+     fn codec(&self, _addr: SocketAddr, _side: ConnectionSide) -> Self::Codec {
+-        Default::default()
++        MessageCodec::crawler()
+     }
+ }
+ 
+@@ -325,7 +420,7 @@ mod repair_tests {
+     }
+ 
+     #[tokio::test]
+-    async fn empty_graph_summary_advances_and_only_recent_protocol_handshakes_count() {
++    async fn empty_graph_summary_advances_and_only_recent_chain_proofs_count() {
+         let crawler = Crawler::new().await;
+         let good: SocketAddr = "192.0.2.1:8233".parse().unwrap();
+         let old: SocketAddr = "192.0.2.2:8233".parse().unwrap();
+@@ -336,6 +431,7 @@ mod repair_tests {
+             ..Default::default()
+         };
+         verified.record_verification();
++        verified.record_chain_verification();
+         let old_node = KnownNode {
+             last_verified: Some(Instant::now() - Duration::from_secs(3601)),
+             ..Default::default()
+@@ -370,7 +466,200 @@ mod repair_tests {
+         node.record_verification();
+         assert!(!node.recently_verified());
+         node.verack_received = true;
+-        node.record_verification();
++        assert!(node.record_verification());
++        assert!(!node.recently_verified());
++        assert!(node.record_chain_verification());
+         assert!(node.recently_verified());
+     }
+ }
++
++#[cfg(test)]
++mod chain_proof_tests {
++    use super::*;
++    use crate::{
++        metrics::NetworkMetrics,
++        network::{KnownNode, CHAIN_PROOF_TIMEOUT_SECS},
++    };
++    use futures_util::StreamExt;
++    use tokio::net::TcpListener;
++    use ziggurat_zcash::protocol::payload::{
++        block::{Block, Header},
++        codec::Codec,
++    };
++
++    fn expected_header() -> Header {
++        let bytes =
++            hex::decode(include_str!("fixtures/mainnet-checkpoint-3520000-header.hex").trim())
++                .unwrap();
++        Header::decode(&mut &bytes[..]).unwrap()
++    }
++
++    fn pending_node() -> KnownNode {
++        let mut node = KnownNode {
++            last_attempt: Some(Instant::now()),
++            version_received: true,
++            verack_received: true,
++            ..Default::default()
++        };
++        assert!(node.record_verification());
++        node
++    }
++
++    #[test]
++    fn pinned_header_matches_zcash_mainnet_and_rejects_another_chain() {
++        let header = expected_header();
++        assert_eq!(header.double_sha256().unwrap(), expected_chain_block_hash());
++        assert_eq!(header.prev_block, checkpoint_parent_hash());
++        assert!(matches_chain_proof(&Headers::new(vec![header.clone()])));
++        // This is a real Zcash testnet header, transported in the same framing
++        // as mainnet by the mock below. Network magic alone must never qualify it.
++        assert!(!matches_chain_proof(&Headers::new(vec![
++            Block::testnet_1().header
++        ])));
++        // A real mainnet block from before a known fork is also insufficient.
++        let historical_bytes =
++            hex::decode(include_str!("fixtures/mainnet-block1-header.hex").trim()).unwrap();
++        let historical_header = Header::decode(&mut &historical_bytes[..]).unwrap();
++        assert!(!matches_chain_proof(&Headers::new(vec![historical_header])));
++        assert!(!matches_chain_proof(&Headers::empty()));
++        assert!(!matches_chain_proof(&Headers::new(vec![
++            header.clone(),
++            header
++        ])));
++    }
++
++    #[test]
++    fn proof_is_same_session_once_only_and_expires() {
++        let mut node = KnownNode::default();
++        assert!(!node.record_chain_verification());
++        node = pending_node();
++        assert!(!node.recently_verified());
++        assert!(node.record_chain_verification());
++        assert!(node.recently_verified());
++        let proof_at = node.chain_verified_at_ms;
++        let handshake_at = node.last_verified_at_ms;
++        assert!(proof_at >= handshake_at);
++        assert!(!node.record_chain_verification());
++        assert!(!node.record_verification());
++        assert_eq!(node.chain_verified_at_ms, proof_at);
++        assert_eq!(node.last_verified_at_ms, handshake_at);
++        node.begin_attempt(Instant::now());
++        assert!(!node.recently_verified());
++        assert!(!node.record_chain_verification());
++        assert_eq!(node.chain_verified_at_ms, None);
++        node = pending_node();
++        node.chain_proof_requested_at =
++            Some(Instant::now() - Duration::from_secs(CHAIN_PROOF_TIMEOUT_SECS));
++        assert!(node.chain_proof_timed_out());
++        assert!(!node.record_chain_verification());
++        assert!(!node.recently_verified());
++    }
++
++    #[tokio::test]
++    async fn unverified_addr_does_not_seed_the_graph_or_disconnect() {
++        let crawler = Crawler::new().await;
++        let source = "192.0.2.1:16125".parse().unwrap();
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .insert(source, pending_node());
++        crawler
++            .process_message(source, Message::Addr(Addr::empty()))
++            .await
++            .unwrap();
++        assert_eq!(crawler.known_network.num_connections(), 0);
++        assert_eq!(crawler.known_network.num_nodes(), 1);
++        assert!(!crawler.known_network.nodes.read()[&source].recently_verified());
++        crawler.node().shut_down().await;
++    }
++
++    async fn mock_peer(proof: Headers, expect_qualified: bool) {
++        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
++        let peer_addr = listener.local_addr().unwrap();
++        let crawler = Crawler::new().await;
++        crawler.enable_handshake().await;
++        crawler.enable_reading().await;
++        crawler.enable_writing().await;
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .insert(peer_addr, KnownNode::default());
++        let server = tokio::spawn(async move {
++            let (stream, client_addr) = listener.accept().await.unwrap();
++            let mut framed = Framed::new(stream, MessageCodec::crawler());
++            assert!(matches!(
++                framed.next().await.unwrap().unwrap(),
++                Message::Version(_)
++            ));
++            let mut version = Version::new(client_addr, peer_addr);
++            // Clone software names and non-default ports are deliberately not trusted.
++            version.user_agent.0 = "/MagicBean:9.1.0/".to_owned();
++            version.start_height = 0;
++            framed.send(Message::Version(version)).await.unwrap();
++            framed.send(Message::Verack).await.unwrap();
++            assert_eq!(framed.next().await.unwrap().unwrap(), Message::Verack);
++            let challenge = framed.next().await.unwrap().unwrap();
++            assert_eq!(
++                challenge,
++                Message::GetHeaders(LocatorHashes::new(
++                    vec![checkpoint_parent_hash()],
++                    expected_chain_block_hash()
++                ))
++            );
++            framed.send(Message::Headers(proof)).await.unwrap();
++            if expect_qualified {
++                assert_eq!(framed.next().await.unwrap().unwrap(), Message::GetAddr);
++            } else {
++                // The peer must not get address-discovery privileges on a wrong chain.
++                assert!(!matches!(framed.next().await, Some(Ok(Message::GetAddr))));
++            }
++        });
++        crawler.connect(peer_addr).await.unwrap();
++        timeout(Duration::from_secs(5), server)
++            .await
++            .unwrap()
++            .unwrap();
++        let summary = NetworkMetrics::default().request_summary(&crawler);
++        assert_eq!(
++            summary.summary.num_good_nodes,
++            usize::from(expect_qualified)
++        );
++        assert_eq!(summary.all_node_reachable, vec![expect_qualified]);
++        if expect_qualified {
++            let info = &summary.node_info[0];
++            assert_eq!(info.chain_block_hash, CHAIN_BLOCK_HASH);
++            assert_eq!(info.chain_proof, crate::network::CHAIN_PROOF);
++            assert!(info.chain_verified_at_ms >= info.last_verified_at_ms);
++            assert_eq!(summary.summary.protocol_versions.values().sum::<usize>(), 1);
++            let before = crawler.known_network.nodes.read()[&peer_addr].chain_verified_at_ms;
++            crawler
++                .process_message(
++                    peer_addr,
++                    Message::Headers(Headers::new(vec![expected_header()])),
++                )
++                .await
++                .unwrap();
++            assert_eq!(
++                crawler.known_network.nodes.read()[&peer_addr].chain_verified_at_ms,
++                before
++            );
++        } else {
++            assert!(summary.node_info.is_empty());
++            assert!(summary.summary.protocol_versions.is_empty());
++            assert!(summary.summary.user_agents.is_empty());
++        }
++        crawler.node().shut_down().await;
++    }
++
++    #[tokio::test]
++    async fn shared_magic_wrong_chain_never_qualifies_or_gets_discovery() {
++        mock_peer(Headers::new(vec![Block::testnet_1().header]), false).await;
++    }
++
++    #[tokio::test]
++    async fn actual_mainnet_header_qualifies_independent_of_agent_port_and_height() {
++        mock_peer(Headers::new(vec![expected_header()]), true).await;
++    }
++}
+diff --git a/src/tools/synthetic_node.rs b/src/tools/synthetic_node.rs
+index 51f0d27..a465bfd 100644
+--- a/src/tools/synthetic_node.rs
++++ b/src/tools/synthetic_node.rs
+@@ -9,7 +9,7 @@ use std::{
+ };
+ 
+ use assert_matches::assert_matches;
+-use bytes::{BufMut, BytesMut};
++use bytes::{Buf, BufMut, BytesMut};
+ use futures_util::{sink::SinkExt, TryStreamExt};
+ use parking_lot::Mutex;
+ use pea2pea::{
+@@ -20,12 +20,16 @@ use tokio::{
+     sync::mpsc::{self, Receiver, Sender},
+     time::timeout,
+ };
+-use tokio_util::codec::{Decoder, Encoder, Framed, LengthDelimitedCodec};
++use tokio_util::codec::{Decoder, Encoder, Framed};
+ use tracing::*;
+ 
+ use crate::{
+     protocol::{
+-        message::{Message, MessageHeader},
++        message::{
++            checksum,
++            constants::{HEADER_LEN, MAGIC, MAGIC_LEN},
++            Message, MessageHeader,
++        },
+         payload::{codec::Codec, Nonce, Version},
+     },
+     tools::message_filter::{Filter, MessageFilter},
+@@ -474,22 +478,57 @@ impl Pea2Pea for InnerNode {
+ }
+ 
+ // TODO: move to protocol
++/// Maximum accepted message body. A full 2,000-header response is nearly 3 MiB.
++/// Keep a hard bound while allowing that legitimate response through.
++const MAX_FRAME_BODY_LENGTH: usize = 4 * 1024 * 1024;
++/// Bound work spent ignoring extension messages before any useful response.
++const MAX_CONSECUTIVE_UNKNOWN_MESSAGES: usize = 64;
++
+ pub struct MessageCodec {
+-    codec: LengthDelimitedCodec,
++    magic: [u8; MAGIC_LEN],
++    consecutive_unknown_messages: usize,
++    crawler_only: bool,
+ }
+ 
+ impl Default for MessageCodec {
+     fn default() -> Self {
+         Self {
+-            codec: LengthDelimitedCodec::builder()
+-                .length_adjustment(24)
+-                .length_field_offset(16)
+-                .little_endian()
+-                .num_skip(0)
+-                // The biggest currently observed frame was 627412 bytes long, so taking some reserve
+-                // to catch frames up to 1MB.
+-                .max_frame_length(1048576)
+-                .new_codec(),
++            magic: MAGIC,
++            consecutive_unknown_messages: 0,
++            crawler_only: false,
++        }
++    }
++}
++
++impl MessageCodec {
++    /// Decode only the messages used by the crawler. Other valid frames are
++    /// ignored before their payload parser runs, reducing the exposed protocol
++    /// surface while retaining full parsing for synthetic-node conformance tests.
++    pub fn crawler() -> Self {
++        Self {
++            crawler_only: true,
++            ..Self::default()
++        }
++    }
++
++    fn accepts_command(&self, command: [u8; 12]) -> bool {
++        use crate::protocol::message::constants::*;
++
++        if self.crawler_only {
++            matches!(
++                command,
++                VERSION_COMMAND
++                    | VERACK_COMMAND
++                    | PING_COMMAND
++                    | PONG_COMMAND
++                    | GETADDR_COMMAND
++                    | ADDR_COMMAND
++                    | HEADERS_COMMAND
++                    | GETHEADERS_COMMAND
++                    | GETDATA_COMMAND
++            )
++        } else {
++            Message::supports_command(command)
+         }
+     }
+ }
+@@ -499,16 +538,58 @@ impl Decoder for MessageCodec {
+     type Error = io::Error;
+ 
+     fn decode(&mut self, src: &mut BytesMut) -> Result<Option<Self::Item>, Self::Error> {
+-        let mut bytes = if let Some(bytes) = self.codec.decode(src)? {
+-            bytes
+-        } else {
+-            return Ok(None);
+-        };
++        loop {
++            if src.len() < HEADER_LEN {
++                return Ok(None);
++            }
++
++            // Validate the header before buffering its advertised body. Network magic
++            // validates framing only; networks sharing magic need a separate chain proof.
++            let header = MessageHeader::decode(&mut &src[..HEADER_LEN])?;
++            if header.magic != self.magic {
++                return Err(Error::new(
++                    ErrorKind::InvalidData,
++                    "wrong network message magic",
++                ));
++            }
++            if header.body_length as usize > MAX_FRAME_BODY_LENGTH {
++                return Err(Error::new(
++                    ErrorKind::InvalidData,
++                    "message body exceeds size limit",
++                ));
++            }
++            let frame_length = HEADER_LEN + header.body_length as usize;
++            if src.len() < frame_length {
++                return Ok(None);
++            }
++
++            let mut frame = src.split_to(frame_length);
++            frame.advance(HEADER_LEN);
++            if checksum(&frame) != header.checksum {
++                return Err(Error::new(
++                    ErrorKind::InvalidData,
++                    "invalid message checksum",
++                ));
++            }
+ 
+-        let header = MessageHeader::decode(&mut bytes)?;
+-        let message = Message::decode(header.command, &mut bytes)?;
++            if !self.accepts_command(header.command) {
++                self.consecutive_unknown_messages += 1;
++                if self.consecutive_unknown_messages > MAX_CONSECUTIVE_UNKNOWN_MESSAGES {
++                    return Err(Error::new(
++                        ErrorKind::InvalidData,
++                        "too many ignored messages",
++                    ));
++                }
++                // Extensions such as sendheaders/sendcmpct must not prevent a peer
++                // from answering the next supported request. The bound above also
++                // prevents a buffered extension flood from monopolizing the executor.
++                continue;
++            }
+ 
+-        Ok(Some(message))
++            let message = Message::decode(header.command, &mut frame)?;
++            self.consecutive_unknown_messages = 0;
++            return Ok(Some(message));
++        }
+     }
+ }
+ 
+@@ -729,3 +810,221 @@ impl Disconnect for InnerNode {
+         self.handshake_infos.lock().remove(&addr);
+     }
+ }
++
++#[cfg(test)]
++mod codec_tests {
++    use super::*;
++    use crate::protocol::{
++        message::constants::{
++            ADDR_COMMAND, BLOCK_COMMAND, COMMAND_LEN, GETADDR_COMMAND, GETDATA_COMMAND,
++            GETHEADERS_COMMAND, HEADERS_COMMAND, MAGIC_MAINNET, MAGIC_TESTNET, PING_COMMAND,
++            PONG_COMMAND, REJECT_COMMAND, TX_COMMAND, VERACK_COMMAND, VERSION_COMMAND,
++        },
++        payload::VarInt,
++    };
++
++    fn codec(magic: [u8; MAGIC_LEN]) -> MessageCodec {
++        MessageCodec {
++            magic,
++            consecutive_unknown_messages: 0,
++            crawler_only: false,
++        }
++    }
++
++    fn frame(magic: [u8; MAGIC_LEN], command: [u8; COMMAND_LEN], body: &[u8]) -> BytesMut {
++        let mut bytes = BytesMut::new();
++        let mut header = MessageHeader::new(command, body);
++        header.magic = magic;
++        header.encode(&mut bytes).unwrap();
++        bytes.put_slice(body);
++        bytes
++    }
++
++    #[test]
++    fn validates_mainnet_and_testnet_framing_without_claiming_chain_identity() {
++        for magic in [MAGIC_MAINNET, MAGIC_TESTNET] {
++            let mut bytes = frame(magic, VERACK_COMMAND, &[]);
++            assert_eq!(
++                codec(magic).decode(&mut bytes).unwrap(),
++                Some(Message::Verack)
++            );
++            assert!(bytes.is_empty());
++        }
++        // A fork sharing mainnet magic also passes framing; only the crawler's
++        // separate known-header challenge establishes that the peer serves Zcash.
++        let mut shared_magic_frame = frame(MAGIC_MAINNET, VERACK_COMMAND, &[]);
++        assert!(codec(MAGIC_MAINNET)
++            .decode(&mut shared_magic_frame)
++            .unwrap()
++            .is_some());
++    }
++
++    #[test]
++    fn rejects_wrong_magic_before_waiting_for_body() {
++        let mut bytes = frame(MAGIC_TESTNET, PING_COMMAND, &[0; 8]);
++        bytes.truncate(HEADER_LEN);
++        let err = codec(MAGIC_MAINNET).decode(&mut bytes).unwrap_err();
++        assert_eq!(err.kind(), ErrorKind::InvalidData);
++    }
++
++    #[test]
++    fn rejects_corrupt_checksum_before_parsing_or_ignoring() {
++        for command in [PING_COMMAND, *b"sendcmpct\0\0\0"] {
++            let mut bytes = frame(MAGIC_MAINNET, command, &[0; 8]);
++            bytes[HEADER_LEN] ^= 1;
++            assert_eq!(
++                codec(MAGIC_MAINNET).decode(&mut bytes).unwrap_err().kind(),
++                ErrorKind::InvalidData
++            );
++        }
++    }
++
++    #[test]
++    fn buffers_partial_frames_and_rejects_truncated_eof() {
++        let mut bytes = frame(MAGIC_MAINNET, PING_COMMAND, &[0; 8]);
++        let last_byte = bytes.split_off(bytes.len() - 1);
++        let mut decoder = codec(MAGIC_MAINNET);
++        let original = bytes.clone();
++        assert!(decoder.decode(&mut bytes).unwrap().is_none());
++        assert_eq!(bytes, original);
++        assert!(decoder.decode_eof(&mut bytes).is_err());
++        bytes.extend_from_slice(&last_byte);
++        assert!(matches!(
++            decoder.decode(&mut bytes).unwrap(),
++            Some(Message::Ping(_))
++        ));
++    }
++
++    #[test]
++    fn rejects_oversized_advertised_body_without_buffering() {
++        let mut bytes = frame(MAGIC_MAINNET, HEADERS_COMMAND, &[]);
++        bytes[16..20].copy_from_slice(&((MAX_FRAME_BODY_LENGTH + 1) as u32).to_le_bytes());
++        assert_eq!(
++            codec(MAGIC_MAINNET).decode(&mut bytes).unwrap_err().kind(),
++            ErrorKind::InvalidData
++        );
++    }
++
++    #[test]
++    fn rejects_supported_messages_with_trailing_or_missing_body_bytes() {
++        for (command, body) in [
++            (VERACK_COMMAND, vec![0]),
++            (PING_COMMAND, vec![0; 9]),
++            (PING_COMMAND, vec![0; 7]),
++        ] {
++            let mut bytes = frame(MAGIC_MAINNET, command, &body);
++            assert_eq!(
++                codec(MAGIC_MAINNET).decode(&mut bytes).unwrap_err().kind(),
++                ErrorKind::InvalidData
++            );
++        }
++    }
++
++    #[test]
++    fn ignores_extension_commands_and_delivers_following_supported_message() {
++        let mut bytes = BytesMut::new();
++        for command in [*b"sendheaders\0", *b"sendcmpct\0\0\0", *b"cmpctheaders"] {
++            bytes.extend_from_slice(&frame(MAGIC_MAINNET, command, &[]));
++        }
++        bytes.extend_from_slice(&frame(MAGIC_MAINNET, VERACK_COMMAND, &[]));
++        assert_eq!(
++            codec(MAGIC_MAINNET).decode(&mut bytes).unwrap(),
++            Some(Message::Verack)
++        );
++        assert!(bytes.is_empty());
++    }
++
++    #[test]
++    fn bounds_unknown_message_floods_even_across_read_chunks() {
++        let mut decoder = codec(MAGIC_MAINNET);
++        for _ in 0..MAX_CONSECUTIVE_UNKNOWN_MESSAGES {
++            let mut bytes = frame(MAGIC_MAINNET, *b"sendheaders\0", &[]);
++            assert!(decoder.decode(&mut bytes).unwrap().is_none());
++        }
++        let mut bytes = frame(MAGIC_MAINNET, *b"sendheaders\0", &[]);
++        assert_eq!(
++            decoder.decode(&mut bytes).unwrap_err().kind(),
++            ErrorKind::InvalidData
++        );
++
++        let mut bytes = BytesMut::new();
++        for _ in 0..=MAX_CONSECUTIVE_UNKNOWN_MESSAGES {
++            bytes.extend_from_slice(&frame(MAGIC_MAINNET, *b"sendheaders\0", &[]));
++        }
++        assert!(codec(MAGIC_MAINNET).decode(&mut bytes).is_err());
++    }
++
++    #[test]
++    fn supported_messages_reset_unknown_message_budget() {
++        let mut decoder = codec(MAGIC_MAINNET);
++        for _ in 0..2 {
++            let mut bytes = BytesMut::new();
++            for _ in 0..MAX_CONSECUTIVE_UNKNOWN_MESSAGES {
++                bytes.extend_from_slice(&frame(MAGIC_MAINNET, *b"sendheaders\0", &[]));
++            }
++            bytes.extend_from_slice(&frame(MAGIC_MAINNET, VERACK_COMMAND, &[]));
++            assert_eq!(decoder.decode(&mut bytes).unwrap(), Some(Message::Verack));
++        }
++    }
++
++    #[test]
++    fn accepts_bounded_two_thousand_header_response() {
++        let mut body = BytesMut::new();
++        VarInt::new(2_000).encode(&mut body).unwrap();
++        for _ in 0..2_000 {
++            body.put_slice(&[0; 140]);
++            VarInt::new(1_344).encode(&mut body).unwrap();
++            body.put_slice(&[0; 1_344]);
++            body.put_u8(0);
++        }
++        assert!(body.len() > 2 * 1024 * 1024);
++        let mut bytes = frame(MAGIC_MAINNET, HEADERS_COMMAND, &body);
++        match codec(MAGIC_MAINNET).decode(&mut bytes).unwrap() {
++            Some(Message::Headers(headers)) => assert_eq!(headers.headers.len(), 2_000),
++            other => panic!("expected headers, got {other:?}"),
++        }
++        assert!(bytes.is_empty());
++    }
++
++    #[test]
++    fn crawler_ignores_unneeded_payload_parsers_but_still_checks_framing() {
++        let mut decoder = MessageCodec::crawler();
++        decoder.magic = MAGIC_MAINNET;
++        let mut bytes = BytesMut::new();
++        for command in [TX_COMMAND, BLOCK_COMMAND, REJECT_COMMAND] {
++            // An incomplete v5 transaction can panic in the legacy general Tx
++            // parser. Crawler mode never exposes that parser to unsolicited data.
++            bytes.extend_from_slice(&frame(MAGIC_MAINNET, command, &[5, 0, 0, 0x80]));
++        }
++        bytes.extend_from_slice(&frame(MAGIC_MAINNET, VERACK_COMMAND, &[]));
++        assert_eq!(decoder.decode(&mut bytes).unwrap(), Some(Message::Verack));
++
++        let mut bytes = frame(MAGIC_MAINNET, TX_COMMAND, &[5, 0, 0, 0x80]);
++        bytes[20] ^= 1;
++        assert!(decoder.decode(&mut bytes).is_err());
++    }
++
++    #[test]
++    fn crawler_supported_parsers_handle_short_malformed_bodies_without_panicking() {
++        for command in [
++            VERSION_COMMAND,
++            VERACK_COMMAND,
++            PING_COMMAND,
++            PONG_COMMAND,
++            ADDR_COMMAND,
++            GETADDR_COMMAND,
++            HEADERS_COMMAND,
++            GETHEADERS_COMMAND,
++            GETDATA_COMMAND,
++        ] {
++            for byte in [0, 0xff] {
++                for body_length in 0..100 {
++                    let mut decoder = MessageCodec::crawler();
++                    decoder.magic = MAGIC_MAINNET;
++                    let mut bytes = frame(MAGIC_MAINNET, command, &vec![byte; body_length]);
++                    let _ = decoder.decode(&mut bytes);
++                }
++            }
++        }
++    }
++}
+-- 
+2.50.0
+
+
+From d3f5c14cd54d1e83d1308af20ec452062c86d97c Mon Sep 17 00:00:00 2001
+From: Antoine Serval <k6nb4k@gmail.com>
+Date: Mon, 19 Oct 2026 09:57:21 +0900
+Subject: [PATCH 2/2] Bound crawler frames and payload counts before allocation
+
+---
+ src/tools/synthetic_node.rs | 248 ++++++++++++++++++++++++++++++++++--
+ 1 file changed, 237 insertions(+), 11 deletions(-)
+
+diff --git a/src/tools/synthetic_node.rs b/src/tools/synthetic_node.rs
+index a465bfd..e4a4d4a 100644
+--- a/src/tools/synthetic_node.rs
++++ b/src/tools/synthetic_node.rs
+@@ -30,7 +30,7 @@ use crate::{
+             constants::{HEADER_LEN, MAGIC, MAGIC_LEN},
+             Message, MessageHeader,
+         },
+-        payload::{codec::Codec, Nonce, Version},
++        payload::{codec::Codec, Nonce, VarInt, Version},
+     },
+     tools::message_filter::{Filter, MessageFilter},
+ };
+@@ -483,6 +483,18 @@ impl Pea2Pea for InnerNode {
+ const MAX_FRAME_BODY_LENGTH: usize = 4 * 1024 * 1024;
+ /// Bound work spent ignoring extension messages before any useful response.
+ const MAX_CONSECUTIVE_UNKNOWN_MESSAGES: usize = 64;
++// These crawler limits bound each unqualified connection before the advertised
++// body is buffered. General synthetic-node parsing keeps the larger frame limit.
++const MAX_CRAWLER_USER_AGENT_LENGTH: usize = 256;
++const MAX_CRAWLER_VERSION_BODY_LENGTH: usize = 80 + 3 + MAX_CRAWLER_USER_AGENT_LENGTH + 5;
++const MAX_CRAWLER_ADDR_COUNT: usize = 1_000;
++const CRAWLER_ADDR_LENGTH: usize = 30;
++const MAX_CRAWLER_ADDR_BODY_LENGTH: usize = 3 + MAX_CRAWLER_ADDR_COUNT * CRAWLER_ADDR_LENGTH;
++const CRAWLER_HEADER_LENGTH: usize = 140 + 3 + 1_344 + 1;
++const MAX_CRAWLER_HEADERS_BODY_LENGTH: usize = 1 + CRAWLER_HEADER_LENGTH;
++const MAX_CRAWLER_LOCATOR_COUNT: usize = 101;
++const MAX_CRAWLER_LOCATORS_BODY_LENGTH: usize = 4 + 1 + MAX_CRAWLER_LOCATOR_COUNT * 32 + 32;
++const MAX_CRAWLER_IGNORED_BODY_LENGTH: usize = 32 * 1024;
+ 
+ pub struct MessageCodec {
+     magic: [u8; MAGIC_LEN],
+@@ -525,12 +537,95 @@ impl MessageCodec {
+                     | ADDR_COMMAND
+                     | HEADERS_COMMAND
+                     | GETHEADERS_COMMAND
+-                    | GETDATA_COMMAND
+             )
+         } else {
+             Message::supports_command(command)
+         }
+     }
++
++    fn max_body_length(&self, command: [u8; 12]) -> usize {
++        use crate::protocol::message::constants::*;
++
++        if !self.crawler_only {
++            return MAX_FRAME_BODY_LENGTH;
++        }
++        match command {
++            VERSION_COMMAND => MAX_CRAWLER_VERSION_BODY_LENGTH,
++            VERACK_COMMAND | GETADDR_COMMAND => 0,
++            PING_COMMAND | PONG_COMMAND => 8,
++            ADDR_COMMAND => MAX_CRAWLER_ADDR_BODY_LENGTH,
++            HEADERS_COMMAND => MAX_CRAWLER_HEADERS_BODY_LENGTH,
++            GETHEADERS_COMMAND => MAX_CRAWLER_LOCATORS_BODY_LENGTH,
++            _ => MAX_CRAWLER_IGNORED_BODY_LENGTH,
++        }
++    }
++
++    /// Check all variable counts against the crawler's protocol needs and the
++    /// actual encoded bytes before a generic Vec/String parser can allocate.
++    fn validate_crawler_body(command: [u8; 12], body: &[u8]) -> io::Result<()> {
++        use crate::protocol::message::constants::*;
++
++        let bad_length = || Error::new(ErrorKind::InvalidData, "invalid crawler payload length");
++        match command {
++            VERSION_COMMAND => {
++                let mut variable = body.get(80..).ok_or_else(bad_length)?;
++                let user_agent_length =
++                    Self::read_bounded_count(&mut variable, MAX_CRAWLER_USER_AGENT_LENGTH)?;
++                if variable.len() != user_agent_length + 5 {
++                    return Err(bad_length());
++                }
++            }
++            ADDR_COMMAND => {
++                let mut addresses = body;
++                let count = Self::read_bounded_count(&mut addresses, MAX_CRAWLER_ADDR_COUNT)?;
++                if addresses.len() != count * CRAWLER_ADDR_LENGTH {
++                    return Err(bad_length());
++                }
++            }
++            HEADERS_COMMAND => {
++                let mut headers = body;
++                // The pinned proof asks for exactly one header. Empty replies are
++                // parsed so qualification can reject them; larger replies fail here.
++                let count = Self::read_bounded_count(&mut headers, 1)?;
++                if headers.len() != count * CRAWLER_HEADER_LENGTH {
++                    return Err(bad_length());
++                }
++                if count == 1 {
++                    let mut solution = &headers[140..];
++                    if Self::read_bounded_count(&mut solution, 1_344)? != 1_344 {
++                        return Err(bad_length());
++                    }
++                }
++            }
++            GETHEADERS_COMMAND => {
++                let mut locators = body.get(4..).ok_or_else(bad_length)?;
++                let count = Self::read_bounded_count(&mut locators, MAX_CRAWLER_LOCATOR_COUNT)?;
++                if locators.len() != count * 32 + 32 {
++                    return Err(bad_length());
++                }
++            }
++            _ => (),
++        }
++        Ok(())
++    }
++
++    fn read_bounded_count(bytes: &mut &[u8], maximum: usize) -> io::Result<usize> {
++        let original_length = bytes.len();
++        let count = *VarInt::decode(bytes)?;
++        let encoded_length = original_length - bytes.len();
++        let canonical_length = match count {
++            0..=252 => 1,
++            253..=65_535 => 3,
++            _ => 5,
++        };
++        if count > maximum || encoded_length != canonical_length {
++            return Err(Error::new(
++                ErrorKind::InvalidData,
++                "invalid crawler payload count",
++            ));
++        }
++        Ok(count)
++    }
+ }
+ 
+ impl Decoder for MessageCodec {
+@@ -552,7 +647,7 @@ impl Decoder for MessageCodec {
+                     "wrong network message magic",
+                 ));
+             }
+-            if header.body_length as usize > MAX_FRAME_BODY_LENGTH {
++            if header.body_length as usize > self.max_body_length(header.command) {
+                 return Err(Error::new(
+                     ErrorKind::InvalidData,
+                     "message body exceeds size limit",
+@@ -586,6 +681,9 @@ impl Decoder for MessageCodec {
+                 continue;
+             }
+ 
++            if self.crawler_only {
++                Self::validate_crawler_body(header.command, &frame)?;
++            }
+             let message = Message::decode(header.command, &mut frame)?;
+             self.consecutive_unknown_messages = 0;
+             return Ok(Some(message));
+@@ -814,13 +912,10 @@ impl Disconnect for InnerNode {
+ #[cfg(test)]
+ mod codec_tests {
+     use super::*;
+-    use crate::protocol::{
+-        message::constants::{
+-            ADDR_COMMAND, BLOCK_COMMAND, COMMAND_LEN, GETADDR_COMMAND, GETDATA_COMMAND,
+-            GETHEADERS_COMMAND, HEADERS_COMMAND, MAGIC_MAINNET, MAGIC_TESTNET, PING_COMMAND,
+-            PONG_COMMAND, REJECT_COMMAND, TX_COMMAND, VERACK_COMMAND, VERSION_COMMAND,
+-        },
+-        payload::VarInt,
++    use crate::protocol::message::constants::{
++        ADDR_COMMAND, BLOCK_COMMAND, COMMAND_LEN, GETADDR_COMMAND, GETDATA_COMMAND,
++        GETHEADERS_COMMAND, HEADERS_COMMAND, MAGIC_MAINNET, MAGIC_TESTNET, PING_COMMAND,
++        PONG_COMMAND, REJECT_COMMAND, TX_COMMAND, VERACK_COMMAND, VERSION_COMMAND,
+     };
+ 
+     fn codec(magic: [u8; MAGIC_LEN]) -> MessageCodec {
+@@ -991,7 +1086,7 @@ mod codec_tests {
+         let mut decoder = MessageCodec::crawler();
+         decoder.magic = MAGIC_MAINNET;
+         let mut bytes = BytesMut::new();
+-        for command in [TX_COMMAND, BLOCK_COMMAND, REJECT_COMMAND] {
++        for command in [TX_COMMAND, BLOCK_COMMAND, REJECT_COMMAND, GETDATA_COMMAND] {
+             // An incomplete v5 transaction can panic in the legacy general Tx
+             // parser. Crawler mode never exposes that parser to unsolicited data.
+             bytes.extend_from_slice(&frame(MAGIC_MAINNET, command, &[5, 0, 0, 0x80]));
+@@ -1027,4 +1122,135 @@ mod codec_tests {
+             }
+         }
+     }
++
++    #[test]
++    fn crawler_rejects_oversized_announced_bodies_before_buffering() {
++        for (command, maximum) in [
++            (VERSION_COMMAND, MAX_CRAWLER_VERSION_BODY_LENGTH),
++            (VERACK_COMMAND, 0),
++            (PING_COMMAND, 8),
++            (ADDR_COMMAND, MAX_CRAWLER_ADDR_BODY_LENGTH),
++            (HEADERS_COMMAND, MAX_CRAWLER_HEADERS_BODY_LENGTH),
++            (GETHEADERS_COMMAND, MAX_CRAWLER_LOCATORS_BODY_LENGTH),
++            (GETDATA_COMMAND, MAX_CRAWLER_IGNORED_BODY_LENGTH),
++            (*b"sendheaders\0", MAX_CRAWLER_IGNORED_BODY_LENGTH),
++        ] {
++            let mut bytes = frame(MAGIC_MAINNET, command, &[]);
++            bytes[16..20].copy_from_slice(&((maximum + 1) as u32).to_le_bytes());
++            let mut decoder = MessageCodec::crawler();
++            decoder.magic = MAGIC_MAINNET;
++            let error = decoder.decode(&mut bytes).unwrap_err();
++            assert_eq!(error.kind(), ErrorKind::InvalidData);
++            assert_eq!(error.to_string(), "message body exceeds size limit");
++            assert_eq!(bytes.len(), HEADER_LEN);
++        }
++    }
++
++    #[test]
++    fn crawler_checks_counts_without_invoking_allocating_payload_parsers() {
++        for (command, prefix_length, count) in [
++            (VERSION_COMMAND, 80, MAX_CRAWLER_USER_AGENT_LENGTH + 1),
++            (ADDR_COMMAND, 0, MAX_CRAWLER_ADDR_COUNT + 1),
++            (HEADERS_COMMAND, 0, 2),
++            (GETHEADERS_COMMAND, 4, MAX_CRAWLER_LOCATOR_COUNT + 1),
++            (VERSION_COMMAND, 80, 1_000_000),
++            (ADDR_COMMAND, 0, 1_000_000),
++            (HEADERS_COMMAND, 0, 1_000_000),
++            (GETHEADERS_COMMAND, 4, 1_000_000),
++        ] {
++            let mut body = BytesMut::from(&vec![0; prefix_length][..]);
++            VarInt::new(count).encode(&mut body).unwrap();
++            // The validator only reads a fixed prefix and CompactSize value;
++            // it rejects before Message::decode can construct a Vec or String.
++            let error = MessageCodec::validate_crawler_body(command, &body).unwrap_err();
++            assert_eq!(error.to_string(), "invalid crawler payload count");
++            let mut bytes = frame(MAGIC_MAINNET, command, &body);
++            let mut decoder = MessageCodec::crawler();
++            decoder.magic = MAGIC_MAINNET;
++            assert_eq!(
++                decoder.decode(&mut bytes).unwrap_err().to_string(),
++                error.to_string()
++            );
++        }
++    }
++
++    #[test]
++    fn crawler_rejects_impossible_lengths_and_noncanonical_counts_before_typed_decode() {
++        for (command, prefix_length, count) in [
++            (VERSION_COMMAND, 80, MAX_CRAWLER_USER_AGENT_LENGTH),
++            (ADDR_COMMAND, 0, MAX_CRAWLER_ADDR_COUNT),
++            (HEADERS_COMMAND, 0, 1),
++            (GETHEADERS_COMMAND, 4, MAX_CRAWLER_LOCATOR_COUNT),
++        ] {
++            let mut body = BytesMut::from(&vec![0; prefix_length][..]);
++            VarInt::new(count).encode(&mut body).unwrap();
++            assert_eq!(
++                MessageCodec::validate_crawler_body(command, &body)
++                    .unwrap_err()
++                    .to_string(),
++                "invalid crawler payload length"
++            );
++        }
++        assert_eq!(
++            MessageCodec::validate_crawler_body(ADDR_COMMAND, &[0xfd, 0, 0])
++                .unwrap_err()
++                .to_string(),
++            "invalid crawler payload count"
++        );
++    }
++
++    #[test]
++    fn crawler_accepts_valid_payloads_at_each_allocation_limit() {
++        let mut version = BytesMut::from(&[0; 80][..]);
++        VarInt::new(MAX_CRAWLER_USER_AGENT_LENGTH)
++            .encode(&mut version)
++            .unwrap();
++        version.extend_from_slice(&[b'a'; MAX_CRAWLER_USER_AGENT_LENGTH]);
++        version.extend_from_slice(&[0; 5]);
++        assert_eq!(version.len(), MAX_CRAWLER_VERSION_BODY_LENGTH);
++
++        let mut addresses = BytesMut::new();
++        VarInt::new(MAX_CRAWLER_ADDR_COUNT)
++            .encode(&mut addresses)
++            .unwrap();
++        addresses.extend_from_slice(&vec![0; MAX_CRAWLER_ADDR_COUNT * CRAWLER_ADDR_LENGTH]);
++        assert_eq!(addresses.len(), MAX_CRAWLER_ADDR_BODY_LENGTH);
++
++        let mut locators = BytesMut::from(&[0; 4][..]);
++        VarInt::new(MAX_CRAWLER_LOCATOR_COUNT)
++            .encode(&mut locators)
++            .unwrap();
++        locators.extend_from_slice(&vec![0; MAX_CRAWLER_LOCATOR_COUNT * 32 + 32]);
++        assert_eq!(locators.len(), MAX_CRAWLER_LOCATORS_BODY_LENGTH);
++
++        for (command, body) in [
++            (VERSION_COMMAND, version),
++            (ADDR_COMMAND, addresses),
++            (GETHEADERS_COMMAND, locators),
++        ] {
++            let mut decoder = MessageCodec::crawler();
++            decoder.magic = MAGIC_MAINNET;
++            let mut bytes = frame(MAGIC_MAINNET, command, &body);
++            assert!(decoder.decode(&mut bytes).unwrap().is_some());
++        }
++    }
++
++    #[test]
++    fn crawler_accepts_pinned_checkpoint_header_frame() {
++        let header = hex::decode(
++            include_str!("crawler/fixtures/mainnet-checkpoint-3520000-header.hex").trim(),
++        )
++        .unwrap();
++        assert_eq!(header.len(), CRAWLER_HEADER_LENGTH);
++        let mut body = BytesMut::from(&[1][..]);
++        body.extend_from_slice(&header);
++        assert_eq!(body.len(), MAX_CRAWLER_HEADERS_BODY_LENGTH);
++        let mut bytes = frame(MAGIC_MAINNET, HEADERS_COMMAND, &body);
++        let mut decoder = MessageCodec::crawler();
++        decoder.magic = MAGIC_MAINNET;
++        assert!(
++            matches!(decoder.decode(&mut bytes).unwrap(), Some(Message::Headers(headers)) if headers.headers.len() == 1)
++        );
++        assert!(bytes.is_empty());
++    }
+ }
+-- 
+2.50.0
+

@@ -22,6 +22,8 @@ const categories: NavigationCategory[] = [
     { href: '/txs', label: 'Transactions', desc: 'Confirmed transactions' },
     { href: '/mempool', label: 'Mempool', desc: 'Pending transactions' },
     { href: '/network', label: 'Network', desc: 'Protocol, issuance and activity' },
+    { href: '/network/upgrades', label: 'Network Upgrades', desc: 'Activation history and upcoming changes', networks: standard },
+    { href: '/network/block-speed', label: 'Block Speed', desc: 'Daily block times and confirmations', networks: standard },
     { href: '/network/nodes', label: 'Network Nodes', desc: 'Node map, peers and software' },
     { href: '/charts', label: 'Charts', desc: 'Browse and share charts' },
     { href: '/mining', label: 'Mining', desc: 'Hashrate, pools and rewards', networks: standard },
@@ -33,7 +35,7 @@ const categories: NavigationCategory[] = [
     { href: '/fork-monitor', label: 'Fork Monitor', desc: 'Forks across monitored nodes', networks: crosslink },
   ] },
   { id: 'analytics', label: 'Analytics', items: [
-    { href: '/ask', label: 'Ask ZecBlock', desc: 'Questions, source data and charts', networks: mainnet },
+    { href: '/zift', label: 'Zift', desc: 'Ask questions, run SQL, build dashboards', networks: mainnet },
     { href: '/privacy', label: 'Privacy Score', desc: 'Index of shielded usage', networks: standard },
     { href: '/pools', label: 'Shielded Pools', desc: 'Balances, history and flows', networks: standard },
     { href: '/ironwood', label: 'Ironwood', desc: 'Adoption and migration', networks: standard },

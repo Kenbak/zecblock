@@ -23,7 +23,7 @@ test('every menu destination has a page and bypasses retired route aliases', () 
 
 test('network-specific navigation keeps unsupported destinations out', () => {
   const links = network => getNavigation(network).flatMap(category => category.items.map(item => item.href));
-  for (const path of ['/crosschain', '/zodl', '/usage-clock', '/governance/nu7']) {
+  for (const path of ['/crosschain', '/zodl', '/usage-clock', '/governance']) {
     assert.ok(links('mainnet').includes(path));
     assert.ok(!links('testnet').includes(path));
     assert.ok(!links('crosslink').includes(path));
@@ -33,12 +33,17 @@ test('network-specific navigation keeps unsupported destinations out', () => {
     assert.ok(!links('mainnet').includes(path));
     assert.ok(!links('testnet').includes(path));
   }
+  for (const path of ['/network/block-speed', '/network/upgrades']) {
+    assert.ok(links('mainnet').includes(path));
+    assert.ok(links('testnet').includes(path));
+    assert.ok(!links('crosslink').includes(path));
+  }
   assert.ok(!getNavigation('crosslink').some(category => category.id === 'analytics'));
 });
 
 test('current navigation selects the most specific route and respects path boundaries', () => {
   const mainnet = getNavigation('mainnet');
-  for (const path of ['/network/nodes', '/privacy/wallets', '/tools/blend-check']) {
+  for (const path of ['/network/block-speed', '/network/upgrades', '/network/nodes', '/privacy/wallets', '/tools/blend-check']) {
     assert.equal(getActiveNavigationHref(path, mainnet), path);
     assert.equal(getActiveNavigationHref(`${path}/`, mainnet), path);
   }

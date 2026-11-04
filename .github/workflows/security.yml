@@ -6,8 +6,8 @@ on:
   pull_request:
     branches: [main, dev]
   schedule:
-    # Weekly re-scan so newly disclosed CVEs surface even without a push.
-    - cron: "0 6 * * 1"
+    # Daily re-scan so newly disclosed CVEs surface even without a push.
+    - cron: "0 6 * * *"
   workflow_dispatch:
 
 permissions:
@@ -64,6 +64,12 @@ jobs:
             exit 0
           fi
           changed="$(git diff --name-only "$base_sha" "${GITHUB_SHA}")"
+          if grep -Fxq '.github/workflows/security.yml' <<< "$changed"; then
+            echo "npm=true" >> "$GITHUB_OUTPUT"
+            echo "rust=true" >> "$GITHUB_OUTPUT"
+            echo "python=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           if grep -Eq '(^|/)package(-lock)?\.json$' <<< "$changed"; then echo "npm=true" >> "$GITHUB_OUTPUT"; else echo "npm=false" >> "$GITHUB_OUTPUT"; fi
           if grep -Eq '^wasm/Cargo\.(toml|lock)$' <<< "$changed"; then echo "rust=true" >> "$GITHUB_OUTPUT"; else echo "rust=false" >> "$GITHUB_OUTPUT"; fi
           if grep -Eq '^server/jobs/requirements[^/]*\.txt$' <<< "$changed"; then echo "python=true" >> "$GITHUB_OUTPUT"; else echo "python=false" >> "$GITHUB_OUTPUT"; fi
@@ -138,11 +144,11 @@ jobs:
       - uses: actions/cache@v5
         with:
           path: ~/.cargo/bin/cargo-audit
-          key: cargo-audit-${{ runner.os }}-0.22.0
+          key: cargo-audit-${{ runner.os }}-0.22.1
       - name: Install cargo-audit when not cached
-        run: command -v cargo-audit >/dev/null || cargo install cargo-audit --version 0.22.0 --locked
-      - name: Generate lockfile if missing
-        run: test -f Cargo.lock || cargo generate-lockfile
+        run: command -v cargo-audit >/dev/null || cargo +1.97.1 install cargo-audit --version 0.22.1 --locked
+      - name: Require the committed dependency graph
+        run: test -f Cargo.lock
       - name: Audit
         run: cargo audit
 
@@ -163,7 +169,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install pip-audit
-        run: pip install pip-audit
+        run: pip install pip-audit==2.10.1
       - name: Audit
         run: pip-audit -r requirements.txt
 

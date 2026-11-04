@@ -2,8 +2,8 @@
 # Pin the complete environment so scheduled jobs never upgrade dependencies.
 cloudpickle==3.1.2
 joblib==1.6.0
-narwhals==2.26.0
-numpy==2.5.3
+narwhals==2.27.1
+numpy==2.5.4
 psycopg2-binary==2.9.13
 scikit-learn==1.9.1
 scipy==1.18.1

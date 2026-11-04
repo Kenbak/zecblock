@@ -10,6 +10,8 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ChartCard } from './ChartCard';
+import { useUrlState } from '@/lib/use-url-state';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 export interface RawPoint {
   month: string;
@@ -31,7 +33,7 @@ function formatMillions(v: number): string {
   return v.toString();
 }
 
-type Period = '2y' | '4y' | 'all';
+type Period = '30d' | '2y' | '4y' | 'all';
 
 export interface ProtocolStatsResponse {
   success: boolean;
@@ -43,7 +45,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [view, setView] = useState<'commitments' | 'nullifiers'>('commitments');
-  const [period, setPeriod] = useState<Period>('all');
+  const [period, setPeriod] = useUrlState<Period>('protocol', '30d', ['30d', '2y', '4y', 'all']);
 
   const { data: apiData, loading } = useApiQuery<ProtocolStatsResponse>(
     '/v1/network/protocol-stats',
@@ -63,10 +65,18 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
 
     let filtered = rawData;
     if (period !== 'all') {
-      const years = period === '2y' ? 2 : 4;
-      const cutoff = new Date();
-      cutoff.setFullYear(cutoff.getFullYear() - years);
-      filtered = rawData.filter(p => new Date(p.month) >= cutoff);
+      const now = Date.now();
+      const cutoff = new Date(now);
+      if (period === '30d') cutoff.setTime(now - 30 * 86_400_000);
+      else cutoff.setUTCFullYear(cutoff.getUTCFullYear() - (period === '2y' ? 2 : 4));
+      filtered = rawData.filter(p => {
+        const timestamp = Date.parse(p.month);
+        if (timestamp > now) return false;
+        if (period !== '30d') return timestamp >= cutoff.getTime();
+        const month = new Date(timestamp);
+        const nextMonth = Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 1);
+        return nextMonth > cutoff.getTime();
+      });
     }
 
     return filtered.map(p => ({
@@ -76,11 +86,13 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   }, [rawData, period]);
 
   const controls = (
-    <div className="flex gap-1">
+    <div className="flex flex-wrap gap-1">
       {(['commitments', 'nullifiers'] as const).map(v => (
         <button
+          type="button"
           key={v}
           onClick={() => setView(v)}
+          aria-pressed={view === v}
           className={`px-2 py-0.5 text-caption font-mono rounded transition-colors ${
             view === v ? 'bg-brand-gold/20 text-cipher-gold' : 'text-muted hover:text-secondary'
           }`}
@@ -89,10 +101,12 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
         </button>
       ))}
       <span className="w-px bg-cipher-border-alpha/30 mx-1" />
-      {(['2y', '4y', 'all'] as const).map(p => (
+      {(['30d', '2y', '4y', 'all'] as const).map(p => (
         <button
+          type="button"
           key={p}
           onClick={() => setPeriod(p)}
+          aria-pressed={period === p}
           className={`px-2 py-0.5 text-caption font-mono rounded transition-colors ${
             period === p ? 'bg-brand-gold/20 text-cipher-gold' : 'text-muted hover:text-secondary'
           }`}
@@ -115,14 +129,14 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
     return (
       <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls}>
         <div className="flex items-center justify-center h-[280px] text-xs text-muted">
-          No protocol data available
+          No monthly protocol buckets overlap this range
         </div>
       </ChartCard>
     );
   }
 
   return (
-    <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls}>
+    <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls} share={{ title: `Zcash protocol growth (${period})`, fileName: `zecblock-protocol-growth-${period}`, csv: () => objectRowsCsv(data) }}>
       {current && (
         <div className="mb-3">
           <div className="flex gap-4 flex-wrap">
@@ -169,6 +183,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
           </p>
         </div>
       )}
+      <p className="text-caption text-muted mb-3">Monthly buckets overlapping the selected UTC window; 30D can include partial months.</p>
       <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={240}>
         <AreaChart data={data}>
           <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
@@ -203,7 +218,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.sapling}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
               <Area
                 type="linear"
@@ -213,7 +228,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.orchard}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
               <Area
                 type="linear"
@@ -223,7 +238,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.ironwood}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
             </>
           ) : (
@@ -236,7 +251,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.sapling}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
               <Area
                 type="linear"
@@ -246,7 +261,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.orchard}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
               <Area
                 type="linear"
@@ -256,7 +271,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
                 fill={colors.ironwood}
                 fillOpacity={0.15}
                 strokeWidth={1.5}
-                dot={false}
+                dot={data.length === 1 ? { r: 3 } : false}
               />
             </>
           )}

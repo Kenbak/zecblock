@@ -1,0 +1,45 @@
+# PRIVATE TEST HARNESS ONLY: CAPTCHA verification and optional simulated IPs
+# are fixtures in ask-preview-api.js. Never expose this service publicly.
+[Unit]
+Description=ZecBlock private Ask API preview
+After=network-online.target zecblock-ask-analytics.service zecblock-ask-quota.service
+Wants=network-online.target
+Requires=zecblock-ask-quota.service
+
+[Service]
+Type=simple
+User=ask_api
+Group=ask_api
+WorkingDirectory=/opt/zecblock-ask-api-preview
+Environment=NODE_ENV=production
+Environment=ASK_PRIVATE_PREVIEW=true
+Environment=ASK_PREVIEW_SIMULATE_IPS=true
+EnvironmentFile=/opt/zecblock-ask-api-preview/api.env
+ExecStart=/opt/zecblock-ask-api-preview/runtime/bin/node /opt/zecblock-ask-api-preview/app/server/api/ask-preview-api.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=yes
+SocketBindDeny=any
+SocketBindAllow=tcp:3004
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+LimitNOFILE=512
+UMask=0077
+TimeoutStopSec=15
+
+# Intentionally no Install section: private preview is not enabled at boot.

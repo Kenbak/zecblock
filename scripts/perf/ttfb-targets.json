@@ -82,6 +82,18 @@
       "core": true
     },
     {
+      "id": "network-block-speed",
+      "routeGroup": "/network/block-speed",
+      "path": "/network/block-speed",
+      "core": true
+    },
+    {
+      "id": "network-upgrades",
+      "routeGroup": "/network/upgrades",
+      "path": "/network/upgrades",
+      "core": true
+    },
+    {
       "id": "privacy",
       "routeGroup": "/privacy",
       "path": "/privacy",
@@ -209,8 +221,8 @@
     },
     {
       "id": "ask",
-      "routeGroup": "/ask",
-      "path": "/ask",
+      "routeGroup": "/zift",
+      "path": "/zift",
       "core": true
     },
     {

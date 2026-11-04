@@ -40,7 +40,7 @@ export function PageLoadingBody({ layout }: { layout: LoadingLayout }) {
   if (layout === 'network' || layout === 'nodes') return <LoadingRegion>
     <div className="card card-static mb-10">
       {layout === 'network' && <div className="network-summary-grid network-protocol-facts border-b border-cipher-border">{['Active upgrade', 'Block subsidy', 'Maximum supply', 'Target spacing'].map(label => <div key={label}><p className="type-label text-muted uppercase">{label}</p><Skeleton className="h-5 w-28 mt-2" /></div>)}</div>}
-      <div className="network-summary-grid network-live-facts">{(layout === 'network' ? ['Latest block', 'Block interval', 'Transactions · 24h', 'Network hashrate'] : ['Reachable nodes', 'Countries', 'Tor nodes', 'Average ping']).map(label => <div key={label}><p className="type-label text-muted mb-2">{label}</p><Skeleton className="h-9 w-32" /><Skeleton className="h-4 w-36 mt-2" /></div>)}</div>
+      <div className="network-summary-grid network-live-facts">{(layout === 'network' ? ['Latest block', 'Block interval', 'Transactions · 24h', 'Network hashrate'] : ['Observed active IPs', 'Countries', 'Tor classified', 'Crawler latency']).map(label => <div key={label}><p className="type-label text-muted mb-2">{label}</p><Skeleton className="h-9 w-32" /><Skeleton className="h-4 w-36 mt-2" /></div>)}</div>
     </div>
     <div className="card card-static"><div className="card-body"><Skeleton className="h-6 w-48 mb-3" /><Skeleton className="h-4 w-2/3 mb-5" /><ControlsSkeleton /><VisualizationSkeleton className={layout === 'nodes' ? 'h-[360px] sm:h-[500px]' : 'h-[220px] sm:h-[460px]'} /></div></div>
     <div className="grid lg:grid-cols-2 gap-5 mt-10"><ChartCardSkeleton /><ChartCardSkeleton /></div>

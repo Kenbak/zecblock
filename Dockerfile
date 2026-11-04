@@ -1,9 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # CipherScan Next.js frontend - multi-stage build producing a standalone server.
-# Base image is pinned by digest; override with --build-arg NODE_IMAGE=... to
-# build against a specific Node image / commit.
-ARG NODE_IMAGE=node:22.14.0-bookworm-slim
+# Base image uses an exact Node patch tag; override with
+# --build-arg NODE_IMAGE=... to build against a specific Node image / commit.
+ARG NODE_IMAGE=node:22.23.4-bookworm-slim
 
 # ---------------------------------------------------------------------------
 # deps: install production-resolved node_modules from the lockfile

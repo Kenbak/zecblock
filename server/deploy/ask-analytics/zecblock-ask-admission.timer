@@ -1,0 +1,9 @@
+[Unit]
+Description=Verify newly applied analytics changes every 15 seconds
+[Timer]
+OnBootSec=20s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=zecblock-ask-admission.service
+[Install]
+WantedBy=timers.target

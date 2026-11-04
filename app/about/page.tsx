@@ -5,7 +5,7 @@ import { NETWORK_LABEL } from '@/lib/config';
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 import styles from './page.module.css';
 
-const DESCRIPTION = 'Explore the story behind ZecBlock, the Zcash blockchain explorer for public network data, shielded pool analytics and developer tools.';
+const DESCRIPTION = 'Explore the story behind ZecBlock, formerly CipherScan: a Zcash blockchain explorer for public network data, shielded pool analytics and developer tools.';
 
 export const metadata = buildPageMetadata({
   title: 'About the Zcash Explorer | ZecBlock',
@@ -87,6 +87,10 @@ const timeline = [
     description: 'Crawler-observed nodes, client versions, reachability and network topology in one place.',
     href: '/network/nodes',
   },
+  {
+    date: 'Oct 1, 2026', month: '2026-10-01', title: 'CipherScan becomes ZecBlock',
+    description: 'The explorer moved from cipherscan.app to zecblock.com under the ZecBlock name.',
+  },
 ];
 
 export default async function AboutPage() {
@@ -118,6 +122,10 @@ export default async function AboutPage() {
           <p className="text-sm sm:text-base text-muted leading-relaxed mb-5">
             ZecBlock is a Zcash blockchain explorer. Follow blocks and transactions,
             understand shielded pools, and explore the health of the network.
+          </p>
+          <p className="text-sm text-muted leading-relaxed mb-5">
+            Previously known as CipherScan, the explorer became ZecBlock on October 1, 2026,
+            moving from cipherscan.app to zecblock.com.
           </p>
           <p className="text-xs text-muted">Built by <span className="text-primary">Kenbak</span>. Built for the Zcash community.</p>
         </div>

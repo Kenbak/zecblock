@@ -1,8 +1,12 @@
 import Link from 'next/link';
 import { TurnstileTracker } from '@/components/pools/TurnstileTracker';
 import { PageHeader } from '@/components/ui';
+import { parseTurnstilePeriod } from '@/lib/turnstile-period';
 
-export default function TurnstilePage() {
+export default async function TurnstilePage({ searchParams }: {
+  searchParams: Promise<{ period?: string | string[] }>;
+}) {
+  const initialPeriod = parseTurnstilePeriod((await searchParams).period);
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       <PageHeader
@@ -38,7 +42,7 @@ export default function TurnstilePage() {
       </div>
 
       <div className="animate-fade-in-up stagger-2">
-        <TurnstileTracker />
+        <TurnstileTracker key={initialPeriod} initialPeriod={initialPeriod} />
       </div>
 
       <div className="mt-8 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 border-t border-glass-4 pt-6">

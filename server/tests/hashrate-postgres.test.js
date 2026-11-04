@@ -11,6 +11,70 @@ function referenceProof(bits) {
   return target > 0n && target < (1n << 256n) ? ((1n << 256n) / (target + 1n)).toString() : null;
 }
 
+test('PostgreSQL history fast path is exact for compact-target boundaries and deterministic random targets', { skip: !connectionString }, async () => {
+  const { Client } = require('pg');
+  const db = new Client({ connectionString }); await db.connect();
+  try {
+    await db.query('BEGIN; CREATE TEMP TABLE blocks (height bigint PRIMARY KEY, hash text, timestamp bigint, bits text) ON COMMIT DROP;');
+    const fixtures = ['zzzzzzzz', '2007fff', '2007ffff0', '', null];
+    for (let exponent = 0; exponent <= 36; exponent++) {
+      for (const mantissa of [0, 1, 2, 255, 256, 65535, 65536, 0x7fffff, 0x800000, 0xffffff]) {
+        const bits = ((BigInt(exponent) << 24n) | BigInt(mantissa)).toString(16).padStart(8, '0');
+        fixtures.push(bits, bits.toUpperCase());
+      }
+    }
+    let seed = 0x6b47c931;
+    for (let exponent = 28; exponent <= 34; exponent++) {
+      const maximum = exponent === 34 ? 255 : exponent === 33 ? 65535 : 0x7fffff;
+      for (let i = 0; i < 1024; i++) {
+        seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0;
+        const mantissa = 1 + seed % maximum;
+        const bits = ((BigInt(exponent) << 24n) | BigInt(mantissa)).toString(16);
+        fixtures.push(i % 2 ? bits : bits.toUpperCase());
+      }
+    }
+    await db.query("INSERT INTO blocks SELECT ordinality, ordinality::text, ordinality, bits FROM unnest($1::text[]) WITH ORDINALITY AS fixture(bits, ordinality)", [fixtures]);
+    const readProofs = async options => (await db.query(`WITH ${workCtes('true', options)} SELECT proof::text FROM work ORDER BY timestamp`)).rows.map(row => row.proof);
+    const legacy = await readProofs();
+    const fast = await readProofs({ fastLargeTargets: true });
+    assert.deepEqual(legacy, fixtures.map(referenceProof));
+    assert.deepEqual(fast, legacy, 'the SQL fast path must preserve every exact proof and invalid-target null');
+  } finally { await db.query('ROLLBACK'); await db.end(); }
+});
+
+test('PostgreSQL fast history remains byte-equivalent to legacy daily and seven-day histories', { skip: !connectionString }, async () => {
+  const { Client } = require('pg');
+  const db = new Client({ connectionString }); await db.connect();
+  try {
+    await db.query('BEGIN; CREATE TEMP TABLE blocks (height bigint PRIMARY KEY, hash text, timestamp bigint, bits text) ON COMMIT DROP;');
+    const midnight = Number((await db.query('SELECT (floor(extract(epoch FROM now()) / 86400) * 86400)::bigint AS at')).rows[0].at);
+    let height = 0;
+    for (let day = 45; day >= 1; day--) {
+      for (const bits of ['207fffff', '1C009E0A', '2100ffff', '220000ff', day === 15 ? null : '1b741ecd']) {
+        await db.query('INSERT INTO blocks VALUES ($1,$2,$3,$4)', [++height, String(height), midnight - day * DAY + height % 100, bits]);
+      }
+    }
+    const where = 'timestamp >= $1 AND timestamp < $2';
+    const fast = workCtes(where, { fastLargeTargets: true });
+    const legacy = workCtes(where);
+    const fastBucket = 'timestamp - ((timestamp % 86400 + 86400) % 86400)';
+    const legacyBucket = '(floor(timestamp::numeric / 86400) * 86400)::bigint';
+    const referenceDb = { query: (sql, values) => db.query(sql.replace(fast, () => legacy).replace(fastBucket, () => legacyBucket), values) };
+    const bucketRows = await db.query(`SELECT (${fastBucket})::text AS fast, (${legacyBucket})::text AS legacy
+      FROM unnest($1::bigint[]) AS boundary(timestamp)`, [[-172801, -172800, -86401, -86400, -86399, -1, 0, 1, 86399, 86400, 172799, 4294967295, '9223372036854775807']]);
+    assert.ok(bucketRows.rows.every(row => row.fast === row.legacy), 'integer UTC bucketing must preserve floor semantics across negative boundaries and large timestamps');
+    for (const period of ['7d', '30d', 'all']) {
+      for (const window of ['24h', '7d']) {
+        const actual = await loadHashrateHistory(db, period, window);
+        const reference = await loadHashrateHistory(referenceDb, period, window);
+        assert.equal(JSON.stringify(actual), JSON.stringify(reference), `${period}/${window}`);
+      }
+    }
+    await db.query("UPDATE blocks SET bits='203fffff', hash='canonical-replacement' WHERE height=200");
+    assert.equal(JSON.stringify(await loadHashrateHistory(db, 'all', '7d')), JSON.stringify(await loadHashrateHistory(referenceDb, 'all', '7d')));
+  } finally { await db.query('ROLLBACK'); await db.end(); }
+});
+
 test('actual PostgreSQL target decoding, fixed windows, history and canonical replacement', { skip: !connectionString }, async () => {
   const { Client } = require('pg');
   const db = new Client({ connectionString }); await db.connect();

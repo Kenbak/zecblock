@@ -244,6 +244,13 @@ Paid mode requires all of these **backend** settings:
   `ASK_MONTHLY_BUDGET_USD` (each positive, at most 1,000 USD).
 - `ASK_MAX_INPUT_USD_PER_MILLION`, `ASK_MAX_OUTPUT_USD_PER_MILLION`: reviewed
   upper bounds covering the selected model's applicable regional/cache premiums.
+  Each call first reserves its worst case at these rates; when the provider
+  reports token usage, the reservation is reduced to the billed cost, so the
+  daily and monthly caps track real spend. Calls with no reported usage
+  (network failure, timeout, cancellation) keep the full reservation.
+- Optional `ASK_CACHED_INPUT_USD_PER_MILLION` (0 up to the input rate): the
+  price of cached input tokens when reconciling. Unset, cached tokens bill at
+  the full input rate.
 - `ASK_ABUSE_SECRET` (at least 32 characters), `ASK_TURNSTILE_SECRET`,
   `ASK_TURNSTILE_SITE_KEY`, `ASK_TURNSTILE_HOSTNAME` (exact frontend hostname).
 - Ready shared `app.locals.redisClient`. Configure durable, non-evicting storage
@@ -360,3 +367,39 @@ deploying the legacy API handler; until then a preview pointed at an older API
 can show confirmed status/components while summary fees and sizes remain unavailable.
 Guided English lookups work without inference; paid narration and multilingual
 selection use the existing validated fact/citation pipeline when AI is enabled.
+
+
+### Private research SQL and browser library (2026-10-06)
+
+`ASK_RESEARCH_ENABLED=true` is an explicit opt-in on both API and isolated worker;
+only the `logical_public_core` profile is supported. No public rollout is implied.
+`GET /v1/ask` reports `researchEnabled`. `POST /v1/ask/research/plan` accepts a
+bounded question and challenge, returns a validated v3 SQL recipe or null, and
+uses the existing provider reservation. With `execute:true`, the validated recipe is executed by the same isolated worker and returned with its result in one challenge-admitted request. Omitting this option only drafts SQL. The main Ask composer uses `/chat`: a validated research intent generates SQL, executes it through the same worker and explains the returned evidence. Optional `currentResearch` preserves the previous query for follow-ups. SQL remains available behind the optional SQL & data disclosure; no separate workspace tab exists.
+`POST /v1/ask/research/query` accepts `{version:3,sql,limit,challenge}`. The manual
+path uses the same challenge/IP admission and the authenticated worker's atomic
+query quotas; it does not require or call the AI provider.
+
+The pinned `pgsql-parser@18.2.9` (PostgreSQL 18 AST) parses one SELECT; the positive
+subset is exercised against PostgreSQL 16. User AST, writes, recursive CTEs, locks,
+private/catalogue relations, unreviewed functions/types/operators and string
+concatenation are rejected. Reviewed aliases resolve to three admission-gated
+public views. Joins, CTEs, subqueries, arithmetic, aggregates and windows are
+supported; this does not certify arbitrary analytical semantics or prevent join
+fanout. Results retain exact decimal strings/nulls, with a fingerprint, UTC
+indexed-through/retrieval times, coverage and units. Limits: 8 KiB SQL, 24 columns,
+200 rows, 256 KiB evidence, 3-second database statements, 500ms lock timeout,
+1MB work_mem, 16MB temp_file_limit, two worker slots and a configured global daily
+query cap. Node worker cgroup limits do not bound the PostgreSQL backend. Heavy
+queries can fail safely and need aggregates or a separate asynchronous tier.
+
+The unified `/ask` conversation stores an explicitly saved versioned library in localStorage
+(`zecblock.research.v1`), not a user account or backend database. Limits: 25 queries,
+12 dashboards with 12 items each, and 2 MiB portable/storage payloads. It exports
+individual/library JSON and readable Markdown reports. Strict imports remap IDs,
+validate references and shapes and never autoexecute SQL. Files are editable
+snapshots, not signed evidence; users must rerun for live verification. Site-data
+clearing loses local saves, so download a copy. SQL/results/notes do not go to the
+model on manual runs. The standalone draft route sends the question and public schema. Ask chat also sends recent questions, the previous SQL recipe for follow-ups, and a bounded public-result preview for explanation; notes and saved browser libraries are not sent.
+No passkeys, cross-device cloud saves, public ratings, publishing/discovery job,
+MCP endpoint, private uploads or BYOK flow is implemented by this change.

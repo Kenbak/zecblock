@@ -1,4 +1,5 @@
 "use client";
+import { DisclosureSummary } from "./PanelTitle";
 import { useState } from "react";
 import { TokenChainIcon } from "@/components/TokenChainIcon";
 import { Analytics, CHAINS, href, value } from "./model";
@@ -33,10 +34,8 @@ export function ChainHistory({ data }: { data: Analytics }) {
         )
       : NaN;
   return (
-    <details className="card">
-      <summary className="cursor-pointer text-sm text-secondary font-mono">
-        View chain history
-      </summary>
+    <details className="card group">
+      <DisclosureSummary title="Weekly chain history" />
       <p className="text-xs text-muted my-4">
         Weekly net ZEC · green into ZEC · orange out · stronger color means more
         · gaps unknown

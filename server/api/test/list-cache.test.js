@@ -561,6 +561,7 @@ test('load timings and response headers expose cache state and measured phases',
   const headers = new Map();
   applyListCacheHeaders({ set(name, value) { headers.set(name, value); } }, sample);
   assert.equal(headers.get('X-CipherScan-Cache'), 'STALE');
+  assert.equal(headers.get('X-ZecBlock-Cache'), 'STALE');
   assert.equal(headers.get('Server-Timing'), formatServerTiming(sample));
 });
 

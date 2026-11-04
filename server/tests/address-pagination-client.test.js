@@ -185,6 +185,7 @@ test('address server/loading/empty/overview amounts and metadata use the configu
       '@/components/CopyButton': { CopyButton: () => null },
       'next/navigation': { notFound: () => { throw new Error('Unexpected not found'); } },
       '@/lib/zcash': { detectAddressType: () => 'transparent' },
+      '@/lib/address-syntax': { isValidAddressSyntax: () => true },
       '@/lib/isr-fallback': { retainLastGoodOrBuildFallback: value => value },
       '@/lib/seo': {
         getAddressResolution: async () => ({ state: 'found', meta }),

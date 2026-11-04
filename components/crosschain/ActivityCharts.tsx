@@ -19,6 +19,7 @@ import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
 import { Analytics, Unit, value } from "./model";
 import { dailyTrends } from "./timeline";
 import { TimelineComparison } from "./TimelineComparison";
+import { objectRowsCsv } from "@/components/charts/PanelShareControl";
 const BUCKETS = [
   "<$10",
   "$10–50",
@@ -81,6 +82,7 @@ export function ActivityCharts({
       {panel === "volume" && (
         <ChartCard
           title="Volume & activity"
+          share={{ title: `ZEC cross-chain swap volume and activity (${data.period})`, fileName: `zecblock-crosschain-activity-${data.period}`, csv: () => objectRowsCsv(points) }}
           height={300}
           controls={
             <div className="filter-group">
@@ -210,6 +212,7 @@ export function ActivityCharts({
       {panel === "sizes" && (
         <ChartCard
           title="Swap sizes"
+          share={{ title: `ZEC cross-chain swap sizes (${data.period})`, fileName: `zecblock-crosschain-swap-sizes-${data.period}`, csv: () => objectRowsCsv(distribution) }}
           height={300}
           controls={
             <div className="filter-group">

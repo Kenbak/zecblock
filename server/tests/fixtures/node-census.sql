@@ -43,7 +43,8 @@ ADD COLUMN betweenness double precision, ADD COLUMN closeness double precision,
 ADD COLUMN degree integer, ADD COLUMN network_type text, ADD COLUMN start_height bigint,
 ADD COLUMN services bigint, ADD COLUMN crawl_seen_count integer DEFAULT 0,
 ADD COLUMN crawl_miss_count integer DEFAULT 0, ADD COLUMN last_verified_at timestamptz,
-ADD COLUMN last_peer_seen_at timestamptz;
+ADD COLUMN last_peer_seen_at timestamptz, ADD COLUMN last_chain_verified_at timestamptz,
+ADD COLUMN chain_block_hash text, ADD COLUMN chain_proof text;
 ALTER TABLE node_snapshots ADD COLUMN tor_hidden_nodes integer DEFAULT 0,
 ADD COLUMN census_version smallint NOT NULL DEFAULT 0;
 CREATE TEMP TABLE node_edges(src_addr_id bigint, dst_addr_id bigint, observed_at timestamptz DEFAULT now(), UNIQUE(src_addr_id,dst_addr_id));

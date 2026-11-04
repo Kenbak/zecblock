@@ -1,0 +1,191 @@
+{
+  "query": {
+    "version": 3,
+    "sql": "WITH \nmonthly_counts AS (SELECT\n  pg_catalog.date_trunc('month', date::timestamp) AS month,\n  pg_catalog.sum(shielded_transactions) AS shielded_transactions,\n  pg_catalog.sum(transparent_transactions) AS transparent_transactions,\n  pg_catalog.sum(unclassified_transactions) AS unclassified_transactions\nFROM analytics_public.activity_daily_query AS activity_daily\nWHERE\n  date >= '2025-01-01'::date\n  AND date < '2026-01-01'::date\nGROUP BY\n  pg_catalog.date_trunc('month', date::timestamp)),\n  rolling_counts AS (SELECT\n    month,\n    shielded_transactions,\n    transparent_transactions,\n    unclassified_transactions,\n    pg_catalog.avg(shielded_transactions) OVER (\n      ORDER BY month\n      ROWS BETWEEN 2 PRECEDING AND CURRENT ROW\n    ) AS shielded_3_month_average,\n    pg_catalog.lag(shielded_transactions) OVER (ORDER BY month) AS previous_shielded_transactions\n  FROM monthly_counts),\n  changes AS (SELECT\n    month,\n    shielded_transactions,\n    transparent_transactions,\n    unclassified_transactions,\n    shielded_3_month_average,\n    previous_shielded_transactions,\n    shielded_transactions - previous_shielded_transactions AS shielded_monthly_change\n  FROM rolling_counts)\nSELECT\n  month,\n  shielded_transactions,\n  transparent_transactions,\n  unclassified_transactions,\n  pg_catalog.round((100.0 * shielded_transactions) / (NULLIF ((shielded_transactions + transparent_transactions) + unclassified_transactions, 0)), 2) AS shielded_share_percent,\n  pg_catalog.round(shielded_3_month_average, 2) AS shielded_3_month_average,\n  previous_shielded_transactions,\n  shielded_monthly_change,\n  pg_catalog.abs(shielded_monthly_change) AS absolute_monthly_change\nFROM changes\nORDER BY\n  month",
+    "limit": 100
+  },
+  "columns": [
+    {
+      "key": "c0",
+      "label": "month",
+      "type": "text"
+    },
+    {
+      "key": "c1",
+      "label": "shielded_transactions",
+      "type": "number"
+    },
+    {
+      "key": "c2",
+      "label": "transparent_transactions",
+      "type": "number"
+    },
+    {
+      "key": "c3",
+      "label": "unclassified_transactions",
+      "type": "number"
+    },
+    {
+      "key": "c4",
+      "label": "shielded_share_percent",
+      "type": "number"
+    },
+    {
+      "key": "c5",
+      "label": "shielded_3_month_average",
+      "type": "number"
+    },
+    {
+      "key": "c6",
+      "label": "previous_shielded_transactions",
+      "type": "number"
+    },
+    {
+      "key": "c7",
+      "label": "shielded_monthly_change",
+      "type": "number"
+    },
+    {
+      "key": "c8",
+      "label": "absolute_monthly_change",
+      "type": "number"
+    }
+  ],
+  "rows": [
+    [
+      "2025-01-01 00:00:00",
+      "12027",
+      "23433",
+      "0",
+      "33.92",
+      "12027.00",
+      null,
+      null,
+      null
+    ],
+    [
+      "2025-02-01 00:00:00",
+      "10011",
+      "20502",
+      "0",
+      "32.81",
+      "11019.00",
+      "12027",
+      "-2016",
+      "2016"
+    ],
+    [
+      "2025-03-01 00:00:00",
+      "11591",
+      "22715",
+      "0",
+      "33.79",
+      "11209.67",
+      "10011",
+      "1580",
+      "1580"
+    ],
+    [
+      "2025-04-01 00:00:00",
+      "10632",
+      "22360",
+      "0",
+      "32.23",
+      "10744.67",
+      "11591",
+      "-959",
+      "959"
+    ],
+    [
+      "2025-05-01 00:00:00",
+      "15531",
+      "23832",
+      "0",
+      "39.46",
+      "12584.67",
+      "10632",
+      "4899",
+      "4899"
+    ],
+    [
+      "2025-06-01 00:00:00",
+      "14321",
+      "18752",
+      "0",
+      "43.30",
+      "13494.67",
+      "15531",
+      "-1210",
+      "1210"
+    ],
+    [
+      "2025-07-01 00:00:00",
+      "12889",
+      "21318",
+      "0",
+      "37.68",
+      "14247.00",
+      "14321",
+      "-1432",
+      "1432"
+    ],
+    [
+      "2025-08-01 00:00:00",
+      "17854",
+      "23246",
+      "0",
+      "43.44",
+      "15021.33",
+      "12889",
+      "4965",
+      "4965"
+    ],
+    [
+      "2025-09-01 00:00:00",
+      "17451",
+      "30066",
+      "0",
+      "36.73",
+      "16064.67",
+      "17854",
+      "-403",
+      "403"
+    ],
+    [
+      "2025-10-01 00:00:00",
+      "53175",
+      "136657",
+      "0",
+      "28.01",
+      "29493.33",
+      "17451",
+      "35724",
+      "35724"
+    ],
+    [
+      "2025-11-01 00:00:00",
+      "63100",
+      "410477",
+      "0",
+      "13.32",
+      "44575.33",
+      "53175",
+      "9925",
+      "9925"
+    ],
+    [
+      "2025-12-01 00:00:00",
+      "40022",
+      "124364",
+      "0",
+      "24.35",
+      "52099.00",
+      "63100",
+      "-23078",
+      "23078"
+    ]
+  ],
+  "datasets": [
+    "activity_daily"
+  ]
+}

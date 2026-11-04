@@ -1,15 +1,15 @@
 'use strict';
 
 const { execFileSync } = require('node:child_process');
-const { validateCrawlSnapshot } = require('../lib/node-census');
+const { validateCrawlSnapshot, verifiedNodes } = require('../lib/node-census');
 
 function checkHealth(metrics, now = Date.now()) {
   validateCrawlSnapshot(metrics, now);
   // A process can keep publishing while its connection scheduler has stalled.
   const runtime = metrics.crawler_runtime?.secs;
-  const lastVerified = Math.max(0, ...metrics.node_info.map(n => n.last_verified_at_ms || 0));
+  const lastVerified = Math.max(0, ...verifiedNodes(metrics, now).map(n => n.chain_verified_at_ms));
   if (runtime > 900 && now - lastVerified > 900_000) {
-    throw new Error('No successful protocol verification for fifteen minutes');
+    throw new Error('No successful Zcash chain verification for fifteen minutes');
   }
 }
 

@@ -24,7 +24,7 @@ function route(network, data) {
   let calls = 0;
   return {
     handler: load('app/api/governance/announcement/route.ts', {
-      '@/lib/governance-data': { getGovernanceCatalog: async () => { calls++; return data; } },
+      '@/lib/governance-data': { getGovernanceAnnouncementCatalog: async () => { calls++; return data; } },
       '@/lib/governance-announcement': helpers,
       '@/lib/seo': { getNetwork: () => network },
     }, { Date: Clock }).GET,
@@ -76,6 +76,25 @@ test('CDN freshness uses the remaining catalog minute rather than adding another
   }
 });
 
+test('five-minute finalized result cache does not disable sharing a fresh directory minute', () => {
+  const data = { ...catalog([vote('results')], now - 240_000), directoryCheckedAt: now - 15_000 };
+  assert.equal(helpers.buildAnnouncementSnapshot(data, now).ttl, 45);
+  // The older result check still bounds the ten-minute stale-data cutoff.
+  const stale = { ...data, checkedAt: now - 600_001 };
+  assert.equal(helpers.buildAnnouncementSnapshot(stale, now).ttl, 0);
+  assert.equal(helpers.buildAnnouncementSnapshot(stale, now).snapshot.announcement, null);
+});
+
+test('fresh active voting stays announced when an unrelated historical tally check is old', () => {
+  const data = { ...catalog([vote('active'), vote('results', now - 30 * 86_400_000, 'old-results')], now - 601_000), directoryCheckedAt: now };
+  const fresh = helpers.buildAnnouncementSnapshot(data, now);
+  assert.equal(fresh.snapshot.announcement.key, 'reviewed-vote:active');
+  assert.equal(fresh.ttl, 60);
+  assert.equal(fresh.snapshot.nextChangeAt, now + 600_001);
+  assert.equal(helpers.buildAnnouncementSnapshot(data, now + 600_001).snapshot.announcement, null);
+  assert.equal(helpers.buildAnnouncementSnapshot(data, now + 600_001).ttl, 0);
+});
+
 test('active voting closes at its deadline and CDN caching rounds down before the boundary', () => {
   const closing = now + 10_250;
   const data = catalog([vote('active', closing)]);
@@ -122,7 +141,7 @@ function bannerHarness(responses, initialNow = now) {
     },
     'next/link': {}, '@/lib/config': { isMainnet: true, isCrosslink: false, NETWORK: 'mainnet' },
     '@/hooks/useApiQuery': { useApiQuery: () => ({ data: null, error: null }) },
-    '@/lib/network-upgrades': { readUpgradeSnapshot: () => null },
+    '@/lib/network-upgrades': { readUpgradeSnapshot: () => null, getPendingNu7Upgrade: () => null },
   }, {
     Date: FakeDate, performance: { now: () => clock }, AbortController,
     AbortSignal: { any: signals => signals[0], timeout: () => new AbortController().signal },
@@ -203,7 +222,7 @@ test('shared announcement responses omit per-IP quota headers while the same lim
   const { NextRequest, NextResponse } = require('next/server');
   const { proxy } = load('proxy.ts', {
     'next/server': { NextResponse },
-    './lib/governance-request': {}, './lib/network': {}, './lib/chart-catalog': {}, './lib/name-validation': {},
+    './lib/governance-request': {}, './lib/network': {}, './lib/chart-catalog': {}, './lib/name-validation': {}, './lib/address-syntax': {},
   }, { process: { env: { NODE_ENV: 'production' } }, setInterval: () => {} });
   const request = path => new NextRequest(`https://zecblock.com${path}`, {
     headers: { host: 'zecblock.com', 'x-forwarded-for': '192.0.2.123' },

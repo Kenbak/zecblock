@@ -17,7 +17,7 @@ export interface ChartExportData {
 }
 export function findShareChart(id: string) { return CHART_CATALOG.find(chart => chart.id === id); }
 export function normalizeChartRange(value: unknown): ChartRange {
-  return CHART_RANGES.includes(value as ChartRange) ? value as ChartRange : 'all';
+  return CHART_RANGES.includes(value as ChartRange) ? value as ChartRange : '30d';
 }
 export function chartRangeRows(chart: CatalogChart, rows: ChartRow[], range: ChartRange): ChartRow[] {
   if (chart.axis || range === 'all' || !rows.length) return rows;
@@ -32,9 +32,9 @@ export function selectedChartSeries(chart: CatalogChart, value: unknown): Catalo
   const series = chart.series.filter(item => selected.has(item.key));
   return series.length ? { ...chart, series } : chart;
 }
-export function chartSharePath(id: string, range: ChartRange = 'all', series?: string[]): string {
+export function chartSharePath(id: string, range: ChartRange = '30d', series?: string[]): string {
   const query = new URLSearchParams();
-  if (range !== 'all') query.set('range', range);
+  query.set('range', range);
   if (series?.length) query.set('series', series.join(','));
   return `/charts/${id}${query.size ? `?${query}` : ''}`;
 }

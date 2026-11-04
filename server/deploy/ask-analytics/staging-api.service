@@ -1,0 +1,48 @@
+# Protected staging only. Separate from the loopback preview and public API.
+[Unit]
+Description=ZecBlock authenticated staging Ask API
+After=network-online.target zecblock-ask-analytics.service zecblock-ask-quota.service
+Wants=network-online.target
+Requires=zecblock-ask-quota.service
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Type=simple
+User=ask_stage
+Group=ask_stage
+WorkingDirectory=/opt/zecblock-ask-staging/app
+Environment=NODE_ENV=production
+# Keep the existing approved budget values and Redis counters. The second file
+# disables preview fixtures and adds the independent staging TLS configuration.
+EnvironmentFile=/opt/zecblock-ask-api-preview/api.env
+EnvironmentFile=/etc/zecblock/ask-staging.env
+ExecStart=/opt/zecblock-ask-staging/runtime/bin/node /opt/zecblock-ask-staging/app/server/api/ask-staging-api.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+CapabilityBoundingSet=
+LockPersonality=yes
+SocketBindDeny=any
+SocketBindAllow=tcp:8443
+MemoryHigh=384M
+MemoryMax=512M
+CPUQuota=100%
+TasksMax=64
+LimitNOFILE=256
+UMask=0077
+TimeoutStopSec=15
+
+[Install]
+WantedBy=multi-user.target

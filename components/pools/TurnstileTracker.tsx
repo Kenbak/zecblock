@@ -12,15 +12,15 @@ import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { getApiUrl } from '@/lib/api-config';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
-import { getFlowColors, TURNSTILE_CATEGORY_LABELS } from '@/lib/flow-colors';
+import { getFlowColors } from '@/lib/flow-colors';
 import { formatZecCompact } from '@/lib/format-numbers';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { ChartCard } from '@/components/network/ChartCard';
 import { MetricWithTooltip } from '@/components/pools/MetricWithTooltip';
 import { InteractiveCompositionBar } from '@/components/pools/InteractiveCompositionBar';
-
-type TurnstilePeriod = 'nu6.2' | '30d' | '90d' | '1y' | 'all';
+import { parseTurnstilePeriod, type TurnstilePeriod } from '@/lib/turnstile-period';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 const PERIOD_SINCE: Record<TurnstilePeriod, string> = {
   'nu6.2': '2026-06-01',
@@ -88,6 +88,7 @@ interface TurnstilePoint {
 
 interface TurnstileTrackerProps {
   showCardHeader?: boolean;
+  initialPeriod?: TurnstilePeriod;
 }
 
 const PERIOD_OPTIONS: { key: TurnstilePeriod; label: string }[] = [
@@ -109,11 +110,11 @@ const TURNSTILE_HINTS: Record<TurnstileCategory, string> = {
   exchange: 'labeled exchange addr',
 };
 
-export function TurnstileTracker({ showCardHeader = false }: TurnstileTrackerProps) {
+export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProps) {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const flowColors = getFlowColors(theme);
-  const [period, setPeriod] = useState<TurnstilePeriod>('all');
+  const [period, setPeriod] = useState<TurnstilePeriod>(() => parseTurnstilePeriod(initialPeriod));
   const [summary, setSummary] = useState<TurnstileSummary | null>(null);
   const [totalShielded, setTotalShielded] = useState<number | null>(null);
   const [timeseries, setTimeseries] = useState<TurnstilePoint[]>([]);
@@ -470,7 +471,7 @@ export function TurnstileTracker({ showCardHeader = false }: TurnstileTrackerPro
         }));
 
         return (
-          <ChartCard title="DAILY_DESHIELDED_ZEC_BREAKDOWN" height={280}>
+          <ChartCard title="DAILY_DESHIELDED_ZEC_BREAKDOWN" height={280} share={{ title: 'Daily deshielded ZEC breakdown', fileName: 'zecblock-daily-deshielded-zec', csv: () => objectRowsCsv(chartData) }}>
             <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />

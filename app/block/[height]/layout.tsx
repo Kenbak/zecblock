@@ -12,7 +12,7 @@ import {
 import { fetchWithDeadline } from '@/lib/server-fetch';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
 import { getUpgradeStats } from '@/lib/network-upgrades-server';
-import { readUpgradeSnapshot, getBlockUpgrade } from '@/lib/network-upgrades';
+import { readUpgradeSnapshot, getFutureBlockUpgrade } from '@/lib/network-upgrades';
 
 type Props = {
   params: Promise<{ height: string }>;
@@ -52,10 +52,12 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
       const tipHeight = await getTipHeight();
       if (Number(height) > tipHeight) {
         const stats = await getUpgradeStats();
-        const upgrade = getBlockUpgrade(Number(height), getNetwork(), readUpgradeSnapshot(stats, getNetwork()));
-        const label = upgrade?.name === 'NU7 activation' ? `NU7 Activation on Zcash ${getNetwork()}` : 'Zcash Block';
+        const upgrade = getFutureBlockUpgrade(Number(height), getNetwork(), readUpgradeSnapshot(stats, getNetwork()));
+        const label = upgrade?.authority === 'announcement' ? 'NU7 Mainnet Preview' : upgrade?.name === 'NU7 activation' ? `NU7 Activation on Zcash ${getNetwork()}` : 'Zcash Block';
         const title = `${label} #${formatNumber(Number(height))} — Estimated Arrival | ZecBlock`;
-        const description = `${label} #${formatNumber(Number(height))} has not been mined yet. Approximately ${formatNumber(Number(height) - tipHeight)} blocks remain. Time estimates follow recent block times and the serving node’s schedule; mining variance can change arrival times.`;
+        const description = upgrade?.authority === 'announcement'
+          ? `${label} #${formatNumber(Number(height))} has not been mined yet. ${upgrade.description} Arrival is approximate.`
+          : `${label} #${formatNumber(Number(height))} has not been mined yet. Approximately ${formatNumber(Number(height) - tipHeight)} blocks remain. Time estimates follow recent block times and the serving node’s schedule; mining variance can change arrival times.`;
         return buildPageMetadata({
           title,
           description,

@@ -6,6 +6,7 @@ import { fetchWithDeadline } from '@/lib/server-fetch';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
 import Link from 'next/link';
 import { readUpgradeSnapshot } from '@/lib/network-upgrades';
+import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 
 // Keep the shared HTML/RSC snapshot inexpensive; browsers refresh live data
 // independently. No server fetch may shorten this route's ISR lifetime.
@@ -33,7 +34,8 @@ export default async function NetworkPage() {
   const apiBase = getApiUrl();
   const network = getNetwork();
   const fetchedAt = Date.now();
-  const [stats, health, nodeLocations, nodeStats, recentBlocks, feeDistribution, halving, emission] = await Promise.all([
+  const [blockSpeed, stats, health, nodeLocations, nodeStats, recentBlocks, feeDistribution, halving, emission] = await Promise.all([
+    network === 'crosslink-testnet' ? null : loadBlockSpeedSnapshot(network).then(snapshot => snapshot.story),
     fetchJson<NetworkPageInitialData['stats']>(apiBase, '/v1/network/stats', network),
     fetchJson<NetworkPageInitialData['health']>(apiBase, '/v1/network/health', network),
     fetchJson<NetworkPageInitialData['nodeLocations']>(apiBase, '/v1/network/nodes', network),
@@ -60,7 +62,7 @@ export default async function NetworkPage() {
   return <>
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(pageSchema).replace(/</g, '\\u003c') }} />
     <NetworkClient initialData={{
-      fetchedAt, stats, health, nodeLocations, nodeStats, recentBlocks, feeDistribution, halving,
+      fetchedAt, stats, health, nodeLocations, nodeStats, recentBlocks, feeDistribution, halving, blockSpeed,
       emission: emission ? {
         circulating: emission.circulating, remaining: emission.remaining,
         dailyEmissionEstimate: emission.dailyEmissionEstimate, supplyObservedAt: emission.supplyObservedAt,
@@ -70,9 +72,10 @@ export default async function NetworkPage() {
     <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
       <div className="border-t border-cipher-border pt-6 max-w-3xl text-sm text-muted space-y-2">
         <h2 className="font-mono font-medium text-secondary">About these observations</h2>
+        {network !== 'crosslink-testnet' && <p>Explore <Link href="/network/upgrades" className="text-brand-gold hover:underline">Zcash network upgrades</Link> for activation history and upcoming changes on {network}.</p>}
         {nu7Height != null && <p>The serving node announces NU7 at <Link href={`/block/${nu7Height}`} prefetch={false} className="text-brand-gold hover:underline">block #{nu7Height.toLocaleString('en-US')}</Link> on Zcash {network}. {nu7Active ? <>The upgrade is active; explore <Link href="#nu7-accounting" className="text-brand-gold hover:underline">fee allocation and NSM accounting</Link> below.</> : <>View its canonical block or the estimated activation countdown.</>}</p>}
         <p>Chain statistics, recent blocks and node discovery are separate observations and can update at different times. Block cadence uses timestamps recorded in blocks; these are not measurements of when this explorer received them.</p>
-        <p>The map shows observed reachable nodes, not a census of every Zcash node. Peer connections and disk usage in Technical details describe this explorer’s node. Observed transaction fees describe past transactions and are not fee recommendations.</p>
+        <p>The map shows observed active IPs, not a census of every Zcash node. {network === 'mainnet' ? 'Crawler observations require a matching Zcash checkpoint header; this establishes the chain through that checkpoint, not current sync status. ' : ''}Peer connections and disk usage in Technical details describe this explorer’s node. Observed transaction fees describe past transactions and are not fee recommendations.</p>
       </div>
     </section>
   </>;

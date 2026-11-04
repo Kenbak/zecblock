@@ -13,7 +13,7 @@ import {
   serializeUrlSet,
   type SitemapUrlEntry,
 } from '@/lib/sitemaps';
-import { getZnsStatus, isValidName, listZnsRegistrations } from '@/lib/zns';
+import { isValidName, listZnsRegistrations } from '@/lib/zns';
 
 export const dynamic = 'force-dynamic';
 
@@ -88,24 +88,45 @@ async function fetchJson(url: string, revalidate: number): Promise<unknown> {
 
 async function refreshRegisteredNamePages(baseUrl: string): Promise<SitemapUrlEntry[]> {
   const signal = AbortSignal.timeout(FETCH_TIMEOUT_MS);
-  const status = await getZnsStatus(signal);
-  const total = Math.min(Math.max(Number(status.registered) || 0, 0), ZNS_SITEMAP_LIMIT);
   const entries: SitemapUrlEntry[] = [];
+  const names = new Set<string>();
+  const cursors = new Set<string>();
+  let recordsRead = 0;
 
+  // The current resolver's status describes sync state, not registration count.
+  // Enumerate its authoritative collection within the existing discovery budget.
   let cursor: string | null = null;
-  for (let offset = 0; offset < total; offset += ZNS_PAGE_SIZE) {
-    const { items: registrations, page } = await listZnsRegistrations(ZNS_PAGE_SIZE, cursor, signal);
-    cursor = page.nextCursor;
+  const maxPages = Math.ceil(ZNS_SITEMAP_LIMIT / ZNS_PAGE_SIZE);
+  for (let pageNumber = 0; pageNumber < maxPages && recordsRead < ZNS_SITEMAP_LIMIT; pageNumber += 1) {
+    const limit = Math.min(ZNS_PAGE_SIZE, ZNS_SITEMAP_LIMIT - recordsRead);
+    const { items: registrations, page } = await listZnsRegistrations(limit, cursor, signal);
+    if (!Array.isArray(registrations) || registrations.length > limit) {
+      throw new Error('Name sitemap data source returned an invalid collection');
+    }
+    recordsRead += registrations.length;
     for (const registration of registrations) {
-      if (typeof registration.name !== 'string' || !isValidName(registration.name)) continue;
+      if (typeof registration?.name !== 'string' || !isValidName(registration.name)) continue;
+      if (typeof registration.address !== 'string' || !registration.address
+        || typeof registration.txid !== 'string' || !Number.isInteger(registration.height)
+        || typeof registration.lastAction !== 'string') {
+        throw new Error('Name sitemap data source returned an invalid registration');
+      }
+      const name = registration.name.toLowerCase();
+      if (names.has(name)) continue;
+      names.add(name);
       entries.push({
-        url: `${baseUrl}/name/${encodeURIComponent(registration.name.toLowerCase())}`,
+        url: `${baseUrl}/name/${encodeURIComponent(name)}`,
       });
     }
-    if (!cursor) break;
+    if (!page.hasNext) break;
+    if (registrations.length === 0 || !page.nextCursor || cursors.has(page.nextCursor)) {
+      throw new Error('Name sitemap data source returned non-advancing pagination');
+    }
+    cursors.add(page.nextCursor);
+    cursor = page.nextCursor;
   }
 
-  if (total > 0 && entries.length === 0) {
+  if (recordsRead > 0 && entries.length === 0) {
     throw new Error('Name sitemap data source returned no valid registrations');
   }
 
@@ -114,7 +135,7 @@ async function refreshRegisteredNamePages(baseUrl: string): Promise<SitemapUrlEn
 
 const getRegisteredNamePagesFromDataCache = unstable_cache(
   refreshRegisteredNamePages,
-  ['sitemap-zns-registrations-v2'],
+  ['sitemap-zns-registrations-v3'],
   {
     revalidate: ZNS_REVALIDATE_SECONDS,
     tags: ['sitemap-zns-registrations'],

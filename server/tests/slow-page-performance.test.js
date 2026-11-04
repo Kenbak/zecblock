@@ -24,7 +24,7 @@ function loadTypeScriptModule(relativePath, imports = {}) {
   const localRequire = (specifier) => {
     if (Object.prototype.hasOwnProperty.call(imports, specifier)) return imports[specifier];
     if (specifier === '@/lib/network-upgrades-server') return { getUpgradeStats: async () => null };
-    if (specifier === '@/lib/network-upgrades') return { readUpgradeSnapshot: () => null, getBlockUpgrade: () => null };
+    if (specifier === '@/lib/network-upgrades') return { readUpgradeSnapshot: () => null, getFutureBlockUpgrade: () => null };
     if (specifier === '@/lib/api-client') return loadTypeScriptModule('lib/api-client.ts');
     return require(specifier);
   };
@@ -122,7 +122,7 @@ test('server-render fetches abort a hung origin inside their deadline', async ()
     SERVER_RENDER_BUILD_FETCH_TIMEOUT_MS,
     SERVER_RENDER_DEV_FETCH_TIMEOUT_MS,
     SERVER_RENDER_FETCH_TIMEOUT_MS,
-  } = loadTypeScriptModule('lib/server-fetch.ts');
+  } = loadTypeScriptModule('lib/server-fetch.ts', { './api-config': { getApiUrl: () => 'https://api.invalid' } });
   assert.ok(
     SERVER_RENDER_FETCH_TIMEOUT_MS <= 1_000,
     'the production page budget must stay below the 2s TTFB target',
@@ -469,7 +469,7 @@ test('homepage, rich list, and detail HTML opt into the Next full route cache', 
 
   assert.match(richList, /export const revalidate = 60/);
   assert.doesNotMatch(richList, /force-dynamic/);
-  assert.match(richList, /fetchWithDeadline\(/);
+  assert.match(richList, /fetchApiDataWithDeadline</);
   assert.match(richList, /retainLastGoodOrBuildFallback\(/);
 
   // Block and tx layouts use dynamic fetch-level revalidation (3600s for

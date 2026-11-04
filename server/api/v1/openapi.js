@@ -155,7 +155,7 @@ const HEIGHT = { type: 'integer', minimum: 0, maximum: 100_000_000 };
 function requestSchema(entry) {
   if (entry.v1.nativeKey === 'ask') {
     const { z } = require('zod');
-    const schema = z.toJSONSchema(entry.v1.path.endsWith('/chat') ? require('../../../lib/ask/chat').chatRequestSchema : entry.v1.path.endsWith('/explain') ? require('./lib/ask-explanation').explainRequestSchema : require('../../../lib/ask/contract').requestSchema);
+    const schema = z.toJSONSchema(entry.v1.path.endsWith('/research/query') ? require('../../../lib/ask/research-contract').sqlQuerySchema.extend({challenge:z.string().min(1).max(2048)}).strict() : entry.v1.path.endsWith('/research/plan') ? z.object({question:z.string().trim().min(1).max(1000),challenge:z.string().max(2048),execute:z.boolean().optional().default(false)}).strict() : entry.v1.path.endsWith('/chat') ? require('../../../lib/ask/chat').chatRequestSchema : entry.v1.path.endsWith('/explain') ? require('./lib/ask-explanation').explainRequestSchema : require('../../../lib/ask/contract').requestSchema);
     delete schema.$schema;
     return schema;
   }
@@ -233,6 +233,7 @@ function buildOperation(entry) {
   return {
     operationId: operationId(entry.method, entry.v1.path),
     summary: entry.description,
+    ...(entry.v1.description ? { description: entry.v1.description } : {}),
     tags: [entry.domain],
     ...(parameters.length ? { parameters } : {}),
     ...(entry.method === 'POST' ? { requestBody: { required: true, content: { 'application/json': { schema: requestSchema(entry) } } } } : {}),

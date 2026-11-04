@@ -8,6 +8,15 @@ const nextConfig: NextConfig = {
       dynamic: 0,
     },
   },
+  async headers() {
+    if (process.env.VERCEL_ENV !== 'preview' || process.env.ASK_STAGING_ENABLED !== 'true') return [];
+    return [{ source: '/:path*', headers: [
+      { key: 'X-Robots-Tag', value: 'noindex, follow' },
+      { key: 'Cache-Control', value: 'private, no-store, max-age=0' },
+      { key: 'CDN-Cache-Control', value: 'no-store' },
+      { key: 'Vercel-CDN-Cache-Control', value: 'no-store' },
+    ] }];
+  },
   async rewrites() {
     return {
       beforeFiles: [
@@ -52,6 +61,8 @@ const nextConfig: NextConfig = {
         destination: 'https://zecblock.com/:path*',
         permanent: true,
       },
+      // Ask was renamed Zift; shared #r= research links keep their fragment.
+      { source: '/ask', destination: '/zift', permanent: true },
       {
         source: '/migration',
         destination: '/ironwood',

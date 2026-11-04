@@ -35,6 +35,7 @@ import {
   type CompactScatterResponse,
   type ScatterCursor,
 } from './compact-scatter';
+import { useUrlState } from '@/lib/use-url-state';
 
 export type { Cohort, Cohorts, Overview, ScatterData, ScatterTx } from './components';
 
@@ -77,7 +78,7 @@ export function MigrationClient({
   const [overview, setOverview] = useState<Overview | null>(initialOverview);
   const [cohorts, setCohorts] = useState<Cohorts | null>(initialCohorts);
   const [scatter, setScatter] = useState<ScatterData | null>(null);
-  const [scatterRange, setScatterRange] = useState<PrivacyRange>('7d');
+  const [scatterRange, setScatterRange] = useUrlState<PrivacyRange>('scatter', '7d', ['24h', '7d', '30d', 'all']);
   const [activityHourly, setActivityHourly] = useState<MigrationActivityData | null>(initialActivityHourly);
   const [activityDaily, setActivityDaily] = useState<MigrationActivityData | null>(initialActivityDaily);
   const [activityAttempted, setActivityAttempted] = useState(

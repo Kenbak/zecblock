@@ -54,6 +54,7 @@ test('malformed block paths are rejected before a streaming response starts', as
       'next/server': { NextResponse },
       './lib/governance-request': {},
       './lib/network': {},
+      './lib/address-syntax': {},
     })[name],
   });
   for (const id of ['bad-hash', '-1', '100000001', 'g'.repeat(64)]) {
@@ -138,9 +139,14 @@ test('identifier aliases redirect before SSR without changing network, query or 
     const canonicalTx = `https://${host}/tx/${'ab'.repeat(32)}`;
     assert.equal(unstable_doesMiddlewareMatch({ config: exports.config, nextConfig: {}, url: canonicalTx }), false,
       'ordinary transaction views must not gain a paid Proxy invocation');
+    // Malformed ids reach Proxy so it can return a styled 404 instead of the
+    // unstyled SSR error shell that a layout notFound() produces. The matcher
+    // must stay linear for long input.
     for (const identifier of ['A'.repeat(63), 'A'.repeat(65), `${'A'.repeat(64)}g`, `${'A'.repeat(8192)}g`]) {
-      assert.equal(unstable_doesMiddlewareMatch({ config: exports.config, nextConfig: {}, url: `https://${host}/tx/${identifier}` }), false,
-        'invalid lengths and long invalid input must not invoke the alias normalizer');
+      const started = process.hrtime.bigint();
+      assert.equal(unstable_doesMiddlewareMatch({ config: exports.config, nextConfig: {}, url: `https://${host}/tx/${identifier}` }), true,
+        'malformed transaction ids must reach the Proxy 404');
+      assert.ok(process.hrtime.bigint() - started < 50_000_000n, 'matching long invalid input must stay fast');
     }
     for (const identifier of ['3492072', 'cd'.repeat(32), '0'.repeat(64)]) {
       const response = await exports.proxy(new NextRequest(`https://${host}/block/${identifier}`));

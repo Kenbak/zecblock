@@ -9,6 +9,7 @@ const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { dataHeaderNames } = require('./lib/data-headers');
 const { Pool } = require('pg');
 const WebSocket = require('ws');
 const http = require('http');
@@ -26,6 +27,7 @@ const {
   receiveEnvelope,
 } = require('./broadcast-relay');
 const { createChainTipBroadcaster } = require('./chain-tip-broadcast');
+const { createIndexNowNotifier, resolveIndexNowConfig } = require('./indexnow');
 
 // Redacts dynamic path segments (addresses, tx/block hashes, heights) before
 // logging so request logs never contain queried identifiers or amounts.
@@ -313,9 +315,9 @@ app.use(cors({
   credentials: true,
   exposedHeaders: [
     'X-Request-Id',
-    'X-CipherScan-Cache',
-    'X-CipherScan-Indexed-Height',
-    'X-CipherScan-Data-Age-Blocks',
+    ...dataHeaderNames('Cache'),
+    ...dataHeaderNames('Indexed-Height'),
+    ...dataHeaderNames('Data-Age-Blocks'),
     'Server-Timing',
     'Retry-After',
     'RateLimit-Limit',
@@ -697,6 +699,19 @@ async function broadcastToAll(message, serviceExtra = null) {
 let chainTip = { height: 0, hash: '' };
 app.locals.chainTip = chainTip;
 
+// IndexNow discovery hints for durable mainnet URL state changes only (see
+// indexnow.js). Disabled unless INDEXNOW_KEY, INDEXNOW_HOST and an explicit
+// mainnet ZCASH_NETWORK/NETWORK are all configured; enable it on exactly one
+// active API instance so standby/relay instances do not duplicate hints.
+const indexNowConfig = resolveIndexNowConfig();
+const indexNow = createIndexNowNotifier({
+  ...indexNowConfig,
+  onError: (context, err) => logSafeError(`[indexnow:${context}]`, err),
+});
+console.log(indexNowConfig.enabled
+  ? `🔎 IndexNow enabled for ${indexNowConfig.host}`
+  : `🔎 IndexNow disabled: ${indexNowConfig.reason}`);
+
 // Broadcast new block to all connected clients
 function broadcastNewBlock(block) {
   const h = parseInt(block.height, 10);
@@ -709,6 +724,7 @@ function broadcastNewBlock(block) {
     data: block,
   });
   purgeChainTipCache();
+  indexNow.blockConnected(block);
 }
 
 // Purge the Next.js CDN cache for chain-tip tagged pages (on-demand ISR)
@@ -760,6 +776,7 @@ const zebraGrpc = new ZebraGrpcClient(
   {
     onMempoolChange: async (change) => {
       if (change.type === 'ADDED') {
+        indexNow.mempoolAdded(change.txid);
         try {
           const tx = await callZebraRPC('getrawtransaction', [change.txid, 1]);
           if (tx) {
@@ -797,8 +814,10 @@ const zebraGrpc = new ZebraGrpcClient(
           broadcastToAll({ type: 'mempool_tx', data: { txid: change.txid } });
         }
       } else if (change.type === 'MINED') {
+        indexNow.transactionMined(change.txid);
         broadcastToAll({ type: 'mempool_removed', data: { txid: change.txid, reason: 'mined' } });
       } else if (change.type === 'INVALIDATED') {
+        indexNow.mempoolDropped(change.txid);
         broadcastToAll({ type: 'mempool_removed', data: { txid: change.txid, reason: 'invalidated' } });
       }
     },
@@ -942,6 +961,7 @@ function shutdown(signal) {
   // they'd otherwise try to send through.
   zebraGrpc.stop();
   forkMonitor.stop();
+  void indexNow.stop();
   clearInterval(wsAliveCheck);
 
   // Upgraded WebSocket connections are not closed by http.Server.close(), so

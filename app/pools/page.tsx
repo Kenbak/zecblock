@@ -7,6 +7,7 @@ import { PageHeader, SectionHeader } from '@/components/ui';
 import { HashLink } from '@/components/ui/HashLink';
 import { PoolDistributionChart } from '@/components/network/PoolDistributionChart';
 import { FlowVolumeChart } from '@/components/pools/FlowVolumeChart';
+import { PoolActivityChart } from '@/components/pools/PoolActivityChart';
 import { FlowLegend } from '@/components/pools/FlowLegend';
 import {
   PoolOverviewHero,
@@ -20,6 +21,7 @@ import { ShieldFlowBadge } from '@/components/ShieldFlowBadge';
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'supply', label: 'Supply history' },
+  { id: 'activity', label: 'Transaction activity' },
   { id: 'flows', label: 'Public flows' },
   { id: 'recent-flows', label: 'Recent transactions' },
   { id: 'methodology', label: 'Data & definitions' },
@@ -135,7 +137,7 @@ export default function PoolsPage() {
       <PageHeader
         eyebrow="POOL_ANALYTICS"
         title="Zcash Shielded Pools"
-        subtitle="Supply held in shielded pools, its history, and the public flows moving ZEC in and out."
+        subtitle="Supply held in shielded pools, transaction activity, and the public flows moving ZEC in and out."
       />
 
       <nav aria-label="Pool analytics sections" className="flex flex-wrap items-center gap-x-5 gap-y-3 text-caption font-mono text-muted border-b border-cipher-border pb-5 mb-8">
@@ -160,6 +162,10 @@ export default function PoolsPage() {
 
       <section id="supply" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
         <PoolDistributionChart />
+      </section>
+
+      <section id="activity" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
+        <PoolActivityChart />
       </section>
 
       <section id="flows" className="scroll-mt-56 sm:scroll-mt-36 mb-14">

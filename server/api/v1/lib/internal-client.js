@@ -74,7 +74,7 @@ const { performance } = require('node:perf_hooks');
  *                                  server.js sets the RateLimit-* family
  *                                  today; X-RateLimit-* covers older/other
  *                                  clients or future limiters).
- *   - X-CipherScan-*              → project-specific, already documented
+ *   - X-ZecBlock-* / X-CipherScan-* → project-specific, already documented
  *                                  as CORS-exposed in server.js
  *                                  (X-CipherScan-Cache today).
  * Deliberately excluded: Set-Cookie, Server, X-Powered-By, and anything
@@ -93,7 +93,7 @@ const ALLOWED_RESPONSE_HEADERS = [
   'x-ratelimit-remaining',
   'x-ratelimit-reset',
 ];
-const ALLOWED_RESPONSE_HEADER_PREFIXES = ['x-cipherscan-'];
+const ALLOWED_RESPONSE_HEADER_PREFIXES = ['x-zecblock-', 'x-cipherscan-'];
 
 function isAllowedResponseHeader(name) {
   const lower = name.toLowerCase();
@@ -131,7 +131,7 @@ class UpstreamError extends Error {
 /**
  * @param {object} config - result of require('../config').loadV1Config()
  */
-function createInternalClient(config) {
+function createInternalClient(config, { fetchImpl = fetch } = {}) {
   const baseUrl = config.internalBaseUrl;
   const timeoutMs = config.internalTimeoutMs;
   const maxResponseBytes = config.maxResponseBytes;
@@ -188,7 +188,7 @@ function createInternalClient(config) {
     }
 
     try {
-      const response = await fetch(url, init);
+      const response = await fetchImpl(url, init);
       const relayedHeaders = pickAllowedHeaders(response.headers);
       if (opts.paymentAuth) for (const name of ['payment-required', 'www-authenticate', 'payment-response', 'payment-receipt', 'x-session-balance', 'x-session-id']) {
         if (response.headers.has(name)) relayedHeaders[name] = response.headers.get(name);

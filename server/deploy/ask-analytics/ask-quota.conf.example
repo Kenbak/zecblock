@@ -1,0 +1,16 @@
+# Root-only /etc/zecblock/ask-quota.conf, delivered via systemd LoadCredential.
+# Replace the password privately. This is a separate instance, not API Redis.
+bind 127.0.0.1
+port 6391
+protected-mode yes
+requirepass REPLACE_WITH_PRIVATE_RANDOM_PASSWORD
+dir /var/lib/zecblock-ask-quota
+appendonly yes
+appendfsync always
+save ""
+maxmemory 16mb
+maxmemory-policy noeviction
+auto-aof-rewrite-percentage 100
+auto-aof-rewrite-min-size 16mb
+daemonize no
+logfile ""

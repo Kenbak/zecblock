@@ -23,8 +23,7 @@ import { formatZecCompact } from '@/lib/format-numbers';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
-import { openAskChart } from '@/lib/ask/widget-context';
-import { NETWORK } from '@/lib/api-config';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Period = '30d' | '90d' | '1y' | 'all';
 type PoolFilter = 'all' | 'ironwood' | 'sapling' | 'orchard';
@@ -95,7 +94,7 @@ export function FlowVolumeChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const flowColors = getFlowColors(theme);
-  const [period, setPeriod] = useState<Period>('all');
+  const [period, setPeriod] = useUrlState<Period>('flows', '30d', PERIOD_OPTIONS.map((option) => option.key));
   const [poolFilter, setPoolFilter] = useState<PoolFilter>('all');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
@@ -118,7 +117,6 @@ export function FlowVolumeChart() {
 
   const controls = (
     <div className="mb-4 flex flex-wrap items-center justify-end gap-2" data-html2canvas-ignore="true">
-      {NETWORK === 'mainnet' ? <button type="button" disabled={loading || !points.length} onClick={() => openAskChart({ version: 1, metric: 'flows', period: period === 'all' ? '1y' : period, pool: poolFilter, view: 'bar', start: null, end: null })} className="mr-auto text-xs text-cipher-gold hover:underline disabled:opacity-40">{period === 'all' ? 'Explain the last year' : 'Explain this chart'}</button> : null}
       <PeriodPillTags
         options={POOL_OPTIONS}
         value={poolFilter}

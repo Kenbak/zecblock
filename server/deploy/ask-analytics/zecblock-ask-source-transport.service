@@ -1,0 +1,40 @@
+[Unit]
+Description=Private SSH transport for analytics source PostgreSQL
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ask_feed_transport
+Group=postgres
+LoadCredential=identity:/etc/zecblock-ask-source-transport/identity
+RuntimeDirectory=ask-source-transport
+RuntimeDirectoryMode=0750
+UMask=0117
+ExecStart=/usr/bin/ssh -F /dev/null -4 -NT -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/zecblock-ask-source-transport/known_hosts -o GlobalKnownHostsFile=/dev/null -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -o StreamLocalBindMask=0117 -o StreamLocalBindUnlink=yes -i %d/identity -L /run/ask-source-transport/.s.PGSQL.15432:127.0.0.1:5432 ask_feed_tunnel@SOURCE_HOST
+Restart=always
+RestartSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_UNIX AF_INET
+ReadWritePaths=/run/ask-source-transport
+IPAddressDeny=any
+IPAddressAllow=SOURCE_HOST/32
+MemoryMax=128M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

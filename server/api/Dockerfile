@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 
 # CipherScan Express API backend.
-ARG NODE_IMAGE=node:22.14.0-bookworm-slim
+ARG NODE_IMAGE=node:22.23.4-bookworm-slim
 
 FROM ${NODE_IMAGE} AS deps
 WORKDIR /app/server/api

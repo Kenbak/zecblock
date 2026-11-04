@@ -1,0 +1,47 @@
+name: Host drift
+
+# Read-only daily check that every API host in server/deploy/release/targets.json
+# serves the same clean main commit, runtime, unit state and schema. A failure
+# here means a host diverged outside the deploy workflow; the job summary lists
+# exactly what differs.
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: host-drift
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  drift:
+    name: Compare hosts with targets.json
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up SSH
+        env:
+          PRIMARY_HOST: ${{ secrets.PRIMARY_HOST }}
+          STANDBY_HOST: ${{ secrets.STANDBY_HOST }}
+          TESTNET_HOST: ${{ secrets.TESTNET_HOST }}
+        run: |
+          mkdir -p ~/.ssh
+          printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
+          printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
+          # Pinned testnet keys live in their own secret so adding a host never
+          # rewrites the established mainnet entries.
+          printf '%s\n' "${{ secrets.TESTNET_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
+          bash server/deploy/release/write-ssh-config.sh
+
+      - name: Report drift
+        run: node server/deploy/release/drift-report.js | tee -a "$GITHUB_STEP_SUMMARY"

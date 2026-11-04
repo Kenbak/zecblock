@@ -114,7 +114,7 @@ Shielded transfer details are not publicly visible. Aggregate pool flows and tra
 
 ### Prerequisites
 
-- Node.js 22.14.x (see `.node-version`)
+- Node.js 22.23.4 or newer within Node 22 (see `.node-version`)
 - npm or yarn
 - PostgreSQL (optional, for full indexer)
 

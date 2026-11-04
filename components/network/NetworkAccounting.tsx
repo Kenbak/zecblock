@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Accounting = { schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
   block: { height: number; feesPaidZat: number | string | null; feesToNsmZat: number | string | null; minerFeeAllocationZat: number | string | null;
@@ -50,12 +51,13 @@ export function NetworkAccounting() {
   const { data, error } = useApiQuery<Accounting>('/v1/network/accounting', undefined, { refreshInterval: 30_000 });
   const activationHeight = data?.schedule?.nu7Height;
   const expectedChain = NETWORK === 'mainnet' ? 'main' : NETWORK === 'testnet' ? 'test' : null;
-  const nu7Active = !error && data != null && expectedChain !== null &&
+  const validSchedule = !error && data != null && expectedChain !== null &&
     data.schedule?.network === expectedChain && activationHeight != null &&
     Number.isSafeInteger(activationHeight) && activationHeight > 0 && activationHeight <= 499_999_999 &&
-    Number.isSafeInteger(data.nodeHeight) && data.nodeHeight >= activationHeight && data.nodeHeight <= 499_999_999;
+    Number.isSafeInteger(data.nodeHeight) && data.nodeHeight >= 0 && data.nodeHeight <= 499_999_999;
+  const nu7Active = validSchedule && data.nodeHeight >= activationHeight;
   const [metric, setMetric] = useState<keyof typeof historySeries>('fees');
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('accounting', '30d', Object.keys(periods) as Period[]);
   const history = useApiQuery<History>('/v1/network/accounting/history', { period }, { enabled: nu7Active, refreshInterval: 30_000 });
   // The hook retains previous query data. Never label an old range or network
   // as the newly selected period while its request is still in flight.
@@ -74,12 +76,40 @@ export function NetworkAccounting() {
   const reserveBuckets = selected?.points.filter(point => point.nsmBalanceZat != null).length ?? 0;
   const receiptBlocks = selected?.selected.receiptBlocks;
   const hasReceiptCoverage = Number.isSafeInteger(receiptBlocks) && receiptBlocks! >= 0 && receiptBlocks! <= (selected?.selected.blocks ?? 0);
-  if (!nu7Active) return null;
+  if (!nu7Active) {
+    if (expectedChain === null) return null;
+    return <section id="nu7-accounting" className="network-section mt-5" aria-label="NSM and fee accounting">
+      <Card className="card-static"><CardBody>
+        <SectionHeader label="NSM_FEES" />
+        <p className="text-sm text-secondary max-w-3xl">The Network Sustainability Mechanism tracks value removed from circulation in a separate reserve for later reissuance.</p>
+        <dl className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-5">
+          {[
+            ['Minimum fee removal', '60%', 'Of aggregate block fees, rounded down once per block.'],
+            ['NSM reserve', 'Separate accounting', 'Removed value is kept separate from circulating supply.'],
+            ['Reissuance', 'Starts later', 'New-issuance halvings stay in place; reserve reissuance has a later start height.'],
+          ].map(([label, value, hint]) => <div key={label} className="min-w-0">
+            <dt className="text-caption text-muted">{label}</dt>
+            <dd className="font-mono text-lg text-primary mt-2">{value}</dd>
+            <p className="text-caption text-muted mt-2">{hint}</p>
+          </div>)}
+        </dl>
+        <div className="flex flex-wrap items-center justify-between gap-3 border-t border-cipher-border mt-5 pt-4 text-caption text-muted">
+          <p role="status">{validSchedule
+            ? `Mechanism overview · ${NETWORK === 'mainnet' ? 'Mainnet' : 'Testnet'} accounting charts begin at NU7, block #${activationHeight.toLocaleString('en-US')}.`
+            : 'Mechanism overview · live activation status is unavailable. Accounting charts require verified NU7 activation.'}</p>
+          <div className="flex gap-4">
+            <a href="https://zips.z.cash/zip-0235" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 hover:text-primary">ZIP 235 ↗</a>
+            <a href="https://zips.z.cash/zip-0237" target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 hover:text-primary">ZIP 237 ↗</a>
+          </div>
+        </div>
+      </CardBody></Card>
+    </section>;
+  }
   const block = data.block;
   const bucketLabel = selected ? selected.bucketSeconds < 3600 ? `${selected.bucketSeconds/60}-minute` : selected.bucketSeconds < 86400
     ? `${Number((selected.bucketSeconds/3600).toFixed(1))}-hour` : `${Number((selected.bucketSeconds/86400).toFixed(1))}-day` : '';
   return <section id="nu7-accounting" className="network-section mt-5" aria-label="NU7 network accounting"><Card className="card-static"><CardBody>
-    <SectionHeader label="NU7_ACCOUNTING" actions={block && <Link href={`/block/${block.height}`} prefetch={false}
+    <SectionHeader label="NSM_FEES" actions={block && <Link href={`/block/${block.height}`} prefetch={false}
       title={`Latest indexed canonical block ${block.height.toLocaleString('en-US')}`}
       className="inline-flex items-center gap-1 rounded-full border border-cipher-border px-2.5 py-1 text-caption text-muted font-mono hover:text-primary">
       Block #{block.height.toLocaleString('en-US')} <span aria-hidden="true">↗</span>

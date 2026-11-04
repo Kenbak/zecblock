@@ -2,7 +2,7 @@ import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Shielded Pool Statistics | ZecBlock',
-  description: 'Explore Zcash shielded pool balances, public supply, and shielding flows across Ironwood, Orchard, Sapling, and Sprout.',
+  description: 'Compare Zcash shielded pool balances, transaction counts and shares, and public shielding flows across Ironwood, Orchard, Sapling, and Sprout.',
   path: '/pools',
   index: true,
   networks: ['mainnet'],
@@ -14,7 +14,7 @@ export default function PoolsLayout({ children }: { children: React.ReactNode })
   const schema = {
     '@context': 'https://schema.org', '@type': 'WebPage', '@id': `${url}#webpage`,
     url, name: 'Zcash Shielded Pools',
-    description: 'Public supply, shielded pools and remaining issuance against the 21 million ZEC cap, with pool history and public flows.',
+    description: 'Zcash shielded pool balances, supply history, transaction activity by pool, and public shielding flows.',
     isPartOf: { '@id': `${getBaseUrl()}/#website` },
     publisher: { '@id': 'https://zecblock.com/#organization' },
   };

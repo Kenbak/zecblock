@@ -6,13 +6,16 @@ const createV1Router = require('../../v1');
 
 test('native names preserve normalization, boundary pagination, missing names and errors', async t => {
   const calls = [];
+  let hasPricing = true;
   const rows = Array.from({ length: 501 }, (_, i) => ({ name: `name${i}`, block_height: i, nested: { tx_id: 'x' } }));
   const source = express(); source.use(express.json());
   source.post('/', (req, res) => {
     const { method, params } = req.body; calls.push(req.body);
     if (params.query === 'broken') return res.status(503).json({ error: 'internal secret' });
     let result;
-    if (method === 'status') result = { registered_count: 501, pricing: { base_price: 100 } };
+    if (method === 'status') result = hasPricing
+      ? { registered_count: 501, pricing: { base_price: 100 } }
+      : { synced_height: 3500000, synced: true, treasury_address: 'u1registry' };
     else if (method === 'events') result = [{ block_height: 42, event_type: 'registered' }];
     else if (params.query === '') result = rows.slice(params.offset, params.offset + Math.min(params.limit, 500));
     else result = rows.find(r => r.name === params.query) || null;
@@ -37,6 +40,9 @@ test('native names preserve normalization, boundary pagination, missing names an
   const name = await (await get('/NAME1.zec')).json();
   assert.equal(name.data.blockHeight, 1); assert.deepEqual(name.data.nested, { txId: 'x' });
   assert.deepEqual((await (await get('/missing')).json()).data, { pricing: { basePrice: 100 } });
+  hasPricing = false;
+  assert.equal((await (await get('/status')).json()).data.registeredCount, undefined);
+  assert.deepEqual((await (await get('/missing')).json()).data, { pricing: null }, 'current resolver status has no pricing; availability remains explicit');
   assert.equal((await (await get('/name1/events')).json()).data[0].eventType, 'registered');
   for (const path of ['?limit=501', '?limit=1&limit=2', '?cursor=invalid', '/bad-name']) assert.equal((await get(path)).status, 400);
   const failed = await get('/broken'); assert.equal(failed.status, 502);

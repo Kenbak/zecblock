@@ -2,7 +2,10 @@ import Link from 'next/link';
 import { CURRENCY } from '@/lib/config';
 import { AddressWithLabel, AddressDisplay } from '@/components/AddressWithLabel';
 import { firstOutputAddress, rankedRecipients } from './tx-classification';
-import type { TransactionData, TxClassification } from './types';
+import type { BridgeData, TransactionData, TxClassification } from './types';
+
+const VENUE_NAMES = { near: 'NEAR Intents', maya: 'Maya Protocol', thorchain: 'THORChain' } as const;
+const venueName = (b: BridgeData) => VENUE_NAMES[b.venue || 'near'];
 
 export function generateTxSummary(
   data: TransactionData,
@@ -36,7 +39,7 @@ export function generateTxSummary(
                 {zecAmt} on{' '}
               </>
             ) : null}
-            {addrNode} via NEAR Intents.
+            {addrNode} via {venueName(b)}.
             {b.otherAmountUsd > 0 && (
               <span className="text-muted">
                 {' '}
@@ -51,7 +54,7 @@ export function generateTxSummary(
         <>
           {zecAmt || CURRENCY} was bridged out by {addrNode} to{' '}
           {b.otherAmount?.toLocaleString(undefined, { maximumFractionDigits: 4 })} {b.otherToken} on{' '}
-          {b.otherChain.toUpperCase()} via NEAR Intents.
+          {b.otherChain.toUpperCase()} via {venueName(b)}.
           {b.otherAmountUsd > 0 && (
             <span className="text-muted">
               {' '}
@@ -61,7 +64,8 @@ export function generateTxSummary(
         </>
       );
     }
-    return <>Batched bridge transaction with {allBridges.length} swaps via NEAR Intents.</>;
+    const venues = [...new Set(allBridges.map(venueName))];
+    return <>Batched bridge transaction with {allBridges.length} swaps via {venues.join(' and ')}.</>;
   }
 
   if (classification.isCoinbase) {

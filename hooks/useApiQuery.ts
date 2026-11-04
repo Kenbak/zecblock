@@ -1,7 +1,7 @@
 'use client';
 
 import { readApiData } from '@/lib/api-client';
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 
 interface UseApiQueryOptions {
@@ -39,6 +39,8 @@ interface UseApiQueryResult<T> {
    * put via stale-data retention until the refresh resolves.
    */
   isRefreshing: boolean;
+  /** Refresh the subscribed visible query through the shared in-flight guard. */
+  refetch: () => Promise<void>;
 }
 
 interface QueryState {
@@ -243,7 +245,7 @@ if (typeof document !== 'undefined') {
 }
 
 function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
-  const url = new URL(`${getApiUrl()}${path}`);
+  const url = new URL(`${getApiUrl()}${path}`, typeof window === 'undefined' ? undefined : window.location.origin);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined) url.searchParams.set(k, String(v));
@@ -305,6 +307,16 @@ export function useApiQuery<T>(
     fetching: false,
     fetchedAt: initialData !== undefined ? initialFetchedAt : 0,
   });
+  const subscriptionRef = useRef<RegistryEntry | null>(null);
+  const requestPolicyRef = useRef({ key, enabled });
+  requestPolicyRef.current = { key, enabled };
+  const refetch = useCallback(async () => {
+    if (!requestPolicyRef.current.enabled || requestPolicyRef.current.key !== key || isHidden()) return;
+    const entry = registry.get(key);
+    if (!entry || subscriptionRef.current !== entry || entry.subscribers.size === 0) return;
+    if (entry.timer) { clearTimeout(entry.timer); entry.timer = null; }
+    await runFetch(entry);
+  }, [key]);
 
   useEffect(() => {
     if (!enabled) return;
@@ -330,6 +342,7 @@ export function useApiQuery<T>(
       forceRender((n) => n + 1);
     };
     entry.subscribers.add(listener);
+    subscriptionRef.current = entry;
     stateRef.current = entry.state;
     forceRender((n) => n + 1);
 
@@ -349,6 +362,7 @@ export function useApiQuery<T>(
     }
 
     return () => {
+      if (subscriptionRef.current === entry) subscriptionRef.current = null;
       entry.subscribers.delete(listener);
       releaseEntry(entry);
     };
@@ -363,7 +377,7 @@ export function useApiQuery<T>(
   }
 
   if (!enabled) {
-    return { data: lastGoodDataRef.current, loading: false, error: null, isRefreshing: false };
+    return { data: lastGoodDataRef.current, loading: false, error: null, isRefreshing: false, refetch };
   }
 
   const hasData = hasEverLoadedRef.current && lastGoodDataRef.current !== null;
@@ -381,6 +395,7 @@ export function useApiQuery<T>(
     loading,
     error: state.error,
     isRefreshing,
+    refetch,
   };
 }
 

@@ -21,6 +21,7 @@ function render(data, { active = 'solrate', loading = false, error = null, curre
     if (name === '@/hooks/useApiQuery') return { useApiQuery: () => ({ data, loading, error }) };
     if (name === '@/lib/config') return { CURRENCY: currency };
     if (name === './ChartCard') return { ChartCard: 'ChartCard' };
+    if (name === '@/components/charts/PanelShareControl') return { objectRowsCsv: () => null };
     throw new Error(`Unexpected import ${name}`);
   } });
   return exports.MiningMetricsChart();

@@ -1,0 +1,13 @@
+[Unit]
+Description=Maya and THORChain native-ZEC venue sync, backfill and pending refresh
+After=network-online.target postgresql.service
+
+[Service]
+Type=oneshot
+# Own lock: Midgard providers are independent of the NEAR flock and quota.
+ExecStart=/usr/bin/flock -n -E 0 /run/cipherscan-crosschain-venues.lock /usr/bin/env NODE_PATH=/root/cipherscan/server/api/node_modules NETWORK=mainnet CROSSCHAIN_VENUES_WRITER_ENABLED=1 /usr/bin/node /root/cipherscan/server/jobs/maintain-crosschain-venues.js --apply
+TimeoutStartSec=180
+KillMode=control-group
+Nice=10
+IOSchedulingClass=idle
+UMask=0077

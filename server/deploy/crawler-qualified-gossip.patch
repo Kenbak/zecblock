@@ -1,0 +1,683 @@
+From cbab96b8edf1baa8298be4dcdfde84f384f44761 Mon Sep 17 00:00:00 2001
+From: Antoine Serval <k6nb4k@gmail.com>
+Date: Fri, 23 Oct 2026 09:51:58 +0900
+Subject: [PATCH] Export fresh chain-qualified directed address gossip
+
+---
+ src/tools/crawler/README.md   |   4 +
+ src/tools/crawler/main.rs     |   3 +
+ src/tools/crawler/metrics.rs  | 239 +++++++++++++++++++++++++++++++++-
+ src/tools/crawler/network.rs  | 185 ++++++++++++++++++++++++--
+ src/tools/crawler/protocol.rs |  83 +++++++++---
+ 5 files changed, 489 insertions(+), 25 deletions(-)
+
+diff --git a/src/tools/crawler/README.md b/src/tools/crawler/README.md
+index 48949f8..1e95291 100644
+--- a/src/tools/crawler/README.md
++++ b/src/tools/crawler/README.md
+@@ -47,6 +47,10 @@ Reachable counts (`num_good_nodes`, `node_addrs`, `node_info`, and `all_node_rea
+ 
+ Each qualified `node_info` entry exports the actual handshake `last_verified_at_ms`, actual header proof `chain_verified_at_ms`, pinned `chain_block_hash`, and versioned `chain_proof` marker. A new connection attempt clears prior chain eligibility; unsolicited or repeated headers cannot refresh it. Proofs expire after one hour, and unanswered challenges time out after 30 seconds. A non-answer remains unverified rather than being labeled a different chain. Initial-sync nodes can decline header requests, and pruning does not remove retained headers.
+ 
++Qualified gossip is exported separately as `gossip_provenance: "zcash-mainnet-qualified-addr-v1"`, `gossip_edges: [{source, target, observed_at_ms}]`, and `gossip_truncated: boolean`. Each directed edge means that the exact source endpoint advertised the target address after completing the pinned header proof in that same session. It is not a confirmed connection between those endpoints, proof that the target serves Zcash, or evidence that the target is reachable. Only actual local receipt time is used; timestamps supplied inside peer advertisements are ignored. Summaries do not refresh receipt timestamps. A fresh empty edge array with `gossip_truncated: false` is a supported observation with no current qualifying advertisements. At most 40,000 edges are exported, selected by newest actual receipt first and stable source/target endpoint ordering for ties; `gossip_truncated: true` explicitly marks omitted qualifying edges without changing any retained evidence timestamp.
++
++Each source retains at most 1,000 targets, matching the maximum addresses accepted in one protocol frame. Repeated targets refresh their actual receipt time; additional new targets beyond the bound are omitted until stored observations expire or the session resets. Receipts expire after ten minutes, and a source must still have a fresh handshake and proof when exported. Starting a new attempt or invalidating its proof clears its advertisements, preventing old gossip from inheriting a newer session's proof. `gossip_edges` and `node_info` use the same cloned source evidence. The legacy `all_*` adjacency fields remain undirected diagnostics with no qualified advertiser provenance and must not be treated as this contract.
++
+ This census measures recently observed reachable endpoints with the pinned mainnet history through height 3,520,000. Known shared-history forks that diverged before this checkpoint fail the challenge; future forks sharing it require a reviewed checkpoint update in both crawler and consumers. It does not establish current tip synchronization, honest behavior, unique physical nodes, Tor onion coverage, or complete network coverage. Historical handshake-only snapshots are incompatible with the new census and must not be used as trend baselines.
+ 
+ The following legacy sample illustrates the RPC shape; its values predate chain-proof qualification and are not current measurements:
+diff --git a/src/tools/crawler/main.rs b/src/tools/crawler/main.rs
+index 2dc7c4e..e00f181 100644
+--- a/src/tools/crawler/main.rs
++++ b/src/tools/crawler/main.rs
+@@ -153,6 +153,9 @@ async fn main() {
+         summary: NetworkSummary::default(),
+         generated_at_ms: 0,
+         node_info: Vec::new(),
++        gossip_provenance: metrics::GOSSIP_PROVENANCE,
++        gossip_edges: Vec::new(),
++        gossip_truncated: false,
+         all_node_addrs: Vec::new(),
+         all_nodes_indices: Vec::new(),
+         all_node_reachable: Vec::new(),
+diff --git a/src/tools/crawler/metrics.rs b/src/tools/crawler/metrics.rs
+index fb4ef8d..54bb3c1 100644
+--- a/src/tools/crawler/metrics.rs
++++ b/src/tools/crawler/metrics.rs
+@@ -10,6 +10,29 @@ use crate::{
+ };
+ 
+ pub const ZCASH_P2P_DEFAULT_MAINNET_PORT: u16 = 8233;
++pub const GOSSIP_PROVENANCE: &str = "zcash-mainnet-qualified-addr-v1";
++pub const MAX_GOSSIP_EDGES: usize = 40_000;
++
++/// Recent address advertisement from a same-session chain-qualified source.
++/// Direction means "source advertised target", never a confirmed remote link.
++#[derive(Debug, Clone, Serialize)]
++pub struct GossipEdge {
++    pub source: String,
++    pub target: String,
++    pub observed_at_ms: u64,
++}
++
++/// Bound the wire payload deterministically, preferring actual recent receipts.
++fn bound_gossip_edges(edges: &mut Vec<GossipEdge>) -> bool {
++    edges.sort_by(|a, b| {
++        b.observed_at_ms
++            .cmp(&a.observed_at_ms)
++            .then_with(|| (&a.source, &a.target).cmp(&(&b.source, &b.target)))
++    });
++    let truncated = edges.len() > MAX_GOSSIP_EDGES;
++    edges.truncate(MAX_GOSSIP_EDGES);
++    truncated
++}
+ 
+ /// Per-node info exposed in the extended summary for the cruncher.
+ #[derive(Debug, Clone, Serialize)]
+@@ -39,6 +62,9 @@ pub struct ExtendedSummary {
+     pub summary: NetworkSummary,
+     pub generated_at_ms: u64,
+     pub node_info: Vec<NodeInfo>,
++    pub gossip_provenance: &'static str,
++    pub gossip_edges: Vec<GossipEdge>,
++    pub gossip_truncated: bool,
+     /// All known node addresses (reachable + unreachable), stable order matching `all_nodes_indices`.
+     pub all_node_addrs: Vec<String>,
+     /// Adjacency list over `all_node_addrs` (indices refer to positions in that vec).
+@@ -68,6 +94,7 @@ impl NetworkMetrics {
+     /// Requests a summary of the network metrics (extended with per-node info).
+     pub fn request_summary(&mut self, crawler: &Crawler) -> ExtendedSummary {
+         let nodes = crawler.known_network.nodes();
++        let generated_at_ms = unix_ms();
+         let summary = new_network_summary(crawler, &self.graph, &nodes);
+ 
+         let node_info: Vec<NodeInfo> = summary
+@@ -91,6 +118,35 @@ impl NetworkMetrics {
+             })
+             .collect();
+ 
++        // Use exactly the same cloned node/session evidence as node_info. The
++        // legacy undirected graph cannot establish advertiser provenance.
++        let mut gossip_edges = Vec::new();
++        for addr in &summary.node_addrs {
++            let node = &nodes[addr];
++            let (Some(handshake_at), Some(proof_at)) =
++                (node.last_verified_at_ms, node.chain_verified_at_ms)
++            else {
++                continue;
++            };
++            if !node.recently_verified() || handshake_at > proof_at {
++                continue;
++            }
++            for (target, observation) in &node.gossip {
++                if observation.observed_at.elapsed().as_secs() < LAST_SEEN_CUTOFF
++                    && proof_at <= observation.observed_at_ms
++                    && observation.observed_at_ms <= generated_at_ms
++                    && target != addr
++                {
++                    gossip_edges.push(GossipEdge {
++                        source: addr.to_string(),
++                        target: target.to_string(),
++                        observed_at_ms: observation.observed_at_ms,
++                    });
++                }
++            }
++        }
++        let gossip_truncated = bound_gossip_edges(&mut gossip_edges);
++
+         // Full known-network graph: every address heard about, connected as observed
+         // in the gossip graph. `get_filtered_adjacency_indices` returns adjacency whose
+         // indices reference positions in the passed slice, so we build the addr vec once
+@@ -105,8 +161,11 @@ impl NetworkMetrics {
+ 
+         ExtendedSummary {
+             summary,
+-            generated_at_ms: unix_ms(),
++            generated_at_ms,
+             node_info,
++            gossip_provenance: GOSSIP_PROVENANCE,
++            gossip_edges,
++            gossip_truncated,
+             all_node_addrs,
+             all_nodes_indices,
+             all_node_reachable,
+@@ -176,3 +235,181 @@ pub fn new_network_summary(
+         nodes_indices,
+     }
+ }
++
++#[cfg(test)]
++mod gossip_summary_tests {
++    use super::*;
++    use crate::network::{GossipObservation, VERIFIED_WINDOW_SECS};
++    use pea2pea::Pea2Pea;
++    use std::time::{Duration, Instant};
++
++    fn qualified() -> KnownNode {
++        let mut node = KnownNode {
++            version_received: true,
++            verack_received: true,
++            ..Default::default()
++        };
++        assert!(node.record_verification());
++        assert!(node.record_chain_verification());
++        node
++    }
++
++    #[tokio::test]
++    async fn summary_preserves_direction_proof_clocks_and_unverified_candidates() {
++        let crawler = Crawler::new().await;
++        let source = "192.0.2.1:8233".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .insert(source, qualified());
++        crawler
++            .known_network
++            .record_qualified_addrs(source, &[target]);
++        let mut metrics = NetworkMetrics::default();
++        let first = metrics.request_summary(&crawler);
++        assert_eq!(first.gossip_provenance, GOSSIP_PROVENANCE);
++        assert_eq!(first.node_info.len(), 1);
++        assert_eq!(first.node_info[0].addr, source.to_string());
++        assert_eq!(first.gossip_edges.len(), 1);
++        let edge = &first.gossip_edges[0];
++        assert_eq!(edge.source, source.to_string());
++        assert_eq!(edge.target, target.to_string());
++        let wire = jsonrpsee::core::to_json_value(&first).unwrap();
++        assert_eq!(wire["gossip_provenance"], GOSSIP_PROVENANCE);
++        assert_eq!(wire["gossip_truncated"], false);
++        assert_eq!(wire["gossip_edges"][0]["source"], source.to_string());
++        assert_eq!(wire["gossip_edges"][0]["target"], target.to_string());
++        assert_eq!(
++            wire["gossip_edges"][0]["observed_at_ms"],
++            edge.observed_at_ms
++        );
++        assert_eq!(wire["gossip_edges"][0].as_object().unwrap().len(), 3);
++        assert!(first.node_info[0].last_verified_at_ms <= first.node_info[0].chain_verified_at_ms);
++        assert!(first.node_info[0].chain_verified_at_ms.unwrap() <= edge.observed_at_ms);
++        assert!(edge.observed_at_ms <= first.generated_at_ms);
++        assert!(!crawler.known_network.nodes.read()[&target].recently_verified());
++        let second = metrics.request_summary(&crawler);
++        assert_eq!(
++            second.gossip_edges[0].observed_at_ms, edge.observed_at_ms,
++            "publishing a summary is not another advertisement"
++        );
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .insert(target, qualified());
++        crawler
++            .known_network
++            .record_qualified_addrs(target, &[source]);
++        let reciprocal = metrics.request_summary(&crawler);
++        assert_eq!(
++            reciprocal.gossip_edges.len(),
++            2,
++            "reciprocal advertisements stay distinct"
++        );
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .begin_attempt(Instant::now());
++        let reconnected = metrics.request_summary(&crawler);
++        assert_eq!(reconnected.gossip_edges.len(), 1);
++        assert_eq!(reconnected.gossip_edges[0].source, target.to_string());
++        assert_eq!(
++            first.gossip_edges.len(),
++            1,
++            "published snapshots own their captured evidence"
++        );
++        crawler.node().shut_down().await;
++    }
++
++    #[tokio::test]
++    async fn summary_rejects_expired_receipts_expired_proofs_and_inconsistent_wall_clocks() {
++        let crawler = Crawler::new().await;
++        let source = "192.0.2.1:8233".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
++        let mut metrics = NetworkMetrics::default();
++        for invalid in [
++            "receipt-expired",
++            "proof-expired",
++            "before-proof",
++            "future-receipt",
++            "bad-proof-order",
++        ] {
++            let mut node = qualified();
++            let proof_at = node.chain_verified_at_ms.unwrap();
++            let mut observation = GossipObservation {
++                observed_at: Instant::now(),
++                observed_at_ms: proof_at,
++            };
++            match invalid {
++                "receipt-expired" => {
++                    observation.observed_at = Instant::now() - Duration::from_secs(LAST_SEEN_CUTOFF)
++                }
++                "proof-expired" => {
++                    node.last_chain_verified =
++                        Some(Instant::now() - Duration::from_secs(VERIFIED_WINDOW_SECS))
++                }
++                "before-proof" => observation.observed_at_ms = proof_at - 1,
++                "future-receipt" => observation.observed_at_ms = unix_ms() + 60_000,
++                "bad-proof-order" => node.last_verified_at_ms = Some(proof_at + 1),
++                _ => unreachable!(),
++            }
++            node.gossip.insert(target, observation);
++            crawler.known_network.nodes.write().insert(source, node);
++            assert!(
++                metrics.request_summary(&crawler).gossip_edges.is_empty(),
++                "{invalid}"
++            );
++        }
++        crawler.node().shut_down().await;
++    }
++
++    #[tokio::test]
++    async fn empty_summary_advertises_capability_without_fabricating_edges() {
++        let crawler = Crawler::new().await;
++        let summary = NetworkMetrics::default().request_summary(&crawler);
++        assert_eq!(summary.gossip_provenance, GOSSIP_PROVENANCE);
++        assert!(summary.gossip_edges.is_empty());
++        assert!(!summary.gossip_truncated);
++        assert!(summary.node_info.is_empty());
++        assert!(summary.generated_at_ms > 0);
++        crawler.node().shut_down().await;
++    }
++
++    #[test]
++    fn global_export_cap_keeps_newest_receipts_and_stable_endpoint_ties() {
++        // Forty-one sources, each within its independent 1,000-target bound.
++        let mut edges = (0..=MAX_GOSSIP_EDGES)
++            .map(|i| GossipEdge {
++                source: format!("192.0.2.{}:8233", i / 1_000 + 1),
++                target: format!("198.51.100.1:{}", i % 1_000 + 1),
++                observed_at_ms: if i == 0 {
++                    999
++                } else if i == MAX_GOSSIP_EDGES {
++                    1_001
++                } else {
++                    1_000
++                },
++            })
++            .collect();
++        assert!(bound_gossip_edges(&mut edges));
++        assert_eq!(edges.len(), MAX_GOSSIP_EDGES);
++        assert_eq!(edges[0].observed_at_ms, 1_001);
++        assert!(!edges.iter().any(|edge| edge.observed_at_ms == 999));
++        for pair in edges[1..].windows(2) {
++            assert!((&pair[0].source, &pair[0].target) <= (&pair[1].source, &pair[1].target));
++        }
++        let wire = jsonrpsee::core::to_json_value(&edges).unwrap();
++        assert_eq!(wire[0]["observed_at_ms"], 1_001);
++        assert!(
++            !bound_gossip_edges(&mut edges),
++            "an already bounded payload is not truncated again"
++        );
++        assert!(!bound_gossip_edges(&mut Vec::new()));
++    }
++}
+diff --git a/src/tools/crawler/network.rs b/src/tools/crawler/network.rs
+index 14adf56..3b7d809 100644
+--- a/src/tools/crawler/network.rs
++++ b/src/tools/crawler/network.rs
+@@ -15,6 +15,16 @@ pub const CHAIN_PROOF_TIMEOUT_SECS: u64 = 30;
+ pub const CHAIN_PROOF: &str = "zcash-mainnet-checkpoint-v1";
+ pub const CHAIN_BLOCK_HASH: &str =
+     "00000000001cfe8c0d46d5f8a7f107546d56168fb5ab1cd66c8033390de10418";
++/// Match the crawler wire decoder's maximum addresses per Addr frame.
++pub const MAX_GOSSIP_TARGETS_PER_SOURCE: usize = 1_000;
++
++/// A directed address advertisement received in the advertiser's current session.
++/// The peer's advertised address timestamp is deliberately not used.
++#[derive(Debug, Clone, Copy)]
++pub struct GossipObservation {
++    pub observed_at: Instant,
++    pub observed_at_ms: u64,
++}
+ 
+ pub fn unix_ms() -> u64 {
+     SystemTime::now()
+@@ -48,6 +58,8 @@ pub struct KnownNode {
+     pub chain_proof_completed: bool,
+     pub last_chain_verified: Option<Instant>,
+     pub chain_verified_at_ms: Option<u64>,
++    /// Current-session gossip only; candidate targets have no reachability implied.
++    pub gossip: HashMap<SocketAddr, GossipObservation>,
+     /// The time it took to complete a connection.
+     pub handshake_time: Option<Duration>,
+     /// The node's protocol version.
+@@ -75,6 +87,7 @@ impl KnownNode {
+     }
+ 
+     pub fn invalidate_chain_proof(&mut self) {
++        self.gossip.clear();
+         self.chain_proof_requested_at = None;
+         self.chain_proof_completed = false;
+         self.last_chain_verified = None;
+@@ -145,19 +158,50 @@ pub struct KnownNetwork {
+ }
+ 
+ impl KnownNetwork {
+-    /// Extends the list of known nodes and connections.
+-    pub fn add_addrs(&self, source: SocketAddr, listening_addrs: &[SocketAddr]) {
++    /// Atomically qualify the advertiser and record directed, bounded gossip.
++    /// Targets enter discovery as candidates, never as verified active nodes.
++    pub fn record_qualified_addrs(
++        &self,
++        source: SocketAddr,
++        listening_addrs: &[SocketAddr],
++    ) -> bool {
++        let mut nodes = self.nodes.write();
+         {
+-            let connections = &mut self.connections.write();
+-            for addr in listening_addrs {
+-                connections.insert(KnownConnection::new(source, *addr));
++            let Some(node) = nodes.get_mut(&source) else {
++                return false;
++            };
++            if !node.recently_verified() {
++                return false;
++            }
++            node.gossip.retain(|_, observation| {
++                observation.observed_at.elapsed().as_secs() < LAST_SEEN_CUTOFF
++            });
++            let observation = GossipObservation {
++                observed_at: Instant::now(),
++                observed_at_ms: unix_ms(),
++            };
++            for addr in listening_addrs.iter().take(MAX_GOSSIP_TARGETS_PER_SOURCE) {
++                if *addr != source
++                    && (node.gossip.contains_key(addr)
++                        || node.gossip.len() < MAX_GOSSIP_TARGETS_PER_SOURCE)
++                {
++                    // Replacement refreshes a repeated observation; HashSet::insert
++                    // on the legacy undirected connection cannot do this.
++                    node.gossip.insert(*addr, observation);
++                }
+             }
+         }
+-        let mut nodes = self.nodes.write();
+-        nodes.entry(source).or_default();
+-        listening_addrs.iter().for_each(|addr| {
++        for addr in listening_addrs.iter().take(MAX_GOSSIP_TARGETS_PER_SOURCE) {
+             nodes.entry(*addr).or_default();
+-        });
++        }
++        drop(nodes);
++
++        // Preserve legacy diagnostics; these pairs are not proof-qualified output.
++        let mut connections = self.connections.write();
++        for addr in listening_addrs.iter().take(MAX_GOSSIP_TARGETS_PER_SOURCE) {
++            connections.insert(KnownConnection::new(source, *addr));
++        }
++        true
+     }
+ 
+     /// Sets the node's connection state.
+@@ -202,5 +246,128 @@ impl KnownNetwork {
+                 conns.remove(&conn);
+             }
+         }
++
++        for node in self.nodes.write().values_mut() {
++            if node.recently_verified() {
++                node.gossip.retain(|_, observation| {
++                    observation.observed_at.elapsed().as_secs() < LAST_SEEN_CUTOFF
++                });
++            } else {
++                node.gossip.clear();
++            }
++        }
++    }
++}
++
++#[cfg(test)]
++mod gossip_tests {
++    use super::*;
++
++    fn qualified() -> KnownNode {
++        let mut node = KnownNode {
++            version_received: true,
++            verack_received: true,
++            ..Default::default()
++        };
++        assert!(node.record_verification());
++        assert!(node.record_chain_verification());
++        node
++    }
++
++    #[test]
++    fn gossip_requires_fresh_proof_and_does_not_qualify_target() {
++        let network = KnownNetwork::default();
++        let source = "192.0.2.1:8233".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
++        assert!(!network.record_qualified_addrs(source, &[target]));
++        network.nodes.write().insert(source, KnownNode::default());
++        assert!(!network.record_qualified_addrs(source, &[target]));
++        assert_eq!(network.num_nodes(), 1);
++        network.nodes.write().insert(source, qualified());
++        assert!(network.record_qualified_addrs(source, &[target]));
++        assert!(!network.nodes.read()[&target].recently_verified());
++        assert!(network.nodes.read()[&target].gossip.is_empty());
++        network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .last_chain_verified = Some(Instant::now() - Duration::from_secs(VERIFIED_WINDOW_SECS));
++        assert!(!network.record_qualified_addrs(source, &[target]));
++    }
++
++    #[test]
++    fn gossip_is_directed_repeated_receipts_refresh_and_sessions_clear() {
++        let network = KnownNetwork::default();
++        let source = "192.0.2.1:8233".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
++        network
++            .nodes
++            .write()
++            .extend([(source, qualified()), (target, qualified())]);
++        network.record_qualified_addrs(source, &[source, target]);
++        assert_eq!(network.nodes.read()[&source].gossip.len(), 1);
++        assert!(network.nodes.read()[&target].gossip.is_empty());
++        let old = Instant::now() - Duration::from_secs(30);
++        network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .gossip
++            .get_mut(&target)
++            .unwrap()
++            .observed_at = old;
++        network.record_qualified_addrs(source, &[target]);
++        assert!(network.nodes.read()[&source].gossip[&target].observed_at > old);
++        network.record_qualified_addrs(target, &[source]);
++        assert!(network.nodes.read()[&target].gossip.contains_key(&source));
++        network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .begin_attempt(Instant::now());
++        assert!(network.nodes.read()[&source].gossip.is_empty());
++        assert!(!network.record_qualified_addrs(source, &[target]));
++        network
++            .nodes
++            .write()
++            .get_mut(&target)
++            .unwrap()
++            .invalidate_chain_proof();
++        assert!(network.nodes.read()[&target].gossip.is_empty());
++    }
++
++    #[test]
++    fn gossip_storage_is_bounded_and_expired_receipts_are_pruned() {
++        let network = KnownNetwork::default();
++        let source = "192.0.2.1:8233".parse().unwrap();
++        network.nodes.write().insert(source, qualified());
++        let targets = (1..=MAX_GOSSIP_TARGETS_PER_SOURCE + 1)
++            .map(|port| SocketAddr::from(([192, 0, 2, 2], port as u16)))
++            .collect::<Vec<_>>();
++        network.record_qualified_addrs(source, &targets);
++        assert_eq!(
++            network.nodes.read()[&source].gossip.len(),
++            MAX_GOSSIP_TARGETS_PER_SOURCE
++        );
++        network.record_qualified_addrs(source, &targets[MAX_GOSSIP_TARGETS_PER_SOURCE..]);
++        assert_eq!(
++            network.nodes.read()[&source].gossip.len(),
++            MAX_GOSSIP_TARGETS_PER_SOURCE
++        );
++        for observation in network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .gossip
++            .values_mut()
++        {
++            observation.observed_at = Instant::now() - Duration::from_secs(LAST_SEEN_CUTOFF);
++        }
++        network.remove_old_connections();
++        assert!(network.nodes.read()[&source].gossip.is_empty());
+     }
+ }
+diff --git a/src/tools/crawler/protocol.rs b/src/tools/crawler/protocol.rs
+index 45df0a1..666152e 100644
+--- a/src/tools/crawler/protocol.rs
++++ b/src/tools/crawler/protocol.rs
+@@ -140,7 +140,8 @@ impl Crawler {
+ 
+     /// Checks to see if crawler should connect to the given address.
+     pub fn should_connect(&self, addr: SocketAddr) -> bool {
+-        if self.known_network.nodes().get(&addr).is_some() {
++        // Membership checks must not clone every node's retained advertisements.
++        if self.known_network.nodes.read().contains_key(&addr) {
+             // Ensure that crawler is not exceeding the MAX_CONCURRENT_CONNECTIONS.
+             if self.node().num_connected() + self.node().num_connecting()
+                 >= MAX_CONCURRENT_CONNECTIONS.into()
+@@ -217,26 +218,22 @@ impl Reading for Crawler {
+     async fn process_message(&self, source: SocketAddr, message: Self::Message) -> io::Result<()> {
+         match message {
+             Message::Addr(addr) => {
+-                // Unqualified peers cannot seed the crawl graph or cause an early
+-                // disconnect before their chain challenge has completed.
+-                if !self
+-                    .known_network
+-                    .nodes
+-                    .read()
+-                    .get(&source)
+-                    .is_some_and(|node| node.chain_proof_completed)
+-                {
+-                    return Ok(());
+-                }
+                 let len = addr.addrs.len();
+-                info!(parent: self.node().span(), "got {} address(es) from {}", len, source);
+ 
+                 let mut listening_addrs = Vec::with_capacity(len);
+                 for addr in &addr.addrs {
+                     listening_addrs.push(addr.addr);
+                 }
+ 
+-                self.known_network.add_addrs(source, &listening_addrs);
++                // Qualification and recording share one node lock, so a reconnect
++                // cannot attach this advertisement to an earlier proof session.
++                if !self
++                    .known_network
++                    .record_qualified_addrs(source, &listening_addrs)
++                {
++                    return Ok(());
++                }
++                info!(parent: self.node().span(), "got {} address(es) from {}", len, source);
+ 
+                 // Disconnect after getting more than 1 addresses or if the received address is
+                 // not the same as the source address.
+@@ -559,13 +556,19 @@ mod chain_proof_tests {
+     async fn unverified_addr_does_not_seed_the_graph_or_disconnect() {
+         let crawler = Crawler::new().await;
+         let source = "192.0.2.1:16125".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
+         crawler
+             .known_network
+             .nodes
+             .write()
+             .insert(source, pending_node());
+         crawler
+-            .process_message(source, Message::Addr(Addr::empty()))
++            .process_message(
++                source,
++                Message::Addr(Addr::new(vec![
++                    ziggurat_zcash::protocol::payload::addr::NetworkAddr::new(target),
++                ])),
++            )
+             .await
+             .unwrap();
+         assert_eq!(crawler.known_network.num_connections(), 0);
+@@ -574,6 +577,56 @@ mod chain_proof_tests {
+         crawler.node().shut_down().await;
+     }
+ 
++    #[tokio::test]
++    async fn qualified_addr_records_receipt_time_and_expired_proof_cannot_seed_candidates() {
++        let crawler = Crawler::new().await;
++        let source = "192.0.2.1:8233".parse().unwrap();
++        let target = "192.0.2.2:8233".parse().unwrap();
++        let other = "192.0.2.3:8233".parse().unwrap();
++        let mut qualified = pending_node();
++        assert!(qualified.record_chain_verification());
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .insert(source, qualified);
++        let mut advertised = ziggurat_zcash::protocol::payload::addr::NetworkAddr::new(target);
++        advertised.last_seen =
++            Some(time::OffsetDateTime::from_unix_timestamp(4_000_000_000).unwrap());
++        crawler
++            .process_message(source, Message::Addr(Addr::new(vec![advertised])))
++            .await
++            .unwrap();
++        let snapshot = NetworkMetrics::default().request_summary(&crawler);
++        assert_eq!(snapshot.gossip_edges.len(), 1);
++        assert!(snapshot.gossip_edges[0].observed_at_ms <= snapshot.generated_at_ms);
++        assert!(snapshot.gossip_edges[0].observed_at_ms < 4_000_000_000_000);
++        assert!(!crawler.known_network.nodes.read()[&target].recently_verified());
++        crawler
++            .known_network
++            .nodes
++            .write()
++            .get_mut(&source)
++            .unwrap()
++            .last_chain_verified =
++            Some(Instant::now() - Duration::from_secs(crate::network::VERIFIED_WINDOW_SECS));
++        crawler
++            .process_message(
++                source,
++                Message::Addr(Addr::new(vec![
++                    ziggurat_zcash::protocol::payload::addr::NetworkAddr::new(other),
++                ])),
++            )
++            .await
++            .unwrap();
++        assert!(!crawler.known_network.nodes.read().contains_key(&other));
++        assert!(NetworkMetrics::default()
++            .request_summary(&crawler)
++            .gossip_edges
++            .is_empty());
++        crawler.node().shut_down().await;
++    }
++
+     async fn mock_peer(proof: Headers, expect_qualified: bool) {
+         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+         let peer_addr = listener.local_addr().unwrap();
+-- 
+2.50.0
+

@@ -26,7 +26,7 @@ export async function resolveNameExtras(name: string, resolution: NameResolution
   if (resolution.state === 'available') {
     try {
       const status = await getZnsStatus(AbortSignal.timeout(1_000));
-      return { ...resolution, pricing: status.pricing };
+      return { ...resolution, pricing: status.pricing ?? null };
     } catch {
       return { ...resolution, pricing: null };
     }

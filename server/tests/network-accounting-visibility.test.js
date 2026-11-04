@@ -14,6 +14,7 @@ function render(data, { network = 'mainnet', error = null, historyData = undefin
   }).outputText, { exports, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'react') return { useState: value => [value === 'fees' ? metric : value === '30d' ? period : value, () => {}] };
+    if (name === '@/lib/use-url-state') return { useUrlState: (key, fallback) => [fallback === '30d' ? period : fallback, () => {}] };
     if (name === 'recharts') return Object.fromEntries(['ComposedChart','Bar','Line','XAxis','YAxis','ResponsiveContainer','CartesianGrid'].map(key => [key,key]));
     if (name === 'next/link') return { default: 'a' };
     if (name === '@/components/ui/SectionHeader') return { SectionHeader: 'SectionHeader' };
@@ -33,13 +34,17 @@ function render(data, { network = 'mainnet', error = null, historyData = undefin
 const snapshot = (height, activation = 4000000, chain = 'main') => ({ nodeHeight: height,
   schedule: { network: chain, nu7Height: activation }, block: null });
 
-test('accounting is hidden and history is not requested before or without confirmed activation', () => {
+test('the stable NSM overview replaces observations before or without confirmed activation', () => {
   for (const data of [undefined, null, {}, snapshot(3999999), snapshot(5000000, null), { ...snapshot(5000000), schedule: null },
     snapshot(5000000, -1), snapshot(5000000, 1.5), snapshot(5000000, 500000000), snapshot(NaN),
     snapshot(500000000)]) {
     const result = render(data);
-    assert.equal(result.tree, null);
+    assert.equal(result.tree.type, 'section');
+    assert.equal(result.tree.props.id, 'nu7-accounting');
     assert.equal(result.historyEnabled, false);
+    assert.equal(nodes(result.tree, 'ComposedChart').length, 0);
+    assert.match(textContent(result.tree), /Mechanism overview/);
+    assert.doesNotMatch(textContent(result.tree), /0(?:\.0+)? ZEC|Minimum removal since NU7|Reserve growth since NU7/);
   }
 });
 
@@ -58,20 +63,33 @@ test('the real activated testnet v1 envelope enables accounting and its history'
   assert.equal(data.block.feesToNsmZat, '12000');
   assert.equal(data.nsmBalanceZat, '55778035961');
 });
-test('each network becomes visible at its own node-announced activation boundary', () => {
+test('each network switches from mechanism overview to observations at its own activation boundary', () => {
   for (const [network, chain, activation] of [['mainnet', 'main', 4000000], ['testnet', 'test', 4400000]]) {
-    assert.equal(render(snapshot(activation - 1, activation, chain), { network }).tree, null);
+    const pending = render(snapshot(activation - 1, activation, chain), { network });
+    assert.equal(pending.tree.props.id, 'nu7-accounting');
+    assert.equal(pending.historyEnabled, false);
+    assert.match(textContent(pending.tree), /accounting charts begin at NU7/);
+    assert.ok(textContent(pending.tree).includes(activation.toLocaleString('en-US')));
     const result = render(snapshot(activation, activation, chain), { network });
     assert.equal(result.tree.type, 'section');
     assert.equal(result.historyEnabled, true);
-    assert.equal(render(snapshot(activation - 1, activation, chain), { network }).tree, null, 'reorg below activation hides accounting');
+    const reorg = render(snapshot(activation - 1, activation, chain), { network });
+    assert.equal(reorg.historyEnabled, false, 'reorg below activation hides observations');
+    assert.match(textContent(reorg.tree), /Mechanism overview/);
   }
 });
 test('wrong-network, Crosslink and failed-refresh snapshots cannot expose NU7 accounting', () => {
   for (const options of [{ network: 'testnet' }, { network: 'crosslink' }, { error: new Error('unavailable') }]) {
     const result = render(snapshot(5000000), options);
-    assert.equal(result.tree, null);
     assert.equal(result.historyEnabled, false);
+    if (options.network === 'crosslink') {
+      assert.equal(result.tree, null);
+    } else {
+      assert.equal(result.tree.props.id, 'nu7-accounting');
+      assert.match(textContent(result.tree), /live activation status is unavailable/);
+      assert.doesNotMatch(textContent(result.tree), /0(?:\.0+)? ZEC|Minimum removal since NU7|Reserve growth since NU7/);
+      assert.equal(nodes(result.tree, 'ComposedChart').length, 0);
+    }
   }
 });
 

@@ -12,6 +12,7 @@ import { GovernanceBanner } from "@/components/GovernanceBanner";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { getBaseUrl, getNetwork, getSiteCopy } from "@/lib/seo";
+import { HOME_FEED_PREFERENCE_BOOTSTRAP } from '@/lib/home-feed-preferences';
 import "./globals.css";
 
 const geistSans = localFont({
@@ -81,11 +82,13 @@ const siteJsonLd = {
       '@type': 'Organization',
       '@id': 'https://zecblock.com/#organization',
       name: 'ZecBlock',
+      alternateName: 'CipherScan',
       url: 'https://zecblock.com',
       logo: 'https://zecblock.com/brand/zecblock-mark.svg',
       sameAs: [
         'https://x.com/zecblock',
         'https://github.com/Kenbak/zecblock',
+        'https://z.cash/ecosystem/zecblock/',
       ],
     },
   ],
@@ -159,6 +162,7 @@ export default function RootLayout({
           dark first whenever JavaScript was slow.
         */}
         <script id="theme-init" dangerouslySetInnerHTML={{ __html: themeScript }} />
+        <script id="home-feed-preferences" dangerouslySetInnerHTML={{ __html: HOME_FEED_PREFERENCE_BOOTSTRAP }} />
       </head>
       <body className={`${geistSans.variable} ${geistMono.variable}`}>
         <ThemeProvider>

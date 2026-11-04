@@ -17,6 +17,7 @@ import { getMiningSoftwareEmoji } from "@/lib/coinbase-client";
 import { SOFTWARE_LABELS, type MiningSoftware } from "@/lib/mining-software";
 import { getChartColors, getChartTooltipStyle, getMiningSoftwareColors } from "@/lib/chart-theme";
 import { useTheme } from "@/contexts/ThemeContext";
+import { useUrlState } from '@/lib/use-url-state';
 
 type Category = {
   software: MiningSoftware;
@@ -54,6 +55,8 @@ const PERIODS = [
   ["since-zakura", "Since first Zakura marker"],
   ["custom", "Custom"],
 ] as const;
+// A custom range needs its dates, so only preset periods are shareable.
+const SHAREABLE_PERIODS: string[] = PERIODS.map(([key]) => key).filter((key) => key !== "custom");
 const inputClass =
   "rounded-md border border-cipher-border bg-cipher-surface px-3 py-2 text-xs text-primary";
 const utcDate = (timestamp: number) =>
@@ -63,7 +66,7 @@ export function MiningSoftwareSection() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const palette = getMiningSoftwareColors(theme);
-  const [period, setPeriod] = useState("30d");
+  const [period, setPeriod] = useUrlState<string>("software", "30d", SHAREABLE_PERIODS);
   const [range, setRange] = useState<{ from: string; to: string } | null>(null);
   const [bucket, setBucket] = useState("auto");
   const [data, setData] = useState<History | null>(null);

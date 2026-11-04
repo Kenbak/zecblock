@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import matter from 'gray-matter';
+import { parseNewsletterSource } from './frontmatter';
 import type { NewsletterIssue } from './types';
 import { extractSections, parseNewsletterContent } from './parser';
 
@@ -34,7 +34,7 @@ export function getAllNewsletters(): NewsletterIssue[] {
     .map((file) => {
       const slug = file.replace('.md', '');
       const raw = fs.readFileSync(path.join(NEWSLETTER_DIR, file), 'utf8');
-      const { data, content } = matter(raw);
+      const { data, content } = parseNewsletterSource(raw);
 
       return {
         slug,
@@ -54,7 +54,7 @@ export function getNewsletter(slug: string): NewsletterIssue | null {
   if (!fs.existsSync(filePath)) return null;
 
   const raw = fs.readFileSync(filePath, 'utf8');
-  const { data, content } = matter(raw);
+  const { data, content } = parseNewsletterSource(raw);
 
   return {
     slug,

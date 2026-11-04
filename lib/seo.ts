@@ -120,7 +120,8 @@ export function buildPageMetadata({
   // index. Its homepage is the only default opt-in; any future testnet landing
   // page must make a deliberate, reviewed indexOnTestnet decision.
   const allowedOnTestnet = network !== 'testnet' || indexOnTestnet;
-  const shouldIndex = !isCrosslink
+  const stagingPreview = process.env.VERCEL_ENV === 'preview' && process.env.ASK_STAGING_ENABLED === 'true';
+  const shouldIndex = !stagingPreview && !isCrosslink
     && allowedOnNetwork
     && allowedOnTestnet
     && (index ?? true);

@@ -3,11 +3,13 @@
 @source "../app";
 @source "../lib";
 
-/* Avoid painting defaults before local preferences are known, even when
-   hydration is delayed. HomeFeedCard's noscript styles restore the SSR view. */
+/* Server snapshots are visible without hydration. Only a validated saved
+   alternative gets a parser-time preference guard, with bounded fail-open. */
 .home-feed-placeholder { display: none; }
-.home-feed[data-preferences-ready="false"] > .home-feed-content { display: none; }
-.home-feed[data-preferences-ready="false"] > .home-feed-placeholder { display: block; }
+html[data-home-left-pending] .home-feed[data-preference-key="cipherscan-home-card-left"][data-preferences-ready="false"] > .home-feed-content,
+html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-card-right"][data-preferences-ready="false"] > .home-feed-content { display: none; }
+html[data-home-left-pending] .home-feed[data-preference-key="cipherscan-home-card-left"][data-preferences-ready="false"] > .home-feed-placeholder,
+html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-card-right"][data-preferences-ready="false"] > .home-feed-placeholder { display: block; }
 
 /* Class-based dark: variant — <html> carries .dark/.light (see ThemeContext).
    Matches the selector the v3 config bridge generated (descendants of .dark). */
@@ -256,6 +258,10 @@
 
   /* Node map */
   --color-map-dot: rgba(55, 65, 81, 0.45);
+  --color-globe-ocean: #0D0E0F;
+  --color-globe-land: #8D8F8B;
+  --color-globe-rim: #A9A69E;
+  --color-globe-grid: #373734;
 
   /* Glass overlays — theme-aware subtle backgrounds & borders */
   --glass-2: rgba(255, 255, 255, 0.02);
@@ -470,6 +476,10 @@
 
   /* Node map */
   --color-map-dot: rgba(148, 163, 184, 0.5);
+  --color-globe-ocean: #E8E7E2;
+  --color-globe-land: #76746B;
+  --color-globe-rim: #77766D;
+  --color-globe-grid: #C8C6BE;
 
   /* Glass overlays — dark tints for light backgrounds */
   --glass-2: rgba(0, 0, 0, 0.02);
@@ -2112,3 +2122,65 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
 /* Legal references use the same quiet link treatment as secondary navigation. */
 .legal-link { color: var(--color-text-primary); text-decoration: underline; text-decoration-color: var(--color-cipher-border); text-underline-offset: 4px; }
 .legal-link:hover { text-decoration-color: currentColor; }
+
+/* Daily speed bars grow from the baseline, left to right, when a view is shown. */
+.speed-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  --bar-index: 0;
+  animation: speed-bar-grow 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--bar-index) * 14ms);
+}
+@keyframes speed-bar-grow { from { transform: scaleY(0); } }
+
+/* Live block pulse: blocks drift left along a 20-minute axis; gaps are block intervals. */
+.block-pulse-track {
+  position: relative;
+  height: 3.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--glass-3);
+  overflow: hidden;
+}
+.block-pulse-tick {
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
+  transform: translateX(-50%);
+  transition: left 1s linear;
+}
+.block-pulse-tick-nu7 { background: var(--color-cipher-gold); }
+.block-pulse-tick-new::after {
+  content: '';
+  position: absolute;
+  inset: -0.5rem -0.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--color-text-primary);
+  animation: block-pulse-ring 1.4s ease-out 2;
+  opacity: 0;
+}
+.block-pulse-tick-nu7.block-pulse-tick-new::after { color: var(--color-cipher-gold); }
+.block-pulse-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 0.25rem;
+  border-left: 1px dashed var(--color-cipher-gold);
+  color: var(--color-cipher-gold);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  transition: left 1s linear;
+}
+@keyframes block-pulse-ring {
+  from { opacity: 0.9; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(1.8); }
+}
+
+/* Countdown digits slide up when they change. */
+.countdown-digit { display: inline-block; animation: countdown-tick 320ms ease-out; }
+@keyframes countdown-tick { from { opacity: 0.2; transform: translateY(-0.25em); } }

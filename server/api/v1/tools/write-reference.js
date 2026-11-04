@@ -11,7 +11,7 @@ function buildReference() {
       method: entry.method, path: entry.v1.path, description: entry.description,
       category: entry.domain, query: queryParameters[`${entry.method} ${entry.v1.path}`] || [],
       listKey: entry.v1.listKey || null, zatoshiFields: entry.v1.zatoshiFields || [],
-      note: entry.v1.notes || null, ownershipToken: Boolean(entry.v1.forwardNodeToken),
+      note: entry.v1.notes || entry.v1.description || null, ownershipToken: Boolean(entry.v1.forwardNodeToken),
       pagination: entry.v1.shape === 'list' || entry.v1.nativeKey === 'names' ? 'cursor' : null,
       parameters: operation.parameters || [],
       requestBody: operation.requestBody?.content['application/json'].schema || null,

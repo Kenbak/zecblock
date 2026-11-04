@@ -3,6 +3,9 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { useUrlState } from '@/lib/use-url-state';
+import { ExportButton } from '@/components/ExportButton';
+import { zatToZecString } from '@/lib/csv';
 
 // The server snapshot revalidates every 15 minutes; poll at the same cadence.
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
@@ -84,7 +87,7 @@ export function ZodlClient({
   initialFetchedAt?: number;
   initialPeriod: string;
 }) {
-  const [period, setPeriod] = useState(initialPeriod);
+  const [period, setPeriod] = useUrlState<string>('period', initialPeriod, PERIODS.map((option) => option.key));
   const [sortKey, setSortKey] = useState<'held' | 'shielded' | 'offramp' | 'blocks'>('held');
   const seeded = period === initialPeriod && initialData !== null;
   const { data, loading, isRefreshing, error } = useApiQuery<ZodlData>(
@@ -157,6 +160,22 @@ export function ZodlClient({
             </button>
           ))}
         </div>
+        {pools.length > 0 && (
+          <div className="sm:ml-auto">
+            <ExportButton
+              type="csv"
+              data={pools}
+              filename={`zecblock-miner-zodl-${data?.period ?? period}`}
+              csvHeaders={['Pool', 'Blocks', 'Active days', 'Classified days', 'Earned (ZEC)', 'Held (ZEC)', 'Spent (ZEC)', 'Shielded (ZEC)', 'To exchange (ZEC)', 'To bridge (ZEC)', 'Other (ZEC)', 'holdRatio', 'shieldedRatio', 'offrampRatio', 'sellRatio', 'otherRatio']}
+              csvMapper={(row: PoolRow) => [
+                row.pool, String(row.blocks), String(row.activeDays), String(row.classifiedDays),
+                zatToZecString(row.earnedZat), zatToZecString(row.heldZat), zatToZecString(row.spentZat), zatToZecString(row.shieldedZat),
+                zatToZecString(row.exchangeZat), zatToZecString(row.bridgeZat), zatToZecString(row.otherZat),
+                String(row.holdRatio), String(row.shieldedRatio), String(row.offrampRatio), String(row.sellRatio), String(row.otherRatio),
+              ]}
+            />
+          </div>
+        )}
         {(loading || isRefreshing) && <span className="text-caption font-mono text-cipher-gold animate-pulse">updating…</span>}
         {error && data && !isRefreshing && (
           <span role="status" className="text-caption font-mono text-muted">Couldn&apos;t refresh. Showing the last loaded leaderboard.</span>

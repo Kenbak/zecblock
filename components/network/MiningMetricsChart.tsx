@@ -11,6 +11,7 @@ import { formatDifficulty, formatHashrate } from '@/lib/format-numbers';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { CURRENCY } from '@/lib/config';
 import { ChartCard } from './ChartCard';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 type MetricKey = 'solrate' | 'difficulty' | 'blockTime' | 'txFees' | 'txCount';
 
@@ -73,7 +74,7 @@ export function MiningMetricsChart() {
         })}
       </div>
 
-      <ChartCard title={`${metric.label.toUpperCase().replace(/\s+/g, '_')}_TREND`} height={280} watermarkSize="lg">
+      <ChartCard title={`${metric.label.toUpperCase().replace(/\s+/g, '_')}_TREND`} height={280} watermarkSize="lg" share={{ title: `Zcash ${metric.label.toLowerCase()} trend`, fileName: `zecblock-${metric.label.toLowerCase().replace(/\s+/g, '-')}`, csv: () => objectRowsCsv(points) }}>
         <p className="text-caption text-muted mb-3">{elapsedSolrate
           ? `${window}-block estimates use total difficulty and elapsed header time; unavailable values remain gaps.`
           : `${window}-block trailing averages. Timing uses block-header timestamps; unavailable values remain gaps.`}</p>

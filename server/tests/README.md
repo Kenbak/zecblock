@@ -19,4 +19,4 @@ invocation until the supported runtime includes the fix and the combined run
 has been verified. Other files keep the existing `--test` execution model.
 
 Node documents direct `node:test` execution and failure exit status in its
-[22.14 test-runner guide](https://nodejs.org/download/release/v22.14.0/docs/api/test.html).
+[22.23.4 test-runner guide](https://nodejs.org/download/release/v22.23.4/docs/api/test.html).

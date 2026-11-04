@@ -12,6 +12,6 @@ export const getUpgradeStats = cache(async () => {
     const stats = await readApiData(response);
     if (!readUpgradeSnapshot(stats, getNetwork())) return null;
     // Keep client props small while retaining the node's network/source fields.
-    return { blockchain: { height: stats.blockchain.height }, mining: { schedule: stats.mining.schedule, avgBlockTime: stats.mining.avgBlockTime } };
+    return { blockchain: { height: stats.blockchain.height, latestBlockTime: stats.blockchain.latestBlockTime }, mining: { schedule: stats.mining.schedule, avgBlockTime: stats.mining.avgBlockTime } };
   } catch { return null; }
 });

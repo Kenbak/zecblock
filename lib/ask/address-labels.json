@@ -1,0 +1,246 @@
+{
+ "source": "https://api.zecblock.com/v1/labels",
+ "retrieved": "2026-10-29",
+ "labels": [
+  {
+   "address": "t1aEbXVxdZasZjcXqYnKJD2N7s12y6Dqp3Z",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1ahNXYP7HFi3oJ8G26rjc9wWe5j4ryxxDL",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1am2oFofYswreeeKTN2G2NLiuW9DQvR5DV",
+   "label": "Grayscale Zcash Trust",
+   "category": "exchange"
+  },
+  {
+   "address": "t1bd55vRgLcBpBxJQFHodH9wb8uTkym6dqc",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1bjJUUESDGx57t146rd5oFdGkN6meUzg7S",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1boLLzTf7ddKJoT7PpVUgqUaoPdDgxWzGc",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1bxF7oetZt2EqWDndzsisTCz4CJhmsjvzL",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1cB2VWdTNV9eW37GQwkj2nvyMdGzECoaiw",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1cByqDRogv9vb7fsYRq4PHgH43cpUxxWSz",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1cKRdxdeqRFzLGiyHB2KnScMnPTMLBMpx2",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1cyAGaYcwWMdsu8Spfm6zUVynSrLMpTY64",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1d2gBnDusuHU8gbbuNcY2xfDxoyQYqeHAv",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1d3xisKP7tfdmNtXr2oDqFToBn1K1gKjSi",
+   "label": "Grayscale Zcash Trust",
+   "category": "exchange"
+  },
+  {
+   "address": "t1e1BVBDt3HTca4M8T9BWRApaBXKETDwWHz",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1e2ivMHX7shmSBhBmGzWxeVN3F9MPvDk8R",
+   "label": "Grayscale Zcash Trust",
+   "category": "exchange"
+  },
+  {
+   "address": "t1e4VsqHKoMNbFp1RdnzXnedfher8gGA5kJ",
+   "label": "Kraken Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1eevo7Gz5KGdRR5w989Gx71yU1v4f4zRsX",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1ewXTvioNXo9fRZfjhnwnayQRYBJ5P4ebX",
+   "label": "Grayscale Zcash Trust",
+   "category": "exchange"
+  },
+  {
+   "address": "t1g42kALKk1ZkjNL6hcrW4oRLgUE7Hps7sm",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1g47g7wNA55q5PWYHWb6X5JxzhMqwaknjC",
+   "label": "Kraken Hot Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1gw1BUJoLS2SqTHAbE6ghj3dKeb8sEJPea",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1HwLQtvGCNfdpGpPUmK6MURTaW8Ujf6hU8",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1KbKkQ7WisJF52sSepMjYokQJbkJCJ1i3C",
+   "label": "Hyperunit Hot Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1Ku2KLyndDPsR32jwnrTMd3yvi9tfFP8ML",
+   "label": "NEAR Intent Bridge",
+   "category": "bridge"
+  },
+  {
+   "address": "t1KuoWCFjRcbG7HKhtVARCgBv7PcxRfMmQd",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1L3mP83QYtcVc5r48sB4tYaPiA31z78WPw",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1M64HCu4RhT5h5GJrWQL7WcMq6pzLdusWp",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1MtYxFayfPrDmMUHDk7vV8bqD7z8MdbS4T",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1N8Q3EmVSo891V3LTaHijeBK4aMPE4HjGz",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1NV4euoqYjnutzS9Lr9VvjBD2LLNuXtXXZ",
+   "label": "Coinbase",
+   "category": "exchange"
+  },
+  {
+   "address": "t1PaCpkUPc5cM6FH9jSfFTUVC3DgrYRgxfj",
+   "label": "Binance",
+   "category": "exchange"
+  },
+  {
+   "address": "t1PKBiv7mtzD9bNafYaqyxaENeiNDbpKxxQ",
+   "label": "Binance Hot Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1QGQUHitjvXhZLJXgp7772CTEwAfYBRQXr",
+   "label": "Kraken Deposit",
+   "category": "exchange"
+  },
+  {
+   "address": "t1RGtQw8T6pfxG9zJNP5U2dRfC7jggaVPjA",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1RyCw14wRXrh3mp21uxgr9ynjem7cNUkMH",
+   "label": "Binance Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1TDwC91tn1zny8EMhBDK2YWiGJ6TCEPjcS",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1TocTvTDv6dX8CsCPL7JvxDC8PYChF6Vco",
+   "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1VxyLUKaK2tvj5iMRQagued6qpxPNvRkk7",
+   "label": "Binance Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1XP8Pjju5eMYVfXiFNNjkjY8kt5ZLL4maJ",
+   "label": "Binance",
+   "category": "exchange"
+  },
+  {
+   "address": "t1YjihZAttWbUQJYGgwhEvdGJLbTVcVGGez",
+   "label": "Kucoin Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1ZtktN6KNQhHkuWXfhWnJEn99p1Gm4ZvQr",
+   "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t3aPMe94jMKyrgkbH5SSukimvdMFJ59EFhP",
+   "label": "Gemini Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t3ev37Q2uL1sfTsiJQJiWJoFzQpDhmnUwYo",
+   "label": "ZIP-271 Disbursement Multisig",
+   "category": "foundation"
+  },
+  {
+   "address": "t3fygNh4yTRdhirVn6qu1QAtTUvZNFmGtbH",
+   "label": "Gemini Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t3hdTwzcVVGEqDdNKJTBfWvWyaFYNJv7KkA",
+   "label": "Gemini Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t3LpoiUrHwkgpWA5KVY7LVAKzHKE9qox3Cj",
+   "label": "Gemini Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t3SvZNJqBJZQx5t7o4nDb9YP1VqJ2R2md88",
+   "label": "Gemini Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t3WGhZh3QV9Wgj9Xb6MrrhLZhpdyVa8QqLG",
+   "label": "Gemini Custody",
+   "category": "exchange"
+  }
+ ]
+}

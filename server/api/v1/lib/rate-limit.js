@@ -29,8 +29,9 @@ const { sendProblem } = require('./problem');
  * @param {number} opts.windowMs
  * @param {number} opts.max
  * @param {string} opts.key - identifies this limiter in the problem detail (e.g. 'scan/orchard')
+ * @param {function} [opts.onLimit] - optional fixed endpoint-specific response
  */
-function createRateLimiter({ windowMs, max, key }) {
+function createRateLimiter({ windowMs, max, key, onLimit }) {
   const hits = new Map(); // ip -> timestamps[]
 
   // Periodic sweep so the map can't grow unbounded under sustained
@@ -57,6 +58,7 @@ function createRateLimiter({ windowMs, max, key }) {
       const oldestInWindow = active[0];
       const retryAfterSeconds = Math.max(1, Math.ceil((oldestInWindow + windowMs - now) / 1000));
       res.set('Retry-After', String(retryAfterSeconds));
+      if (onLimit) { onLimit(req, res, retryAfterSeconds); return; }
       sendProblem(res, 'rate-limited', {
         instance: req.originalUrl,
         detail: `Rate limit exceeded for ${key}: max ${max} requests per ${Math.round(windowMs / 1000)}s.`,

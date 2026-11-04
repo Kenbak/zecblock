@@ -21,10 +21,11 @@ export default function DocsPage() {
     <ApiReference categories={categories}>
       <section id="quickstart" className={styles.guide}>
         <h2>Quick start</h2>
+        <p>Connecting an AI assistant? Use the <Link href="/docs/mcp">read-only Zcash MCP server</Link>.</p>
         <p>Make a request to the API base above. Paths in this reference already include <code>/v1</code>; append them to the host only.</p>
         <pre className={styles.code}><code>{`curl '${baseUrl}/v1/blocks?limit=5'`}</code></pre>
-        <p className={styles.note}>This is the v1 contract reference. Use a deployment with v1 enabled; the planned mainnet host is <code>api.zecblock.com</code>. The existing production API continues until cutover. A gated preview requires <code>X-API-Preview-Key</code>; the private local adapter handles preview access and allows reads only.</p>
-        <div className={styles.guideGrid}><div><h3>Access</h3><p>Public data routes do not require an account after launch. Updating or deleting a Crosslink node registration requires its ownership token. Paid/private services and operational routes are excluded from this reference.</p></div><div><h3>Network</h3><p>Confirm <code>meta.network</code> in the response. Endpoint availability and data coverage vary by network; Crosslink routes require a Crosslink deployment.</p></div></div>
+        <p className={styles.note}>The public {networkLabel} v1 API uses <code>{baseUrl}/v1</code>. Endpoint availability follows the selected network. Protected previews may require <code>X-API-Preview-Key</code>; public production reads do not require that header.</p>
+        <div className={styles.guideGrid}><div><h3>Access</h3><p>Public data reads do not require an account. Writes can have endpoint-specific requirements: updating or deleting a Crosslink node registration requires its ownership token. Paid/private services and operational routes are excluded from this reference.</p></div><div><h3>Network</h3><p>Confirm <code>meta.network</code> in the response. Endpoint availability and data coverage vary by network; Crosslink routes require a Crosslink deployment.</p></div></div>
       </section>
       <section id="parameters" className={styles.guide}>
         <h2>Using parameters</h2>

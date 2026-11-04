@@ -40,6 +40,17 @@ test('shared parser rejects legacy responses and preserves building/error semant
   assert.equal(await api.readApiData(response(null)),null);
   await assert.rejects(()=>api.readApiCollection(response([])),/invalid collection/);
 });
+test('bounded server JSON uses the same envelope and HTTP error validation', async()=>{
+  const {readBoundedJson}=require('../../lib/bounded-json');
+  const good=response({observations:[0,null,12]});
+  assert.deepEqual(api.parseApiResponse(good,await readBoundedJson(good)),{
+    data:{observations:[0,null,12]},meta:{requestId:'test',network:'mainnet'},
+  });
+  assert.throws(()=>api.parseApiResponse(response(null),{data:[],meta:{requestId:'test',network:'other'}}),/incompatible/);
+  const failed=new Response(JSON.stringify({detail:'Preparing data',code:'building'}),{status:503,headers:{'x-request-id':'bounded-test','retry-after':'60'}});
+  assert.throws(()=>api.parseApiResponse(failed,{detail:'Preparing data',code:'building'}),e=>e instanceof api.ApiError&&e.status===503&&e.code==='building'&&e.requestId==='bounded-test'&&e.retryAfter==='60');
+  await assert.rejects(()=>readBoundedJson(response({large:'x'.repeat(128)}),16),/byte limit/);
+});
 test('transaction metadata resolves pending and missing v1 mempool records without a legacy success flag', async () => {
   const txid = 'a'.repeat(64);
   for(const inMempool of [true,false]) {

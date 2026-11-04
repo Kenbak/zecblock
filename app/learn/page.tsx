@@ -17,19 +17,17 @@ const sections = [
   { id: 'resources', label: 'Ecosystem' },
 ];
 
-type Resource = { name: string; description: string; href: string };
+type Resource = { name: string; description: string; href: string; logo?: string };
 const nodes: Resource[] = [
-  { name: 'Zakura', description: 'Zcash full node with block pruning, snapshots and a zcashd compatibility mode.', href: 'https://zakura.com/' },
-  { name: 'Zebra', description: 'Rust full node from the Zcash Foundation. Independently verify the chain.', href: 'https://github.com/ZcashFoundation/zebra' },
-  { name: 'Zaino', description: 'Zcash indexing infrastructure from Zingolabs for wallet and application services.', href: 'https://github.com/zingolabs/zaino' },
-  { name: 'lightwalletd', description: 'Backend service that supplies compact blockchain data to light wallets.', href: 'https://github.com/zcash/lightwalletd' },
+  { name: 'Zakura', description: 'Full node with pruning, snapshots and zcashd compatibility.', href: 'https://zakura.com/', logo: '/brands/zakura.svg' },
+  { name: 'Zebra', description: 'Rust full node from the Zcash Foundation.', href: 'https://github.com/ZcashFoundation/zebra', logo: '/brands/zebra.png' },
+  { name: 'Zaino', description: 'Zingolabs indexing infrastructure for wallets and apps.', href: 'https://github.com/zingolabs/zaino', logo: '/brands/zingolabs.png' },
+  { name: 'lightwalletd', description: 'Compact blockchain data for light wallets.', href: 'https://github.com/zcash/lightwalletd', logo: '/brands/zcash.png' },
 ];
 const development: Resource[] = [
-  { name: 'Thus Spoke Zakura', description: 'Local Zcash development environment with wallets, a faucet, mining controls and an explorer. Uses an isolated Regtest chain, separate from public testnet.', href: 'https://github.com/zcashlabs/thus-spoke-zakura' },
-  { name: 'ZecBlock API', description: 'Explorer endpoints, data definitions and integration examples.', href: '/docs' },
-  { name: 'librustzcash', description: 'Rust libraries for Zcash transactions, keys and wallet functionality.', href: 'https://github.com/zcash/librustzcash' },
-  { name: 'Zingolib', description: 'Light-wallet library for building Zcash applications.', href: 'https://github.com/zingolabs/zingolib' },
-  { name: 'Protocol & ZIPs', description: 'Protocol specifications and Zcash Improvement Proposals.', href: 'https://zips.z.cash/' },
+  { name: 'librustzcash', description: 'Rust libraries for transactions, keys and wallets.', href: 'https://github.com/zcash/librustzcash', logo: '/brands/zcash.png' },
+  { name: 'Zingolib', description: 'Zingolabs light-wallet library.', href: 'https://github.com/zingolabs/zingolib', logo: '/brands/zingolabs.png' },
+  { name: 'Protocol & ZIPs', description: 'The protocol and Zcash Improvement Proposals.', href: 'https://zips.z.cash/', logo: '/brands/zcash.png' },
 ];
 const community: Resource[] = [
   { name: 'Zcash learning hub', description: 'Guides to Zcash, its technology and the wider ecosystem.', href: 'https://z.cash/learn/' },
@@ -51,7 +49,10 @@ function Destination({ href, children, className }: { href: string; children: Re
 function ResourceList({ items }: { items: Resource[] }) {
   return <ul className={styles.resourceList}>{items.map(item => <li key={item.href}>
     <Destination href={item.href} className={styles.resource}>
-      <span><strong>{item.name}</strong><span className={styles.description}>{item.description}</span></span>
+      <span className={styles.resourceName}>
+        {item.logo && <Image src={item.logo} alt="" width={28} height={28} className={styles.resourceLogo} />}
+        <span><strong>{item.name}</strong><span className={styles.description}>{item.description}</span></span>
+      </span>
       <Arrow external={!item.href.startsWith('/')} />
     </Destination>
   </li>)}</ul>;
@@ -91,6 +92,7 @@ export default function LearnPage() {
             <Destination href="http://pool.tazminer.com:3000" className={styles.button}>Mine testnet ZEC <Arrow external /></Destination>
           </div>
           <p className={styles.heroNote}>Browser mining uses testnet Zcash (TAZ), for learning and testing. Testnet coins have no monetary value.</p>
+          <a href="#build" className={styles.textLink}>Want to build on Zcash? Start here <Arrow /></a>
         </div>
         <PrivacyTerminal />
       </div>
@@ -174,17 +176,43 @@ export default function LearnPage() {
     </section>
 
     <section id="build" className={styles.section}>
-      <SectionTitle number="04" title="Build on Zcash. Verify it yourself." description="Full nodes verify the chain. Indexers and libraries help applications use it." />
+      <SectionTitle number="04" title="Build on Zcash. Verify it yourself." description="From your first local experiment to your first contribution." />
+      <ol className={styles.buildSteps} aria-label="Start building on Zcash">
+        <li>
+          <span className={styles.meta}>01 · Run locally</span>
+          <h3 className={styles.buildIdentity}><Image src="/brands/zakura.svg" alt="" width={32} height={32} className={styles.projectLogo} /><span>Thus Spoke Zakura</span></h3>
+          <p>A local Regtest chain with wallets, funding and block controls.</p>
+          <Destination href="https://github.com/zcashlabs/thus-spoke-zakura" className={styles.textLink}>Start locally <Arrow external /></Destination>
+        </li>
+        <li>
+          <span className={styles.meta}>02 · Build an application</span>
+          <h3 className={styles.buildIdentity}><Image src="/brands/zcash-labs.png" alt="" width={32} height={32} className={styles.projectLogo} /><span>zcash.js</span></h3>
+          <p>An experimental TypeScript SDK for Zcash queries and local wallets.</p>
+          <Destination href="https://github.com/zcashlabs/zcashjs" className={styles.textLink}>Explore the SDK <Arrow external /></Destination>
+        </li>
+        <li>
+          <span className={styles.meta}>03 · Test and inspect</span>
+          <h3 className={styles.buildIdentity}><Image src="/brands/zcash.png" alt="" width={32} height={32} className={styles.projectLogo} /><span>Get testnet ZEC</span></h3>
+          <p>Mine TAZ in your browser, then test your app and inspect transactions.</p>
+          <div className={styles.buildActions}>
+            <Destination href="http://pool.tazminer.com:3000" className={styles.button}>Mine in your browser <Arrow external /></Destination>
+            <div className={styles.buildLinks}>
+              <Destination href="https://testnet.zecblock.com/" className={styles.textLink}>Open testnet <Arrow external /></Destination>
+              <Destination href="/docs" className={styles.textLink}>API docs <Arrow /></Destination>
+            </div>
+          </div>
+        </li>
+        <li>
+          <span className={styles.meta}>04 · Find people & contribute</span>
+          <h3 className={styles.buildIdentity}><Image src="/brands/zypherpunk.jpg" alt="" width={32} height={32} className={styles.projectLogo} /><span>Zypherpunk</span></h3>
+          <p>Build, learn and contribute with the Zcash Labs developer community.</p>
+          <Destination href="https://x.com/zypherpunks/status/2110032705119232296" className={styles.textLink}>Explore Zypherpunk <Arrow external /></Destination>
+        </li>
+      </ol>
+      <p className={styles.testnetNote}>TAZ is testnet ZEC. Use your wallet’s testnet receive address. Testnet coins have no monetary value; local Regtest uses a separate chain.</p>
       <div className={styles.twoColumns}>
         <div className={styles.directory}><h3>Nodes & indexing</h3><ResourceList items={nodes} /></div>
-        <div className={styles.directory}><h3>Developer tools & references</h3><ResourceList items={development} /></div>
-      </div>
-      <div className={styles.sectionNote}>
-        <p>Testing on public testnet? Use testnet ZEC (TAZ) and a testnet address. Testnet coins have no monetary value.</p>
-        <div className={styles.inlineLinks}>
-          <Destination href="http://pool.tazminer.com:3000" className={styles.textLink}>Mine testnet ZEC in browser <Arrow external /></Destination>
-          <Destination href="https://testnet.zecblock.com/" className={styles.textLink}>Open testnet explorer <Arrow external /></Destination>
-        </div>
+        <div className={styles.directory}><h3>Libraries & protocol references</h3><ResourceList items={development} /></div>
       </div>
       <SectionTransition href="#reading" label="Further reading" />
     </section>

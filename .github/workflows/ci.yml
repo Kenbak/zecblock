@@ -49,6 +49,10 @@ jobs:
         run: npm ci --prefix server/api --no-audit --no-fund
       - name: Run the local/CI frontend verification contract
         run: npm run verify:frontend
+      - name: Protected staging proxy regressions
+        run: node --test server/tests/ask-staging-proxy.test.js server/tests/staging-data-proxy.test.js
+      - name: Ask conversation and saved-result regressions
+        run: node --test server/tests/ask-conversation-results.test.js server/tests/ask-follow-ups.test.js server/tests/ask-composer.test.js server/tests/ask-feedback-limits.test.js server/tests/research-display.test.js server/tests/research-library.test.js server/tests/research-share.test.js server/tests/research-portable-narrative.test.js server/tests/ask-research-tools.test.js server/tests/ask-workspace-saved-context.test.js server/tests/ask-sql-explain.test.js
       - name: Inbox orchestration and worker lifecycle regressions
         run: node --test server/tests/inbox-scan.test.js server/tests/scan-worker-pool.test.js
       - name: Supply-map accounting regressions
@@ -61,14 +65,18 @@ jobs:
   # ---------------------------------------------------------------------------
   backend-api:
     name: Backend API (Express)
-    runs-on: ubuntu-latest
+    # The isolated Ask fixture invokes the runner's PostgreSQL 16 binaries;
+    # avoid changing its database major when ubuntu-latest advances.
+    runs-on: ubuntu-24.04
     env:
       TEST_REDIS_URL: redis://127.0.0.1:6379
       ADDRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       HASHRATE_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_ACTIVITY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_POOL_ACTIVITY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       MINING_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_NODE_CENSUS_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
+      TEST_NODE_TOPOLOGY_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_ACCOUNTING_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_UTXO_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
       TEST_FORK_MONITOR_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -101,6 +109,29 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version-file: .node-version
+      - name: Install native Redis fixture runtime
+        # The Docker service supplies TEST_REDIS_URL, while the Ask isolation
+        # fixtures launch their own redis-server with port 0/private Unix sockets.
+        # Suppress package service startup so it cannot contend for TCP 6379.
+        run: |
+          sudo apt-get update
+          fixture_policy_dir="$(mktemp -d)"
+          if sudo test -e /usr/sbin/policy-rc.d || sudo test -L /usr/sbin/policy-rc.d; then
+            sudo cp -a /usr/sbin/policy-rc.d "$fixture_policy_dir/original"
+          fi
+          restore_fixture_policy() {
+            sudo rm -f /usr/sbin/policy-rc.d
+            if sudo test -e "$fixture_policy_dir/original" || sudo test -L "$fixture_policy_dir/original"; then
+              sudo cp -a "$fixture_policy_dir/original" /usr/sbin/policy-rc.d
+            fi
+            rm -rf "$fixture_policy_dir"
+          }
+          trap restore_fixture_policy EXIT
+          printf '#!/bin/sh\nexit 101\n' > "$fixture_policy_dir/deny-service-start"
+          sudo rm -f /usr/sbin/policy-rc.d
+          sudo install -o root -g root -m 0755 "$fixture_policy_dir/deny-service-start" /usr/sbin/policy-rc.d
+          sudo apt-get install -y --no-install-recommends redis-server
+          redis-server --version
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Install shared inventory-test dependencies
@@ -110,6 +141,13 @@ jobs:
         env:
           NODE_PATH: ${{ github.workspace }}/server/api/node_modules
         run: npm run verify
+      - name: Validate the complete Ask evaluation catalogue without provider calls
+        run: node scripts/evaluate-ask-research.js --all
+      - name: Execute the Ask catalogue against disposable PostgreSQL 16
+        env:
+          ASK_EVAL_TEST_POSTGRES: "1"
+          ASK_LOGICAL_PG_BIN: /usr/lib/postgresql/16/bin
+        run: node --test --test-timeout=45000 test/v1/ask-research-eval-postgres.test.js
       - name: Route/lib regression tests
         # These live under server/tests/ (not server/api/test/) but exercise
         # server/api/routes/* and server/lib/* directly with mocked pools —
@@ -127,6 +165,7 @@ jobs:
           node --test server/tests/crosslink-freshness.test.js
           python3 server/tests/crosslink-snapshot.test.py
           npm run test:server-regressions
+          npm run test:release
           npm run test:activity
           npm run test:bot
           npm run test:hashrate-postgres
@@ -201,9 +240,13 @@ jobs:
   # ---------------------------------------------------------------------------
   # Python ML jobs: install deps + byte-compile
   # ---------------------------------------------------------------------------
-  python-jobs:
-    name: Python jobs
+  python-environments:
+    name: Python dependencies (${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ["3.12", "3.13"]
     defaults:
       run:
         working-directory: server/jobs
@@ -211,11 +254,25 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.13"
+          python-version: ${{ matrix.python }}
       - name: Install dependencies
-        run: pip install -r requirements.txt
+        run: |
+          pip install -r requirements.txt
+          pip check
+      - name: Import the scheduled job without running database work
+        run: python3 -c "import runpy; runpy.run_path('ml-pattern-detector.py', run_name='dependency_check')"
       - name: Compile sources in memory
         run: python3 -c "import pathlib; [compile(path.read_text(), str(path), 'exec') for path in pathlib.Path('.').rglob('*.py')]"
+
+  python-jobs:
+    # Preserve the branch-protection check name while requiring both runtimes.
+    name: Python jobs
+    runs-on: ubuntu-latest
+    if: always()
+    needs: python-environments
+    steps:
+      - name: Require every Python environment to pass
+        run: test '${{ needs.python-environments.result }}' = success
 
   # ---------------------------------------------------------------------------
   # Shell scripts: shellcheck
@@ -231,3 +288,5 @@ jobs:
         run: |
           find . -name '*.sh' -not -path '*/node_modules/*' -not -path './.netlify/*' -not -path './.next/*' \
             -print0 | xargs -0 -r shellcheck --severity=warning
+      - name: Verify indexer heartbeat and alert regressions
+        run: node --test server/tests/ops-heartbeat.test.js

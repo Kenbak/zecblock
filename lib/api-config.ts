@@ -51,11 +51,26 @@ const DEFAULT_API_URLS: Record<Network, string> = {
 };
 
 export function getApiUrlForNetwork(network: Network): string {
+  // Protected previews route only browser mainnet reads through their GET
+  // bridge. SSR keeps the explicit server API origin and service credentials.
+  if (typeof window !== 'undefined' && network === 'mainnet' && process.env.NEXT_PUBLIC_ASK_STAGING === 'true') {
+    return '/api/staging-data';
+  }
   const configuredUrl = typeof window === 'undefined'
     ? process.env.CIPHERSCAN_API_URL || process.env.NEXT_PUBLIC_API_URL
     : process.env.NEXT_PUBLIC_API_URL;
 
   return normalizeApiBaseUrl(configuredUrl || DEFAULT_API_URLS[network]);
+}
+
+/**
+ * Server-only base URL for another public network's API. The deployment's own
+ * API override applies only to its own network.
+ */
+export function getPeerNetworkApiUrl(network: 'mainnet' | 'testnet'): string {
+  if (network === NETWORK) return getApiUrlForNetwork(network);
+  const override = network === 'mainnet' ? process.env.MAINNET_API_URL : process.env.TESTNET_API_URL;
+  return normalizeApiBaseUrl(override || DEFAULT_API_URLS[network]);
 }
 
 export const API_CONFIG = {

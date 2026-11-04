@@ -12,6 +12,8 @@ import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
 import { NodeMapExplorer } from '@/components/network/NodeMapExplorer';
 import { clientLabel, clientColor } from '@/lib/network-colors';
 import { scoreColor } from '@/components/ui/RadialGauge';
+import type { NodeStats } from '@/components/NodeMap';
+import { ExportButton } from '@/components/ExportButton';
 
 interface NodeEntry {
   id: number;
@@ -35,17 +37,6 @@ interface NodeEntry {
   closeness: number | null;
 }
 
-interface NodeStats {
-  censusVersion?: number;
-  activeNodes: number;
-  totalNodes: number;
-  countries: number;
-  cities: number;
-  avgPingMs: number | null;
-  torNodes: number;
-  lastUpdated: string | null;
-}
-
 interface ClientEntry {
   client: string;
   count: number;
@@ -64,13 +55,13 @@ function countryFlag(code: string | null): string {
 }
 
 interface HealthScore {
-  healthScore: number;
+  healthScore: number | null;
   components: {
-    connectivity: { score: number; avgDegree: number; poorlyConnected: number; maxDegree: number };
+    connectivity: { score: number | null; avgDegree: number | null; poorlyConnected: number | null; maxDegree: number | null };
     upgrade: { score: number; latestProtocol: number; adoptionPct: number; latestCount: number };
     clientDiversity: { score: number; topClient: string | null; topClientPct: number; implementations: number };
     geographic: { score: number; countries: number; uniqueSubnets: number };
-    reliability: { score: number; avgReliabilityPct: number | null; scoredNodes: number };
+    reliability: { score: number | null; avgReliabilityPct: number | null; scoredNodes: number };
   };
   totalActive: number;
 }
@@ -98,7 +89,8 @@ interface Reliability {
 
 interface UpgradeReadiness {
   latestProtocol: number;
-  readinessPct: number;
+  referenceUpgrade?: string;
+  readinessPct: number | null;
   latestCount: number;
   totalActive: number;
   versions: { protocolVersion: number; nodeCount: number; percentage: number; clients: string[]; isLatest: boolean }[];
@@ -108,8 +100,8 @@ interface Concentration {
   concentrationRisk: string;
   subnets: { subnet: string; nodeCount: number; clients: string[] }[];
   isps: { isp: string; nodeCount: number; percentage: number }[];
-  highDegreeNodes: number;
-  maxDegree: number;
+  highDegreeNodes: number | null;
+  maxDegree: number | null;
 }
 
 export default function NodesClient() {
@@ -184,6 +176,8 @@ export default function NodesClient() {
 
   const identifiedCount = clients.filter(c => c.client !== 'Unknown').reduce((s, c) => s + c.count, 0);
   const coveragePct = stats?.activeNodes ? ((identifiedCount / stats.activeNodes) * 100).toFixed(0) : '—';
+  const torClassificationAvailable = stats != null && stats.torNodes != null &&
+    ((stats.censusVersion ?? 0) >= 3 ? stats.torClassificationAvailable === true : stats.torClassificationAvailable !== false);
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -207,10 +201,10 @@ export default function NodesClient() {
       <Card className="network-summary-panel card-static mb-8">
         <dl className="network-summary-grid network-live-facts">
           {[
-            { label: 'Observed active nodes', value: stats?.activeNodes.toLocaleString() ?? '—', hint: 'Live peers and recent crawler observations' },
+            { label: 'Observed active IPs', value: stats?.activeNodes.toLocaleString() ?? '—', hint: (stats?.censusVersion ?? 0) >= 3 ? 'Live peers and crawlers serving Zcash chain headers' : 'Live peers and recent crawler observations' },
             { label: 'Countries', value: stats?.countries ?? '—', hint: stats ? `${stats.cities} observed cities` : 'Geographic coverage' },
-            { label: 'Tor nodes', value: stats?.torNodes ?? '—', hint: 'Observed Tor infrastructure' },
-            { label: stats?.censusVersion === 2 ? 'Average handshake' : 'Average ping', value: stats?.avgPingMs != null ? `${stats.avgPingMs.toFixed(0)} ms` : '—', hint: 'From crawler observations' },
+            { label: 'Tor classified', value: torClassificationAvailable ? stats.torNodes : '—', hint: torClassificationAvailable ? 'Known exit IPs and hidden-service classifications, not all Tor users' : 'Tor classification unavailable' },
+            { label: (stats?.censusVersion ?? 0) >= 2 ? 'Average handshake' : 'Average ping', value: stats?.avgPingMs != null ? `${stats.avgPingMs.toFixed(0)} ms` : '—', hint: 'From crawler observations' },
           ].map(item => <div key={item.label}>
             <dt className="type-label text-muted uppercase mb-2">{item.label}</dt>
             <dd className="type-metric text-primary">{item.value}</dd>
@@ -218,8 +212,9 @@ export default function NodesClient() {
           </div>)}
         </dl>
         <p className="border-t border-cipher-border px-5 py-3 text-caption text-muted">
-          {stats ? `${stats.totalNodes.toLocaleString()} nodes seen in total · Last observation ${stats.lastUpdated ? formatRelativeTime(stats.lastUpdated) : 'unavailable'}` : 'Awaiting node observations.'}
+          {stats ? `${stats.totalNodes.toLocaleString()} historical candidate IPs · Last observation ${stats.lastUpdated ? formatRelativeTime(stats.lastUpdated) : 'unavailable'}` : 'Awaiting node observations.'}
           {' '}Discovery coverage is not a census of the network.
+          {stats?.chainQualifiedCrawlerNodes != null && stats.localPeerOnlyNodes != null && <> {stats.chainQualifiedCrawlerNodes.toLocaleString()} crawler-verified IPs and {stats.localPeerOnlyNodes.toLocaleString()} additional local-peer IPs.</>}
         </p>
       </Card>
       {fetchError && <p role="status" className="text-caption text-warning mb-6">Some node observations could not load. Previously received values remain visible. <button onClick={fetchData} className="underline underline-offset-4">Retry</button></p>}
@@ -286,12 +281,12 @@ export default function NodesClient() {
               <CardBody>
                 <div className="flex items-start justify-between mb-5 gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-primary">Protocol adoption</h3>
-                    <p className="text-caption text-muted mt-0.5">Reference protocol {upgrade.latestProtocol} or newer · among nodes reporting a protocol version</p>
+                    <h3 className="text-sm font-semibold text-primary">{upgrade.referenceUpgrade ? `${upgrade.referenceUpgrade} readiness` : 'Protocol adoption'}</h3>
+                    <p className="text-caption text-muted mt-0.5">Advertising protocol {upgrade.latestProtocol} or newer{upgrade.referenceUpgrade ? ` (${upgrade.referenceUpgrade})` : ''} · among nodes reporting a protocol version</p>
                   </div>
-                  <span className="text-2xl font-semibold font-mono tabular-nums" style={{ color: scoreColor(upgrade.readinessPct) }}>{upgrade.readinessPct}%</span>
+                  <span className="text-2xl font-semibold font-mono tabular-nums" style={upgrade.readinessPct != null ? { color: scoreColor(upgrade.readinessPct) } : undefined}>{upgrade.readinessPct != null ? `${upgrade.readinessPct}%` : '—'}</span>
                 </div>
-                <p className="text-caption text-muted mb-4">{upgrade.latestCount.toLocaleString()} of {upgrade.totalActive.toLocaleString()} reporting nodes meet the reference protocol.</p>
+                <p className="text-caption text-muted mb-4">{upgrade.latestCount.toLocaleString()} of {upgrade.totalActive.toLocaleString()} reporting nodes advertise it. A protocol version is self-reported and does not prove a node will follow the upgrade.</p>
                 <div className="space-y-2.5">
                   {upgrade.versions.map(v => (
                     <div key={v.protocolVersion} className="flex items-center gap-2 text-caption">
@@ -322,7 +317,7 @@ export default function NodesClient() {
               <dl className="grid grid-cols-3 gap-4 border-y border-cipher-border py-5 mb-6">
                 {[
                   { label: 'Reachability', value: reliability.avgReliabilityPct != null ? `${reliability.avgReliabilityPct}%` : '—' },
-                  { label: stats?.censusVersion === 2 ? 'Median handshake' : 'Median ping', value: reliability.latency.median != null ? `${reliability.latency.median} ms` : '—' },
+                  { label: (stats?.censusVersion ?? 0) >= 2 ? 'Median handshake' : 'Median ping', value: reliability.latency.median != null ? `${reliability.latency.median} ms` : '—' },
                   { label: 'Full-node flags', value: reliability.services.known > 0 ? `${reliability.services.fullNodePct}%` : '—' },
                 ].map(item => <div key={item.label} className="min-w-0">
                   <dt className="text-caption text-muted mb-2">{item.label}</dt>
@@ -379,10 +374,10 @@ export default function NodesClient() {
           <summary className="network-detail-toggle">
             <span>
               <span className="block font-mono text-sm text-primary">Crawler assessment</span>
-              <span className="block text-caption text-muted mt-1">Five inputs from observed nodes. Expand to inspect the score.</span>
+              <span className="block text-caption text-muted mt-1">{health.healthScore == null ? 'Overall score unavailable without independently validated connectivity measurements.' : 'Five inputs from observed nodes. Expand to inspect the score.'}</span>
             </span>
             <span className="flex items-center gap-4 shrink-0">
-              <span className="font-mono text-xl text-primary tabular-nums">{health.healthScore}<span className="text-caption text-muted"> / 100</span></span>
+              <span className="font-mono text-xl text-primary tabular-nums">{health.healthScore ?? '—'}<span className="text-caption text-muted"> / 100</span></span>
               <svg className="network-detail-chevron w-4 h-4 text-muted" viewBox="0 0 16 16" fill="none" aria-hidden="true"><path d="m6 3 5 5-5 5" stroke="currentColor" strokeWidth="1.5" /></svg>
             </span>
           </summary>
@@ -392,7 +387,7 @@ export default function NodesClient() {
               <thead><tr className="border-b border-cipher-border text-muted"><th className="text-left py-3 pr-3">Input</th><th className="text-left py-3 pr-3">Observation</th><th className="text-right py-3">Score / 100</th></tr></thead>
               <tbody className="divide-y divide-cipher-border">
                 {[
-                  { label: 'Connectivity', score: health.components.connectivity.score, observation: `${health.components.connectivity.avgDegree} average peers` },
+                  { label: 'Connectivity', score: health.components.connectivity.score, observation: health.components.connectivity.avgDegree == null ? 'Gossip links unavailable' : `${health.components.connectivity.avgDegree} average peers` },
                   { label: 'Protocol adoption', score: health.components.upgrade.score, observation: `${health.components.upgrade.adoptionPct}% at reference protocol or newer` },
                   { label: 'Client diversity', score: health.components.clientDiversity.score, observation: health.components.clientDiversity.topClient ? `${health.components.clientDiversity.topClient} · ${health.components.clientDiversity.topClientPct}%` : 'Unavailable' },
                   { label: 'Geographic spread', score: health.components.geographic.score, observation: `${health.components.geographic.countries} countries` },
@@ -400,7 +395,7 @@ export default function NodesClient() {
                 ].map(item => <tr key={item.label}>
                   <th scope="row" className="text-left font-normal text-secondary py-3 pr-3">{item.label}</th>
                   <td className="text-muted py-3 pr-3">{item.observation}</td>
-                  <td className="font-mono tabular-nums text-primary text-right py-3">{item.score}</td>
+                  <td className="font-mono tabular-nums text-primary text-right py-3">{item.score ?? '—'}</td>
                 </tr>)}
               </tbody>
             </table>
@@ -417,7 +412,22 @@ export default function NodesClient() {
               <h3 className="text-sm font-semibold text-primary">Observed nodes</h3>
               <p className="text-caption text-muted mt-1">Reported software, location and the latest crawler measurements.</p>
             </div>
-            <DirectoryPagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
+            <div className="flex flex-wrap items-center gap-3">
+              {nodes.length > 0 && (
+                <ExportButton
+                  type="csv"
+                  data={nodes}
+                  filename={`zecblock-nodes-page-${page + 1}`}
+                  csvHeaders={['Client', 'Version', 'Protocol version', 'Country', 'Tor', 'Tor type', 'Ping (ms)', 'Active', 'Peers (degree)', 'Betweenness', 'Closeness', 'ISP', 'Source', 'First seen (UTC)', 'Last seen (UTC)']}
+                  csvMapper={(node: NodeEntry) => [
+                    node.client, node.version ?? '', String(node.protocolVersion ?? ''), node.country ?? '', node.isTor ? 'yes' : 'no', node.torType ?? '',
+                    String(node.pingMs ?? ''), node.isActive ? 'yes' : 'no', String(node.degree ?? ''), String(node.betweenness ?? ''), String(node.closeness ?? ''),
+                    node.isp ?? '', node.source, node.firstSeen, node.lastSeen,
+                  ]}
+                />
+              )}
+              <DirectoryPagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
+            </div>
           </div>
 
           {loading ? (
@@ -431,7 +441,7 @@ export default function NodesClient() {
                     <SortHeader label="Client / version" col="client_impl" current={sortBy} dir={sortDir} onClick={handleSort} />
                     <SortHeader label="Location" col="country_code" current={sortBy} dir={sortDir} onClick={handleSort} />
                     <SortHeader label="Gossip links" col="degree" current={sortBy} dir={sortDir} onClick={handleSort} align="right" />
-                    <SortHeader label={stats?.censusVersion === 2 ? "Handshake" : "Ping"} col="ping_ms" current={sortBy} dir={sortDir} onClick={handleSort} align="right" />
+                    <SortHeader label={(stats?.censusVersion ?? 0) >= 2 ? "Handshake" : "Ping"} col="ping_ms" current={sortBy} dir={sortDir} onClick={handleSort} align="right" />
                     <SortHeader label="Last Seen" col="last_seen" current={sortBy} dir={sortDir} onClick={handleSort} align="right" />
                   </tr>
                 </thead>

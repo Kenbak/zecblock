@@ -67,7 +67,66 @@ test('French contextual follow-up returns sourced prose without forcing a chart 
 test('unsupported multilingual intent stops after classification', async () => {
   let calls = 0;
   const result = await chat({ ...input, question: 'Écris une recette de cupcakes' }, async () => { calls++; return { intent: 'unsupported', transactionQuery: null, blockQuery: null, spec: null, topics: [], locale: 'fr' }; }, null, signal, '');
-  assert.equal(calls, 1); assert.match(result.answer, /Zcash/); assert.deepEqual(result.sources, []);
+  assert.equal(calls, 1); assert.equal(result.answer, 'Je peux expliquer Zcash, les portefeuilles et nœuds pris en charge, et les données publiques du réseau.'); assert.deepEqual(result.sources, []);
+});
+test('English unsupported replies explain unavailable private facts without a query or second inference', async () => {
+  let calls=0,sourceCalls=0;
+  const noSource=async()=>{sourceCalls++;throw Error('Unsupported private facts must not access data');};
+  const analytics={researchEnabled:true,researchExtended:true,jobsEnabled:true,catalogue:[],execute:noSource,submit:noSource};
+  const questions=['Which shielded wallets belong to exchanges? Identify their owners.','What private amount did this shielded payment send?','Who owns this shielded address?','How much did this private payment send?'];
+  for(const question of questions){
+    const result=await chat({...input,question,locale:'en'},async(body,task)=>{
+      calls++;assert.equal(body.question,question);
+      return task.validator.parse({intent:'unsupported',sql:null,transactionQuery:null,blockQuery:null,flowQuery:null,spec:null,topics:[],locale:'en'});
+    },{dispatch:noSource},signal,'',{},analytics);
+    assert.match(result.answer,/cannot identify shielded-wallet owners/);
+    assert.match(result.answer,/private shielded payment amounts/);
+    assert.match(result.answer,/available public Zcash data/);
+    assert.match(result.answer,/supported wallets and nodes/);
+    assert.doesNotMatch(result.answer,/Try a question about this page/);
+    assert.deepEqual(result.sources,[]);assert.equal(result.spec,null);assert.equal(result.locale,'en');
+    for(const field of ['job','query','research','analytics','transfers','blocks','transactions'])assert.equal(Object.hasOwn(result,field),false);
+  }
+  assert.equal(calls,questions.length);assert.equal(sourceCalls,0);
+});
+
+test('other unsupported English requests keep useful unavailable copy without unsolicited wallet privacy claims',async()=>{
+  let calls=0,sourceCalls=0;
+  const noSource=async()=>{sourceCalls++;throw Error('Unsupported requests must not access data');};
+  const analytics={researchEnabled:true,researchExtended:true,jobsEnabled:true,catalogue:[],execute:noSource,submit:noSource};
+  const questions=['Compare Zcash social-media engagement across every platform.','Write a cupcake recipe.','Show shielded transaction fee amounts for an unavailable future period.','Compare private social-media metrics.'];
+  for(const question of questions){
+    const result=await chat({...input,question,locale:'en'},async(body,task)=>{calls++;assert.equal(body.question,question);return task.validator.parse({intent:'unsupported',sql:null,transactionQuery:null,blockQuery:null,flowQuery:null,spec:null,topics:[],locale:'en'});},{dispatch:noSource},signal,'',{},analytics);
+    assert.match(result.answer,/cannot answer that with the data and tools available here/);
+    assert.match(result.answer,/available public Zcash data/);
+    assert.doesNotMatch(result.answer,/shielded-wallet owners|private shielded payment amounts|Try a question about this page/);
+    assert.deepEqual(result.sources,[]);assert.equal(result.spec,null);
+    for(const field of ['job','query','research','analytics','transfers','blocks','transactions'])assert.equal(Object.hasOwn(result,field),false);
+  }
+  assert.equal(calls,questions.length);assert.equal(sourceCalls,0);
+});
+
+test('unsupported historical address balances explain current-only source semantics without extra inference or queries',async()=>{
+ const noSource=async()=>assert.fail('unsupported history does not execute a query');
+ const analytics={researchEnabled:true,researchExtended:true,jobsEnabled:true,catalogue:[],execute:noSource,submit:noSource};
+ const questions=['Use current address summaries to give exact transparent address balances at the close of September 1, 2026. Do not substitute current balances.','Show historical address balances.','What was this address balance as of last year?'];let calls=0;
+ for(const question of questions){
+  const result=await chat({...input,question,locale:'en'},async(body,task)=>{calls++;return task.validator.parse({intent:'unsupported',sql:null,transactionQuery:null,blockQuery:null,flowQuery:null,spec:null,topics:[],locale:'en'});},{dispatch:noSource},signal,'',{},analytics);
+  assert.match(result.answer,/summaries contain current balances/);assert.match(result.answer,/do not establish exact balances at an earlier date/);assert.match(result.answer,/public address activity/);assert.deepEqual(result.sources,[]);assert.equal(result.spec,null);assert.equal(result.job,undefined);
+ }
+ assert.equal(calls,questions.length);
+ const privateReply=await chat({...input,question:'Who owns this shielded address and what was its historical balance?',locale:'en'},async(body,task)=>task.validator.parse({intent:'unsupported',sql:null,transactionQuery:null,blockQuery:null,flowQuery:null,spec:null,topics:[],locale:'en'}),{dispatch:noSource},signal,'',{},analytics);
+ assert.match(privateReply.answer,/cannot identify shielded-wallet owners/);assert.doesNotMatch(privateReply.answer,/summaries contain current balances/);
+});
+
+test('incomplete model analysis plans report validation failure without source access', async () => {
+  for (const intent of ['analysis', 'analytics']) {
+    let sourceCalls = 0;
+    const client = { dispatch: async () => { sourceCalls++; throw new Error('Must not read source'); } };
+    const analytics = { catalogue: [], execute: async () => { sourceCalls++; throw new Error('Must not query replica'); } };
+    await assert.rejects(chat({ ...input, question: 'Rank an unavailable weekly metric' }, async () => ({ intent, spec: null, analyticsPlan: null, topics: [], locale: 'en' }), client, signal, '', {}, analytics), error => error.askKind === 'answer');
+    assert.equal(sourceCalls, 0);
+  }
 });
 
 test('page explanations and suggested follow-ups supply the matching guide without unrelated data or classification', async () => {

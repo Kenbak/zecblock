@@ -537,7 +537,7 @@
     "/v1/ask/chat": {
       "post": {
         "operationId": "post_ask_Chat",
-        "summary": "Contextual mainnet questions with reviewed public sources, supported language selection and bounded recent questions. Paid answers require bot verification and shared spend limits.",
+        "summary": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
         "tags": [
           "ask"
         ],
@@ -566,6 +566,8 @@
                       "pulse",
                       "miner_zodl",
                       "network",
+                      "network_upgrades",
+                      "block_speed",
                       "addresses",
                       "mempool",
                       "nodes",
@@ -758,6 +760,245 @@
                       "maxLength": 1000
                     }
                   },
+                  "currentAnalytics": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "number",
+                        "const": 2
+                      },
+                      "dataset": {
+                        "type": "string",
+                        "enum": [
+                          "daily",
+                          "blocks",
+                          "transactions",
+                          "flows",
+                          "swaps"
+                        ]
+                      },
+                      "start": {
+                        "type": "string",
+                        "pattern": "^20\\d{2}-\\d{2}-\\d{2}$"
+                      },
+                      "end": {
+                        "type": "string",
+                        "pattern": "^20\\d{2}-\\d{2}-\\d{2}$"
+                      },
+                      "bucket": {
+                        "type": "string",
+                        "enum": [
+                          "none",
+                          "day",
+                          "week",
+                          "month"
+                        ]
+                      },
+                      "dimensions": {
+                        "maxItems": 2,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z_]{0,31}$"
+                        }
+                      },
+                      "filters": {
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z_]{0,31}$"
+                            },
+                            "op": {
+                              "type": "string",
+                              "enum": [
+                                "eq",
+                                "ne",
+                                "gte",
+                                "lte"
+                              ]
+                            },
+                            "value": {
+                              "type": "string",
+                              "minLength": 1,
+                              "maxLength": 128
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "op",
+                            "value"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "measures": {
+                        "minItems": 1,
+                        "maxItems": 4,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "field": {
+                              "type": "string",
+                              "pattern": "^[a-z][a-z_]{0,31}$"
+                            },
+                            "operation": {
+                              "type": "string",
+                              "enum": [
+                                "count",
+                                "sum",
+                                "avg",
+                                "min",
+                                "max",
+                                "last"
+                              ]
+                            },
+                            "filters": {
+                              "maxItems": 2,
+                              "type": "array",
+                              "items": {
+                                "type": "object",
+                                "properties": {
+                                  "field": {
+                                    "type": "string",
+                                    "pattern": "^[a-z][a-z_]{0,31}$"
+                                  },
+                                  "op": {
+                                    "type": "string",
+                                    "enum": [
+                                      "eq",
+                                      "ne",
+                                      "gte",
+                                      "lte"
+                                    ]
+                                  },
+                                  "value": {
+                                    "type": "string",
+                                    "minLength": 1,
+                                    "maxLength": 128
+                                  }
+                                },
+                                "required": [
+                                  "field",
+                                  "op",
+                                  "value"
+                                ],
+                                "additionalProperties": false
+                              }
+                            }
+                          },
+                          "required": [
+                            "field",
+                            "operation",
+                            "filters"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "calculations": {
+                        "maxItems": 2,
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "operation": {
+                              "type": "string",
+                              "enum": [
+                                "ratio",
+                                "difference"
+                              ]
+                            },
+                            "left": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 3
+                            },
+                            "right": {
+                              "type": "integer",
+                              "minimum": 0,
+                              "maximum": 3
+                            }
+                          },
+                          "required": [
+                            "operation",
+                            "left",
+                            "right"
+                          ],
+                          "additionalProperties": false
+                        }
+                      },
+                      "order": {
+                        "type": "object",
+                        "properties": {
+                          "column": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "maximum": 8
+                          },
+                          "direction": {
+                            "type": "string",
+                            "enum": [
+                              "asc",
+                              "desc"
+                            ]
+                          }
+                        },
+                        "required": [
+                          "column",
+                          "direction"
+                        ],
+                        "additionalProperties": false
+                      },
+                      "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 25
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "dataset",
+                      "start",
+                      "end",
+                      "bucket",
+                      "dimensions",
+                      "filters",
+                      "measures",
+                      "calculations",
+                      "order",
+                      "limit"
+                    ],
+                    "additionalProperties": false
+                  },
+                  "currentResearch": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "number",
+                        "const": 3
+                      },
+                      "sql": {
+                        "type": "string",
+                        "minLength": 1,
+                        "maxLength": 8192
+                      },
+                      "limit": {
+                        "type": "integer",
+                        "minimum": 1,
+                        "maximum": 200
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "sql",
+                      "limit"
+                    ],
+                    "additionalProperties": false
+                  },
                   "challenge": {
                     "type": "string",
                     "maxLength": 2048
@@ -781,7 +1022,7 @@
         "x-cipherscan-v1-status": "native",
         "responses": {
           "200": {
-            "description": "Contextual mainnet questions with reviewed public sources, supported language selection and bounded recent questions. Paid answers require bot verification and shared spend limits.",
+            "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1043,6 +1284,385 @@
         "responses": {
           "200": {
             "description": "Explain a mainnet analysis using server-fetched public evidence. Requires configured AI and an exact fingerprint match with the chart observations. Private, no-store.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-IP, shared daily or concurrent request limit reached.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI not configured, shared limiter unavailable, or provider failure. Guided analyses remain available.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ask/research/plan": {
+      "post": {
+        "operationId": "post_ask_Research_Plan",
+        "summary": "Feature-gated mainnet research: draft reviewed read-only PostgreSQL over three public datasets. Requires AI, challenge and shared spend admission. Returns validated SQL; execute=true runs it through the same isolated read-only worker in one admitted request.",
+        "tags": [
+          "ask"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "question": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 1000
+                  },
+                  "challenge": {
+                    "type": "string",
+                    "maxLength": 2048
+                  },
+                  "execute": {
+                    "default": false,
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "question",
+                  "challenge",
+                  "execute"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-cipherscan-legacy-path": null,
+        "x-cipherscan-legacy-method": "POST",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "native",
+        "responses": {
+          "200": {
+            "description": "Feature-gated mainnet research: draft reviewed read-only PostgreSQL over three public datasets. Requires AI, challenge and shared spend admission. Returns validated SQL; execute=true runs it through the same isolated read-only worker in one admitted request.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Per-IP, shared daily or concurrent request limit reached.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI not configured, shared limiter unavailable, or provider failure. Guided analyses remain available.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/ask/research/query": {
+      "post": {
+        "operationId": "post_ask_Research_Query",
+        "summary": "Feature-gated mainnet research: validated SELECT with joins, nonrecursive CTEs and windows over blocks, transactions and public flows. Challenge/IP and worker quotas apply; manual execution does not call AI. Exact decimal strings, 200 rows and 256 KiB maximum. No writes, private tables or arbitrary functions.",
+        "tags": [
+          "ask"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "version": {
+                    "type": "number",
+                    "const": 3
+                  },
+                  "sql": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 8192
+                  },
+                  "limit": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 200
+                  },
+                  "challenge": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 2048
+                  }
+                },
+                "required": [
+                  "version",
+                  "sql",
+                  "limit",
+                  "challenge"
+                ],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-cipherscan-legacy-path": null,
+        "x-cipherscan-legacy-method": "POST",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "native",
+        "responses": {
+          "200": {
+            "description": "Feature-gated mainnet research: validated SELECT with joins, nonrecursive CTEs and windows over blocks, transactions and public flows. Challenge/IP and worker quotas apply; manual execution does not call AI. Exact decimal strings, 200 rows and 256 KiB maximum. No writes, private tables or arbitrary functions.",
             "content": {
               "application/json": {
                 "schema": {
@@ -3463,6 +4083,178 @@
         }
       }
     },
+    "/v1/search/prefix": {
+      "get": {
+        "operationId": "get_search_Prefix",
+        "summary": "Resolve a shortened transaction id or block hash to complete identifiers.",
+        "tags": [
+          "search"
+        ],
+        "parameters": [
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 8,
+              "maxLength": 140,
+              "examples": [
+                "5b34c8b44d",
+                "5b34c8b44d...ec9e77"
+              ]
+            },
+            "description": "Hex prefix of 8–63 characters, or a shortened id: a prefix of at least 6 and a suffix of at least 4 hex characters joined by ... or …. Case-insensitive."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/search/prefix",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Resolve a shortened transaction id or block hash to complete identifiers.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/v1/blocks/{hashOrHeight}/archive": {
       "get": {
         "operationId": "get_blocks_HashOrHeight_Archive",
@@ -3660,6 +4452,161 @@
         "responses": {
           "200": {
             "description": "Observed block intervals and rolling averages with node-announced target spacing.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/network/block-speed": {
+      "get": {
+        "operationId": "get_network_Block-speed",
+        "summary": "Daily block-interval history and seven-day summaries from canonical block headers, split at node-announced NU7 activation.",
+        "tags": [
+          "network"
+        ],
+        "x-cipherscan-legacy-path": "/api/network/block-speed",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Daily block-interval history and seven-day summaries from canonical block headers, split at node-announced NU7 activation.",
             "content": {
               "application/json": {
                 "schema": {
@@ -5366,6 +6313,7 @@
       "get": {
         "operationId": "get_network_Nodes_Stats",
         "summary": "Node census summary stats.",
+        "description": "In census v3, torNodes is an integer only when torClassificationAvailable is true; otherwise it is null. Classification requires a valid nonempty Tor exit list and a matching committed census snapshot no older than 600 seconds. torClassificationCheckedAt is an ISO timestamp or null. Missing, failed, stale or mismatched classification is unavailable, never a measured zero. This count covers known exit IPs and hidden-service destinations, not all Tor users. Crawl-mode responses use Cache-Control: no-store; other census aggregates retain their internal cache.",
         "tags": [
           "network"
         ],
@@ -5521,6 +6469,7 @@
       "get": {
         "operationId": "get_network_Nodes_History",
         "summary": "Historical node count series.",
+        "description": "In census v3, each sample exposes nullable torNodes and torClassificationAvailable. A Tor count is returned only for the exact snapshot with a fresh matching classification status; older samples have no persisted availability evidence and return null rather than an invented historical zero. Crawl-mode responses use Cache-Control: no-store.",
         "tags": [
           "network"
         ],
@@ -6163,7 +7112,7 @@
     "/v1/network/topology": {
       "get": {
         "operationId": "get_network_Topology",
-        "summary": "Peer topology graph.",
+        "summary": "Observed address-advertisement graph. In mainnet crawl mode, directed links require fresh same-session Zcash checkpoint proof from the advertiser; advertised targets are not independently verified active nodes. Synthetic IDs omit endpoints. Missing or stale provenance returns topologyAvailable=false; supported empty snapshots return true with no links. observedAt records the collector snapshot and expiresAt bounds its display; truncated marks bounded partial output. Degree counts incident advertisements, while centrality and connectivity scores remain unavailable.",
         "tags": [
           "network"
         ],
@@ -6173,7 +7122,7 @@
         "x-cipherscan-v1-status": "adapter",
         "responses": {
           "200": {
-            "description": "Peer topology graph.",
+            "description": "Observed address-advertisement graph. In mainnet crawl mode, directed links require fresh same-session Zcash checkpoint proof from the advertiser; advertised targets are not independently verified active nodes. Synthetic IDs omit endpoints. Missing or stale provenance returns topologyAvailable=false; supported empty snapshots return true with no links. observedAt records the collector snapshot and expiresAt bounds its display; truncated marks bounded partial output. Degree counts incident advertisements, while centrality and connectivity scores remain unavailable.",
             "content": {
               "application/json": {
                 "schema": {
@@ -7461,7 +8410,7 @@
     "/v1/mining/orphan-rates": {
       "get": {
         "operationId": "get_mining_Orphan-rates",
-        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
         "tags": [
           "mining"
         ],
@@ -7471,7 +8420,162 @@
         "x-cipherscan-v1-status": "adapter",
         "responses": {
           "200": {
-            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mining/observation-lag": {
+      "get": {
+        "operationId": "get_mining_Observation-lag",
+        "summary": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
+        "tags": [
+          "mining"
+        ],
+        "x-cipherscan-legacy-path": "/api/mining/observation-lag",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8335,6 +9439,758 @@
         "responses": {
           "200": {
             "description": "Lightweight recent-blocks summary. coinbaseTransparentOutput is transparent coinbase outputs in ZEC, including non-miner payouts; minerReward is a deprecated alias and is not actual miner receipts. Missing amounts are null.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/crosschain/venues/analytics": {
+      "get": {
+        "operationId": "get_crosschain_Venues_Analytics",
+        "summary": "Indexed Maya or THORChain native-ZEC analytics: history, volume, routes, outcomes and explicit traversal coverage.",
+        "tags": [
+          "crosschain"
+        ],
+        "parameters": [
+          {
+            "name": "granularity",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "hour",
+                "day"
+              ],
+              "description": "Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d."
+            },
+            "description": "Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d."
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "90d",
+                "1y",
+                "all"
+              ],
+              "default": "30d",
+              "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+            },
+            "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+          },
+          {
+            "name": "venue",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "maya",
+                "thorchain"
+              ]
+            },
+            "description": "Independent indexed venue dataset."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/crosschain/venues/analytics",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Indexed Maya or THORChain native-ZEC analytics: history, volume, routes, outcomes and explicit traversal coverage.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/crosschain/venues/swaps": {
+      "get": {
+        "operationId": "get_crosschain_Venues_Swaps",
+        "summary": "Filter and paginate indexed Maya or THORChain actions, retaining exact native legs, refund details and source identity.",
+        "tags": [
+          "crosschain"
+        ],
+        "parameters": [
+          {
+            "name": "chain",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "pattern": "^[a-z0-9_-]{1,32}$"
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 8192,
+              "description": "Opaque data.nextCursor. Bound to filters and the original time window; do not construct or edit."
+            },
+            "description": "Opaque data.nextCursor. Bound to filters and the original time window; do not construct or edit."
+          },
+          {
+            "name": "destAsset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Exact upstream destinationAsset identifier."
+            },
+            "description": "Exact upstream destinationAsset identifier."
+          },
+          {
+            "name": "direction",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "inflow",
+                "outflow",
+                "internal"
+              ],
+              "description": "Native ZEC asset acquired, exchanged or ZEC-to-ZEC. Asset direction does not prove an on-chain transfer."
+            },
+            "description": "Native ZEC asset acquired, exchanged or ZEC-to-ZEC. Asset direction does not prove an on-chain transfer."
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Inclusive UTC ISO timestamp, overrides the period start."
+            },
+            "description": "Inclusive UTC ISO timestamp, overrides the period start."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "maxUsd",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000,
+              "description": "Inclusive source-side USD maximum (up to 8 decimal places)."
+            },
+            "description": "Inclusive source-side USD maximum (up to 8 decimal places)."
+          },
+          {
+            "name": "minUsd",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "number",
+              "minimum": 0,
+              "maximum": 1000000000000,
+              "description": "Inclusive source-side USD minimum (up to 8 decimal places)."
+            },
+            "description": "Inclusive source-side USD minimum (up to 8 decimal places)."
+          },
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "24h",
+                "7d",
+                "30d",
+                "90d",
+                "1y",
+                "all"
+              ],
+              "default": "30d",
+              "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+            },
+            "description": "Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete."
+          },
+          {
+            "name": "referral",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Exact upstream referral value."
+            },
+            "description": "Exact upstream referral value."
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 200,
+              "description": "Exact deposit, recipient or sender address, or source/destination transaction hash."
+            },
+            "description": "Exact deposit, recipient or sender address, or source/destination transaction hash."
+          },
+          {
+            "name": "sourceAsset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 256,
+              "description": "Exact upstream originAsset identifier."
+            },
+            "description": "Exact upstream originAsset identifier."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "SUCCESS",
+                "FAILED",
+                "REFUNDED",
+                "PROCESSING",
+                "PENDING_DEPOSIT",
+                "INCOMPLETE_DEPOSIT"
+              ]
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "format": "date-time",
+              "description": "Exclusive UTC ISO timestamp, fixes the end of the window."
+            },
+            "description": "Exclusive UTC ISO timestamp, fixes the end of the window."
+          },
+          {
+            "name": "token",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 64
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "venue",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "maya",
+                "thorchain"
+              ]
+            },
+            "description": "Independent indexed venue dataset."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/crosschain/venues/swaps",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Filter and paginate indexed Maya or THORChain actions, retaining exact native legs, refund details and source identity.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/crosschain/venues": {
+      "get": {
+        "operationId": "get_crosschain_Venues",
+        "summary": "Recent native-ZEC Maya or THORChain swaps with exact full transaction legs, provider observation time and cursor pagination.",
+        "tags": [
+          "crosschain"
+        ],
+        "parameters": [
+          {
+            "name": "cursor",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "maxLength": 2048,
+              "pattern": "^[A-Za-z0-9_-]+$",
+              "description": "Opaque data.nextCursor from this venue; do not construct or edit."
+            },
+            "description": "Opaque data.nextCursor from this venue; do not construct or edit."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 25,
+              "default": 10
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "venue",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "maya",
+                "thorchain"
+              ],
+              "description": "One native-ZEC venue. Required; providers have independent observation and availability states."
+            },
+            "description": "One native-ZEC venue. Required; providers have independent observation and availability states."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/crosschain/venues",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Recent native-ZEC Maya or THORChain swaps with exact full transaction legs, provider observation time and cursor pagination.",
             "content": {
               "application/json": {
                 "schema": {
@@ -14946,6 +16802,179 @@
         "responses": {
           "200": {
             "description": "Daily public shielding and deshielding flows.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Preview or endpoint authentication required.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/shielded-pools/activity": {
+      "get": {
+        "operationId": "get_shielded-pools_Activity",
+        "summary": "Daily canonical non-coinbase transaction counts by shielded pool.",
+        "tags": [
+          "shielded-pools"
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "7d",
+                "30d",
+                "90d",
+                "1y"
+              ],
+              "default": "30d"
+            },
+            "description": "Trailing complete UTC calendar days, excluding today. One year means 365 days."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/pools/activity",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Daily canonical non-coinbase transaction counts by shielded pool.",
             "content": {
               "application/json": {
                 "schema": {

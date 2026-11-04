@@ -1,0 +1,22 @@
+[Unit]
+Description=Read-only analytics bootstrap checks (journal only)
+After=postgresql@16-main.service zecblock-ask-source-transport.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+ExecStart=/usr/bin/python3 /opt/zecblock-ask-operations/host-health.py
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=128M
+TasksMax=16
+TimeoutStartSec=20

@@ -8,6 +8,9 @@ import {
 } from "./SwapFilterLink";
 import { TokenChainIcon } from "@/components/TokenChainIcon";
 import { useApiQuery } from "@/hooks/useApiQuery";
+import { useCrosschainVenue } from "./VenueContext";
+import { PanelTitle } from "./PanelTitle";
+import { VenueTransferDetails } from "./VenueTransferDetails";
 import {
   CHAINS,
   IS_DEMO,
@@ -75,6 +78,7 @@ function Hashes({ chain, hashes }: { chain: string; hashes: string[] }) {
   );
 }
 function Detail({ swap: s }: { swap: Swap }) {
+  if (s.providerRecord) return <VenueTransferDetails record={s.providerRecord} />;
   const fields = [
     ["Created (UTC)", date(s.createdAt)],
     ["Deposit address", s.depositAddress],
@@ -160,6 +164,7 @@ export function SwapExplorer({
   statuses: string[];
 }) {
   const searchParams = useSwapSearchParams();
+  const venue = useCrosschainVenue();
   const [filtersOpen, setFiltersOpen] = useState(false);
   const params: Record<string, string> = {};
   for (const key of [
@@ -182,21 +187,22 @@ export function SwapExplorer({
     if (val) params[key] = val;
   }
   params.period ||= "30d";
+  if (venue !== "near") params.venue = venue;
   const field =
     "bg-cipher-bg border border-cipher-border rounded-lg px-3 py-2 text-sm w-full";
   return (
     <section className="card space-y-4" aria-label="Recent swaps">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-mono text-secondary">Recent swaps</h2>
-        {IS_DEMO && (
+      <PanelTitle
+        title={venue === "near" ? "Recent swaps" : "Recent swaps & refunds"}
+        controls={IS_DEMO ? (
           <span
             className="text-xs text-cipher-orange"
             title="Simulated swaps: fixture addresses and transaction IDs are examples."
           >
             Demo data
           </span>
-        )}
-      </div>
+        ) : undefined}
+      />
       <div className="space-y-2">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <nav aria-label="Swap direction" className="filter-group">
@@ -237,14 +243,14 @@ export function SwapExplorer({
           </button>
         </div>
         {Object.keys(params).some(
-          (key) => !["period", "cursor"].includes(key),
+          (key) => !["period", "cursor", "venue"].includes(key),
         ) && (
           <div
             className="flex flex-wrap gap-2 items-center text-xs"
             aria-label="Active swap filters"
           >
             {Object.entries(params)
-              .filter(([key]) => !["period", "cursor"].includes(key))
+              .filter(([key]) => !["period", "cursor", "venue"].includes(key))
               .map(([key, val]) => {
                 const labels: Record<string, string> = {
                   direction: "Direction",
@@ -323,6 +329,7 @@ export function SwapExplorer({
           className="grid grid-cols-2 md:grid-cols-4 gap-3"
         >
           <input type="hidden" name="period" value={params.period || "30d"} />
+          {venue !== "near" ? <input type="hidden" name="venue" value={venue} /> : null}
           {["sourceAsset", "destAsset"].map((k) =>
             params[k] ? (
               <input key={k} type="hidden" name={k} value={params[k]} />
@@ -473,7 +480,7 @@ function SwapResults({
   unit: Unit;
 }) {
   const { data, loading, error, isRefreshing } = useApiQuery<SwapPage>(
-    "/v1/crosschain/swaps",
+    params.venue === "maya" || params.venue === "thorchain" ? "/v1/crosschain/venues/swaps" : "/v1/crosschain/swaps",
     { ...params, limit: "25" },
     { refreshInterval: params.cursor ? undefined : 120000 },
   );
@@ -535,7 +542,7 @@ function SwapResults({
                       {value(unit === "zec" ? s.zecAmount : s.amountUsd, unit)}
                     </span>
                     <span className="text-muted order-5 text-right">
-                      {s.status.replaceAll("_", " ")}{" "}
+                      {s.refundKind === "partial" ? "Partial refund" : s.status.replaceAll("_", " ")}{" "}
                       <span aria-hidden="true">⌄</span>
                       <span className="sr-only"> — expand details</span>
                     </span>

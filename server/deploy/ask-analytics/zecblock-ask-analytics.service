@@ -1,0 +1,39 @@
+[Unit]
+Description=ZecBlock restricted Ask analytics worker
+After=network-online.target zecblock-ask-quota.service
+Wants=network-online.target
+Requires=zecblock-ask-quota.service
+
+[Service]
+Type=simple
+DynamicUser=yes
+WorkingDirectory=/opt/zecblock-analytics
+Environment=NODE_ENV=production
+EnvironmentFile=/etc/zecblock/ask-analytics.env
+ExecStart=/opt/zecblock-analytics/runtime/bin/node /opt/zecblock-analytics/server/api/ask-analytics-worker.js
+Restart=on-failure
+RestartSec=5
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+SocketBindDeny=any
+SocketBindAllow=tcp:3015
+LockPersonality=yes
+MemoryMax=128M
+CPUQuota=25%
+TasksMax=32
+LimitNOFILE=128
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

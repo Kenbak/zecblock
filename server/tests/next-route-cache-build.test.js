@@ -70,3 +70,7 @@ test('governance announcements compute clock boundaries at request time before e
     'announcement selection must not become a static ISR response that outlives a known vote boundary',
   );
 });
+
+test('governance hub retains its minute ISR interval when catalog reads are coalesced', () => {
+  assert.equal(manifest.routes?.['/governance']?.initialRevalidateSeconds, 60);
+});

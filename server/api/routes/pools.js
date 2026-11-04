@@ -3,11 +3,13 @@
  *
  * GET /api/pools/overview   — current pool sizes + 24h/7d/30d deltas
  * GET /api/pools/flows      — daily shield/deshield volume aggregation
+ * GET /api/pools/activity   — canonical non-coinbase transaction counts per pool
  * GET /api/pools/turnstile  — deshield UTXO spend status (held vs moved)
  */
 
 const express = require('express');
 const { logSafeError } = require('../lib/safe-log');
+const { PERIOD_DAYS, ACTIVITY_SQL, activityWindow, activityResponse } = require('../lib/pool-activity');
 const router = express.Router();
 
 let pool, redisClient;
@@ -27,7 +29,8 @@ async function cached(key, ttl, fn) {
   } catch {}
   const data = await fn();
   try {
-    if (redisClient?.isOpen) await redisClient.setEx(key, ttl, JSON.stringify(data));
+    const seconds = typeof ttl === 'function' ? ttl(data) : ttl;
+    if (redisClient?.isOpen && seconds > 0) await redisClient.setEx(key, seconds, JSON.stringify(data));
   } catch {}
   return data;
 }
@@ -36,6 +39,28 @@ function periodToSeconds(period) {
   const map = { '7d': 604800, '30d': 2592000, '90d': 7776000, '1y': 31536000 };
   return map[period] || 2592000;
 }
+
+router.get('/api/pools/activity', async (req, res) => {
+  const period = req.query.period === undefined ? '30d' : req.query.period;
+  if (typeof period !== 'string' || !Object.hasOwn(PERIOD_DAYS, period)
+      || Object.keys(req.query).some(key => key !== 'period')) {
+    return res.status(400).json({ error: 'Use period=7d, 30d, 90d or 1y.' });
+  }
+  const window = activityWindow(period);
+  try {
+    const ttl = data => data.sourceHeight === null ? 0
+      : data.coverage.completeDays === data.coverage.expectedDays ? 300 : 15;
+    const data = await cached(`zcash:pools:activity:v1:${period}:${window.endDate}`, ttl, async () => {
+      const { rows } = await pool.query(ACTIVITY_SQL, window.params);
+      return activityResponse(rows, window);
+    });
+    if (data.sourceHeight === null) return res.status(503).json({ error: 'Pool activity is not available' });
+    return res.json({ success: true, ...data });
+  } catch (err) {
+    logSafeError('pools/activity error:', err);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // ─── GET /api/pools/overview ────────────────────────────────────────────────
 

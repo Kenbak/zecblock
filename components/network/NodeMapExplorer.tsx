@@ -30,7 +30,7 @@ const TAB_DESCRIPTIONS: Record<MapTab, string> = {
  * scene only loads when actually selected.
  */
 export function NodeMapExplorer() {
-  const [tab, setTab] = useState<MapTab>('topology');
+  const [tab, setTab] = useState<MapTab>('client');
   const topologyMounted = useRef(false);
   if (tab === 'topology') topologyMounted.current = true;
 
@@ -44,7 +44,7 @@ export function NodeMapExplorer() {
 
       {/* Keep topology mounted (hidden) once loaded so the WebGL scene and
           computed force layout survive tab switches — avoids a full refetch +
-          320-tick re-simulation every time the user switches back. */}
+          a new force simulation every time the user switches back. */}
       {topologyMounted.current && (
         <div style={{ display: tab === 'topology' ? 'block' : 'none' }}>
           <Suspense fallback={

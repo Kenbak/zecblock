@@ -1,0 +1,17 @@
+[Unit]
+Description=Trusted private analytics consistency admission
+After=postgresql.service zecblock-ask-source-transport.service
+[Service]
+Type=oneshot
+User=postgres
+WorkingDirectory=/opt/zecblock-analytics
+ExecStart=/opt/zecblock-analytics/runtime/bin/node /opt/zecblock-analytics/server/api/scripts/ask-core-admission.js
+TimeoutStartSec=300
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_UNIX
+MemoryMax=2G
+TasksMax=32

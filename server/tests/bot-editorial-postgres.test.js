@@ -50,7 +50,9 @@ test('editorial SQL: canonical flows, provider samples, UTC dates and atomic pub
       sourceUpdatedAt:'2026-09-29T07:59:00Z',fetchedAt:now.toISOString()},unavailable:null})};
     const live=await data.liveCandidates(reader,now,withoutPrice);
     const flow=live.candidates.find(c=>c.type==='flow_shield');assert.ok(flow);
-    assert.equal(Number(flow.evidence.sample_count),200);assert.match(flow.content,/One of the largest 0\.5% of shielding/);
+    assert.equal(Number(flow.evidence.sample_count),200);
+    assert.equal(flow.evidence.tailPct, 100 / 201);
+    assert.match(flow.content,/The largest shielding transaction in 90 days/);
     assert.ok(live.decisions.some(d=>d.reason==='context-unavailable'));assert.doesNotMatch(flow.content,/\$/);
     await db.query(`CREATE TABLE zec_price_daily(date date,price_usd numeric);INSERT INTO zec_price_daily VALUES('2026-09-29',1400);
       CREATE TABLE privacy_stats(sapling_pool_size bigint,orchard_pool_size bigint,ironwood_pool_size bigint,transparent_pool_size bigint,shielded_pool_size bigint,updated_at timestamptz);

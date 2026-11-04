@@ -1,43 +1,32 @@
 'use client';
 import { LoadingRegion, Skeleton } from '@/components/ui/Skeleton';
 
-import { useState, useMemo } from 'react';
+import { useId, useState, useMemo, type KeyboardEvent } from 'react';
 import Link from 'next/link';
-import { ChartWatermark } from '@/components/ChartWatermark';
+import { NodeGlobe } from '@/components/network/NodeGlobe';
+import { NodePlanisphere } from '@/components/network/NodePlanisphere';
 import { clientLabel } from '@/lib/network-colors';
 import { useApiQuery } from '@/hooks/useApiQuery';
-import {
-  MAP_WIDTH,
-  MAP_HEIGHT,
-  DOT_RADIUS,
-  project,
-  useWorldLandDots,
-} from '@/lib/world-dot-map';
+import { clusterNodeLocations, type NodeLocation } from '@/lib/node-map-locations';
+export type { NodeLocation } from '@/lib/node-map-locations';
 
 // ==========================================================================
 // TYPES
 // ==========================================================================
 
-export interface NodeLocation {
-  country: string;
-  countryCode: string;
-  city?: string | null;
-  lat: number;
-  lon: number;
-  nodeCount: number;
-  avgPingMs: number | null;
-  topClient?: string | null;
-  topIsp?: string | null;
-}
-
 export interface NodeStats {
+  censusVersion?: number;
+  chainQualifiedCrawlerNodes?: number;
+  localPeerOnlyNodes?: number;
   activeNodes: number;
   totalNodes: number;
   countries: number;
   cities: number;
   avgPingMs: number | null;
-  torNodes: number;
-  lastUpdated: string;
+  torNodes: number | null;
+  torClassificationAvailable?: boolean;
+  torClassificationCheckedAt?: string | null;
+  lastUpdated: string | null;
 }
 
 interface NodeTrends {
@@ -78,10 +67,10 @@ interface NodeMapProps {
 
 // Color tiers based on node count (cipher-yellow intensity scale)
 const NODE_TIERS = {
-  high: { fill: '#F8BC21', glow: '#F8BC21', label: '10+' },      // cipher-yellow (full)
-  medium: { fill: '#D49A20', glow: '#D49A20', label: '5-9' },    // mid yellow
-  low: { fill: '#A07818', glow: '#A07818', label: '2-4' },       // deep yellow
-  single: { fill: '#7A6030', glow: '#7A6030', label: '1' },      // muted yellow
+  high: { fill: '#F8BC21' },      // cipher-yellow (full)
+  medium: { fill: '#D49A20' },    // mid yellow
+  low: { fill: '#A07818' },       // deep yellow
+  single: { fill: '#7A6030' },   // muted yellow
 };
 const EMPTY_LOCATIONS: NodeLocation[] = [];
 const EMPTY_COUNTRIES: TopCountry[] = [];
@@ -123,46 +112,35 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
   );
   const locations = locationsQuery.data?.locations ?? EMPTY_LOCATIONS;
   const stats = statsQuery.data?.stats ?? null;
+  const torClassificationAvailable = stats != null && stats.torNodes != null &&
+    ((stats.censusVersion ?? 0) >= 3 ? stats.torClassificationAvailable === true : stats.torClassificationAvailable !== false);
   const trends = statsQuery.data?.trends ?? null;
   const topCountries = statsQuery.data?.topCountries ?? EMPTY_COUNTRIES;
   const loading = locationsQuery.loading || statsQuery.loading;
   const error = locationsQuery.error || statsQuery.error;
   const [hoveredNode, setHoveredNode] = useState<NodeLocation | null>(null);
   const [selectedCountry, setSelectedCountry] = useState<string | null>(null);
+  const [view, setView] = useState<'globe' | 'map'>('globe');
+  const viewId = useId();
 
-  const worldDots = useWorldLandDots();
+  function changeView(next: 'globe' | 'map') {
+    setHoveredNode(null);
+    setView(next);
+  }
+
+  function handleViewKey(event: KeyboardEvent<HTMLButtonElement>) {
+    let next: 'globe' | 'map';
+    if (event.key === 'Home') next = 'globe';
+    else if (event.key === 'End') next = 'map';
+    else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') next = view === 'globe' ? 'map' : 'globe';
+    else return;
+    event.preventDefault();
+    changeView(next);
+    event.currentTarget.parentElement?.querySelector<HTMLButtonElement>(`[data-node-view="${next}"]`)?.focus();
+  }
 
   // Cluster nearby nodes
-  const clusteredNodes = useMemo(() => {
-    const clusters: Map<string, NodeLocation> = new Map();
-
-    locations.forEach((loc) => {
-      const keyLat = Math.round(loc.lat / 8) * 8;
-      const keyLon = Math.round(loc.lon / 8) * 8;
-      const key = `${keyLat},${keyLon}`;
-
-      const existing = clusters.get(key);
-      if (existing) {
-        const total = existing.nodeCount + loc.nodeCount;
-        const existingWins = existing.nodeCount >= loc.nodeCount;
-        clusters.set(key, {
-          lat: (existing.lat * existing.nodeCount + loc.lat * loc.nodeCount) / total,
-          lon: (existing.lon * existing.nodeCount + loc.lon * loc.nodeCount) / total,
-          nodeCount: total,
-          country: existingWins ? existing.country : loc.country,
-          countryCode: existingWins ? existing.countryCode : loc.countryCode,
-          city: existingWins ? existing.city : loc.city,
-          avgPingMs: loc.avgPingMs,
-          topClient: existingWins ? existing.topClient : loc.topClient,
-          topIsp: existingWins ? existing.topIsp : loc.topIsp,
-        });
-      } else {
-        clusters.set(key, { ...loc });
-      }
-    });
-
-    return Array.from(clusters.values());
-  }, [locations]);
+  const clusteredNodes = useMemo(() => clusterNodeLocations(locations), [locations]);
 
   // Count nodes for selected country (for the header display)
   const selectedCountryData = useMemo(() => {
@@ -175,10 +153,10 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
   // RENDER
   // ==========================================================================
 
-  if (loading && worldDots.length === 0) {
+  if (loading && locations.length === 0) {
     return <LoadingRegion label="Loading node map" className="card p-0 overflow-hidden">
       <div className="px-4 sm:px-6 py-4 border-b border-cipher-border"><Skeleton className="h-6 w-48 mb-2" /><Skeleton className="h-4 w-80" /></div>
-      <div className="relative w-full" style={{ aspectRatio: `${MAP_WIDTH} / ${MAP_HEIGHT}`, maxHeight: 460 }}><Skeleton className="absolute left-1/2 top-1/2 -translate-x-1/2 w-32 h-4" /></div>
+      <div className="relative w-full h-[440px]"><Skeleton className="absolute left-1/2 top-1/2 -translate-x-1/2 w-32 h-4" /></div>
       <div className="px-5 py-4 border-t border-cipher-border"><Skeleton className="h-4 w-64" /></div>
     </LoadingRegion>;
   }
@@ -210,7 +188,7 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-semibold text-primary">Network Node Map</h2>
-              <p className="text-caption sm:text-xs text-muted">Observed reachable nodes · discovery coverage can change</p>
+              <p className="text-caption sm:text-xs text-muted">Observed active IPs · discovery coverage can change</p>
             </div>
           </div>
 
@@ -221,31 +199,42 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
                   <span className="font-semibold text-primary font-mono text-lg sm:text-xl">{stats.activeNodes}</span>
 
                 </div>
-                <div className="text-caption text-muted uppercase tracking-wider">Reachable</div>
+                <div className="text-caption text-muted uppercase tracking-wider">Observed IPs</div>
               </div>
               <div className="text-center">
                 <div className="font-semibold text-primary font-mono text-lg sm:text-xl">{stats.countries}</div>
                 <div className="text-caption text-muted uppercase tracking-wider">Countries</div>
               </div>
-              {stats.torNodes > 0 && (
-                <div className="text-center">
-                  <div className="font-semibold text-cipher-purple font-mono text-lg sm:text-xl">{stats.torNodes}</div>
-                  <div className="text-caption text-muted uppercase tracking-wider">Tor</div>
-                </div>
-              )}
+              <div className="text-center">
+                <div className="font-semibold text-cipher-purple font-mono text-lg sm:text-xl">{torClassificationAvailable ? stats.torNodes : '—'}</div>
+                <div className="text-caption text-muted uppercase tracking-wider" title="Known Tor exit IPs and hidden-service classifications, not all Tor users">Tor classified</div>
+                {!torClassificationAvailable && <div className="text-caption text-muted mt-1">Tor classification unavailable</div>}
+              </div>
             </div>
           )}
         </div>
       </div>
 
-      {/* Dot Matrix Map */}
+      {stats?.chainQualifiedCrawlerNodes != null && stats.localPeerOnlyNodes != null && <p className="px-4 sm:px-6 py-3 text-caption text-muted">{stats.chainQualifiedCrawlerNodes} crawler-verified IPs · {stats.localPeerOnlyNodes} additional local-peer IPs. Local peers are connections reported by this explorer’s node.</p>}
+      {error && <p role="status" className="px-4 sm:px-6 py-3 border-t border-cipher-border text-caption text-warning">Refresh failed. Previously received observations remain visible and may be stale.</p>}
+
+      {/* Mount only the active view so the globe stops drawing when hidden. */}
       <div className="relative overflow-hidden bg-cipher-bg">
-        <ChartWatermark size="map" />
+        <div role="tablist" aria-label="Node map view"
+          className="absolute top-3 right-3 z-10 inline-flex rounded-md border border-cipher-border bg-cipher-surface-solid/90 backdrop-blur-sm p-1">
+          {(['globe', 'map'] as const).map(option => <button key={option} type="button" role="tab"
+            id={`${viewId}-${option}-tab`} aria-controls={`${viewId}-${option}-panel`}
+            aria-selected={view === option} tabIndex={view === option ? 0 : -1} data-node-view={option}
+            onClick={() => changeView(option)} onKeyDown={handleViewKey}
+            className={`h-9 rounded-sm px-3 text-caption font-mono transition-colors focus-visible:outline-2 focus-visible:outline-cipher-gold ${view === option ? 'bg-brand-gold/10 text-cipher-gold' : 'text-muted hover:text-primary hover:bg-cipher-hover'}`}>
+            {option === 'globe' ? 'Globe' : 'Map'}
+          </button>)}
+        </div>
         {/* Active filter indicator */}
         {selectedCountryData && (
           <button
             onClick={() => setSelectedCountry(null)}
-            className="absolute top-3 right-3 z-10 flex items-center gap-2 backdrop-blur-sm border border-cipher-gold/30 rounded-lg px-3 py-1.5 text-xs font-mono transition hover:border-cipher-gold/60 bg-cipher-surface-solid"
+            className="absolute top-3 left-3 z-10 flex items-center gap-2 backdrop-blur-sm border border-cipher-gold/30 rounded-lg px-3 py-1.5 text-xs font-mono transition hover:border-cipher-gold/60 bg-cipher-surface-solid"
           >
             <span>{getFlagEmoji(selectedCountryData.countryCode)}</span>
             <span className="text-cipher-gold font-semibold">{selectedCountryData.country}</span>
@@ -254,165 +243,37 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
           </button>
         )}
 
-        <svg
-          viewBox={`0 0 ${MAP_WIDTH} ${MAP_HEIGHT}`}
-          className="relative z-[1] w-full h-auto"
-          style={{ maxHeight: '520px' }}
-          onMouseLeave={() => setHoveredNode(null)}
-        >
-          <defs>
-            {/* Glow filters for each tier */}
-            <filter id="glow-high" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="4" result="blur" />
-              <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.957  0 0 0 0 0.718  0 0 0 0 0.157  0 0 0 0.6 0" />
-              <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="glow-medium" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="3" result="blur" />
-              <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.831  0 0 0 0 0.604  0 0 0 0 0.125  0 0 0 0.5 0" />
-              <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="glow-low" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
-              <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.627  0 0 0 0 0.471  0 0 0 0 0.094  0 0 0 0.4 0" />
-              <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            <filter id="glow-single" x="-50%" y="-50%" width="200%" height="200%">
-              <feGaussianBlur in="SourceGraphic" stdDeviation="2" result="blur" />
-              <feColorMatrix in="blur" type="matrix" values="0 0 0 0 0.478  0 0 0 0 0.376  0 0 0 0 0.188  0 0 0 0.3 0" />
-              <feMerge>
-                <feMergeNode />
-                <feMergeNode in="SourceGraphic" />
-              </feMerge>
-            </filter>
-            {/* Scan line animation */}
-            <linearGradient id="scanGradient" x1="0" x2="1" y1="0" y2="0">
-              <stop offset="0%" stopColor="transparent" />
-              <stop offset="50%" stopColor="#F8BC21" stopOpacity="0.08" />
-              <stop offset="100%" stopColor="transparent" />
-            </linearGradient>
-          </defs>
+        <div role="tabpanel" id={`${viewId}-globe-panel`} aria-labelledby={`${viewId}-globe-tab`} hidden={view !== 'globe'}>
+          {view === 'globe' && <NodeGlobe
+            locations={clusteredNodes}
+            selectedCountry={selectedCountry}
+            onHover={setHoveredNode}
+          />}
+        </div>
+        <div role="tabpanel" id={`${viewId}-map-panel`} aria-labelledby={`${viewId}-map-tab`} hidden={view !== 'map'}>
+          {view === 'map' && <NodePlanisphere
+            locations={clusteredNodes}
+            selectedCountry={selectedCountry}
+            onHover={setHoveredNode}
+          />}
+        </div>
 
-          {/* Land dots (gray dot matrix) */}
-          {worldDots.map((dot, i) => (
-            <circle
-              key={`wd-${i}`}
-              cx={dot.x}
-              cy={dot.y}
-              r={DOT_RADIUS}
-              fill="var(--color-map-dot)"
-            />
-          ))}
-
-          {/* Scan line effect */}
-          <rect
-            x="0"
-            width={MAP_WIDTH}
-            height="3"
-            fill="url(#scanGradient)"
-            opacity="0.6"
-          >
-            <animate
-              attributeName="y"
-              from="-3"
-              to={MAP_HEIGHT}
-              dur="6s"
-              repeatCount="indefinite"
-            />
-          </rect>
-
-          {/* Node clusters - sorted so smaller ones render on top */}
-          {[...clusteredNodes]
-            .sort((a, b) => b.nodeCount - a.nodeCount)
-            .map((node, i) => {
-              const pos = project(node.lat, node.lon);
-              const isHovered = hoveredNode === node;
-              const count = node.nodeCount;
-              const tier = getNodeTier(count);
-
-              // Country filter: is this node in the selected country?
-              const isFiltered = selectedCountry !== null;
-              const isSelected = selectedCountry === node.countryCode;
-              const isDimmed = isFiltered && !isSelected;
-
-              const radius = Math.max(10, Math.min(22, 8 + Math.sqrt(count) * 3.5));
-
-              // Pick glow filter
-              const filterId = isDimmed ? undefined
-                : count >= 10 ? 'glow-high'
-                : count >= 5 ? 'glow-medium'
-                : count >= 2 ? 'glow-low'
-                : 'glow-single';
-
-              return (
-                <g
-                  key={`nc-${i}`}
-                  className="cursor-pointer"
-                  onMouseEnter={() => setHoveredNode(node)}
-                  onMouseLeave={() => setHoveredNode(null)}
-                  filter={filterId ? `url(#${filterId})` : undefined}
-                  style={{
-                    transition: 'opacity 300ms ease',
-                    opacity: isDimmed ? 0.15 : 1,
-                  }}
-                >
-                  {/* Main circle */}
-                  <circle
-                    cx={pos.x}
-                    cy={pos.y}
-                    r={isHovered ? radius + 2 : radius}
-                    fill={tier.fill}
-                    opacity={isHovered ? 1 : 0.85}
-                    stroke={isHovered ? '#ffffff' : 'rgba(255,255,255,0.15)'}
-                    strokeWidth={isHovered ? 2 : 0.5}
-                    style={{
-                      transition: 'all 150ms cubic-bezier(0.16, 1, 0.3, 1)',
-                    }}
-                  />
-
-                  {/* Count number */}
-                  <text
-                    x={pos.x}
-                    y={pos.y + 0.5}
-                    textAnchor="middle"
-                    dominantBaseline="central"
-                    fill="#08090F"
-                    fontSize={12}
-                    fontWeight="600"
-                    fontFamily="var(--font-geist-mono), monospace"
-                    className="pointer-events-none select-none"
-                  >
-                    {count}
-                  </text>
-                </g>
-              );
-            })}
-        </svg>
-
-        {/* Hover tooltip (country + count only, no city) */}
+        {/* A marker is a geographic group, not the country total. */}
         {hoveredNode && (
-            <div className="absolute top-3 left-3 backdrop-blur-sm border border-cipher-gold/20 rounded-lg px-4 py-3 shadow-2xl z-10 pointer-events-none bg-cipher-surface-solid">
+          <div className="absolute top-3 left-3 backdrop-blur-sm border border-cipher-gold/20 rounded-lg px-4 py-3 shadow-2xl z-20 pointer-events-none bg-cipher-surface-solid">
             <div className="flex items-center gap-2">
               <span className="text-lg">{getFlagEmoji(hoveredNode.countryCode)}</span>
               <span className="font-semibold text-primary text-sm">{hoveredNode.country}</span>
             </div>
             <div className="flex items-center gap-3 text-xs mt-1.5">
               <span className="font-mono font-semibold" style={{ color: getNodeTier(hoveredNode.nodeCount).fill }}>
-                {hoveredNode.nodeCount} node{hoveredNode.nodeCount > 1 ? 's' : ''}
+                {hoveredNode.nodeCount} observed IP{hoveredNode.nodeCount !== 1 ? 's' : ''}
               </span>
               {hoveredNode.avgPingMs != null && hoveredNode.avgPingMs > 0 && (
                 <span className="text-muted font-mono">{hoveredNode.avgPingMs.toFixed(0)}ms</span>
               )}
             </div>
+            <p className="text-caption text-muted mt-1">Geographic group · approximate location</p>
             {(hoveredNode.topClient || hoveredNode.topIsp) && (
               <div className="flex items-center gap-2 text-caption font-mono text-muted mt-1">
                 {hoveredNode.topClient && (
@@ -428,28 +289,6 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
             )}
           </div>
         )}
-
-        {/* Legend */}
-        <div className="absolute bottom-3 left-3 backdrop-blur-sm border border-cipher-border rounded-lg px-3 py-2 text-caption pointer-events-none bg-cipher-surface-solid">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: NODE_TIERS.high.fill, boxShadow: `0 0 6px ${NODE_TIERS.high.glow}` }}></span>
-              <span className="text-muted">{NODE_TIERS.high.label}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2.5 h-2.5 rounded-full" style={{ background: NODE_TIERS.medium.fill }}></span>
-              <span className="text-muted">{NODE_TIERS.medium.label}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ background: NODE_TIERS.low.fill }}></span>
-              <span className="text-muted">{NODE_TIERS.low.label}</span>
-            </div>
-            <div className="flex items-center gap-1.5">
-              <span className="w-2 h-2 rounded-full" style={{ background: NODE_TIERS.single.fill }}></span>
-              <span className="text-muted">{NODE_TIERS.single.label}</span>
-            </div>
-          </div>
-        </div>
       </div>
 
       {/* CTA — full client breakdown, topology graph & health scoring live on /network/nodes.
@@ -485,9 +324,12 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
                     {value > 0 ? '+' : ''}{value}%
                   </span>
                 </div>
+              ) : (stats?.censusVersion ?? 0) >= 3 ? (
+                <span key={label} className="text-caption text-muted font-mono">{label} unavailable</span>
               ) : null
             ))}
           </div>
+          {(stats?.censusVersion ?? 0) >= 3 && Object.values(trends).some(value => value == null) && <p className="text-caption text-muted mt-2">Changes require a comparable observation after chain verification was introduced.</p>}
         </div>
       )}
 
@@ -528,12 +370,13 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
               const othersCount = (stats?.activeNodes || 0) - top10Sum;
               return othersCount > 0 ? (
                 <span className="flex items-center gap-1.5 rounded-lg px-2 sm:px-3 py-1 sm:py-1.5 bg-cipher-bg/50 border border-transparent">
-                  <span className="text-caption sm:text-xs text-muted">Others</span>
+                  <span className="text-caption sm:text-xs text-muted">Other / unknown</span>
                   <span className="text-caption sm:text-xs font-mono font-semibold text-muted">{othersCount}</span>
                 </span>
               ) : null;
             })()}
           </div>
+          <p className="text-caption text-muted mt-3">Map markers include located IPs only. Map and totals can reflect different observation times.</p>
         </div>
       )}
     </div>

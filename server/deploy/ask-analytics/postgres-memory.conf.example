@@ -1,0 +1,8 @@
+# Reviewed candidate for postgresql@16-main.service.d/ask-memory.conf.
+# Apply only after the runbook preflight and disposable crash proof pass.
+# Shared buffers are 16GiB; do not size from the newly restarted idle RSS.
+[Service]
+MemoryAccounting=yes
+MemoryHigh=24G
+MemoryMax=32G
+MemorySwapMax=1G

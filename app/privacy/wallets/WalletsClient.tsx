@@ -18,6 +18,7 @@ import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/SectionHeader';
 import { PageSectionNav } from '@/components/PageSectionNav';
+import { useUrlState } from '@/lib/use-url-state';
 
 const SECTIONS = [
   { id: 'fee-lanes', label: 'Fee Lanes' },
@@ -76,7 +77,7 @@ const formatNumber = (n: number) => n.toLocaleString();
 export default function WalletsClient() {
   const { theme } = useTheme();
   const colors = getChartColors(theme as 'dark' | 'light');
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('period', '30d', PERIODS);
   const feeQuery = useApiQuery<FeeLaneData>('/v1/privacy/fee-lanes', { period });
   const fingerprintQuery = useApiQuery<FingerprintData>('/v1/privacy/wallet-fingerprints', { period });
   const feeLanes = feeQuery.data?.period===period && feeQuery.data.buckets ? feeQuery.data : null;

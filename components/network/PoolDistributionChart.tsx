@@ -21,6 +21,7 @@ import { PoolCurrencyToggle, PoolCurrencyNote, usePoolCurrency } from '@/compone
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
 import { tooltipDate } from '@/lib/chart-dates';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Period = '30d' | '90d' | '1y' | 'all';
 type View = 'rate' | 'composition' | 'pools';
@@ -196,7 +197,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
   const colors = getChartColors(theme);
   const { currency, price, format } = usePoolCurrency();
   const [chartWidth, setChartWidth] = useState(600);
-  const [period, setPeriod] = useState<Period>('all');
+  const [period, setPeriod] = useUrlState<Period>('pools', '30d', ['30d', '90d', '1y', 'all']);
   const [view, setView] = useState<View>('pools');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 

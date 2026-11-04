@@ -16,6 +16,7 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { HashLink } from '@/components/ui/HashLink';
 import { MempoolBubbles, type MempoolBubblesHandle } from '@/components/MempoolBubbles';
 import { MempoolTreemap, type MempoolTreemapHandle } from '@/components/MempoolTreemap';
+import { ExportButton } from '@/components/ExportButton';
 
 interface MempoolTransaction {
   txid: string;
@@ -298,6 +299,17 @@ export default function MempoolClient() {
             actions={
               <>
               <Badge color="gold">{data.showing} of {data.count}</Badge>
+              <ExportButton
+                type="csv"
+                data={data.transactions}
+                filename="zecblock-mempool"
+                csvHeaders={['Txid', 'Type', 'First seen (UTC)', 'Size (bytes)', 'Transparent inputs', 'Transparent outputs', 'Sapling spends', 'Sapling outputs', 'Orchard actions', 'Ironwood actions', 'Transparent output total (ZEC)', 'Sapling value balance (ZEC)', 'Orchard value balance (ZEC)', 'Ironwood value balance (ZEC)', 'Version']}
+                csvMapper={(tx: MempoolTransaction) => [
+                  tx.txid, tx.type, new Date(tx.time * 1000).toISOString(), String(tx.size), String(tx.vin), String(tx.vout),
+                  String(tx.vShieldedSpend), String(tx.vShieldedOutput), String(tx.orchardActions ?? ''), String(tx.ironwoodActions ?? ''),
+                  String(tx.totalOutput ?? ''), String(tx.valueBalanceSapling ?? ''), String(tx.valueBalanceOrchard ?? ''), String(tx.valueBalanceIronwood ?? ''), String(tx.version ?? ''),
+                ]}
+              />
             <button
               onClick={() => setShowTable(!showTable)}
               className="flex items-center gap-1.5 text-xs text-muted hover:text-primary transition-colors font-mono"

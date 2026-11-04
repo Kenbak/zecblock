@@ -17,19 +17,22 @@ export const GRANTS = {
 const integer = z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
   .pipe(z.number().int().nonnegative().max(Number.MAX_SAFE_INTEGER));
 const bytes32 = z.string().regex(/^[A-Za-z0-9+/]{43}=$/);
+// Leading size checks reject before Zod visits individual elements. These are
+// admission limits, not claims about the number of votes/proposals upstream.
+export const GOVERNANCE_LIMITS = { rounds: 2000, endorsers: 2000, proposals: 500, options: 100, results: 50_000 } as const;
 const option = z.object({ index: integer.default(0), label: z.string().min(1).max(4000), description: z.string().max(20000).default(''), total_value: integer.default(0) });
-const proposal = z.object({ id: integer, title: z.string().min(1).max(4000), description: z.string().max(50000).default(''), options: z.array(option).min(1).max(100) });
+const proposal = z.object({ id: integer, title: z.string().min(1).max(4000), description: z.string().max(50000).default(''), options: z.array(option).max(GOVERNANCE_LIMITS.options).min(1) });
 export const roundSchema = z.object({
   vote_round_id: bytes32, title: z.string().min(1).max(4000), description: z.string().max(50000).default(''),
   status: integer, vote_end_time: integer, snapshot_height: integer, snapshot_blockhash: bytes32,
-  discussion_url: z.string().default(''), proposals: z.array(proposal).min(1).max(500),
+  discussion_url: z.string().default(''), proposals: z.array(proposal).max(GOVERNANCE_LIMITS.proposals).min(1),
   tally_timed_out: z.boolean().default(false),
 });
 export type Round = z.infer<typeof roundSchema>;
 export type Proposal = z.infer<typeof proposal>;
 export type VoteState = 'upcoming' | 'active' | 'tallying' | 'results' | 'failed' | 'unavailable';
 export type Vote = { id: string; title: string; description: string; href: string; state: VoteState; round: Round; proposals: Proposal[]; zecPerUnit: number | null };
-export type Catalog = { votes: Vote[]; checkedAt: number; unavailable: boolean };
+export type Catalog = { votes: Vote[]; checkedAt: number; directoryCheckedAt?: number; unavailable: boolean };
 export const STATE_LABELS: Record<VoteState, string> = {
   upcoming: 'Preparing vote', active: 'Voting open', tallying: 'Tallying', results: 'Results published', failed: 'Vote unsuccessful', unavailable: 'Results unavailable',
 };
@@ -51,9 +54,9 @@ export function roundHref(round: Round): string {
 }
 
 export function selectTrustedRounds(raw: unknown, registry: unknown, endorsements: unknown): Round[] {
-  const directory = z.object({ rounds: z.array(z.unknown()).max(2000).default([]) }).parse(raw);
-  const identity = z.object({ endorsers: z.array(z.object({ endorser_id: z.string(), address: z.string() })).default([]) }).parse(registry);
-  const endorsed = z.object({ vote_round_ids: z.array(bytes32).default([]) }).parse(endorsements);
+  const directory = z.object({ rounds: z.array(z.unknown()).max(GOVERNANCE_LIMITS.rounds).default([]) }).parse(raw);
+  const identity = z.object({ endorsers: z.array(z.object({ endorser_id: z.string(), address: z.string() })).max(GOVERNANCE_LIMITS.endorsers).default([]) }).parse(registry);
+  const endorsed = z.object({ vote_round_ids: z.array(bytes32).max(GOVERNANCE_LIMITS.rounds).default([]) }).parse(endorsements);
   const trusted = identity.endorsers.some(e => e.endorser_id === TRUSTED_ENDORSER.id && e.address === TRUSTED_ENDORSER.address);
   const ids = new Set(trusted ? endorsed.vote_round_ids : []);
   const rounds: Round[] = [];
@@ -83,8 +86,8 @@ export function parseRoundVote(round: Round, summary: unknown, tally: unknown, n
   if (round.status === 1) return { ...vote, state: now >= round.vote_end_time * 1000 ? 'tallying' : 'active' };
   if (round.status === 2) return { ...vote, state: 'tallying' };
   if (round.status !== 3) return vote;
-  const parsed = z.object({ vote_round_id: z.literal(round.vote_round_id), status: z.literal(3), vote_end_time: z.literal(round.vote_end_time), proposals: z.array(proposal) }).safeParse(summary);
-  const totals = z.object({ results: z.array(z.object({ vote_round_id: z.literal(round.vote_round_id), proposal_id: integer, vote_decision: integer.default(0), total_value: integer.default(0) })) }).safeParse(tally);
+  const parsed = z.object({ vote_round_id: z.literal(round.vote_round_id), status: z.literal(3), vote_end_time: z.literal(round.vote_end_time), proposals: z.array(proposal).max(GOVERNANCE_LIMITS.proposals) }).safeParse(summary);
+  const totals = z.object({ results: z.array(z.object({ vote_round_id: z.literal(round.vote_round_id), proposal_id: integer, vote_decision: integer.default(0), total_value: integer.default(0) })).max(GOVERNANCE_LIMITS.results) }).safeParse(tally);
   if (!parsed.success || !totals.success || parsed.data.proposals.length !== round.proposals.length) return vote;
   const expected = new Set(round.proposals.flatMap(p => p.options.map(o => `${p.id}:${o.index}`)));
   const tuples = new Map(totals.data.results.map(r => [`${r.proposal_id}:${r.vote_decision}`, r.total_value]));
@@ -108,10 +111,14 @@ export function parseRoundVote(round: Round, summary: unknown, tally: unknown, n
 export function catalogIsStale(catalog: Catalog, now: number): boolean {
   return catalog.unavailable || now - catalog.checkedAt > 10 * 60_000;
 }
+export function catalogDirectoryIsStale(catalog: Catalog, now: number): boolean {
+  return catalog.unavailable || now - (catalog.directoryCheckedAt ?? catalog.checkedAt) > 10 * 60_000;
+}
 export type Announcement = { key: string; href: string; text: string };
 export function selectAnnouncement(catalog: Catalog, now: number): Announcement | null {
-  const fresh = !catalogIsStale(catalog, now);
-  const active = fresh && catalog.votes.filter(v => v.state === 'active' && v.round.vote_end_time * 1000 > now).sort((a, b) => a.round.vote_end_time - b.round.vote_end_time)[0];
+  // Current voting status comes from the directory. An unrelated historical
+  // tally failing to refresh must not hide a freshly confirmed open vote.
+  const active = !catalogDirectoryIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'active' && v.round.vote_end_time * 1000 > now).sort((a, b) => a.round.vote_end_time - b.round.vote_end_time)[0];
   if (active) return { key: `${active.id}:active`, href: active.href, text: `${active.title}: voting is open` };
   // Date-only announcement: never invent an exact opening time or transition to active by the clock.
   const opening = Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
@@ -119,7 +126,7 @@ export function selectAnnouncement(catalog: Catalog, now: number): Announcement 
     return { key: `${GRANTS.slug}:upcoming`, href: `/governance/${GRANTS.slug}`, text: 'Retroactive grants voting opens September 17 · Review the proposals' };
   }
   // Bound announcements by the on-chain closing time; refreshes cannot restart the window.
-  const result = fresh && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * 86400_000).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
+  const result = !catalogIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * 86400_000).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
   if (result) return { key: `${result.id}:results`, href: result.href, text: `${result.title}: results are live · Explore and verify the tally` };
   return null;
 }

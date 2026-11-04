@@ -11,9 +11,10 @@ import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { ValuationChart } from '@/components/valuation/ValuationChart';
 import { SearchInterest } from '@/components/valuation/SearchInterest';
 import { dailyMarketContext, finite, positive, modeledPremium, quoteIsFresh, snapshotIsRecent, utcDay, type PriceQuote, type ValuationPoint, type ValuationSnapshot } from '@/lib/valuation';
+import { useUrlState } from '@/lib/use-url-state';
 
-type Period = '90d'|'1y'|'2y'|'all';
-const PERIODS: {key:Period;label:string}[] = [{key:'90d',label:'90D'},{key:'1y',label:'1Y'},{key:'2y',label:'2Y'},{key:'all',label:'ALL'}];
+type Period = '30d'|'90d'|'1y'|'2y'|'all';
+const PERIODS: {key:Period;label:string}[] = [{key:'30d',label:'30D'},{key:'90d',label:'90D'},{key:'1y',label:'1Y'},{key:'2y',label:'2Y'},{key:'all',label:'ALL'}];
 const SECTIONS = [{id:'overview',label:'Overview'},{id:'price',label:'Price & cost basis'},{id:'activity',label:'Spending & holding'},{id:'attention',label:'Adoption & attention'},{id:'methodology',label:'Methodology'}];
 interface AgePoint {date:string;lt1m:number;b1_3m:number;b3_6m:number;b6_12m:number;b1_2y:number;gt2y:number;total:number;[key:string]:unknown}
 interface DormancyPoint {date:string;cdd:number|null;avgDormancy:number|null;[key:string]:unknown}
@@ -26,7 +27,7 @@ const show = (v:unknown, f:(v:number)=>string) => finite(v)?f(v):'—';
 
 export default function ValuationClient() {
   const {theme}=useTheme();const c=getChartColors(theme);
-  const [period,setPeriod]=useState<Period>('all'); const [profitMetric,setProfitMetric]=useState<'nupl'|'sopr'>('nupl');const [ageMetric,setAgeMetric]=useState<'avgDormancy'|'cdd'>('avgDormancy');
+  const [period,setPeriod]=useUrlState<Period>('period','30d',PERIODS.map(p=>p.key)); const [profitMetric,setProfitMetric]=useState<'nupl'|'sopr'>('nupl');const [ageMetric,setAgeMetric]=useState<'avgDormancy'|'cdd'>('avgDormancy');
   const [now,setNow]=useState(0);
   useEffect(()=>{setNow(Date.now());const id=setInterval(()=>setNow(Date.now()),30_000);return()=>clearInterval(id)},[]);
   const quoteQuery=useApiQuery<PriceQuote>('/v1/network/price',undefined,{refreshInterval:30_000});
@@ -38,13 +39,13 @@ export default function ValuationClient() {
   const searchQuery=useApiQuery<{snapshot:{capturedAt:string}|null}>('/v1/valuation/search-interest',undefined,{refreshInterval:300_000});
   const history=useMemo(()=>histQuery.data?.points??[],[histQuery.data]);
   const market=useMemo(()=>dailyMarketContext(history),[history]);
-  const shown=useMemo(()=>{const days=period==='90d'?90:period==='1y'?365:period==='2y'?730:Infinity;const latest=history.at(-1);return history.filter(p=>latest && utcDay(p.date)>=utcDay(latest.date)-(days-1)*86400_000).map(p=>({...p,sopr:p.soprSource==='transparent_spends'?p.sopr:null}));},[history,period]);
+  const shown=useMemo(()=>{const days=period==='30d'?30:period==='90d'?90:period==='1y'?365:period==='2y'?730:Infinity;const latest=history.at(-1);return history.filter(p=>latest && utcDay(p.date)>=utcDay(latest.date)-(days-1)*86400_000).map(p=>({...p,sopr:p.soprSource==='transparent_spends'?p.sopr:null}));},[history,period]);
   const s=snapshotQuery.data;const q=quoteQuery.data;const fresh=quoteIsFresh(q,now)&&!quoteQuery.error;const recent=snapshotIsRecent(s?.date,now);
   const premium=quoteQuery.error?null:modeledPremium(s,q,now);
   const marketRecent=snapshotIsRecent(market.date??undefined,now);
   const trend=fresh&&marketRecent&&positive(market.ma200)&&positive(q?.price)?(q.price/market.ma200-1)*100:null;
   const drawdown=fresh&&marketRecent&&positive(market.high365)&&positive(q?.price)?(q.price/Math.max(market.high365,q.price)-1)*100:null;
-  const expectedPeriod = period==='all' ? 'all' : `${period==='90d'?90:period==='1y'?365:730}d`;
+  const expectedPeriod = period==='all' ? 'all' : `${period==='30d'?30:period==='90d'?90:period==='1y'?365:730}d`;
   const agePoints=ageQuery.data?.period===expectedPeriod?ageQuery.data.points:[];const dormPoints=dormQuery.data?.period===expectedPeriod?dormQuery.data.points:[];
   const pools=poolsQuery.data;const shieldedPct=pools?.current&&positive(pools.current.chainSupply)&&finite(pools.current.shielded)?pools.current.shielded/pools.current.chainSupply*100:null;
   const poolChange=pools?.deltas?.shielded?.['7d'];

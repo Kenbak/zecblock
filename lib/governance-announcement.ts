@@ -1,4 +1,4 @@
-import { GRANTS, catalogIsStale, isGrantsRound, selectAnnouncement, type Announcement, type Catalog } from './governance';
+import { GRANTS, catalogDirectoryIsStale, catalogIsStale, isGrantsRound, selectAnnouncement, type Announcement, type Catalog } from './governance';
 
 const CATALOG_REFRESH_MS = 60_000;
 const CATALOG_MAX_AGE_MS = 10 * 60_000;
@@ -11,9 +11,13 @@ export type AnnouncementSnapshot = {
 };
 
 export function buildAnnouncementSnapshot(catalog: Catalog, now: number) {
+  const directoryCheckedAt = catalog.directoryCheckedAt ?? catalog.checkedAt;
+  const announcement = selectAnnouncement(catalog, now);
+  const active = announcement?.key.endsWith(':active') ?? false;
+  const checkedAt = active ? directoryCheckedAt : catalog.checkedAt;
   // Include every clock-driven selection boundary, including a currently empty
   // banner becoming eligible. Only a new catalog may announce a vote opening.
-  const boundaries = [catalog.checkedAt + CATALOG_MAX_AGE_MS + 1];
+  const boundaries = [checkedAt + CATALOG_MAX_AGE_MS + 1];
   if (!catalog.votes.some(vote => isGrantsRound(vote.round))) {
     const opening = Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
     boundaries.push(opening - 7 * 86_400_000, opening);
@@ -24,14 +28,15 @@ export function buildAnnouncementSnapshot(catalog: Catalog, now: number) {
   }
   const futureBoundaries = boundaries.filter(time => Number.isFinite(time) && time > now);
   const nextChangeAt = futureBoundaries.length ? Math.min(...futureBoundaries) : null;
-  // Do not stack a fresh CDN minute on top of the catalog's existing minute.
+  // Do not stack a fresh CDN minute on top of the directory's existing minute.
   // A stale catalog can trigger its own refresh but cannot seed another CDN TTL.
-  const ttl = catalogIsStale(catalog, now) ? 0 : Math.max(0, Math.floor(Math.min(
+  const stale = active ? catalogDirectoryIsStale(catalog, now) : catalogIsStale(catalog, now);
+  const ttl = stale ? 0 : Math.max(0, Math.floor(Math.min(
     CATALOG_REFRESH_MS,
-    catalog.checkedAt + CATALOG_REFRESH_MS - now,
+    directoryCheckedAt + CATALOG_REFRESH_MS - now,
     nextChangeAt === null ? CATALOG_REFRESH_MS : nextChangeAt - now,
   ) / 1000));
-  const snapshot: AnnouncementSnapshot = { announcement: selectAnnouncement(catalog, now), generatedAt: now, nextChangeAt };
+  const snapshot: AnnouncementSnapshot = { announcement, generatedAt: now, nextChangeAt };
   return { snapshot, ttl };
 }
 

@@ -6,8 +6,27 @@ const { logSafeError } = require('../lib/safe-log');
 const { accountingHistorySql, historyPoints } = require('../lib/accounting-history');
 const { accountingPeriodSql, periodPayload } = require('../lib/accounting-period');
 const { hasSubsidyAllocations } = require('../lib/subsidy-allocations');
+const { loadBlockSpeed } = require('../lib/block-speed');
 const cadenceCache = new WeakMap();
+const speedCache = new WeakMap();
 const accountingPeriodCache = new WeakMap();
+
+// One computation per worker every five minutes; concurrent requests share it.
+// Failures are not cached.
+function sharedBlockSpeed(pool, compute) {
+  const entry = speedCache.get(pool);
+  if (entry?.payload && entry.expires > Date.now()) return entry.payload;
+  if (entry?.pending) return entry.pending;
+  const pending = compute().then(payload => {
+    speedCache.set(pool, { payload, expires: Date.now() + 300000 });
+    return payload;
+  }, error => {
+    speedCache.delete(pool);
+    throw error;
+  });
+  speedCache.set(pool, { pending });
+  return pending;
+}
 
 function registerNetworkReadinessRoutes(router) {
   router.get('/api/network/block-time', async (req, res) => {
@@ -43,6 +62,26 @@ function registerNetworkReadinessRoutes(router) {
       logSafeError('[BLOCK-TIME]', error);
       res.set('Cache-Control', 'no-store');
       return res.status(503).json({ success: false, error: 'Block time observations unavailable' });
+    }
+  });
+
+  router.get('/api/network/block-speed', async (req, res) => {
+    try {
+      const { pool, callZebraRPC } = req.app.locals;
+      const payload = await sharedBlockSpeed(pool, async () => {
+        const info = await callZebraRPC('getblockchaininfo');
+        const schedule = networkSchedule(info);
+        if (!schedule) throw new Error('Serving node upgrade schedule unavailable');
+        const result = await loadBlockSpeed({ pool, info, schedule });
+        if (!result) throw new Error('No indexed blocks');
+        return result;
+      });
+      res.set('Cache-Control', 'public, max-age=60');
+      return res.json(payload);
+    } catch (error) {
+      logSafeError('[BLOCK-SPEED]', error);
+      res.set('Cache-Control', 'no-store');
+      return res.status(503).json({ success: false, error: 'Block speed observations unavailable' });
     }
   });
 

@@ -5,8 +5,22 @@ const METHOD = 'target-work-v1';
 
 // Bitcoin/Zcash GetBlockProof: floor(2^256 / (target + 1)). Decode nBits,
 // including its sign/overflow rules. Invalid/missing targets must not become zero work.
-function workCtes(where) {
-  return `compact AS (
+function workCtes(where, { fastLargeTargets = false } = {}) {
+  const numericProof = `div(${TWO_256}::numeric, 1 + CASE WHEN (n >> 24) <= 3
+        THEN trunc((n & 8388607)::numeric / power(256::numeric, 3 - (n >> 24)))
+        ELSE (n & 8388607)::numeric * power(256::numeric, (n >> 24) - 3)
+      END)`;
+  // For valid e=28..34, let A=256^(35-e), K=256^(e-3), m=mantissa.
+  // q=floor((A-1)/m) is exactly floor(AK/(mK+1)): qm<=A-1,
+  // (q+1)m>=A and q<K. A<=2^56, so the numerator fits signed BIGINT.
+  // The surrounding compact-target guards still reject sign/overflow/zero.
+  const proof = fastLargeTargets ? `CASE WHEN (n >> 24) >= 28 THEN
+        ((1::bigint << (8 * (35 - (n >> 24)))::int) - 1) / (n & 8388607)
+        ELSE ${numericProof} END` : numericProof;
+  // History references n repeatedly in validity checks and both aggregates.
+  // Decode the compact header once per block instead of letting CTE inlining
+  // repeat its regex/bit conversion at every reference in the full-chain scan.
+  return `compact AS${fastLargeTargets ? ' MATERIALIZED' : ''} (
     SELECT timestamp, CASE WHEN bits ~ '^[0-9a-fA-F]{8}$'
       THEN ('x' || bits)::bit(32)::bigint END AS n FROM blocks WHERE ${where}
   ), work AS (
@@ -15,10 +29,7 @@ function workCtes(where) {
       AND ((n >> 24) <= 33 OR (n & 8388607) <= 255)
       AND ((n >> 24) <= 32 OR (n & 8388607) <= 65535)
       AND ((n >> 24) > 3 OR (n & 8388607) >= power(256::numeric, 3 - (n >> 24)))
-      THEN div(${TWO_256}::numeric, 1 + CASE WHEN (n >> 24) <= 3
-        THEN trunc((n & 8388607)::numeric / power(256::numeric, 3 - (n >> 24)))
-        ELSE (n & 8388607)::numeric * power(256::numeric, (n >> 24) - 3)
-      END) END AS proof FROM compact
+      THEN ${proof} END AS proof FROM compact
   )`;
 
 }
@@ -114,8 +125,8 @@ async function loadHashrateHistory(pool, period, window) {
   const earliestEnd = Math.ceil(Number(bounds.history_start) / DAY) * DAY + windowSeconds;
   const start = period === 'all' ? earliestEnd : Math.max(end - (days - 1) * DAY, earliestEnd);
   if (bounds.history_start == null || start > end) return { points: [], window, method: METHOD };
-  const { rows } = await pool.query(`WITH ${workCtes('timestamp >= $1 AND timestamp < $2')}
-    SELECT (floor(timestamp::numeric / 86400) * 86400)::bigint AS day_start,
+  const { rows } = await pool.query(`WITH ${workCtes('timestamp >= $1 AND timestamp < $2', { fastLargeTargets: true })}
+    SELECT timestamp - ((timestamp % 86400 + 86400) % 86400) AS day_start,
       count(*) AS block_count, count(proof) AS valid_count, sum(proof)::text AS expected_work
     FROM work GROUP BY day_start ORDER BY day_start`, [start - windowSeconds, end]);
   return { points: historyPoints(rows, { windowSeconds, start, end, historyStart: bounds.history_start }),

@@ -380,9 +380,18 @@ fn main() {
         })(),
         [_, mode, out] if mode == "explorer-encode" => explorer::encode(Path::new(out)),
         [_, mode, out] if mode == "explorer-encode-blocks" => explorer::encode_blocks(Path::new(out)),
-        [_, mode, records, dir, tip, base @ ..] if (mode == "explorer-build" || mode == "explorer-build-blocks") && base.len() <= 1 => match (tip.parse(), base.first().map(|b| b.parse()).transpose()) {
-            (Ok(tip), Ok(base_tip)) => explorer::build(Path::new(records), Path::new(dir), tip, base_tip,
-                if mode == "explorer-build" { explorer::Kind::Tx } else { explorer::Kind::Block }),
+        [_, mode, records, summaries, pages @ ..] if mode == "explorer-addresses-from-tx" && pages.len() <= 1 => explorer::addresses_from_tx(Path::new(records), Path::new(summaries), pages.first().map(Path::new)),
+        [_, mode, summaries, pages @ ..] if mode == "explorer-encode-addresses" && pages.len() <= 1 => explorer::encode_addresses(Path::new(summaries), pages.first().map(Path::new)),
+        [_, mode, records, dir, tip, base @ ..] if mode.starts_with("explorer-build") && base.len() <= 1 => match (tip.parse(), base.first().map(|b| b.parse()).transpose(), mode.as_str()) {
+            (Ok(tip), Ok(base_tip), "explorer-build" | "explorer-build-blocks" | "explorer-build-addresses" | "explorer-build-address-pages") => {
+                let kind = match mode.as_str() {
+                    "explorer-build" => explorer::Kind::Tx,
+                    "explorer-build-blocks" => explorer::Kind::Block,
+                    "explorer-build-addresses" => explorer::Kind::Address,
+                    _ => explorer::Kind::AddressPage,
+                };
+                explorer::build(Path::new(records), Path::new(dir), tip, base_tip, kind)
+            }
             _ => Err("invalid snapshot or base tip".into()),
         },
         // <root> holds base/, recent/, blocks/, blocks-recent/; optional web directory.

@@ -10,7 +10,8 @@ export default function LocalLink({ children, className, title, href }: { childr
   const path = typeof href === 'string' ? href : '';
   const tx = /^\/tx\/([a-f\d]{64})$/i.exec(path);
   const block = /^\/block\/(\d{1,10}|[a-f\d]{64})$/i.exec(path);
-  const fragment = tx ? `#tx=${tx[1].toLowerCase()}` : block ? `#block=${block[1].toLowerCase()}` : null;
+  const address = /^\/address\/(t[13][1-9A-HJ-NP-Za-km-z]{33})$/.exec(path);
+  const fragment = tx ? `#tx=${tx[1].toLowerCase()}` : block ? `#block=${block[1].toLowerCase()}` : address ? `#address=${address[1]}` : null;
   return fragment
     ? <a href={fragment} className={className} title={title}>{children}</a>
     : <span className={className} title={title}>{children}</span>;
@@ -53,4 +54,13 @@ export function BridgeExplorerLinks({ bridges }: { bridges: Array<{ otherChain: 
   return <div className="space-y-2">{bridges.map((bridge, index) => bridge.otherTxHash ? <div key={index} className="flex items-center gap-2 text-xs text-muted font-mono">
     <span>{bridge.otherChain.toUpperCase()} transaction</span><code className="break-all text-secondary">{bridge.otherTxHash}</code><CopyButton text={bridge.otherTxHash} size="xs" />
   </div> : null)}</div>;
+}
+
+export function AddressLabel(props?: { address?: string }) {
+  void props;
+  return null;
+}
+
+export function LocalImage({ src, alt, width, height, className }: { src: string; alt: string; width?: number; height?: number; className?: string; [key: string]: unknown }) {
+  return <img src={src} alt={alt} width={width} height={height} className={className} />;
 }

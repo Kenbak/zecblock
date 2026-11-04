@@ -6,7 +6,7 @@
 //! ZecBlock key, and every decrypted row must prove itself against the
 //! signed roots before its bytes are read. A "not found" is therefore proven
 //! too: the whole verified bucket lacks the txid.
-use crate::explorer_record::{BLOCK_POINTER, BlockRecord, Record, block_height_key, layout, publication};
+use crate::explorer_record::{AddressRecord, BLOCK_POINTER, BlockRecord, Record, address_key as record_address_key, address_page_key as record_address_page_key, block_height_key, layout, publication};
 use reinspiring::native::{NativeDecoder, NativeDecodingState};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -126,6 +126,18 @@ pub fn block_key(height: u32) -> String {
     hex::encode(block_height_key(height))
 }
 
+/// Lookup key (hex) of a transparent address's summary.
+#[wasm_bindgen]
+pub fn address_key(address: &str) -> String {
+    hex::encode(record_address_key(address))
+}
+
+/// Lookup key (hex) of an older history page (1-based) of an address.
+#[wasm_bindgen]
+pub fn address_page_key(address: &str, page: u32) -> String {
+    hex::encode(record_address_page_key(address, page))
+}
+
 #[wasm_bindgen]
 pub struct ExplorerPirBrowser {
     main: Table,
@@ -150,7 +162,7 @@ impl ExplorerPirBrowser {
             hex::encode(&Sha256::digest(manifest)[..12])
         };
         let kind = verified.value["kind"].as_str().unwrap_or("tx").to_owned();
-        if kind != "tx" && kind != "block" {
+        if !["tx", "block", "address", "address-page"].contains(&kind.as_str()) {
             return Err(JsValue::from_str("unsupported publication kind"));
         }
         Ok(ExplorerPirBrowser { snapshot_tip: verified.tip, publication_id: id, kind, main, overflow, pending: None })
@@ -260,6 +272,8 @@ impl ExplorerPirBrowser {
     fn finish(&self, txid: [u8; 32], bytes: &[u8], full_rows: Option<usize>) -> Result<serde_json::Value, JsValue> {
         let mut json = if self.kind == "tx" {
             Record::decode(txid, bytes).map_err(js)?.to_json()
+        } else if self.kind.starts_with("address") {
+            AddressRecord::decode(bytes).map_err(js)?.to_json()
         } else if bytes.first() == Some(&BLOCK_POINTER) {
             // A block hash resolves to its height; the record is under that key.
             let mut at = 1;

@@ -7,6 +7,8 @@ import type { TransactionData } from '@/app/tx/[txid]/components/types';
 import { TransactionView } from './TransactionView';
 import type { PartialView, PrivateRecord } from './TransactionView';
 import { BlockView } from './BlockView';
+import { AddressView } from './AddressView';
+import type { PrivateAddress } from './AddressView';
 import type { BlockPartial, PrivateBlock } from './BlockView';
 
 type Manifest = {
@@ -15,6 +17,7 @@ type Manifest = {
   snapshot?: { height: number; hash: string; publishedAt: string };
   sourceSummary?: { recordCount?: number };
   blocks?: boolean;
+  addresses?: boolean;
 };
 type Feed = {
   snapshotTip: number;
@@ -27,12 +30,14 @@ type View =
   | { kind: 'loading'; txid: string }
   | { kind: 'result'; record: PrivateRecord; data: TransactionData; partial: PartialView | null }
   | { kind: 'block'; block: PrivateBlock; partial: BlockPartial | null }
+  | { kind: 'address'; address: PrivateAddress }
   | { kind: 'notfound'; txid: string; height: number | null }
   | { kind: 'error'; message: string };
 
 const TXID = /^[a-f\d]{64}$/i;
 const HEIGHT = /^\d{1,10}$/;
-const FRAGMENT = /^#(tx|block)=([a-f\d]{64}|\d{1,10})$/i;
+const FRAGMENT = /^#(tx|block|address)=([a-f\d]{64}|\d{1,10}|t[13][1-9A-HJ-NP-Za-km-z]{33})$/i;
+const ADDRESS = /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/;
 
 function ago(seconds: number) {
   const s = Math.max(0, Math.round(Date.now() / 1000 - seconds));
@@ -118,7 +123,7 @@ function SearchForm({ hero, idSuffix = '', placeholder, value, onChange, onSubmi
   disabled: boolean; inputRef?: React.RefObject<HTMLInputElement | null>;
 }) {
   const common = {
-    ref: inputRef, value, disabled, type: 'text', name: 'private-record', autoComplete: 'off', spellCheck: false, autoCapitalize: 'off', maxLength: 64,
+    ref: inputRef, value, disabled, type: 'text', name: 'private-record', autoComplete: 'off', spellCheck: false, autoCapitalize: 'off', maxLength: 64, 
     'aria-label': 'Transaction ID', onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
   } as const;
   if (!hero) return <form onSubmit={onSubmit} className="w-full" autoComplete="off" role="search">
@@ -166,7 +171,7 @@ export function App() {
     const match = FRAGMENT.exec(window.location.hash);
     if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
     if (!match) return false;
-    const term = match[2].toLowerCase();
+    const term = match[1].toLowerCase() === 'address' ? match[2] : match[2].toLowerCase();
     setQuery(term);
     start(term);
     return true;
@@ -205,6 +210,11 @@ export function App() {
         if (!data.block || !Array.isArray(data.block.transactions)) { setView({ kind: 'error', message: 'This block could not be decoded safely.' }); return; }
         setView({ kind: 'block', block: data.block, partial: data.partial ?? null });
         setMeasurements(data.measurements ?? null);
+      } else if (data.type === 'address') {
+        setLoadingFull(false);
+        if (!data.address || !Array.isArray(data.address.transactions)) { setView({ kind: 'error', message: 'This address could not be decoded safely.' }); return; }
+        setView({ kind: 'address', address: data.address });
+        setMeasurements(data.measurements ?? null);
       } else if (data.type === 'notfound') {
         const current = viewRef.current;
         setView({ kind: 'notfound', txid: current.kind === 'loading' ? current.txid : '', height: Number.isSafeInteger(data.snapshotHeight) ? data.snapshotHeight : null });
@@ -229,10 +239,12 @@ export function App() {
   function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready || busy) return;
-    const term = query.trim().toLowerCase();
+    const raw = query.trim();
+    const term = ADDRESS.test(raw) ? raw : raw.toLowerCase();
     const blocksOn = Boolean(manifest?.blocks);
-    if (!TXID.test(term) && !(blocksOn && HEIGHT.test(term))) {
-      setInputError(blocksOn ? 'Enter a transaction ID, block hash or block height.' : 'Enter a 64-character transaction ID.');
+    const addressesOn = Boolean(manifest?.addresses);
+    if (!TXID.test(term) && !(blocksOn && HEIGHT.test(term)) && !(addressesOn && ADDRESS.test(term))) {
+      setInputError(addressesOn ? 'Enter a transaction ID, block hash, block height or t-address.' : blocksOn ? 'Enter a transaction ID, block hash or block height.' : 'Enter a 64-character transaction ID.');
       return;
     }
     setInputError('');
@@ -243,6 +255,12 @@ export function App() {
     if (!ready || busy || (view.kind !== 'result' && view.kind !== 'block') || !view.partial) return;
     setLoadingFull(true);
     workerRef.current?.postMessage({ type: 'loadFull', requestId: requestRef.current });
+  }
+
+  function loadMore() {
+    if (!ready || busy || view.kind !== 'address') return;
+    setLoadingFull(true);
+    workerRef.current?.postMessage({ type: 'loadMore', requestId: requestRef.current });
   }
 
   function home() {
@@ -258,7 +276,7 @@ export function App() {
     if (ready && TXID.test(txid)) workerRef.current?.postMessage({ type: 'prepare', txid });
   };
   const height = manifest?.snapshot?.height;
-  const placeholder = manifest?.blocks ? 'Search a transaction, block hash or height' : 'Search a transaction ID...';
+  const placeholder = manifest?.addresses ? 'Search a transaction, block or t-address' : manifest?.blocks ? 'Search a transaction, block hash or height' : 'Search a transaction ID...';
   const count = manifest?.sourceSummary?.recordCount;
 
   return <>
@@ -287,7 +305,7 @@ export function App() {
         <div className="home-hero relative z-30 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="home-introduction">
             <h1 className="text-primary">The Zcash Private Explorer</h1>
-            <p className="home-hero-intro text-secondary">Look up any Zcash transaction or block without revealing which one. Your search is encrypted in your browser, so not even ZecBlock can see it.</p>
+            <p className="home-hero-intro text-secondary">Look up any Zcash transaction, block or address without revealing which one. Your search is encrypted in your browser, so not even ZecBlock can see it.</p>
           </div>
           <div className="home-command">
             <SearchForm hero placeholder={placeholder} value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} inputRef={inputRef} />
@@ -313,6 +331,8 @@ export function App() {
 
       {view.kind === 'home' && feed && <FeedPanel feed={feed} onOpen={term => { setQuery(term); start(term); }} />}
 
+      {view.kind === 'address' && <AddressView address={view.address} loadingMore={loadingFull} onLoadMore={loadMore} />}
+
       {view.kind === 'block' && <BlockView key={String(view.block.height)} block={view.block} partial={view.partial} loadingFull={loadingFull} onLoadFull={loadFull} />}
 
       {view.kind === 'result' && <TransactionView key={`${view.record.publicationId}:${view.record.txid}`} record={view.record} data={view.data} partial={view.partial} loadingFull={loadingFull} onLoadFull={loadFull} />}
@@ -324,7 +344,7 @@ export function App() {
           </div>
           <h1 className="text-lg font-semibold text-primary mb-2">{view.kind === 'notfound' ? 'Transaction Not Found' : 'Lookup Failed'}</h1>
           <p className="text-sm text-secondary mb-6 max-w-md mx-auto" id="lookup-error">{view.kind === 'notfound'
-            ? `No confirmed ${manifest?.blocks ? 'transaction or block' : 'transaction'} matches this${view.height ? ` up to block ${view.height.toLocaleString()}` : ''}.`
+            ? `Nothing on the chain matches this${view.height ? ` up to block ${view.height.toLocaleString()}` : ''}.`
             : view.message}</p>
           {view.kind === 'notfound' && view.txid && <p className="text-xs font-mono text-muted break-all max-w-xl mx-auto mb-6">{view.txid}</p>}
           <button type="button" onClick={home} className="text-cipher-gold hover:text-cipher-yellow transition-colors font-mono text-sm">&larr; New search</button>

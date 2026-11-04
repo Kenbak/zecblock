@@ -15,7 +15,7 @@
 //! a preview's full lists touches the overflow table; that request is padded
 //! to a power-of-two row count and reveals the coarse size class.
 use super::chunk_spike::{parallel_multiply, parallel_multiply_batch, preprocess_blocks};
-use super::explorer_record::{BLOCK_POINTER, BLOCK_VERSION, BlockRecord, Record, block_height_key, parse_block_line, parse_export_line, publication};
+use super::explorer_record::{AddressRecord, AddressTx, BLOCK_POINTER, BLOCK_VERSION, BlockRecord, Record, block_height_key, parse_address_line, parse_block_line, parse_export_line, publication};
 use super::*;
 use memmap2::{Mmap, MmapMut};
 use rayon::prelude::*;
@@ -150,6 +150,172 @@ pub(super) fn encode_blocks(out_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Address rows (stdin), grouped by address: summaries with their newest
+/// page to `summaries`, older pages to `pages` (a recent publication passes
+/// none: it keeps only each address's newest page of recent activity).
+pub(super) fn encode_addresses(summaries: &Path, pages: Option<&Path>) -> Result<(), String> {
+    let stdin = io::stdin();
+    let mut lines = stdin.lock().lines();
+    let mut main = BufWriter::with_capacity(8 << 20, File::create(summaries).map_err(io_err)?);
+    let mut paged = pages.map(|p| File::create(p).map(|f| BufWriter::with_capacity(8 << 20, f))).transpose().map_err(io_err)?;
+    let (mut addresses, mut rows, mut page_entries, mut max_height) = (0u64, 0u64, 0u64, 0u32);
+    let start = Instant::now();
+    let mut carry: Option<(String, Vec<AddressTx>)> = None;
+    let mut write = |groups: Vec<(String, Vec<AddressTx>)>, main: &mut BufWriter<File>, paged: &mut Option<BufWriter<File>>| -> Result<(), String> {
+        let encoded: Vec<Vec<([u8; 32], Vec<u8>, bool)>> = groups.into_par_iter()
+            .map(|(address, rows)| AddressRecord::from_rows(&address, rows, paged.is_some()).into_iter().map(|(k, r)| (k, r.encode(), r.page > 0)).collect())
+            .collect();
+        for (key, body, is_page) in encoded.into_iter().flatten() {
+            if body.len() > INLINE_MAX {
+                return Err("address entry exceeds the inline limit".into());
+            }
+            let out = if is_page { page_entries += 1; paged.as_mut().unwrap() } else { addresses += 1; &mut *main };
+            out.write_all(&key).map_err(io_err)?;
+            out.write_all(&(body.len() as u32).to_le_bytes()).map_err(io_err)?;
+            out.write_all(&body).map_err(io_err)?;
+        }
+        Ok(())
+    };
+    loop {
+        let batch: Vec<String> = lines.by_ref().take(200_000).collect::<Result<_, _>>().map_err(io_err)?;
+        let done = batch.is_empty();
+        let mut groups = Vec::new();
+        for line in &batch {
+            let (address, tx) = parse_address_line(line).map_err(|e| format!("{e}: {}", &line[..line.len().min(80)]))?;
+            rows += 1;
+            max_height = max_height.max(tx.height);
+            match &mut carry {
+                Some((current, txs)) if *current == address => txs.push(tx),
+                _ => {
+                    if let Some(finished) = carry.replace((address, vec![tx])) {
+                        groups.push(finished);
+                    }
+                }
+            }
+        }
+        if done {
+            groups.extend(carry.take());
+        }
+        write(groups, &mut main, &mut paged)?;
+        if done {
+            break;
+        }
+    }
+    main.flush().map_err(io_err)?;
+    if let Some(p) = paged.as_mut() {
+        p.flush().map_err(io_err)?;
+    }
+    println!("{}", json!({"addresses":addresses,"rows":rows,"pages":page_entries,"maxHeight":max_height,"seconds":start.elapsed().as_secs_f64()}));
+    Ok(())
+}
+
+/// Address histories derived from a transaction records file, so the address
+/// publications are exactly consistent with the transaction table and need no
+/// extra replica export. Pass one writes one row per (address, transaction)
+/// into hash partitions on disk; pass two groups each partition in memory.
+pub(super) fn addresses_from_tx(records: &Path, summaries: &Path, pages: Option<&Path>) -> Result<(), String> {
+    const PARTITIONS: usize = 64;
+    let start = Instant::now();
+    let file = File::open(records).map_err(io_err)?;
+    let data = unsafe { Mmap::map(&file) }.map_err(io_err)?;
+    let mut index: Vec<(usize, usize)> = Vec::new();
+    let mut at = 0;
+    while at < data.len() {
+        let len = u32::from_le_bytes(data.get(at + 32..at + 36).ok_or("truncated records file")?.try_into().unwrap()) as usize;
+        index.push((at, len));
+        at += 36 + len;
+    }
+    let work = summaries.with_extension("partitions");
+    fs::create_dir_all(&work).map_err(io_err)?;
+    let mut parts: Vec<BufWriter<File>> = (0..PARTITIONS)
+        .map(|i| File::create(work.join(format!("{i:02}"))).map(|f| BufWriter::with_capacity(1 << 20, f)))
+        .collect::<Result<_, _>>().map_err(io_err)?;
+    let (mut rows, mut max_height) = (0u64, 0u32);
+    for chunk in index.chunks(200_000) {
+        let batch: Vec<Vec<(usize, Vec<u8>)>> = chunk.par_iter().map(|&(offset, len)| {
+            let txid: [u8; 32] = data[offset..offset + 32].try_into().unwrap();
+            let record = Record::decode(txid, &data[offset + 36..offset + 36 + len])?;
+            let mut per: std::collections::BTreeMap<&str, (i64, i64)> = Default::default();
+            for input in &record.inputs {
+                if let (Some(address), Some(value)) = (&input.address, input.value) {
+                    per.entry(address).or_default().0 += value;
+                }
+            }
+            for output in &record.outputs {
+                if let (Some(address), Some(value)) = (&output.address, output.value) {
+                    per.entry(address).or_default().1 += value;
+                }
+            }
+            Ok(per.into_iter().map(|(address, (value_in, value_out))| {
+                let mut row = Vec::with_capacity(address.len() + 69);
+                row.push(address.len() as u8);
+                row.extend_from_slice(address.as_bytes());
+                row.extend_from_slice(&record.txid);
+                row.extend_from_slice(&record.height.to_le_bytes());
+                row.extend_from_slice(&record.tx_index.unwrap_or(0).to_le_bytes());
+                row.extend_from_slice(&record.block_time.to_le_bytes());
+                row.extend_from_slice(&value_in.to_le_bytes());
+                row.extend_from_slice(&value_out.to_le_bytes());
+                let part = u64::from_le_bytes(sha2::Sha256::digest(address.as_bytes())[..8].try_into().unwrap()) as usize % PARTITIONS;
+                (part, row)
+            }).collect())
+        }).collect::<Result<_, String>>()?;
+        for (part, row) in batch.into_iter().flatten() {
+            parts[part].write_all(&row).map_err(io_err)?;
+            rows += 1;
+        }
+    }
+    for part in &mut parts {
+        part.flush().map_err(io_err)?;
+    }
+    drop(parts);
+    let mut main = BufWriter::with_capacity(8 << 20, File::create(summaries).map_err(io_err)?);
+    let mut paged = pages.map(|p| File::create(p).map(|f| BufWriter::with_capacity(8 << 20, f))).transpose().map_err(io_err)?;
+    let (mut addresses, mut page_entries) = (0u64, 0u64);
+    for i in 0..PARTITIONS {
+        let path = work.join(format!("{i:02}"));
+        let bytes = fs::read(&path).map_err(io_err)?;
+        let mut groups: HashMap<String, Vec<AddressTx>> = HashMap::new();
+        let mut at = 0;
+        while at < bytes.len() {
+            let len = bytes[at] as usize;
+            let address = String::from_utf8(bytes[at + 1..at + 1 + len].to_vec()).map_err(|_| "address is not UTF-8")?;
+            let r = &bytes[at + 1 + len..at + 1 + len + 68];
+            let tx = AddressTx {
+                txid: r[..32].try_into().unwrap(),
+                height: u32::from_le_bytes(r[32..36].try_into().unwrap()),
+                tx_index: u32::from_le_bytes(r[36..40].try_into().unwrap()),
+                time: u64::from_le_bytes(r[40..48].try_into().unwrap()),
+                value_in: i64::from_le_bytes(r[48..56].try_into().unwrap()),
+                value_out: i64::from_le_bytes(r[56..64].try_into().unwrap()),
+            };
+            max_height = max_height.max(tx.height);
+            groups.entry(address).or_default().push(tx);
+            at += 1 + len + 68;
+        }
+        fs::remove_file(&path).map_err(io_err)?;
+        let encoded: Vec<Vec<([u8; 32], Vec<u8>, bool)>> = groups.into_par_iter()
+            .map(|(address, rows)| AddressRecord::from_rows(&address, rows, paged.is_some()).into_iter().map(|(k, r)| (k, r.encode(), r.page > 0)).collect())
+            .collect();
+        for (key, body, is_page) in encoded.into_iter().flatten() {
+            if body.len() > INLINE_MAX {
+                return Err("address entry exceeds the inline limit".into());
+            }
+            let out = if is_page { page_entries += 1; paged.as_mut().unwrap() } else { addresses += 1; &mut main };
+            out.write_all(&key).map_err(io_err)?;
+            out.write_all(&(body.len() as u32).to_le_bytes()).map_err(io_err)?;
+            out.write_all(&body).map_err(io_err)?;
+        }
+    }
+    fs::remove_dir(&work).map_err(io_err)?;
+    main.flush().map_err(io_err)?;
+    if let Some(p) = paged.as_mut() {
+        p.flush().map_err(io_err)?;
+    }
+    println!("{}", json!({"addresses":addresses,"rows":rows,"pages":page_entries,"maxHeight":max_height,"seconds":start.elapsed().as_secs_f64()}));
+    Ok(())
+}
+
 // ---- build ---------------------------------------------------------------------
 
 /// What a publication's records are.
@@ -157,17 +323,20 @@ pub(super) fn encode_blocks(out_path: &Path) -> Result<(), String> {
 pub(super) enum Kind {
     Tx,
     Block,
+    Address,
+    AddressPage,
 }
 
 impl Kind {
     fn name(self) -> &'static str {
-        match self { Kind::Tx => "tx", Kind::Block => "block" }
+        match self { Kind::Tx => "tx", Kind::Block => "block", Kind::Address => "address", Kind::AddressPage => "address-page" }
     }
 
     fn preview(self, key: [u8; 32], full: &[u8], max: usize) -> Result<Vec<u8>, String> {
         match self {
             Kind::Tx => Ok(Record::decode(key, full)?.preview(max)),
             Kind::Block => Ok(BlockRecord::decode(full)?.preview(max)),
+            Kind::Address | Kind::AddressPage => Err("address entries are always inline".into()),
         }
     }
 
@@ -176,7 +345,7 @@ impl Kind {
         match self {
             Kind::Tx => Record::decode(key, body).map(|r| Some((r.height, r.block_hash))),
             Kind::Block if body.first() == Some(&BLOCK_VERSION) => BlockRecord::decode(body).map(|b| Some((b.height, b.hash))),
-            Kind::Block => Ok(None),
+            Kind::Block | Kind::Address | Kind::AddressPage => Ok(None),
         }
     }
 }
@@ -304,7 +473,9 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             kind.position(txid_at(i), &data[offset + 36..offset + 36 + len]).map(|p| p.unwrap_or((0, [0u8; 32])))
         })
         .try_reduce(|| (0, [0u8; 32]), |a, b| Ok(if b.0 > a.0 { b } else { a }))?;
-    if u64::from(tip_height) != snapshot_tip {
+    // Address entries carry no block hash; their tip is the export's bound.
+    let addresses = matches!(kind, Kind::Address | Kind::AddressPage);
+    if !addresses && u64::from(tip_height) != snapshot_tip {
         return Err(format!("records end at block {tip_height}, not the declared tip {snapshot_tip}"));
     }
     let markers = if base_tip.is_some() && kind == Kind::Tx { spent_markers(&data, &index)? } else { Vec::new() };
@@ -689,7 +860,8 @@ struct Shared {
 
 /// Publication sets under the serving root: each base set, and the recent
 /// set that extends it. Only `base` is required.
-const SETS: [(&str, Option<&str>, usize); 4] = [("base", None, 1), ("recent", Some("base"), 8), ("blocks", None, 1), ("blocks-recent", Some("blocks"), 8)];
+const SETS: [(&str, Option<&str>, usize); 7] = [("base", None, 1), ("recent", Some("base"), 8), ("blocks", None, 1), ("blocks-recent", Some("blocks"), 8),
+    ("addresses", None, 1), ("addresses-recent", Some("addresses"), 8), ("address-pages", None, 1)];
 
 impl Shared {
     fn query(&self, table: Arc<Table>, body: &[u8]) -> Result<(Vec<u8>, String), String> {

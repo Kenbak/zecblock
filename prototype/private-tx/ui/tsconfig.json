@@ -20,6 +20,8 @@
       "react-dom/*": ["prototype/private-tx/node_modules/@types/react-dom/*"],
       "next/link": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/components/AddressWithLabel": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/AddressLabel": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "next/image": ["prototype/private-tx/ui/adapters/image.tsx"],
       "@/components/PrivacyRiskInline": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/components/TokenChainIcon": ["prototype/private-tx/ui/adapters/local-only.tsx"],
       "@/components/Tooltip": ["prototype/private-tx/ui/adapters/local-only.tsx"],

@@ -8,12 +8,16 @@
 // markers). Both are always asked with the same shape, so the server cannot
 // tell an old record from a new one or a miss. Every publication is signed
 // with the pinned ZecBlock key and every row is checked against its roots.
-import init, { ExplorerPirBrowser, block_key } from '/wasm/zecblock_pir_browser.js';
+import init, { ExplorerPirBrowser, address_key, address_page_key, block_key } from '/wasm/zecblock_pir_browser.js';
 
 const SCHEMA = 'zecblock-private-explorer-v3';
 // pair: { name, baseSet, recentSet, base, recent }, each publication { browser, id, info }.
 const tx = { name: 'tx', baseSet: 'base', recentSet: 'recent', base: null, recent: null };
 const blocks = { name: 'block', baseSet: 'blocks', recentSet: 'blocks-recent', base: null, recent: null };
+const addresses = { name: 'address', baseSet: 'addresses', recentSet: 'addresses-recent', base: null, recent: null };
+// Older address history pages: one publication built with the address base.
+let pages = null, lastAddress = null;
+const ADDRESS = /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/;
 let busy = false, last = null, ready = null, feed = null;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
@@ -57,6 +61,7 @@ function publication() {
     coverage: { startHeight: 0, endHeight: tip(), complete: true },
     sourceSummary: { recordCount: tx.base.info.records + (tx.recent?.info.records ?? 0) },
     blocks: Boolean(blocks.base),
+    addresses: Boolean(addresses.base),
   };
 }
 
@@ -86,7 +91,7 @@ async function refreshPair(pair) {
 
 async function refresh() {
   const before = tip();
-  await Promise.all([refreshPair(tx), refreshPair(blocks)]);
+  await Promise.all([refreshPair(tx), refreshPair(blocks), refreshPair(addresses)]);
   await loadFeed().catch(() => {});
   if (tip() !== before) self.postMessage({ type: 'tip', manifest: publication() });
 }
@@ -96,6 +101,7 @@ async function reloadPair(pair) {
   ready = null;
   pair.base = await open(pair.baseSet, pair.baseSet === 'base' ? '/manifest' : `/${pair.baseSet}/manifest`);
   pair.recent = null;
+  if (pair === addresses) pages = await openPages();
   await refreshPair(pair);
   self.postMessage({ type: 'tip', manifest: publication() });
 }
@@ -106,6 +112,8 @@ async function initialize() {
   tx.base = await open('base', '/manifest');
   if (!tx.base) throw new Error('no base publication');
   blocks.base = await open('blocks', '/blocks/manifest').catch(() => null);
+  addresses.base = await open('addresses', '/addresses/manifest').catch(() => null);
+  pages = addresses.base ? await openPages().catch(() => null) : null;
   await refresh().catch(() => {});
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
   if (feed) self.postMessage({ type: 'feed', feed: feed.data });
@@ -226,6 +234,53 @@ async function lookupBlock(key) {
   return { ...first, measurements: { ...first.measurements, totalMs: first.measurements.totalMs + performance.now() - started } };
 }
 
+// History pages must come from the same snapshot as the address base.
+async function openPages() {
+  const next = await open('address-pages', '/address-pages/manifest');
+  return next && next.info.snapshotTip === addresses.base?.info.snapshotTip ? next : null;
+}
+
+const add = (a, b) => (BigInt(a ?? 0) + BigInt(b ?? 0)).toString();
+
+// One same-shape request to both address publications. The base summary
+// covers history up to its snapshot and the recent entry everything after,
+// so totals add up and the recent transactions come first.
+async function lookupAddress(address) {
+  const outcome = await queryPair(addresses, address_key(address));
+  const base = outcome.fromBase?.found ? outcome.fromBase : null;
+  const recent = outcome.fromRecent?.found ? outcome.fromRecent : null;
+  if (!base && !recent) return { ...outcome, result: null };
+  const received = add(base?.total_received, recent?.total_received);
+  const sent = add(base?.total_sent, recent?.total_sent);
+  return { ...outcome, result: {
+    address, total_received: received, total_sent: sent, balance: (BigInt(received) - BigInt(sent)).toString(),
+    tx_count: (base?.tx_count ?? 0) + (recent?.tx_count ?? 0),
+    first_seen: base?.first_seen ?? recent?.first_seen ?? 0, last_seen: recent?.last_seen ?? base?.last_seen ?? 0,
+    pages: base?.pages ?? 0, loadedPages: 0, recentTruncated: Boolean(recent && recent.tx_count > recent.transactions.length),
+    transactions: [...(recent?.transactions ?? []), ...(base?.transactions ?? [])],
+  } };
+}
+
+// Only on request: the next older page of the last address, one query.
+async function loadMore({ requestId }) {
+  if (busy || !lastAddress || !pages || lastAddress.loadedPages >= lastAddress.pages) return;
+  busy = true;
+  const started = performance.now();
+  try {
+    const page = lastAddress.loadedPages + 1;
+    const upload = pages.browser.query_main(address_page_key(lastAddress.address, page));
+    const reply = ask(`/address-pages/${pages.id}/query/main`, upload);
+    pages.browser.prepare_decode();
+    const { body } = await reply;
+    const result = JSON.parse(pages.browser.decode_main(body));
+    if (!result.found) throw new Error('page');
+    lastAddress = { ...lastAddress, loadedPages: page, transactions: [...lastAddress.transactions, ...result.transactions] };
+    self.postMessage({ type: 'address', requestId, address: lastAddress, measurements: { totalMs: performance.now() - started } });
+  } catch {
+    self.postMessage({ type: 'error', requestId, message: 'More history could not be retrieved. No retry or public lookup was made.' });
+  } finally { busy = false; }
+}
+
 // Retries once when a base was replaced mid-search (same for every client).
 async function withReload(run, pairs) {
   try { return await run(); } catch (error) {
@@ -242,6 +297,15 @@ async function lookup({ requestId, txid, query }) {
   busy = true;
   const term = String(query ?? txid ?? '').trim().toLowerCase();
   try {
+    const original = String(query ?? txid ?? '').trim();
+    if (ADDRESS.test(original)) {
+      if (!addresses.base) throw new Error('addresses unavailable');
+      const outcome = await withReload(() => lookupAddress(original), [addresses]);
+      if (!outcome.result) { lastAddress = null; self.postMessage({ type: 'notfound', requestId, snapshotHeight: tip(), kind: 'address' }); return; }
+      lastAddress = outcome.result;
+      self.postMessage({ type: 'address', requestId, address: lastAddress, measurements: outcome.measurements });
+      return;
+    }
     const isHeight = /^\d{1,10}$/.test(term) && Number(term) <= 0xffffffff;
     if (!isHeight && !/^[a-f\d]{64}$/.test(term)) throw new Error('search');
     if (isHeight && !blocks.base) throw new Error('blocks unavailable');
@@ -304,4 +368,5 @@ self.addEventListener('message', event => {
   else if (data?.type === 'lookup') lookup(data);
   else if (data?.type === 'prepare' && tx.base && !busy && /^[a-f\d]{64}$/.test(data.txid)) { try { prepare(tx, data.txid, true); } catch { ready = null; } }
   else if (data?.type === 'loadFull') loadFull(data);
+  else if (data?.type === 'loadMore') loadMore(data);
 });

@@ -14,6 +14,8 @@ const configAdapter = resolve(HERE, 'adapters/config.ts');
 const safeAliases = new Map([
   ['next/link', localAdapter],
   ['@/components/AddressWithLabel', localAdapter],
+  ['@/components/AddressLabel', localAdapter],
+  ['next/image', resolve(HERE, 'adapters/image.tsx')],
   ['@/components/PrivacyRiskInline', localAdapter],
   ['@/components/TokenChainIcon', localAdapter],
   ['@/components/Tooltip', localAdapter],
@@ -37,7 +39,7 @@ const bundled = await build({
       // Shared source files may sit beside another checkout's node_modules.
       // A single React instance must own both the app and reused components.
       plugin.onResolve({ filter: /^(react|react-dom)(\/.*)?$/ }, args => plugin.resolve(resolve(APP, 'node_modules', args.path), { kind: args.kind, resolveDir: APP }));
-      plugin.onResolve({ filter: /^(next\/link|@\/)/ }, args => {
+      plugin.onResolve({ filter: /^(next\/link|next\/image|@\/)/ }, args => {
         if (safeAliases.has(args.path)) return { path: safeAliases.get(args.path) };
         if (/^@\/lib\/api-|useTransactionPage/.test(args.path)) throw new Error(`Ordinary data fetching cannot enter the private UI: ${args.path}`);
         if (args.path.startsWith('@/')) return plugin.resolve(resolve(ROOT, args.path.slice(2)), { kind: args.kind, resolveDir: args.resolveDir });
@@ -66,6 +68,7 @@ const input = [
   `@source "${resolve(ROOT, 'components')}";`,
   `@source "${resolve(ROOT, 'app/tx')}";`,
   `@source "${resolve(ROOT, 'app/block')}";`,
+  `@source "${resolve(ROOT, 'app/address')}";`,
   `@source "${HERE}";`,
   css, additional,
 ].join('\n');
@@ -82,4 +85,6 @@ await copyFile(resolve(APP, 'node_modules/geist/LICENSE.txt'), resolve(OUT, 'fon
 await mkdir(resolve(OUT, 'brand'), { recursive: true });
 for (const file of ['zecblock-logotype.png', 'zecblock-logotype-light.png']) await copyFile(resolve(ROOT, 'public/brand', file), resolve(OUT, 'brand', file));
 await copyFile(resolve(ROOT, 'public/favicon-32x32.png'), resolve(OUT, 'favicon.png'));
+await mkdir(resolve(OUT, 'tokens'), { recursive: true });
+await copyFile(resolve(ROOT, 'public/tokens/zec.png'), resolve(OUT, 'tokens/zec.png'));
 process.stdout.write(`Built private React transaction view from ${Object.keys(bundled.metafile.inputs).length} local source modules.\n`);

@@ -1288,3 +1288,188 @@ mod block_tests {
         assert_ne!(block_height_key(1), block_height_key(2));
     }
 }
+
+// ---- transparent addresses ---------------------------------------------------------
+
+pub const ADDRESS_VERSION: u8 = 1;
+/// History entries per page; the first page travels with the summary.
+pub const ADDRESS_PAGE: usize = 50;
+
+pub fn address_key(address: &str) -> [u8; 32] {
+    Sha256::new().chain_update(b"zecblock-explorer-address-v1").chain_update(address.as_bytes()).finalize().into()
+}
+
+/// Key of history page `page` (1-based; page 0 is in the summary entry).
+pub fn address_page_key(address: &str, page: u32) -> [u8; 32] {
+    Sha256::new().chain_update(b"zecblock-explorer-address-page-v1").chain_update(address.as_bytes()).chain_update(page.to_le_bytes()).finalize().into()
+}
+
+/// One transaction of an address's history, newest first in a page.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AddressTx {
+    pub txid: [u8; 32],
+    pub height: u32,
+    pub tx_index: u32,
+    pub time: u64,
+    /// Spent from this address in the transaction (zatoshis).
+    pub value_in: i64,
+    /// Received by this address in the transaction (zatoshis).
+    pub value_out: i64,
+}
+
+/// A summary with the newest page of history, or (page > 0) one older page.
+/// Totals cover exactly the rows the publication was built from, so a base
+/// summary and a recent delta add up without counting anything twice.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct AddressRecord {
+    pub address: String,
+    pub page: u32,
+    pub received: i64,
+    pub sent: i64,
+    pub tx_count: u32,
+    pub first_seen: u64,
+    pub last_seen: u64,
+    /// Older pages available after page 0.
+    pub pages: u32,
+    pub txs: Vec<AddressTx>,
+}
+
+impl AddressRecord {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(96 + self.txs.len() * 50);
+        out.push(ADDRESS_VERSION);
+        let at = out.len();
+        out.push(0);
+        out[at] = put_address(&mut out, &self.address);
+        put(&mut out, u64::from(self.page));
+        if self.page == 0 {
+            put_signed(&mut out, self.received);
+            put_signed(&mut out, self.sent);
+            put(&mut out, u64::from(self.tx_count));
+            put(&mut out, self.first_seen);
+            put(&mut out, self.last_seen);
+            put(&mut out, u64::from(self.pages));
+        }
+        put(&mut out, self.txs.len() as u64);
+        for tx in &self.txs {
+            out.extend_from_slice(&tx.txid);
+            put(&mut out, u64::from(tx.height));
+            put(&mut out, u64::from(tx.tx_index));
+            put(&mut out, tx.time);
+            put_signed(&mut out, tx.value_in);
+            put_signed(&mut out, tx.value_out);
+        }
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+        let mut r = Reader { bytes, at: 0 };
+        if r.byte()? != ADDRESS_VERSION {
+            return Err("unsupported address record version".into());
+        }
+        let kind = r.byte()?;
+        let mut record = AddressRecord { address: read_address(&mut r, kind)?, page: r.var32()?, ..AddressRecord::default() };
+        if record.page == 0 {
+            record.received = r.signed()?;
+            record.sent = r.signed()?;
+            record.tx_count = r.var32()?;
+            record.first_seen = r.var()?;
+            record.last_seen = r.var()?;
+            record.pages = r.var32()?;
+        }
+        for _ in 0..r.var()? {
+            record.txs.push(AddressTx { txid: r.hash()?, height: r.var32()?, tx_index: r.var32()?, time: r.var()?, value_in: r.signed()?, value_out: r.signed()? });
+        }
+        if r.at != bytes.len() {
+            return Err("trailing bytes after address record".into());
+        }
+        Ok(record)
+    }
+
+    pub fn to_json(&self) -> Value {
+        let mut json = json!({
+            "address": self.address,
+            "page": self.page,
+            "transactions": self.txs.iter().map(|t| json!({
+                "txid": hex::encode(t.txid), "block_height": t.height, "tx_index": t.tx_index, "block_time": t.time,
+                "value_in": t.value_in.to_string(), "value_out": t.value_out.to_string(),
+            })).collect::<Vec<_>>(),
+        });
+        if self.page == 0 {
+            json["total_received"] = json!(self.received.to_string());
+            json["total_sent"] = json!(self.sent.to_string());
+            json["balance"] = json!((self.received - self.sent).to_string());
+            json["tx_count"] = json!(self.tx_count);
+            json["first_seen"] = json!(self.first_seen);
+            json["last_seen"] = json!(self.last_seen);
+            json["pages"] = json!(self.pages);
+        }
+        json
+    }
+
+    /// Records for one address from its rows (any order): the summary with
+    /// the newest page, then older pages unless `pages` is false.
+    pub fn from_rows(address: &str, mut rows: Vec<AddressTx>, pages: bool) -> Vec<([u8; 32], AddressRecord)> {
+        rows.sort_unstable_by(|a, b| (b.height, b.tx_index, b.txid).cmp(&(a.height, a.tx_index, a.txid)));
+        let summary = AddressRecord {
+            address: address.to_owned(),
+            received: rows.iter().map(|r| r.value_out).sum(),
+            sent: rows.iter().map(|r| r.value_in).sum(),
+            tx_count: rows.len() as u32,
+            first_seen: rows.iter().map(|r| r.time).min().unwrap_or(0),
+            last_seen: rows.iter().map(|r| r.time).max().unwrap_or(0),
+            pages: if pages { rows.len().saturating_sub(1).max(0) as u32 / ADDRESS_PAGE as u32 } else { 0 },
+            ..AddressRecord::default()
+        };
+        let mut chunks = rows.chunks(ADDRESS_PAGE);
+        let mut out = vec![(address_key(address), AddressRecord { txs: chunks.next().unwrap_or(&[]).to_vec(), ..summary })];
+        if pages {
+            for (i, chunk) in chunks.enumerate() {
+                let page = i as u32 + 1;
+                out.push((address_page_key(address, page), AddressRecord { address: address.to_owned(), page, txs: chunk.to_vec(), ..AddressRecord::default() }));
+            }
+        }
+        out
+    }
+}
+
+/// Parses one line of the address export (see `addresses.sql`):
+/// address, txid, block_height, tx_index, block_time, value_in, value_out.
+pub fn parse_address_line(line: &str) -> Result<(String, AddressTx), String> {
+    let f: Vec<&str> = line.split('\t').collect();
+    if f.len() != 7 {
+        return Err(format!("expected 7 columns, found {}", f.len()));
+    }
+    Ok((f[0].to_owned(), AddressTx {
+        txid: hash_field(f[1])?,
+        height: f[2].parse().map_err(|_| "bad height")?,
+        tx_index: opt(f[3])?.unwrap_or(0),
+        time: opt(f[4])?.unwrap_or(0),
+        value_in: opt(f[5])?.unwrap_or(0),
+        value_out: opt(f[6])?.unwrap_or(0),
+    }))
+}
+
+#[cfg(test)]
+mod address_tests {
+    use super::*;
+
+    #[test]
+    fn address_pages_round_trip_and_fit() {
+        let rows: Vec<AddressTx> = (0..123u32).map(|i| AddressTx { txid: [i as u8; 32], height: 1_000 + i, tx_index: i % 3, time: 1_700_000_000 + u64::from(i),
+            value_in: if i % 2 == 0 { 0 } else { 5_000 }, value_out: 2_000_000_000 }).collect();
+        let records = AddressRecord::from_rows("t1TVdjqU1APVQmCRRnzbqfjz6wR2qtBnnoc", rows, true);
+        assert_eq!(records.len(), 3);
+        let summary = &records[0].1;
+        assert_eq!((summary.tx_count, summary.pages, summary.txs.len()), (123, 2, 50));
+        assert_eq!(summary.txs[0].height, 1_122);
+        assert_eq!(records[2].1.txs.len(), 23);
+        for (_, record) in &records {
+            let bytes = record.encode();
+            assert!(bytes.len() <= 4_096);
+            assert_eq!(&AddressRecord::decode(&bytes).unwrap(), record);
+        }
+        assert_eq!(summary.received - summary.sent, 123 * 2_000_000_000 - 61 * 5_000);
+        assert_eq!(AddressRecord::from_rows("t1TVdjqU1APVQmCRRnzbqfjz6wR2qtBnnoc", vec![], true)[0].1.pages, 0);
+    }
+}

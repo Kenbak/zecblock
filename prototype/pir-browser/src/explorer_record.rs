@@ -318,6 +318,26 @@ impl Record {
         out
     }
 
+    /// The record with only its first inputs and outputs, as many as fit in
+    /// `max` bytes. `vin_count`/`vout_count` keep the full counts, so a reader
+    /// knows the lists were cut. Never shorter than the zero-list form.
+    pub fn preview(&self, max: usize) -> Vec<u8> {
+        let mut cut = self.clone();
+        cut.vin_count = Some(self.vin_count.unwrap_or(self.inputs.len() as u32));
+        cut.vout_count = Some(self.vout_count.unwrap_or(self.outputs.len() as u32));
+        let encode = |keep: usize, cut: &mut Record| {
+            cut.inputs = self.inputs[..keep.min(self.inputs.len())].to_vec();
+            cut.outputs = self.outputs[..keep.min(self.outputs.len())].to_vec();
+            cut.encode()
+        };
+        let (mut low, mut high) = (0, self.inputs.len().max(self.outputs.len()));
+        while low < high {
+            let mid = (low + high + 1) / 2;
+            if encode(mid, &mut cut).len() <= max { low = mid } else { high = mid - 1 }
+        }
+        encode(low, &mut cut)
+    }
+
     pub fn decode(txid: [u8; 32], bytes: &[u8]) -> Result<Self, String> {
         let mut r = Reader { bytes, at: 0 };
         if r.byte()? != RECORD_VERSION {
@@ -589,22 +609,65 @@ mod tests {
         assert_eq!(json["outputs"][1]["address"], "weird-script");
         assert_eq!(json["coinbaseHex"], "0401");
     }
+
+    #[test]
+    fn preview_keeps_counts_and_fits() {
+        let output = |index| Output { index, value: Some(1_000 + i64::from(index)), address: Some("t1aTey5i7FzJQ2FC238SomgzMfbZxXBWPMX".into()), spent: false };
+        let record = Record { txid: [7; 32], height: 1, block_hash: [9; 32], block_time: 2, outputs: (0..500).map(output).collect(), ..Default::default() };
+        let full = record.encode();
+        let preview = record.preview(1_024);
+        assert!(preview.len() <= 1_024 && preview.len() < full.len());
+        let decoded = Record::decode(record.txid, &preview).unwrap();
+        assert_eq!(decoded.vout_count, Some(500));
+        assert!(!decoded.outputs.is_empty() && decoded.outputs.len() < 500);
+        assert_eq!(decoded.outputs[..], record.outputs[..decoded.outputs.len()]);
+        assert!(Record::decode(record.txid, &record.preview(1)).unwrap().outputs.is_empty());
+    }
+
+    #[test]
+    fn bucket_entries_span_rows_and_previews_point_to_overflow() {
+        use layout::*;
+        let mut bucket = vec![0u8; 2 * ROW_BYTES];
+        let (a, b) = ([1u8; 32], [2u8; 32]);
+        let first = vec![5u8; ROW_BYTES];
+        let second = preview_body(70_000, 40_000, b"cut");
+        let mut at = BUCKET_HEADER;
+        for (txid, body, flag) in [(a, &first, 0), (b, &second, PREVIEW_FLAG)] {
+            bucket[at..at + TAG].copy_from_slice(&txid[..TAG]);
+            bucket[at + TAG..at + ENTRY_HEADER].copy_from_slice(&(body.len() as u16 | flag).to_le_bytes());
+            bucket[at + ENTRY_HEADER..at + ENTRY_HEADER + body.len()].copy_from_slice(body);
+            at += ENTRY_HEADER + body.len();
+        }
+        bucket[..2].copy_from_slice(&2u16.to_le_bytes());
+        assert_eq!(find(&bucket, &a).unwrap(), Entry::Inline(first));
+        assert_eq!(find(&bucket, &b).unwrap(), Entry::Preview { preview: b"cut".to_vec(), start: 70_000, len: 40_000 });
+        assert_eq!(find(&bucket, &[3u8; 32]).unwrap(), Entry::Absent);
+        assert_eq!(overflow_rows(70_000, 40_000), 4..=6);
+        assert_eq!(padded_rows(3), 4);
+    }
 }
 
 // ---- table layout shared by builder, server and clients ----------------------
 
 pub mod layout {
+    //! A txid hashes to one bucket: the same local row in every main instance.
+    //! Every lookup asks every instance for that row with one shared upload
+    //! and gets all of them back, so the bucket spans `instances * ROW_BYTES`
+    //! at no extra request cost. Bucket bytes: `[entries u16][reserved u16]`
+    //! then entries `[tag 12][len u16 | PREVIEW_FLAG][body]`, which may cross
+    //! row boundaries. A preview body is `[var start][var len][record preview]`
+    //! pointing at the full record in the overflow table.
     use sha2::{Digest, Sha256};
 
-    pub const SCHEMA_NAME: &str = "zecblock-private-explorer-test-v1";
-    pub const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-row-v1";
+    pub const SCHEMA_NAME: &str = "zecblock-private-explorer-test-v2";
+    pub const ROW_HASH_DOMAIN: &[u8] = b"zecblock-explorer-bucket-v2";
     pub const ROW_BYTES: usize = 16_384;
-    pub const ROW_HEADER: usize = 4;
+    pub const BUCKET_HEADER: usize = 4;
     pub const TAG: usize = 12;
     pub const ENTRY_HEADER: usize = TAG + 2;
-    pub const STUB_FLAG: u16 = 0x8000;
+    pub const PREVIEW_FLAG: u16 = 0x8000;
 
-    /// Global main-table row for a txid in display byte order.
+    /// Local bucket row for a txid in display byte order.
     pub fn row_of(txid: &[u8; 32], rows: u64) -> u64 {
         let digest = Sha256::new().chain_update(ROW_HASH_DOMAIN).chain_update(txid).finalize();
         u64::from_le_bytes(digest[..8].try_into().unwrap()) % rows
@@ -639,35 +702,37 @@ pub mod layout {
         Err("varint too long".into())
     }
 
-    pub fn stub(start: u64, len: usize) -> Vec<u8> {
-        let mut out = Vec::with_capacity(12);
+    pub fn preview_body(start: u64, len: usize, preview: &[u8]) -> Vec<u8> {
+        let mut out = Vec::with_capacity(12 + preview.len());
         put_var(&mut out, start);
         put_var(&mut out, len as u64);
+        out.extend_from_slice(preview);
         out
     }
 
-    /// Where a txid's record sits in a decoded main row.
+    /// Where a txid's record sits in a decoded bucket.
     #[derive(Debug, PartialEq, Eq)]
     pub enum Entry {
         Absent,
         Inline(Vec<u8>),
-        /// Byte range in the concatenated overflow table.
-        Overflow { start: u64, len: usize },
+        /// A truncated record, plus the full record's byte range in the
+        /// concatenated overflow table.
+        Preview { preview: Vec<u8>, start: u64, len: usize },
     }
 
-    pub fn find(row: &[u8], txid: &[u8; 32]) -> Result<Entry, String> {
-        if row.len() != ROW_BYTES {
-            return Err("main row has the wrong length".into());
+    pub fn find(bucket: &[u8], txid: &[u8; 32]) -> Result<Entry, String> {
+        if bucket.is_empty() || bucket.len() % ROW_BYTES != 0 {
+            return Err("bucket has the wrong length".into());
         }
-        let entries = u16::from_le_bytes([row[0], row[1]]);
-        let mut at = ROW_HEADER;
+        let entries = u16::from_le_bytes([bucket[0], bucket[1]]);
+        let mut at = BUCKET_HEADER;
         for _ in 0..entries {
-            let header = row.get(at..at + ENTRY_HEADER).ok_or("row entry exceeds row")?;
+            let header = bucket.get(at..at + ENTRY_HEADER).ok_or("bucket entry exceeds bucket")?;
             let raw = u16::from_le_bytes([header[TAG], header[TAG + 1]]);
-            let len = (raw & !STUB_FLAG) as usize;
-            let body = row.get(at + ENTRY_HEADER..at + ENTRY_HEADER + len).ok_or("row entry exceeds row")?;
+            let len = (raw & !PREVIEW_FLAG) as usize;
+            let body = bucket.get(at + ENTRY_HEADER..at + ENTRY_HEADER + len).ok_or("bucket entry exceeds bucket")?;
             if header[..TAG] == txid[..TAG] {
-                if raw & STUB_FLAG == 0 {
+                if raw & PREVIEW_FLAG == 0 {
                     return Ok(Entry::Inline(body.to_vec()));
                 }
                 let mut at = 0;
@@ -676,7 +741,7 @@ pub mod layout {
                 if len == 0 {
                     return Err("empty overflow record".into());
                 }
-                return Ok(Entry::Overflow { start, len });
+                return Ok(Entry::Preview { preview: body[at..].to_vec(), start, len });
             }
             at += ENTRY_HEADER + len;
         }
@@ -686,5 +751,11 @@ pub mod layout {
     /// Global overflow rows covering a byte range.
     pub fn overflow_rows(start: u64, len: usize) -> std::ops::RangeInclusive<u64> {
         start / ROW_BYTES as u64..=(start + len as u64 - 1) / ROW_BYTES as u64
+    }
+
+    /// Row count actually requested for a full-record fetch: the next power
+    /// of two, so the server learns only a coarse size class.
+    pub fn padded_rows(rows: usize) -> usize {
+        rows.next_power_of_two()
     }
 }

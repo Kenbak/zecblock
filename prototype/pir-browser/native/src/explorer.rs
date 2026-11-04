@@ -1,15 +1,19 @@
 //! Private explorer test: every canonical transaction's explorer record in
-//! hashed 16 KiB PIR rows, plus an overflow table for large records.
+//! hashed buckets spanning all main instances, plus an overflow table holding
+//! the full form of large records.
 //!
 //! encode  : export lines (stdin) -> records.bin ([txid 32][len u32][record])
 //! build   : records.bin -> per-instance database files + manifest.json
 //! serve   : loopback HTTP; one upload answers every instance of a table
 //! lookup  : native client; prints the `/api/tx/:txid` fields and timings
 //!
-//! A main-table lookup always queries every main instance with the same
-//! encrypted row selection, so the server learns nothing about which row or
-//! instance holds the txid, or whether it exists. Fetching overflow rows does
-//! reveal that the transaction is large, and how many rows it spans.
+//! A lookup is always exactly one main-table request: the same encrypted row
+//! selection for every instance, answered by every instance. Every txid has an
+//! entry in its bucket, either complete or as a preview (all summary fields,
+//! first inputs/outputs), so the server learns nothing about which txid was
+//! chosen, whether it exists or how large it is. Only an explicit request for
+//! a preview's full lists touches the overflow table; that request is padded
+//! to a power-of-two row count and reveals the coarse size class.
 use super::chunk_spike::{parallel_multiply, preprocess_blocks};
 use super::explorer_record::{Record, parse_export_line};
 use super::*;
@@ -25,12 +29,18 @@ use std::{
 use zakura_pir_client::transparent::native::TableClientExt as _;
 use zakura_pir_protocol::native::D;
 
-use super::explorer_record::layout::{self, ENTRY_HEADER, ROW_BYTES, ROW_HEADER, STUB_FLAG, TAG, row_of, stub};
+use super::explorer_record::layout::{self, BUCKET_HEADER, ENTRY_HEADER, PREVIEW_FLAG, ROW_BYTES, TAG, preview_body, row_of};
+use sha2::Digest as _;
+use std::collections::HashSet;
+/// Records up to this size are stored whole; larger ones get a preview.
 const INLINE_MAX: usize = 4_096;
+const PREVIEW_MAX: usize = 2_048;
+/// Upper bound on the two varints in front of a preview.
+const PREVIEW_POINTER: usize = 10;
 const MAX_INSTANCE_ROWS: usize = 131_072;
-const TARGET_FILL: f64 = 0.85;
-/// Row bytes kept free of inline records so overflow stubs always fit.
-const STUB_RESERVE: usize = 1_024;
+/// Planned mean bucket fill; the slack absorbs per-bucket variance so that
+/// demoting small records to previews stays rare.
+const TARGET_FILL: f64 = 0.72;
 
 // ---- shared helpers ----------------------------------------------------------
 
@@ -107,23 +117,6 @@ pub(super) fn encode(out_path: &Path) -> Result<(), String> {
 
 // ---- build ---------------------------------------------------------------------
 
-fn records(path: &Path, mut visit: impl FnMut([u8; 32], &[u8]) -> Result<(), String>) -> Result<(), String> {
-    let mut reader = BufReader::with_capacity(8 << 20, File::open(path).map_err(io_err)?);
-    let mut header = [0u8; 36];
-    let mut body = Vec::new();
-    loop {
-        match reader.read_exact(&mut header) {
-            Ok(()) => {}
-            Err(e) if e.kind() == io::ErrorKind::UnexpectedEof => return Ok(()),
-            Err(e) => return Err(e.to_string()),
-        }
-        let len = u32::from_le_bytes(header[32..].try_into().unwrap()) as usize;
-        body.resize(len, 0);
-        reader.read_exact(&mut body).map_err(io_err)?;
-        visit(header[..32].try_into().unwrap(), &body)?;
-    }
-}
-
 fn write_overflow(maps: &mut [MmapMut], cursor: &mut u64, rows: usize, limit: u64, bytes: &[u8]) -> Result<u64, String> {
     let start = *cursor;
     if start + bytes.len() as u64 > limit {
@@ -154,80 +147,129 @@ fn table_files(dir: &Path, kind: &str, instances: usize, rows: usize) -> Result<
         .collect()
 }
 
+enum Body<'a> {
+    Full(&'a [u8]),
+    Preview { full: &'a [u8], bytes: Vec<u8> },
+}
+
+impl<'a> Body<'a> {
+    fn entry_bytes(&self) -> usize {
+        ENTRY_HEADER + match self { Body::Full(full) => full.len(), Body::Preview { bytes, .. } => PREVIEW_POINTER + bytes.len() }
+    }
+    /// Halves the entry's preview budget; false when it cannot get smaller.
+    fn shrink(&mut self, txid: [u8; 32]) -> Result<bool, String> {
+        let full: &'a [u8] = match self { Body::Full(full) | Body::Preview { full, .. } => full };
+        let current = self.entry_bytes();
+        let bytes = Record::decode(txid, full)?.preview((current - ENTRY_HEADER - PREVIEW_POINTER).min(PREVIEW_MAX) / 2);
+        if ENTRY_HEADER + PREVIEW_POINTER + bytes.len() >= current {
+            return Ok(false);
+        }
+        *self = Body::Preview { full, bytes };
+        Ok(true)
+    }
+}
+
 pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Result<(), String> {
     fs::create_dir(dir).map_err(io_err)?;
     let start = Instant::now();
-    let (mut count, mut inline_bytes, mut overflow_bytes, mut large) = (0u64, 0u64, 0u64, 0u64);
-    records(records_path, |_, body| {
-        count += 1;
-        if body.len() > INLINE_MAX {
+    let file = File::open(records_path).map_err(io_err)?;
+    let data = unsafe { Mmap::map(&file) }.map_err(io_err)?;
+    let mut index: Vec<(usize, usize)> = Vec::new();
+    let (mut estimate, mut overflow_bytes, mut large) = (0u64, 0u64, 0u64);
+    let mut at = 0;
+    while at < data.len() {
+        let len = u32::from_le_bytes(data.get(at + 32..at + 36).ok_or("truncated records file")?.try_into().unwrap()) as usize;
+        index.push((at, len));
+        if len > INLINE_MAX {
             large += 1;
-            overflow_bytes += body.len() as u64;
-            inline_bytes += (ENTRY_HEADER + 10) as u64;
+            overflow_bytes += len as u64;
+            estimate += (ENTRY_HEADER + PREVIEW_POINTER + PREVIEW_MAX) as u64;
         } else {
-            inline_bytes += (ENTRY_HEADER + body.len()) as u64;
+            estimate += (ENTRY_HEADER + len) as u64;
         }
-        Ok(())
-    })?;
-    let usable = (ROW_BYTES - ROW_HEADER - STUB_RESERVE) as f64 * TARGET_FILL;
-    let (main_instances, main_rows) = instance_rows((inline_bytes as f64 / usable).ceil() as usize);
-    let total_rows = (main_instances * main_rows) as u64;
-    // Spills from full rows also land in overflow; reserve a 10% margin.
+        at += 36 + len;
+    }
+    if at != data.len() {
+        return Err("truncated records file".into());
+    }
+    let txid_at = |i: usize| -> [u8; 32] { data[index[i].0..index[i].0 + 32].try_into().unwrap() };
+    let (instances, rows) = instance_rows((estimate as f64 / (ROW_BYTES as f64 * TARGET_FILL)).ceil() as usize);
+    let bucket_bytes = instances * ROW_BYTES;
+    let mut order: Vec<(u32, u32)> = (0..index.len()).into_par_iter().map(|i| (row_of(&txid_at(i), rows as u64) as u32, i as u32)).collect();
+    order.par_sort_unstable();
+    // Demotions of small records also land in overflow; reserve a margin.
     let overflow_capacity = (overflow_bytes + overflow_bytes / 10 + (64 << 20)) as usize;
     let (overflow_instances, overflow_rows) = instance_rows(overflow_capacity.div_ceil(ROW_BYTES));
-    let mut main = table_files(dir, "main", main_instances, main_rows)?;
+    let mut main = table_files(dir, "main", instances, rows)?;
     let mut overflow = table_files(dir, "overflow", overflow_instances, overflow_rows)?;
     let overflow_limit = (overflow_instances * overflow_rows * ROW_BYTES) as u64;
-    let mut cursor = 0u64;
-    let mut spills = 0u64;
-    let mut used = vec![0u16; total_rows as usize];
-    records(records_path, |txid, body| {
-        let global = row_of(&txid, total_rows) as usize;
-        let (instance, row) = (global / main_rows, global % main_rows);
-        let base = row * ROW_BYTES;
-        let free = ROW_BYTES - ROW_HEADER - used[global] as usize;
-        let (payload, flag) = if body.len() <= INLINE_MAX && ENTRY_HEADER + body.len() + STUB_RESERVE <= free {
-            (body.to_vec(), 0)
-        } else {
-            if body.len() <= INLINE_MAX {
-                spills += 1;
+    let (mut cursor, mut previews, mut demoted_small, mut demoted_buckets, mut max_used, mut total_used) = (0u64, 0u64, 0u64, 0u64, 0usize, 0u64);
+    let mut buffer = vec![0u8; bucket_bytes];
+    for group in order.chunk_by(|a, b| a.0 == b.0) {
+        let bucket = group[0].0 as usize;
+        let mut tags = HashSet::with_capacity(group.len());
+        let mut entries: Vec<([u8; 32], Body)> = Vec::with_capacity(group.len());
+        for &(_, i) in group {
+            let txid = txid_at(i as usize);
+            if !tags.insert(<[u8; TAG]>::try_from(&txid[..TAG]).unwrap()) {
+                return Err(format!("duplicate tag in bucket {bucket}"));
             }
-            (stub(write_overflow(&mut overflow, &mut cursor, overflow_rows, overflow_limit, body)?, body.len()), STUB_FLAG)
-        };
-        if ENTRY_HEADER + payload.len() > free {
-            return Err(format!("row {global} cannot hold even a stub"));
+            let (offset, len) = index[i as usize];
+            let full = &data[offset + 36..offset + 36 + len];
+            let body = if len <= INLINE_MAX {
+                Body::Full(full)
+            } else {
+                Body::Preview { full, bytes: Record::decode(txid, full)?.preview(PREVIEW_MAX) }
+            };
+            entries.push((txid, body));
         }
-        let table = &mut main[instance];
-        let at = base + ROW_HEADER + used[global] as usize;
-        let entries = u16::from_le_bytes([table[base], table[base + 1]]);
-        {
-            // Tags must be unique within a row; scan the entries already placed.
-            let mut scan = base + ROW_HEADER;
-            for _ in 0..entries {
-                if table[scan..scan + TAG] == txid[..TAG] {
-                    return Err("duplicate tag within a row".into());
+        let mut used: usize = BUCKET_HEADER + entries.iter().map(|(_, b)| b.entry_bytes()).sum::<usize>();
+        if used > bucket_bytes {
+            demoted_buckets += 1;
+            let mut frozen = vec![false; entries.len()];
+            while used > bucket_bytes {
+                let pick = (0..entries.len()).filter(|&i| !frozen[i]).max_by_key(|&i| entries[i].1.entry_bytes())
+                    .ok_or_else(|| format!("bucket {bucket} cannot fit even zero-list previews"))?;
+                let (txid, body) = &mut entries[pick];
+                let (before, was_full) = (body.entry_bytes(), matches!(body, Body::Full(_)));
+                if body.shrink(*txid)? {
+                    used = used - before + body.entry_bytes();
+                    demoted_small += u64::from(was_full);
+                } else {
+                    frozen[pick] = true;
                 }
-                let len = u16::from_le_bytes([table[scan + TAG], table[scan + TAG + 1]]) & !STUB_FLAG;
-                scan += ENTRY_HEADER + len as usize;
             }
         }
-        table[at..at + TAG].copy_from_slice(&txid[..TAG]);
-        table[at + TAG..at + ENTRY_HEADER].copy_from_slice(&(payload.len() as u16 | flag).to_le_bytes());
-        table[at + ENTRY_HEADER..at + ENTRY_HEADER + payload.len()].copy_from_slice(&payload);
-        used[global] += (ENTRY_HEADER + payload.len()) as u16;
-        table[base..base + 2].copy_from_slice(&(entries + 1).to_le_bytes());
-        table[base + 2..base + 4].copy_from_slice(&used[global].to_le_bytes());
-        Ok(())
-    })?;
+        buffer[..used.max(BUCKET_HEADER)].fill(0);
+        buffer[..2].copy_from_slice(&(entries.len() as u16).to_le_bytes());
+        let mut at = BUCKET_HEADER;
+        for (txid, body) in &entries {
+            let (payload, flag) = match body {
+                Body::Full(full) => (full.to_vec(), 0),
+                Body::Preview { full, bytes } => {
+                    previews += 1;
+                    let start = write_overflow(&mut overflow, &mut cursor, overflow_rows, overflow_limit, full)?;
+                    (preview_body(start, full.len(), bytes), PREVIEW_FLAG)
+                }
+            };
+            buffer[at..at + TAG].copy_from_slice(&txid[..TAG]);
+            buffer[at + TAG..at + ENTRY_HEADER].copy_from_slice(&(payload.len() as u16 | flag).to_le_bytes());
+            buffer[at + ENTRY_HEADER..at + ENTRY_HEADER + payload.len()].copy_from_slice(&payload);
+            at += ENTRY_HEADER + payload.len();
+        }
+        for (instance, map) in main.iter_mut().enumerate() {
+            map[bucket * ROW_BYTES..(bucket + 1) * ROW_BYTES].copy_from_slice(&buffer[instance * ROW_BYTES..(instance + 1) * ROW_BYTES]);
+        }
+        max_used = max_used.max(at);
+        total_used += at as u64;
+    }
     for map in main.iter().chain(overflow.iter()) {
         map.flush().map_err(io_err)?;
     }
-    let max_used = *used.iter().max().unwrap() as usize;
-    let mean_used = used.iter().map(|&u| u as u64).sum::<u64>() as f64 / used.len() as f64;
-    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"records":count,"rowBytes":ROW_BYTES,
-        "rowHashDomain":String::from_utf8_lossy(layout::ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,
-        "main":{"instances":main_instances,"rows":main_rows,"totalRows":total_rows,"inlineBytes":inline_bytes,
-            "meanRowBytesUsed":mean_used,"maxRowBytesUsed":max_used,"spilledToOverflow":spills},
+    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"records":index.len(),"rowBytes":ROW_BYTES,
+        "rowHashDomain":String::from_utf8_lossy(layout::ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,"previewMax":PREVIEW_MAX,
+        "main":{"instances":instances,"rows":rows,"bucketBytes":bucket_bytes,"meanBucketBytesUsed":total_used as f64 / rows as f64,
+            "maxBucketBytesUsed":max_used,"previews":previews,"demotedSmallRecords":demoted_small,"bucketsWithDemotions":demoted_buckets},
         "overflow":{"instances":overflow_instances,"rows":overflow_rows,"bytesUsed":cursor,"largeRecords":large},
         "buildSeconds":start.elapsed().as_secs_f64()});
     fs::write(dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).map_err(io_err)?).map_err(io_err)?;
@@ -461,32 +503,41 @@ impl Remote {
     }
 }
 
-pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path) -> Result<(), String> {
+pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Result<(), String> {
     let txid: [u8; 32] = hex::decode(txid_hex).ok().and_then(|b| b.try_into().ok()).ok_or("txid must be 64 hex characters")?;
     let total = Instant::now();
     let http = Http { addr: addr.to_owned() };
     let mut timing = BTreeMap::new();
     let (manifest_bytes, _) = http.call("GET", "/manifest", &[])?;
     let manifest: Value = serde_json::from_slice(&manifest_bytes).map_err(io_err)?;
-    let cache = cache.join(manifest["snapshotTip"].to_string());
+    if manifest["schema"] != layout::SCHEMA_NAME {
+        return Err("unsupported private explorer manifest".into());
+    }
+    // Public parameters belong to one exact publication, not just its tip.
+    let cache = cache.join(hex::encode(&sha2::Sha256::digest(&manifest_bytes)[..16]));
     fs::create_dir_all(&cache).map_err(io_err)?;
     let start = Instant::now();
     let main = Remote::fetch(&http, &cache, &manifest, "main")?;
     let overflow = Remote::fetch(&http, &cache, &manifest, "overflow")?;
     timing.insert("publicParamsNs".into(), start.elapsed().as_nanos());
-    let total_rows = manifest["main"]["totalRows"].as_u64().ok_or("bad manifest")?;
-    let global = row_of(&txid, total_rows) as usize;
-    let rows = main.rows(&http, "main", &[global % main.rows], &mut timing)?;
-    let row = &rows[0][global / main.rows];
-    let record = match layout::find(row, &txid)? {
+    let rows = main.rows(&http, "main", &[row_of(&txid, main.rows as u64) as usize], &mut timing)?;
+    let mut partial = false;
+    let record = match layout::find(&rows[0].concat(), &txid)? {
         layout::Entry::Absent => None,
         layout::Entry::Inline(body) => Some(body),
-        layout::Entry::Overflow { start, len } => {
+        layout::Entry::Preview { preview, .. } if !full => {
+            partial = true;
+            Some(preview)
+        }
+        layout::Entry::Preview { start, len, .. } => {
             let wanted: Vec<usize> = layout::overflow_rows(start, len).map(|g| g as usize).collect();
             let first = wanted[0];
-            let fetched = overflow.rows(&http, "overflow", &wanted.iter().map(|g| g % overflow.rows).collect::<Vec<_>>(), &mut timing)?;
+            // Padding repeats the first row; the server cannot see which rows.
+            let mut asked: Vec<usize> = wanted.iter().map(|g| g % overflow.rows).collect();
+            asked.resize(layout::padded_rows(wanted.len()), asked[0]);
+            let fetched = overflow.rows(&http, "overflow", &asked, &mut timing)?;
             let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / overflow.rows].clone()).collect();
-            timing.insert("overflowRows".into(), wanted.len() as u128);
+            timing.insert("overflowRows".into(), asked.len() as u128);
             Some(bytes[start as usize - first * ROW_BYTES..][..len].to_vec())
         }
     };
@@ -497,6 +548,7 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path) -> Result<(), Str
             let tip = manifest["snapshotTip"].as_u64().unwrap_or(0);
             json["confirmationsAtSnapshot"] = json!(tip.saturating_sub(json["blockHeight"].as_u64().unwrap_or(0)) + 1);
             json["found"] = json!(true);
+            json["partial"] = json!(partial);
             json
         }
     };

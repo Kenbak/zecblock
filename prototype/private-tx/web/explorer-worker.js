@@ -16,7 +16,7 @@ async function initialize() {
   await init();
   const text = new TextDecoder().decode((await bytes('/manifest')).body);
   const value = JSON.parse(text);
-  if (value.schema !== 'zecblock-private-explorer-test-v1' || !Number.isSafeInteger(value.snapshotTip)) throw new Error('manifest');
+  if (value.schema !== 'zecblock-private-explorer-test-v2' || !Number.isSafeInteger(value.snapshotTip)) throw new Error('manifest');
   // Public parameters are fetched for every table before any selection exists.
   const [main, overflow] = await Promise.all([bytes('/publics/main'), bytes('/publics/overflow')]);
   browser = new ExplorerPirBrowser(text, main.body, overflow.body);
@@ -37,6 +37,34 @@ async function ask(table, upload) {
   return { body, serverMs: Number(response.headers.get('x-server-ns') || 0) / 1e6 };
 }
 
+function toRecord(result) {
+  const detail = {
+    ...result,
+    isCanonical: true,
+    confirmations: manifest.snapshot.height - result.blockHeight + 1,
+    fee: zec(result.feeZat) ?? 0,
+    totalInput: zec(result.totalInputZat),
+    totalOutput: zec(result.totalOutputZat),
+    valueBalance: zec(result.valueBalanceZat),
+    valueBalanceSapling: zec(result.valueBalanceSaplingZat),
+    valueBalanceOrchard: zec(result.valueBalanceOrchardZat),
+    valueBalanceIronwood: zec(result.valueBalanceIronwoodZat),
+    hasShielded: Boolean(result.hasSprout || result.hasSapling || result.hasOrchard || result.hasIronwood),
+  };
+  return {
+    schema: 'zecblock-private-tx-record-v1', found: true, publicationId: manifest.publicationId, network: 'mainnet',
+    snapshot: manifest.snapshot, coverage: manifest.coverage, txid: result.txid, detail, raw: null, price: null,
+  };
+}
+
+function partialOf(result) {
+  return result.partial ? {
+    rows: result.fullRows, shownInputs: result.inputs.length, shownOutputs: result.outputs.length,
+    totalInputs: result.vinCount ?? result.inputs.length, totalOutputs: result.voutCount ?? result.outputs.length,
+  } : null;
+}
+
+// Every lookup is exactly one main-table request of the same shape.
 async function lookup({ requestId, txid }) {
   if (busy || !browser) return;
   busy = true;
@@ -49,49 +77,45 @@ async function lookup({ requestId, txid }) {
     const main = await ask('main', upload);
     const received = performance.now();
     self.postMessage({ type: 'stage', requestId, stage: 'decode' });
-    let result = JSON.parse(browser.decode_main(main.body));
-    let queryBytes = upload.length, responseBytes = main.body.length, overflowMs = 0, overflowRows = 0, serverMs = main.serverMs;
-    if (result.needsOverflow) {
-      overflowRows = result.needsOverflow;
-      const t = performance.now();
-      self.postMessage({ type: 'stage', requestId, stage: 'server', chunk: 2, chunks: 2 });
-      const more = browser.query_overflow();
-      const reply = await ask('overflow', more);
-      result = JSON.parse(browser.decode_overflow(reply.body));
-      queryBytes += more.length; responseBytes += reply.body.length; serverMs += reply.serverMs;
-      overflowMs = performance.now() - t;
-    }
+    const result = JSON.parse(browser.decode_main(main.body));
     const decoded = performance.now();
     if (result.found !== true) {
       self.postMessage({ type: 'error', requestId, message: `No confirmed transaction with this ID up to block ${manifest.snapshot.height.toLocaleString()}. The server cannot tell this lookup from a found one, and no public lookup was made.` });
       return;
     }
-    const detail = {
-      ...result,
-      isCanonical: true,
-      confirmations: manifest.snapshot.height - result.blockHeight + 1,
-      fee: zec(result.feeZat) ?? 0,
-      totalInput: zec(result.totalInputZat),
-      totalOutput: zec(result.totalOutputZat),
-      valueBalance: zec(result.valueBalanceZat),
-      valueBalanceSapling: zec(result.valueBalanceSaplingZat),
-      valueBalanceOrchard: zec(result.valueBalanceOrchardZat),
-      valueBalanceIronwood: zec(result.valueBalanceIronwoodZat),
-      hasShielded: Boolean(result.hasSprout || result.hasSapling || result.hasOrchard || result.hasIronwood),
-    };
-    const record = {
-      schema: 'zecblock-private-tx-record-v1', found: true, publicationId: manifest.publicationId, network: 'mainnet',
-      snapshot: manifest.snapshot, coverage: manifest.coverage, txid: result.txid, detail, raw: null, price: null,
-    };
-    self.postMessage({ type: 'result', requestId, result: record, measurements: {
-      queryBytes, responseBytes, encryptMs: encrypted - started, requestMs: received - encrypted,
-      serverMs, overflowRows, overflowMs, decodeMs: decoded - received - overflowMs, totalMs: decoded - started } });
+    self.postMessage({ type: 'result', requestId, result: toRecord(result), partial: partialOf(result), measurements: {
+      queryBytes: upload.length, responseBytes: main.body.length, encryptMs: encrypted - started, requestMs: received - encrypted,
+      serverMs: main.serverMs, decodeMs: decoded - received, totalMs: decoded - started } });
   } catch {
     self.postMessage({ type: 'error', requestId, message: 'The private response could not be decoded. No retry or public lookup was made.' });
+  } finally { busy = false; }
+}
+
+// Only on an explicit request: the padded full form of a previewed record.
+async function loadFull({ requestId }) {
+  if (busy || !browser) return;
+  busy = true;
+  const started = performance.now();
+  try {
+    self.postMessage({ type: 'stage', requestId, stage: 'query' });
+    const upload = browser.query_full();
+    const encrypted = performance.now();
+    self.postMessage({ type: 'stage', requestId, stage: 'server' });
+    const reply = await ask('overflow', upload);
+    const received = performance.now();
+    self.postMessage({ type: 'stage', requestId, stage: 'decode' });
+    const result = JSON.parse(browser.decode_full(reply.body));
+    const decoded = performance.now();
+    self.postMessage({ type: 'result', requestId, result: toRecord(result), partial: null, measurements: {
+      queryBytes: upload.length, responseBytes: reply.body.length, encryptMs: encrypted - started, requestMs: received - encrypted,
+      serverMs: reply.serverMs, decodeMs: decoded - received, totalMs: decoded - started, overflowRows: new DataView(upload.buffer, upload.byteOffset).getUint32(0, true) } });
+  } catch {
+    self.postMessage({ type: 'error', requestId, message: 'The full inputs and outputs could not be retrieved. No retry or public lookup was made.' });
   } finally { busy = false; }
 }
 
 self.addEventListener('message', event => {
   if (event.data?.type === 'initialize') initialize().catch(() => self.postMessage({ type: 'error', message: 'The private explorer publication could not be initialized.' }));
   else if (event.data?.type === 'lookup') lookup(event.data);
+  else if (event.data?.type === 'loadFull') loadFull(event.data);
 });

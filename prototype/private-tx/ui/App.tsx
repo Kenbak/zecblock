@@ -22,7 +22,8 @@ type Manifest = {
 type Sample = { txid: string; label?: string; height?: number };
 type Measurements = { queryBytes: number; responseBytes: number; encryptMs: number; requestMs: number; decodeMs: number; totalMs: number; [key: string]: number };
 const TXID = /^[a-f\d]{64}$/i;
-const EXPLORER = 'zecblock-private-explorer-test-v1';
+const EXPLORER = 'zecblock-private-explorer-test-v2';
+type PartialView = { rows: number; shownInputs: number; shownOutputs: number; totalInputs: number; totalOutputs: number };
 
 function fullRecord(value: unknown): PrivateRecord | null {
   if (!value || typeof value !== 'object') return null;
@@ -56,6 +57,7 @@ export function App() {
   const [record, setRecord] = useState<PrivateRecord | null>(null);
   const [transaction, setTransaction] = useState<TransactionData | null>(null);
   const [measurements, setMeasurements] = useState<Measurements | null>(null);
+  const [partial, setPartial] = useState<PartialView | null>(null);
 
   useEffect(() => {
     const workerUrl = document.querySelector<HTMLMetaElement>('meta[name="private-worker"]')?.content || '/worker.js';
@@ -70,7 +72,7 @@ export function App() {
         const changed = publicationRef.current !== null && publication !== null && publicationRef.current !== publication;
         publicationRef.current = publication;
         if (changed) {
-          setRecord(null);
+          setRecord(null); setPartial(null);
           setTransaction(null);
           setMeasurements(null);
           setError('');
@@ -133,11 +135,12 @@ export function App() {
         setRecord(decoded);
         setTransaction(transformed);
         setMeasurements(data.measurements);
+        setPartial(data.partial ?? null);
         setStatus('Lookup complete. Transaction data was decoded locally.');
       } else if (data.type === 'error') {
         setBusy(false);
         setStage(null);
-        setRecord(null);
+        setRecord(null); setPartial(null);
         setTransaction(null);
         setError(typeof data.message === 'string' ? data.message : 'The private lookup could not complete. No public lookup was attempted.');
         setStatus('Stopped safely. No ordinary transaction lookup was attempted.');
@@ -147,7 +150,7 @@ export function App() {
       event.preventDefault();
       setReady(false);
       setBusy(false);
-      setRecord(null);
+      setRecord(null); setPartial(null);
       setTransaction(null);
       setStage(null);
       setError('The browser worker could not continue. Reload this local page to restart it.');
@@ -163,14 +166,14 @@ export function App() {
     setError('');
     const selected = txid.trim().toLowerCase();
     if (!TXID.test(selected)) {
-      setRecord(null);
+      setRecord(null); setPartial(null);
       setTransaction(null);
       setMeasurements(null);
       setError('Enter exactly 64 hexadecimal characters. Validation stays in this browser.');
       return;
     }
     setBusy(true);
-    setRecord(null);
+    setRecord(null); setPartial(null);
     setTransaction(null);
     setMeasurements(null);
     setStage('query');
@@ -178,10 +181,18 @@ export function App() {
     workerRef.current?.postMessage({ type: 'lookup', requestId: ++requestRef.current, txid: selected });
   }
 
+  function loadFull() {
+    if (!ready || busy || !partial) return;
+    setBusy(true);
+    setStage('query');
+    setStatus('Preparing the padded full-record request in this browser.');
+    workerRef.current?.postMessage({ type: 'loadFull', requestId: requestRef.current });
+  }
+
   function clear() {
     if (busy) return;
     setTxid('');
-    setRecord(null);
+    setRecord(null); setPartial(null);
     setTransaction(null);
     setMeasurements(null);
     setError('');
@@ -223,9 +234,10 @@ export function App() {
 
       {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
       {collection && <p className="text-caption text-muted mb-4" id="collection-snapshot-warning">{snapshot ? 'The collection head is the newest segment snapshot. Older segments retain their captured observations; each result shows its own snapshot.' : 'The collection snapshot is unavailable.'} Current confirmation counts and spent status are unavailable.</p>}
-      {explorer && <p className="text-caption text-muted mb-4" id="explorer-warning">All-transactions test. Every lookup sends the same encrypted request to every main table, so the server cannot tell which transaction you chose or whether it exists. Large transactions need an extra overflow request, which reveals that the record is large. Raw transaction bytes are not included.</p>}
+      {explorer && <p className="text-caption text-muted mb-4" id="explorer-warning">All-transactions test. Every lookup is one encrypted request of the same size to every main table, so the server cannot tell which transaction you chose, whether it exists or how large it is. Large transactions show their first inputs and outputs; loading the rest is a separate request you choose to make. Raw transaction bytes are not included.</p>}
       {global && <p className="text-caption text-muted mb-4" id="global-index-warning">This experimental index covers the published records only. Every lookup receives the same complete encrypted bundle; results retain their own original snapshot. Full-history coverage and independent cryptographic review are pending.</p>}
       {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
+      {record && transaction && partial && <div className="private-publication-warning" id="partial-warning" role="status"><p>Large transaction: showing the first {partial.shownInputs.toLocaleString()} of {partial.totalInputs.toLocaleString()} inputs and {partial.shownOutputs.toLocaleString()} of {partial.totalOutputs.toLocaleString()} outputs. Fee, totals and counts are complete.</p><p className="text-caption text-muted mt-2">Loading the rest sends a second request for {partial.rows} encrypted rows. The server still cannot see which transaction, but it learns you opened a large one of about that size.</p><button type="button" className="btn btn-primary btn-md mt-3" id="load-full" disabled={busy} onClick={loadFull}>{busy ? 'Retrieving privately…' : 'Load all inputs and outputs privately'}</button></div>}
       {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
       {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[
         ['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`],
@@ -235,7 +247,7 @@ export function App() {
         ...(measurements.decodePrepareMs === undefined ? [] : [['Browser reply preparation (overlaps request)', formatMs(measurements.decodePrepareMs)]]),
         ['Browser decoding and verification', formatMs(measurements.decodeMs)],
         ...(measurements.serverMs === undefined ? [] : [['Server computation (all tables)', formatMs(measurements.serverMs)]]),
-        ...(measurements.overflowRows ? [['Overflow rows fetched', String(measurements.overflowRows)], ['Overflow request', formatMs(measurements.overflowMs)]] : []),
+        ...(measurements.overflowRows ? [['Overflow rows fetched (padded)', String(measurements.overflowRows)]] : []),
         ...(measurements.decoderCoefficientBytes === undefined ? [] : [['Cached public coefficients', `${measurements.decoderCoefficientBytes.toLocaleString()} bytes`]]),
       ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{measurements.decodePrepareMs !== undefined && <p>Browser reply preparation overlaps the request; these times cannot be added together. Coefficient bytes exclude other browser memory.</p>}</details>}
 

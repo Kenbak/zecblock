@@ -69,15 +69,16 @@ impl Table {
 }
 
 enum Pending {
-    Main { txid: [u8; 32], instance: usize, secrets: Vec<NativeSecret> },
-    Overflow { txid: [u8; 32], start: u64, len: usize, globals: Vec<u64>, secrets: Vec<NativeSecret> },
+    Main { txid: [u8; 32], secrets: Vec<NativeSecret> },
+    /// A preview was shown; the full record can be fetched on request.
+    Preview { txid: [u8; 32], start: u64, len: usize },
+    Full { txid: [u8; 32], start: u64, len: usize, globals: Vec<u64>, secrets: Vec<NativeSecret> },
 }
 
 #[wasm_bindgen]
 pub struct ExplorerPirBrowser {
     main: Table,
     overflow: Table,
-    total_rows: u64,
     snapshot_tip: u64,
     pending: Option<Pending>,
 }
@@ -92,65 +93,64 @@ impl ExplorerPirBrowser {
         }
         let main = Table::new("main", &manifest.main, main_publics).map_err(|e| JsValue::from_str(&e))?;
         let overflow = Table::new("overflow", &manifest.overflow, overflow_publics).map_err(|e| JsValue::from_str(&e))?;
-        Ok(ExplorerPirBrowser {
-            total_rows: (manifest.main.instances * manifest.main.rows) as u64,
-            snapshot_tip: manifest.snapshot_tip,
-            main,
-            overflow,
-            pending: None,
-        })
+        Ok(ExplorerPirBrowser { snapshot_tip: manifest.snapshot_tip, main, overflow, pending: None })
     }
 
-    /// Encrypted main-table request for a displayed txid.
+    /// Encrypted main-table request for a displayed txid. Every lookup has
+    /// this same shape, whatever the transaction.
     pub fn query_main(&mut self, txid_hex: &str) -> Result<Vec<u8>, JsValue> {
         let txid: [u8; 32] = hex::decode(txid_hex.trim())
             .ok()
             .and_then(|b| b.try_into().ok())
             .ok_or_else(|| JsValue::from_str("Enter a 64-character transaction ID"))?;
-        let global = layout::row_of(&txid, self.total_rows) as usize;
-        let (secrets, body) = self.main.query(&[global % self.main.rows]).map_err(|e| JsValue::from_str(&e))?;
-        self.pending = Some(Pending::Main { txid, instance: global / self.main.rows, secrets });
+        let row = layout::row_of(&txid, self.main.rows as u64) as usize;
+        let (secrets, body) = self.main.query(&[row]).map_err(|e| JsValue::from_str(&e))?;
+        self.pending = Some(Pending::Main { txid, secrets });
         Ok(body)
     }
 
-    /// Either a finished result, or `{"needsOverflow":rows}` after which the
-    /// page sends `query_overflow()` and passes its reply to `decode_overflow`.
+    /// The result JSON. A large transaction comes back as a preview with
+    /// `partial: true` and `fullRows`, the padded row count `query_full`
+    /// would request.
     pub fn decode_main(&mut self, reply: &[u8]) -> Result<String, JsValue> {
-        let Some(Pending::Main { txid, instance, secrets }) = self.pending.take() else {
+        let Some(Pending::Main { txid, secrets }) = self.pending.take() else {
             return Err(JsValue::from_str("no main query is pending"));
         };
         let rows = self.main.decode(&secrets, reply).map_err(|e| JsValue::from_str(&e))?;
-        match layout::find(&rows[0][instance], &txid).map_err(|e| JsValue::from_str(&e))? {
+        match layout::find(&rows[0].concat(), &txid).map_err(|e| JsValue::from_str(&e))? {
             layout::Entry::Absent => Ok(json!({"found":false,"txid":hex::encode(txid),"snapshotTip":self.snapshot_tip}).to_string()),
-            layout::Entry::Inline(bytes) => self.finish(txid, &bytes),
-            layout::Entry::Overflow { start, len } => {
-                let globals: Vec<u64> = layout::overflow_rows(start, len).collect();
-                let count = globals.len();
-                self.pending = Some(Pending::Overflow { txid, start, len, globals, secrets: Vec::new() });
-                Ok(json!({"needsOverflow":count}).to_string())
+            layout::Entry::Inline(bytes) => self.finish(txid, &bytes, None),
+            layout::Entry::Preview { preview, start, len } => {
+                let rows = layout::padded_rows(layout::overflow_rows(start, len).count());
+                self.pending = Some(Pending::Preview { txid, start, len });
+                self.finish(txid, &preview, Some(rows))
             }
         }
     }
 
-    pub fn query_overflow(&mut self) -> Result<Vec<u8>, JsValue> {
-        let Some(Pending::Overflow { globals, secrets, .. }) = self.pending.as_mut() else {
-            return Err(JsValue::from_str("no overflow fetch is pending"));
+    /// Padded overflow request for the full form of the last preview.
+    pub fn query_full(&mut self) -> Result<Vec<u8>, JsValue> {
+        let Some(Pending::Preview { txid, start, len }) = self.pending.take() else {
+            return Err(JsValue::from_str("no preview is pending"));
         };
-        let local: Vec<usize> = globals.iter().map(|g| *g as usize % self.overflow.rows).collect();
-        let (new_secrets, body) = self.overflow.query(&local).map_err(|e| JsValue::from_str(&e))?;
-        *secrets = new_secrets;
+        let globals: Vec<u64> = layout::overflow_rows(start, len).collect();
+        let mut local: Vec<usize> = globals.iter().map(|g| *g as usize % self.overflow.rows).collect();
+        // Padding repeats the first row; the server cannot see which rows.
+        local.resize(layout::padded_rows(local.len()), local[0]);
+        let (secrets, body) = self.overflow.query(&local).map_err(|e| JsValue::from_str(&e))?;
+        self.pending = Some(Pending::Full { txid, start, len, globals, secrets });
         Ok(body)
     }
 
-    pub fn decode_overflow(&mut self, reply: &[u8]) -> Result<String, JsValue> {
-        let Some(Pending::Overflow { txid, start, len, globals, secrets }) = self.pending.take() else {
-            return Err(JsValue::from_str("no overflow fetch is pending"));
+    pub fn decode_full(&mut self, reply: &[u8]) -> Result<String, JsValue> {
+        let Some(Pending::Full { txid, start, len, globals, secrets }) = self.pending.take() else {
+            return Err(JsValue::from_str("no full-record fetch is pending"));
         };
         let rows = self.overflow.decode(&secrets, reply).map_err(|e| JsValue::from_str(&e))?;
         let bytes: Vec<u8> = globals.iter().zip(&rows).flat_map(|(g, per)| per[*g as usize / self.overflow.rows].clone()).collect();
         let offset = (start - globals[0] * layout::ROW_BYTES as u64) as usize;
         let record = bytes.get(offset..offset + len).ok_or_else(|| JsValue::from_str("overflow record exceeds fetched rows"))?;
-        self.finish(txid, record)
+        self.finish(txid, record, None)
     }
 
     #[wasm_bindgen(getter)]
@@ -158,10 +158,14 @@ impl ExplorerPirBrowser {
         self.snapshot_tip as f64
     }
 
-    fn finish(&self, txid: [u8; 32], bytes: &[u8]) -> Result<String, JsValue> {
+    fn finish(&self, txid: [u8; 32], bytes: &[u8], full_rows: Option<usize>) -> Result<String, JsValue> {
         let mut json = Record::decode(txid, bytes).map_err(|e| JsValue::from_str(&e))?.to_json();
         json["found"] = json!(true);
         json["snapshotTip"] = json!(self.snapshot_tip);
+        json["partial"] = json!(full_rows.is_some());
+        if let Some(rows) = full_rows {
+            json["fullRows"] = json!(rows);
+        }
         Ok(json.to_string())
     }
 }

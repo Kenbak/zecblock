@@ -383,7 +383,9 @@ fn main() {
             (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads, web.first().map(Path::new)),
             _ => Err("invalid port or threads".into()),
         },
-        [_, mode, addr, txid] if mode == "explorer-lookup" => explorer::lookup(addr, txid, &explorer::default_cache()),
+        [_, mode, addr, txid, full @ ..] if mode == "explorer-lookup" && (full.is_empty() || full == ["full"]) => {
+            explorer::lookup(addr, txid, &explorer::default_cache(), !full.is_empty())
+        }
         [_, mode, dir] if mode == "serve" => serve(Path::new(dir)),
         _ => Err("Usage: zecblock-pir-fixture prepare|serve <directory> | prepare-full <source.json> <directory> [--debug-oracle] | prepare-full-legacy <source.json> <directory> | plan-full <source.json> | plan-global|plan-global-compact|measure-global <source.json> | prepare-global|prepare-global-compact <source.json> <NEW-directory> | prepare-global-poison-test <clean-directory> <NEW-directory> <layer> <row> <payload-offset> | serve-global|serve-global-cached <directory> | profile-global <directory> [--mode baseline|cached|compare] [--layers N|all] [--iterations N] | benchmark-matvec <directory> [iterations]".into()),
     };

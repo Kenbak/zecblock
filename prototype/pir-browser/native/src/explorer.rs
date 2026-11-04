@@ -15,7 +15,7 @@
 //! a preview's full lists touches the overflow table; that request is padded
 //! to a power-of-two row count and reveals the coarse size class.
 use super::chunk_spike::{parallel_multiply, parallel_multiply_batch, preprocess_blocks};
-use super::explorer_record::{Record, parse_export_line, publication};
+use super::explorer_record::{BLOCK_POINTER, BLOCK_VERSION, BlockRecord, Record, block_height_key, parse_block_line, parse_export_line, publication};
 use super::*;
 use memmap2::{Mmap, MmapMut};
 use rayon::prelude::*;
@@ -115,7 +115,71 @@ pub(super) fn encode(out_path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Block lines (stdin) -> records file: each block's record under its height
+/// key, and a `[BLOCK_POINTER][var height]` entry under its hash.
+pub(super) fn encode_blocks(out_path: &Path) -> Result<(), String> {
+    let stdin = io::stdin();
+    let mut lines = stdin.lock().lines();
+    let mut writer = BufWriter::with_capacity(8 << 20, File::create(out_path).map_err(io_err)?);
+    let (mut blocks, mut bytes, mut max_height, mut largest) = (0u64, 0u64, 0u32, 0usize);
+    let start = Instant::now();
+    loop {
+        let batch: Vec<String> = lines.by_ref().take(20_000).collect::<Result<_, _>>().map_err(io_err)?;
+        if batch.is_empty() {
+            break;
+        }
+        let encoded: Vec<(u32, [u8; 32], Vec<u8>)> = batch.par_iter()
+            .map(|line| parse_block_line(line).map(|b| (b.height, b.hash, b.encode())).map_err(|e| format!("{e}: {}", &line[..line.len().min(80)])))
+            .collect::<Result<_, String>>()?;
+        for (height, hash, body) in encoded {
+            let mut pointer = vec![BLOCK_POINTER];
+            layout::put_var(&mut pointer, u64::from(height));
+            for (key, entry) in [(block_height_key(height), &body), (hash, &pointer)] {
+                writer.write_all(&key).map_err(io_err)?;
+                writer.write_all(&(entry.len() as u32).to_le_bytes()).map_err(io_err)?;
+                writer.write_all(entry).map_err(io_err)?;
+            }
+            blocks += 1;
+            bytes += body.len() as u64;
+            max_height = max_height.max(height);
+            largest = largest.max(body.len());
+        }
+    }
+    writer.flush().map_err(io_err)?;
+    println!("{}", json!({"blocks":blocks,"recordBytes":bytes,"maxHeight":max_height,"largestRecord":largest,"seconds":start.elapsed().as_secs_f64()}));
+    Ok(())
+}
+
 // ---- build ---------------------------------------------------------------------
+
+/// What a publication's records are.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum Kind {
+    Tx,
+    Block,
+}
+
+impl Kind {
+    fn name(self) -> &'static str {
+        match self { Kind::Tx => "tx", Kind::Block => "block" }
+    }
+
+    fn preview(self, key: [u8; 32], full: &[u8], max: usize) -> Result<Vec<u8>, String> {
+        match self {
+            Kind::Tx => Ok(Record::decode(key, full)?.preview(max)),
+            Kind::Block => Ok(BlockRecord::decode(full)?.preview(max)),
+        }
+    }
+
+    /// Height and block hash a record belongs to; None for block pointers.
+    fn position(self, key: [u8; 32], body: &[u8]) -> Result<Option<(u32, [u8; 32])>, String> {
+        match self {
+            Kind::Tx => Record::decode(key, body).map(|r| Some((r.height, r.block_hash))),
+            Kind::Block if body.first() == Some(&BLOCK_VERSION) => BlockRecord::decode(body).map(|b| Some((b.height, b.hash))),
+            Kind::Block => Ok(None),
+        }
+    }
+}
 
 fn write_overflow(maps: &mut [MmapMut], cursor: &mut u64, rows: usize, limit: u64, bytes: &[u8]) -> Result<u64, String> {
     let start = *cursor;
@@ -176,10 +240,10 @@ impl<'a> Body<'a> {
         ENTRY_HEADER + match self { Body::Full(full) | Body::Spent(full) => full.len(), Body::Preview { bytes, .. } => PREVIEW_POINTER + bytes.len() }
     }
     /// Halves the entry's preview budget; false when it cannot get smaller.
-    fn shrink(&mut self, txid: [u8; 32]) -> Result<bool, String> {
+    fn shrink(&mut self, kind: Kind, txid: [u8; 32]) -> Result<bool, String> {
         let full: &'a [u8] = match self { Body::Full(full) | Body::Preview { full, .. } => full, Body::Spent(_) => return Ok(false) };
         let current = self.entry_bytes();
-        let bytes = Record::decode(txid, full)?.preview((current - ENTRY_HEADER - PREVIEW_POINTER).min(PREVIEW_MAX) / 2);
+        let bytes = kind.preview(txid, full, (current - ENTRY_HEADER - PREVIEW_POINTER).min(PREVIEW_MAX) / 2)?;
         if ENTRY_HEADER + PREVIEW_POINTER + bytes.len() >= current {
             return Ok(false);
         }
@@ -209,7 +273,7 @@ fn spent_markers(data: &[u8], index: &[(usize, usize)]) -> Result<Vec<([u8; 32],
 
 /// `base_tip` marks a recent publication: blocks after the base snapshot,
 /// plus spent markers for base transactions those blocks spend.
-pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip: Option<u64>) -> Result<(), String> {
+pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip: Option<u64>, kind: Kind) -> Result<(), String> {
     fs::create_dir(dir).map_err(io_err)?;
     let start = Instant::now();
     let file = File::open(records_path).map_err(io_err)?;
@@ -237,13 +301,35 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
     let (tip_height, tip_hash) = (0..index.len()).into_par_iter()
         .map(|i| {
             let (offset, len) = index[i];
-            Record::decode(txid_at(i), &data[offset + 36..offset + 36 + len]).map(|r| (r.height, r.block_hash))
+            kind.position(txid_at(i), &data[offset + 36..offset + 36 + len]).map(|p| p.unwrap_or((0, [0u8; 32])))
         })
         .try_reduce(|| (0, [0u8; 32]), |a, b| Ok(if b.0 > a.0 { b } else { a }))?;
     if u64::from(tip_height) != snapshot_tip {
         return Err(format!("records end at block {tip_height}, not the declared tip {snapshot_tip}"));
     }
-    let markers = if base_tip.is_some() { spent_markers(&data, &index)? } else { Vec::new() };
+    let markers = if base_tip.is_some() && kind == Kind::Tx { spent_markers(&data, &index)? } else { Vec::new() };
+    // A block publication carries the public homepage feed: the same bytes
+    // for every visitor, bound to the signed manifest by its hash.
+    let feed = if kind == Kind::Block {
+        let mut latest: Vec<BlockRecord> = (0..index.len()).into_par_iter()
+            .filter_map(|i| {
+                let (offset, len) = index[i];
+                let body = &data[offset + 36..offset + 36 + len];
+                (body.first() == Some(&BLOCK_VERSION)).then(|| BlockRecord::decode(body))
+            })
+            .collect::<Result<_, _>>()?;
+        latest.sort_unstable_by(|a, b| b.height.cmp(&a.height));
+        latest.truncate(10);
+        let blocks: Vec<Value> = latest.iter().map(|b| json!({"height":b.height,"hash":hex::encode(b.hash),"timestamp":b.time,
+            "transaction_count":b.tx_count,"size":b.size,"total_fees":b.total_fees.map(|f| f.to_string()),"miner_address":b.miner_address})).collect();
+        let txs: Vec<Value> = latest.iter().flat_map(|b| b.txs.iter().rev().map(move |t| (b, t))).take(10).map(|(b, t)| json!({
+            "txid":hex::encode(t.txid),"block_height":b.height,"timestamp":b.time,"is_coinbase":t.flags & 1 != 0,
+            "has_shielded":t.flags & 0b11110 != 0,"total_output":t.total_output.map(|v| v.to_string()),"fee":t.fee.map(|v| v.to_string())})).collect();
+        let bytes = serde_json::to_vec(&json!({"snapshotTip":snapshot_tip,"blocks":blocks,"transactions":txs})).map_err(io_err)?;
+        Some(bytes)
+    } else {
+        None
+    };
     estimate += markers.iter().map(|(_, bitmap)| (ENTRY_HEADER + bitmap.len()) as u64).sum::<u64>();
     let (instances, rows) = instance_rows((estimate as f64 / (PAYLOAD as f64 * TARGET_FILL)).ceil() as usize);
     let bucket_bytes = instances * PAYLOAD;
@@ -285,7 +371,7 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             let body = if len <= INLINE_MAX {
                 Body::Full(full)
             } else {
-                Body::Preview { full, bytes: Record::decode(txid, full)?.preview(PREVIEW_MAX) }
+                Body::Preview { full, bytes: kind.preview(txid, full, PREVIEW_MAX)? }
             };
             entries.push((tag, txid, body));
         }
@@ -298,7 +384,7 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
                     .ok_or_else(|| format!("bucket {bucket} cannot fit even zero-list previews"))?;
                 let (_, txid, body) = &mut entries[pick];
                 let (before, was_full) = (body.entry_bytes(), matches!(body, Body::Full(_)));
-                if body.shrink(*txid)? {
+                if body.shrink(kind, *txid)? {
                     used = used - before + body.entry_bytes();
                     demoted_small += u64::from(was_full);
                 } else {
@@ -337,7 +423,7 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
     for map in main.iter().chain(overflow.iter()) {
         map.flush().map_err(io_err)?;
     }
-    let manifest = json!({"schema":layout::SCHEMA_NAME,"network":"mainnet","snapshotTip":snapshot_tip,"tipHash":hex::encode(tip_hash),
+    let manifest = json!({"schema":layout::SCHEMA_NAME,"kind":kind.name(),"network":"mainnet","snapshotTip":snapshot_tip,"tipHash":hex::encode(tip_hash),
         "baseTip":base_tip,"spentMarkers":markers.len(),"payloadBytes":PAYLOAD,"proofDepth":{"main":layout::depth(rows),"overflow":layout::depth(overflow_rows)},
         "proveSeconds":prove_seconds,
         "records":index.len(),"rowBytes":ROW_BYTES,"builtAt":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(io_err)?.as_secs(),
@@ -346,6 +432,11 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             "maxBucketBytesUsed":max_used,"previews":previews,"demotedSmallRecords":demoted_small,"bucketsWithDemotions":demoted_buckets},
         "overflow":{"instances":overflow_instances,"rows":overflow_rows,"roots":overflow_roots,"bytesUsed":cursor,"largeRecords":large},
         "buildSeconds":start.elapsed().as_secs_f64()});
+    let mut manifest = manifest;
+    if let Some(feed) = &feed {
+        fs::write(dir.join("feed.json"), feed).map_err(io_err)?;
+        manifest["feedSha256"] = json!(hex::encode(sha2::Sha256::digest(feed)));
+    }
     fs::write(dir.join("manifest.json"), serde_json::to_vec_pretty(&manifest).map_err(io_err)?).map_err(io_err)?;
     println!("{manifest}");
     Ok(())
@@ -591,11 +682,14 @@ fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: 
 
 /// Everything a connection thread needs; query work goes to the scheduler.
 struct Shared {
-    base: PublicationSet,
-    recent: PublicationSet,
+    sets: Vec<(&'static str, Option<&'static str>, PublicationSet)>,
     web: Option<PathBuf>,
     jobs: Mutex<mpsc::Sender<Job>>,
 }
+
+/// Publication sets under the serving root: each base set, and the recent
+/// set that extends it. Only `base` is required.
+const SETS: [(&str, Option<&str>, usize); 4] = [("base", None, 1), ("recent", Some("base"), 8), ("blocks", None, 1), ("blocks-recent", Some("blocks"), 8)];
 
 impl Shared {
     fn query(&self, table: Arc<Table>, body: &[u8]) -> Result<(Vec<u8>, String), String> {
@@ -605,14 +699,21 @@ impl Shared {
         answer.recv().map_err(|_| "scheduler stopped".to_string())?
     }
 
-    fn current_base(&self) -> Option<Arc<Publication>> {
-        self.base.read().unwrap().last().cloned()
+    fn set(&self, name: &str) -> Option<&(&'static str, Option<&'static str>, PublicationSet)> {
+        self.sets.iter().find(|(n, _, _)| *n == name)
     }
 
-    /// The newest recent table built on the current base.
-    fn current_recent(&self) -> Option<Arc<Publication>> {
-        let tip = self.current_base()?.tip;
-        self.recent.read().unwrap().iter().rev().find(|p| p.base_tip == Some(tip)).cloned()
+    /// A base set's loaded publication, or the newest recent table built on
+    /// its base's current publication.
+    fn current(&self, name: &str) -> Option<Arc<Publication>> {
+        let (_, parent, set) = self.set(name)?;
+        match parent {
+            None => set.read().unwrap().last().cloned(),
+            Some(parent) => {
+                let tip = self.current(parent)?.tip;
+                set.read().unwrap().iter().rev().find(|p| p.base_tip == Some(tip)).cloned()
+            }
+        }
     }
 
     fn handle(&self, stream: &mut TcpStream) -> Result<(), String> {
@@ -621,20 +722,23 @@ impl Shared {
             Some(p) => respond(stream, "200 OK", "application/json", &format!("X-Publication-Id: {}\r\nCache-Control: no-store\r\n", p.id), &p.manifest).map_err(io_err),
             None => respond(stream, "404 Not Found", "text/plain", "", b"no publication").map_err(io_err),
         };
-        match route.as_str() {
-            "GET /manifest" => manifest(stream, self.current_base()),
-            "GET /recent/manifest" => manifest(stream, self.current_recent()),
-            r if r.starts_with("GET /base/") || r.starts_with("POST /base/") || r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
-                let path = &r[r.find(' ').unwrap() + 2..];
-                let (set, rest) = path.split_once('/').ok_or("bad path")?;
+        let path = route.split_once(' ').map(|(_, p)| p.trim_start_matches('/')).unwrap_or("");
+        let named = path.split_once('/').and_then(|(name, rest)| self.set(name).map(|s| (s, rest)));
+        match (route.as_str(), named) {
+            ("GET /manifest", _) => manifest(stream, self.current("base")),
+            (_, Some(((name, _, _), "manifest"))) if route.starts_with("GET ") => manifest(stream, self.current(name)),
+            (r, Some(((_, _, set), rest))) => {
                 let (id, rest) = rest.split_once('/').ok_or("bad path")?;
-                let set = if set == "base" { &self.base } else { &self.recent };
                 let Some(publication) = set.read().unwrap().iter().find(|p| p.id == id).cloned() else {
                     return respond(stream, "410 Gone", "text/plain", "", b"publication replaced").map_err(io_err);
                 };
                 let table = |name: &str| match name { "main" => Ok(publication.main.clone()), "overflow" => Ok(publication.overflow.clone()), _ => Err("unknown table".to_string()) };
                 match (r.starts_with("POST"), rest.split_once('/').unwrap_or((rest, ""))) {
                     (false, ("manifest.sig", "")) => respond(stream, "200 OK", "application/octet-stream", "", &publication.signature).map_err(io_err),
+                    (false, ("feed.json", "")) => match fs::read(publication.target.join("feed.json")) {
+                        Ok(feed) => respond(stream, "200 OK", "application/json", "Cache-Control: no-store\r\n", &feed).map_err(io_err),
+                        Err(_) => respond(stream, "404 Not Found", "text/plain", "", b"no feed").map_err(io_err),
+                    },
                     (false, ("publics", kind)) => respond(stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
                     (true, ("query", kind)) => {
                         let (out, timing) = self.query(table(kind)?, &body)?;
@@ -643,7 +747,7 @@ impl Shared {
                     _ => respond(stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
                 }
             }
-            r if r.starts_with("GET /") && self.web.is_some() && !r.contains("..") => {
+            (r, None) if r.starts_with("GET /") && self.web.is_some() && !r.contains("..") => {
                 let name = match r["GET /".len()..].split('?').next().unwrap_or("") { "" => "index.html", other => other };
                 let kind = match name.rsplit('.').next() {
                     Some("html") => "text/html; charset=utf-8",
@@ -668,25 +772,23 @@ impl Shared {
 /// Most connections handled at once; further ones get 503.
 const MAX_CONNECTIONS: usize = 256;
 
-/// `base_root` and `recent_root` each hold a `current` symlink to a signed
-/// publication directory; both are followed and swapped without a restart.
-pub(super) fn serve(base_root: &Path, port: u16, threads: usize, web: Option<&Path>, recent_root: Option<&Path>) -> Result<(), String> {
+/// `root` holds one directory per publication set (see SETS), each with a
+/// `current` symlink to a signed publication; all are followed and swapped
+/// without a restart.
+pub(super) fn serve(root: &Path, port: u16, threads: usize, web: Option<&Path>) -> Result<(), String> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
     let loader = rayon::ThreadPoolBuilder::new().num_threads(threads.min(4)).build().map_err(io_err)?;
-    let (base, recent): (PublicationSet, PublicationSet) = Default::default();
+    let sets: Vec<_> = SETS.iter().map(|&(name, parent, _)| (name, parent, PublicationSet::default())).collect();
     // The first base loads with every thread before the listener opens.
-    let first = fs::canonicalize(base_root.join("current")).map_err(|_| "base root has no current publication".to_string())?;
+    let first = fs::canonicalize(root.join("base/current")).map_err(|_| "no base publication under root".to_string())?;
     let start = Instant::now();
-    base.write().unwrap().push(Arc::new(Publication::load(&first, &pool)?));
+    sets[0].2.write().unwrap().push(Arc::new(Publication::load(&first, &pool)?));
     eprintln!("{}", json!({"loaded":first.display().to_string(),"seconds":start.elapsed().as_secs_f64(),"threads":threads,"maxBatch":MAX_BATCH}));
-    let mut roots = vec![(base_root.to_owned(), base.clone(), 1)];
-    if let Some(root) = recent_root {
-        roots.push((root.to_owned(), recent.clone(), 8));
-    }
+    let roots = SETS.iter().zip(&sets).map(|(&(name, _, keep), (_, _, set))| (root.join(name), set.clone(), keep)).collect();
     std::thread::spawn(move || watch(roots, loader));
     let (sender, jobs) = mpsc::channel();
     std::thread::spawn(move || schedule(jobs, pool));
-    let shared = Arc::new(Shared { base, recent, web: web.map(Path::to_owned), jobs: Mutex::new(sender) });
+    let shared = Arc::new(Shared { sets, web: web.map(Path::to_owned), jobs: Mutex::new(sender) });
     let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(io_err)?;
     eprintln!("Private explorer listening on http://127.0.0.1:{port}");

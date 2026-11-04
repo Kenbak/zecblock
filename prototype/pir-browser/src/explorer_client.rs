@@ -6,7 +6,7 @@
 //! ZecBlock key, and every decrypted row must prove itself against the
 //! signed roots before its bytes are read. A "not found" is therefore proven
 //! too: the whole verified bucket lacks the txid.
-use crate::explorer_record::{Record, layout, publication};
+use crate::explorer_record::{BLOCK_POINTER, BlockRecord, Record, block_height_key, layout, publication};
 use reinspiring::native::{NativeDecoder, NativeDecodingState};
 use serde_json::json;
 use wasm_bindgen::prelude::*;
@@ -120,10 +120,18 @@ enum Pending {
     Full { txid: [u8; 32], start: u64, len: usize, globals: Vec<u64>, queries: Vec<Query> },
 }
 
+/// Lookup key (hex) of the block at `height` in a block publication.
+#[wasm_bindgen]
+pub fn block_key(height: u32) -> String {
+    hex::encode(block_height_key(height))
+}
+
 #[wasm_bindgen]
 pub struct ExplorerPirBrowser {
     main: Table,
     overflow: Table,
+    /// "tx" or "block".
+    kind: String,
     snapshot_tip: u64,
     publication_id: String,
     pending: Option<Pending>,
@@ -141,7 +149,11 @@ impl ExplorerPirBrowser {
             use sha2::{Digest, Sha256};
             hex::encode(&Sha256::digest(manifest)[..12])
         };
-        Ok(ExplorerPirBrowser { snapshot_tip: verified.tip, publication_id: id, main, overflow, pending: None })
+        let kind = verified.value["kind"].as_str().unwrap_or("tx").to_owned();
+        if kind != "tx" && kind != "block" {
+            return Err(JsValue::from_str("unsupported publication kind"));
+        }
+        Ok(ExplorerPirBrowser { snapshot_tip: verified.tip, publication_id: id, kind, main, overflow, pending: None })
     }
 
     /// Encrypted main-table request for a displayed txid. Every lookup has
@@ -193,6 +205,13 @@ impl ExplorerPirBrowser {
         Ok(result.to_string())
     }
 
+    /// One main-table query for row 0 whose reply is discarded: the second
+    /// round of a block search that round one already answered. Leaves the
+    /// pending lookup (and any preview) untouched.
+    pub fn query_dummy_main(&self) -> Result<Vec<u8>, JsValue> {
+        Ok(self.main.query(&[0]).map_err(js)?.1)
+    }
+
     /// `count` overflow queries for row 0, sent to the publication that does
     /// not hold the record while the other fetches its full form, so both
     /// tables always see the same padded request.
@@ -239,7 +258,23 @@ impl ExplorerPirBrowser {
     }
 
     fn finish(&self, txid: [u8; 32], bytes: &[u8], full_rows: Option<usize>) -> Result<serde_json::Value, JsValue> {
-        let mut json = Record::decode(txid, bytes).map_err(js)?.to_json();
+        let mut json = if self.kind == "tx" {
+            Record::decode(txid, bytes).map_err(js)?.to_json()
+        } else if bytes.first() == Some(&BLOCK_POINTER) {
+            // A block hash resolves to its height; the record is under that key.
+            let mut at = 1;
+            let height = bytes[1..].iter().take(5).enumerate().try_fold(0u64, |v, (i, &b)| {
+                at += 1;
+                let v = v | u64::from(b & 0x7f) << (7 * i);
+                if b & 0x80 == 0 { Err(v) } else { Ok(v) }
+            }).err().ok_or_else(|| JsValue::from_str("bad block pointer"))?;
+            if at != bytes.len() {
+                return Err(JsValue::from_str("bad block pointer"));
+            }
+            json!({"pointer": height})
+        } else {
+            BlockRecord::decode(bytes).map_err(js)?.to_json()
+        };
         json["found"] = json!(true);
         json["verified"] = json!(true);
         json["snapshotTip"] = json!(self.snapshot_tip);

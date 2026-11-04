@@ -1,16 +1,20 @@
-// Worker for the private explorer. The txid, its rows and decryption secrets
+// Worker for the private explorer. Search terms, rows and decryption secrets
 // stay inside WASM in this worker; requests carry only opaque encrypted bytes.
 // No public API is ever called.
 //
-// Two publications answer every lookup: the large base snapshot and a small
-// recent table (blocks since the base, rebuilt every few minutes, plus
-// "spent since the base" markers). Both are always asked with the same shape,
-// so the server cannot tell an old transaction from a new one or a miss.
-import init, { ExplorerPirBrowser } from '/wasm/zecblock_pir_browser.js';
+// Each kind of record (transactions, blocks) is a pair of publications: a
+// large base snapshot and a small recent table (blocks since the base,
+// rebuilt every few minutes; for transactions also "spent since the base"
+// markers). Both are always asked with the same shape, so the server cannot
+// tell an old record from a new one or a miss. Every publication is signed
+// with the pinned ZecBlock key and every row is checked against its roots.
+import init, { ExplorerPirBrowser, block_key } from '/wasm/zecblock_pir_browser.js';
 
 const SCHEMA = 'zecblock-private-explorer-v3';
-// `base` and `recent` are { browser, id, info } for verified publications.
-let base, recent = null, busy = false, last = null, ready = null;
+// pair: { name, baseSet, recentSet, base, recent }, each publication { browser, id, info }.
+const tx = { name: 'tx', baseSet: 'base', recentSet: 'recent', base: null, recent: null };
+const blocks = { name: 'block', baseSet: 'blocks', recentSet: 'blocks-recent', base: null, recent: null };
+let busy = false, last = null, ready = null, feed = null;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
 async function bytes(path, init = {}) {
@@ -20,9 +24,11 @@ async function bytes(path, init = {}) {
   return { body: new Uint8Array(await response.arrayBuffer()), response };
 }
 const zec = zat => zat == null ? null : Number(BigInt(zat)) / 1e8;
-const tip = () => recent?.info.snapshotTip ?? base.info.snapshotTip;
+const tipOf = pair => pair.recent?.info.snapshotTip ?? pair.base?.info.snapshotTip ?? 0;
+const tip = () => Math.max(tipOf(tx), tipOf(blocks));
 const hex = bytes => [...new Uint8Array(bytes)].map(b => b.toString(16).padStart(2, '0')).join('');
-const publicationId = async manifest => hex(await crypto.subtle.digest('SHA-256', manifest)).slice(0, 24);
+const sha256 = async data => hex(await crypto.subtle.digest('SHA-256', data));
+const publicationId = async manifest => (await sha256(manifest)).slice(0, 24);
 
 // Fetches a signed publication. The WASM constructor rejects it unless the
 // signature is from the pinned ZecBlock key; rows are then checked against
@@ -42,53 +48,118 @@ async function open(set, manifestPath) {
 }
 
 function publication() {
-  const builtAt = recent?.info.builtAt ?? base.info.builtAt;
+  const builtAt = tx.recent?.info.builtAt ?? tx.base.info.builtAt;
   return {
     schema: SCHEMA,
-    publicationId: base.id,
+    publicationId: tx.base.id,
     network: 'mainnet',
     snapshot: { height: tip(), hash: '', publishedAt: Number.isSafeInteger(builtAt) ? new Date(builtAt * 1000).toISOString() : new Date(0).toISOString() },
     coverage: { startHeight: 0, endHeight: tip(), complete: true },
-    sourceSummary: { recordCount: base.info.records + (recent?.info.records ?? 0) },
+    sourceSummary: { recordCount: tx.base.info.records + (tx.recent?.info.records ?? 0) },
+    blocks: Boolean(blocks.base),
   };
+}
+
+// The homepage feed: the same signed bytes for every visitor.
+async function loadFeed() {
+  const source = blocks.recent ? [blocks.recentSet, blocks.recent] : blocks.base ? [blocks.baseSet, blocks.base] : null;
+  if (!source || !source[1].info.feedSha256) return;
+  const [set, publication] = source;
+  if (feed?.id === publication.id) return;
+  const { body } = await bytes(`/${set}/${publication.id}/feed.json`);
+  if (await sha256(body) !== publication.info.feedSha256) throw new Error('feed does not match the signed manifest');
+  feed = { id: publication.id, data: JSON.parse(new TextDecoder().decode(body)) };
+  self.postMessage({ type: 'feed', feed: feed.data });
+}
+
+async function refreshPair(pair) {
+  if (!pair.base) return;
+  const response = await fetch(`/${pair.recentSet}/manifest`, options(AbortSignal.timeout(30_000)));
+  if (response.status === 404) { pair.recent = null; return; }
+  if (!response.ok) throw new Error('transport');
+  const manifest = new Uint8Array(await response.arrayBuffer());
+  if (await publicationId(manifest) === pair.recent?.id) return;
+  const next = await open(pair.recentSet, `/${pair.recentSet}/manifest`);
+  if (next && next.info.baseTip !== pair.base.info.snapshotTip) throw new Error('recent table is for another base');
+  pair.recent = next;
+}
+
+async function refresh() {
+  const before = tip();
+  await Promise.all([refreshPair(tx), refreshPair(blocks)]);
+  await loadFeed().catch(() => {});
+  if (tip() !== before) self.postMessage({ type: 'tip', manifest: publication() });
+}
+
+// A replaced base answers 410: load the new one, then its recent table.
+async function reloadPair(pair) {
+  ready = null;
+  pair.base = await open(pair.baseSet, pair.baseSet === 'base' ? '/manifest' : `/${pair.baseSet}/manifest`);
+  pair.recent = null;
+  await refreshPair(pair);
+  self.postMessage({ type: 'tip', manifest: publication() });
 }
 
 async function initialize() {
   await init();
-  // Public parameters are fetched for every table before any selection exists.
-  base = await open('base', '/manifest');
-  if (!base) throw new Error('no base publication');
-  await refreshRecent().catch(() => {});
+  // Public parameters are fetched for every table before any search exists.
+  tx.base = await open('base', '/manifest');
+  if (!tx.base) throw new Error('no base publication');
+  blocks.base = await open('blocks', '/blocks/manifest').catch(() => null);
+  await refresh().catch(() => {});
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
-  // The same public manifest for everyone, polled independently of lookups.
-  setInterval(() => { if (!busy) refreshRecent().catch(() => {}); }, 20_000);
-}
-
-// Same public manifest for everyone; fetched before each lookup.
-async function refreshRecent() {
-  const response = await fetch('/recent/manifest', options(AbortSignal.timeout(30_000)));
-  if (response.status === 404) { if (recent) { recent = null; self.postMessage({ type: 'tip', manifest: publication() }); } return; }
-  if (!response.ok) throw new Error('transport');
-  const manifest = new Uint8Array(await response.arrayBuffer());
-  if (await publicationId(manifest) === recent?.id) return;
-  const next = await open('recent', '/recent/manifest');
-  if (next && next.info.baseTip !== base.info.snapshotTip) throw new Error('recent table is for another base');
-  recent = next;
-  self.postMessage({ type: 'tip', manifest: publication() });
-}
-
-// A replaced base answers 410: load the new one, then the matching recent table.
-async function reloadBase() {
-  ready = null;
-  base = await open('base', '/manifest');
-  recent = null;
-  await refreshRecent();
-  self.postMessage({ type: 'tip', manifest: publication() });
+  if (feed) self.postMessage({ type: 'feed', feed: feed.data });
+  // The same public manifests for everyone, polled independently of searches.
+  setInterval(() => { if (!busy) refresh().catch(() => {}); }, 20_000);
 }
 
 async function ask(path, upload) {
   const { body, response } = await bytes(path, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: upload });
   return { body, serverMs: Number(response.headers.get('x-server-ns') || 0) / 1e6 };
+}
+
+// Encrypted selections for one key in both publications of a pair. With
+// `ahead`, decoding products are computed too, before anything is sent.
+function prepare(pair, key, ahead) {
+  if (ready?.pair === pair && ready.key === key && ready.used === pair.recent && ready.usedBase === pair.base) return ready;
+  const started = performance.now();
+  const used = pair.recent, usedBase = pair.base;
+  const baseUpload = usedBase.browser.query_main(key);
+  const recentUpload = used?.browser.query_main(key);
+  if (ahead) { usedBase.browser.prepare_decode(); used?.browser.prepare_decode(); }
+  const prepared = { pair, key, used, usedBase, baseUpload, recentUpload, ahead, encryptMs: performance.now() - started };
+  if (pair === tx) ready = prepared;
+  return prepared;
+}
+
+// One same-shape request to both publications of a pair.
+async function queryPair(pair, key) {
+  const started = performance.now();
+  const { used, usedBase, baseUpload, recentUpload, encryptMs, ahead } = prepare(pair, key, false);
+  if (pair === tx) ready = null;
+  const encrypted = performance.now();
+  const replies = Promise.all([
+    ask(`/${pair.baseSet}/${usedBase.id}/query/main`, baseUpload),
+    used ? ask(`/${pair.recentSet}/${used.id}/query/main`, recentUpload) : null,
+  ]);
+  // No-ops when prepared ahead; otherwise overlaps the network round trip.
+  usedBase.browser.prepare_decode();
+  used?.browser.prepare_decode();
+  const [baseReply, recentReply] = await replies;
+  const received = performance.now();
+  const fromBase = JSON.parse(usedBase.browser.decode_main(baseReply.body));
+  const fromRecent = used ? JSON.parse(used.browser.decode_main(recentReply.body)) : null;
+  const decoded = performance.now();
+  const owner = fromRecent?.found === true ? 'recent' : fromBase.found === true ? 'base' : null;
+  return {
+    owner, used, usedBase, fromBase, fromRecent,
+    result: owner === 'recent' ? fromRecent : owner === 'base' ? fromBase : null,
+    measurements: {
+      queryBytes: baseUpload.length + (recentUpload?.length ?? 0), responseBytes: baseReply.body.length + (recentReply?.body.length ?? 0),
+      encryptMs: ahead ? 0 : encryptMs, preparedAheadMs: ahead ? encryptMs : 0, requestMs: received - encrypted,
+      serverMs: baseReply.serverMs + (recentReply?.serverMs ?? 0), decodeMs: decoded - received, totalMs: decoded - started,
+    },
+  };
 }
 
 function markSpent(result, spent) {
@@ -125,67 +196,70 @@ function partialOf(result) {
   } : null;
 }
 
-// Encrypts the selection and computes its decoding products before anything
-// is sent. Called ahead of time when the page has a complete txid, so a
-// submitted lookup costs only the network round trip and the final decrypt.
-function prepare(txid, ahead) {
-  if (ready?.txid === txid && ready.used === recent && ready.usedBase === base) return ready;
-  const started = performance.now();
-  const used = recent;
-  const usedBase = base;
-  const baseUpload = usedBase.browser.query_main(txid);
-  const recentUpload = used?.browser.query_main(txid);
-  if (ahead) { usedBase.browser.prepare_decode(); used?.browser.prepare_decode(); }
-  ready = { txid, used, usedBase, baseUpload, recentUpload, ahead, encryptMs: performance.now() - started };
-  return ready;
+const blockPartialOf = block => block.partial ? { rows: block.fullRows, shownTransactions: block.transactions.length, totalTransactions: block.transaction_count } : null;
+
+async function lookupTx(txid) {
+  const outcome = await queryPair(tx, txid);
+  const spent = outcome.owner === 'base' ? outcome.fromRecent?.outputsSpentSinceBase : undefined;
+  return { ...outcome, spent, result: outcome.owner === 'base' ? markSpent(outcome.result, spent) : outcome.result };
 }
 
-async function lookupOnce(txid) {
+// Always two rounds to both block publications. Round one asks for the
+// search key: a height key returns the record, a hash key returns a pointer
+// to the height. Round two asks for that height, or for a random key when
+// round one already has the record, so every block search looks the same.
+async function lookupBlock(key) {
+  const first = await queryPair(blocks, key);
+  const pointer = first.result?.pointer;
+  if (Number.isSafeInteger(pointer)) {
+    const second = await queryPair(blocks, block_key(pointer));
+    const measurements = Object.fromEntries(Object.keys(first.measurements).map(k => [k, first.measurements[k] + second.measurements[k]]));
+    return { ...second, result: second.result && !Number.isSafeInteger(second.result.pointer) ? second.result : null, measurements };
+  }
+  // Same requests as a real second round; the replies are not needed, and
+  // the first round's pending state (a preview to load in full) is kept.
   const started = performance.now();
-  const { used, usedBase, baseUpload, recentUpload, encryptMs, ahead } = prepare(txid, false);
-  ready = null;
-  const encrypted = performance.now();
-  const replies = Promise.all([
-    ask(`/base/${usedBase.id}/query/main`, baseUpload),
-    used ? ask(`/recent/${used.id}/query/main`, recentUpload) : null,
+  await Promise.all([
+    ask(`/${blocks.baseSet}/${first.usedBase.id}/query/main`, first.usedBase.browser.query_dummy_main()),
+    first.used ? ask(`/${blocks.recentSet}/${first.used.id}/query/main`, first.used.browser.query_dummy_main()) : null,
   ]);
-  // No-ops when prepared ahead; otherwise overlaps the network round trip.
-  usedBase.browser.prepare_decode();
-  used?.browser.prepare_decode();
-  const [baseReply, recentReply] = await replies;
-  const received = performance.now();
-  const fromBase = JSON.parse(usedBase.browser.decode_main(baseReply.body));
-  const baseDecoded = performance.now();
-  const fromRecent = used ? JSON.parse(used.browser.decode_main(recentReply.body)) : null;
-  const decoded = performance.now();
-  const owner = fromRecent?.found === true ? 'recent' : fromBase.found === true ? 'base' : null;
-  const spent = owner === 'base' ? fromRecent?.outputsSpentSinceBase : undefined;
-  last = owner ? { owner, used, usedBase, spent } : null;
-  const measurements = {
-    queryBytes: baseUpload.length + (recentUpload?.length ?? 0), responseBytes: baseReply.body.length + (recentReply?.body.length ?? 0),
-    encryptMs: ahead ? 0 : encryptMs, preparedAheadMs: ahead ? encryptMs : 0, requestMs: received - encrypted, serverMs: baseReply.serverMs + (recentReply?.serverMs ?? 0),
-    decodeMs: decoded - received, baseDecodeMs: baseDecoded - received, recentDecodeMs: decoded - baseDecoded, totalMs: decoded - started,
-  };
-  return { owner, result: owner === 'recent' ? fromRecent : markSpent(fromBase, spent), measurements };
+  return { ...first, measurements: { ...first.measurements, totalMs: first.measurements.totalMs + performance.now() - started } };
 }
 
-async function lookup({ requestId, txid }) {
-  if (busy || !base) return;
+// Retries once when a base was replaced mid-search (same for every client).
+async function withReload(run, pairs) {
+  try { return await run(); } catch (error) {
+    if (!(error instanceof Gone)) throw error;
+    for (const pair of pairs) await reloadPair(pair);
+    return run();
+  }
+}
+
+// A search: digits are a block height; 64 hex characters are a txid or a
+// block hash, so both are always looked up for them.
+async function lookup({ requestId, txid, query }) {
+  if (busy || !tx.base) return;
   busy = true;
+  const term = String(query ?? txid ?? '').trim().toLowerCase();
   try {
-    let outcome;
-    // A rebuild can land between the manifest and the query; retry once.
-    try { outcome = await lookupOnce(txid); } catch (error) {
-      if (!(error instanceof Gone)) throw error;
-      // The same recovery for every client after a rebuild; then one retry.
-      await reloadBase();
-      outcome = await lookupOnce(txid);
+    const isHeight = /^\d{1,10}$/.test(term) && Number(term) <= 0xffffffff;
+    if (!isHeight && !/^[a-f\d]{64}$/.test(term)) throw new Error('search');
+    if (isHeight && !blocks.base) throw new Error('blocks unavailable');
+    const [txOutcome, blockOutcome] = await withReload(() => Promise.all([
+      isHeight ? null : lookupTx(term),
+      blocks.base ? lookupBlock(isHeight ? block_key(Number(term)) : term) : null,
+    ]), isHeight ? [blocks] : [tx, ...(blocks.base ? [blocks] : [])]);
+    if (txOutcome?.owner) {
+      last = { pair: tx, owner: txOutcome.owner, used: txOutcome.used, usedBase: txOutcome.usedBase, spent: txOutcome.spent };
+      self.postMessage({ type: 'result', requestId, result: toRecord(txOutcome.result), partial: partialOf(txOutcome.result), measurements: txOutcome.measurements });
+    } else if (blockOutcome?.result) {
+      last = { pair: blocks, owner: blockOutcome.owner, used: blockOutcome.used, usedBase: blockOutcome.usedBase };
+      const block = { ...blockOutcome.result, confirmations: tip() - blockOutcome.result.height + 1 };
+      self.postMessage({ type: 'block', requestId, block, partial: blockPartialOf(block), measurements: blockOutcome.measurements });
+    } else {
+      last = null;
+      self.postMessage({ type: 'notfound', requestId, snapshotHeight: tip(), kind: isHeight ? 'block' : 'any' });
     }
-    if (!outcome.owner) {
-      self.postMessage({ type: 'notfound', requestId, snapshotHeight: tip() });
-      return;
-    }
-    self.postMessage({ type: 'result', requestId, result: toRecord(outcome.result), partial: partialOf(outcome.result), measurements: outcome.measurements });
   } catch {
     self.postMessage({ type: 'error', requestId, message: 'The private lookup could not complete. No retry or public lookup was made.' });
   } finally { busy = false; }
@@ -194,36 +268,40 @@ async function lookup({ requestId, txid }) {
 // Only on an explicit request: the padded full form of a previewed record.
 // The other publication receives the same number of dummy row queries.
 async function loadFull({ requestId }) {
-  if (busy || !base || !last) return;
+  if (busy || !last) return;
   busy = true;
   const started = performance.now();
   try {
-    const { owner, used, usedBase, spent } = last;
+    const { pair, owner, used, usedBase, spent } = last;
     const ownerBrowser = owner === 'recent' ? used.browser : usedBase.browser;
     const upload = ownerBrowser.query_full();
     const count = new DataView(upload.buffer, upload.byteOffset).getUint32(0, true);
-    const ownerPath = owner === 'recent' ? `/recent/${used.id}/query/overflow` : `/base/${usedBase.id}/query/overflow`;
-    const other = owner === 'recent' ? { browser: usedBase.browser, path: `/base/${usedBase.id}/query/overflow` } : used ? { browser: used.browser, path: `/recent/${used.id}/query/overflow` } : null;
+    const ownerPath = owner === 'recent' ? `/${pair.recentSet}/${used.id}/query/overflow` : `/${pair.baseSet}/${usedBase.id}/query/overflow`;
+    const other = owner === 'recent' ? { browser: usedBase.browser, path: `/${pair.baseSet}/${usedBase.id}/query/overflow` }
+      : used ? { browser: used.browser, path: `/${pair.recentSet}/${used.id}/query/overflow` } : null;
     const dummy = other?.browser.query_dummy(count);
     const encrypted = performance.now();
     const replies = Promise.all([ask(ownerPath, upload), other ? ask(other.path, dummy) : null]);
     ownerBrowser.prepare_decode();
     const [reply, dummyReply] = await replies;
     const received = performance.now();
-    const result = markSpent(JSON.parse(ownerBrowser.decode_full(reply.body)), spent);
+    const full = JSON.parse(ownerBrowser.decode_full(reply.body));
     const decoded = performance.now();
-    self.postMessage({ type: 'result', requestId, result: toRecord(result), partial: null, measurements: {
+    const measurements = {
       queryBytes: upload.length + (dummy?.length ?? 0), responseBytes: reply.body.length + (dummyReply?.body.length ?? 0),
       encryptMs: encrypted - started, requestMs: received - encrypted, serverMs: reply.serverMs + (dummyReply?.serverMs ?? 0),
-      decodeMs: decoded - received, totalMs: decoded - started, overflowRows: count } });
+      decodeMs: decoded - received, totalMs: decoded - started, overflowRows: count };
+    if (pair === tx) self.postMessage({ type: 'result', requestId, result: toRecord(markSpent(full, spent)), partial: null, measurements });
+    else self.postMessage({ type: 'block', requestId, block: { ...full, confirmations: tip() - full.height + 1 }, partial: null, measurements });
   } catch {
-    self.postMessage({ type: 'error', requestId, message: 'The full inputs and outputs could not be retrieved. No retry or public lookup was made.' });
+    self.postMessage({ type: 'error', requestId, message: 'The full record could not be retrieved. No retry or public lookup was made.' });
   } finally { busy = false; }
 }
 
 self.addEventListener('message', event => {
-  if (event.data?.type === 'initialize') initialize().catch(() => self.postMessage({ type: 'error', message: 'The private explorer publication could not be initialized.' }));
-  else if (event.data?.type === 'lookup') lookup(event.data);
-  else if (event.data?.type === 'prepare' && base && !busy && /^[a-f\d]{64}$/.test(event.data.txid)) { try { prepare(event.data.txid, true); } catch { ready = null; } }
-  else if (event.data?.type === 'loadFull') loadFull(event.data);
+  const data = event.data;
+  if (data?.type === 'initialize') initialize().catch(() => self.postMessage({ type: 'error', message: 'The private explorer publication could not be initialized.' }));
+  else if (data?.type === 'lookup') lookup(data);
+  else if (data?.type === 'prepare' && tx.base && !busy && /^[a-f\d]{64}$/.test(data.txid)) { try { prepare(tx, data.txid, true); } catch { ready = null; } }
+  else if (data?.type === 'loadFull') loadFull(data);
 });

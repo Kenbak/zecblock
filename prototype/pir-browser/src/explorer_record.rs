@@ -968,3 +968,323 @@ pub mod publication {
         })
     }
 }
+
+// ---- blocks ------------------------------------------------------------------------
+
+/// First byte of an encoded block record.
+pub const BLOCK_VERSION: u8 = 1;
+/// First byte of a block-hash pointer entry: `[BLOCK_POINTER][var height]`.
+pub const BLOCK_POINTER: u8 = 0xfe;
+
+/// Lookup key of a block's full record: its height, hashed into the same
+/// 32-byte key space as txids and block hashes.
+pub fn block_height_key(height: u32) -> [u8; 32] {
+    Sha256::new().chain_update(b"zecblock-explorer-block-height-v1").chain_update(height.to_le_bytes()).finalize().into()
+}
+
+/// What the block page lists for each transaction.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlockTx {
+    pub txid: [u8; 32],
+    /// coinbase, sapling, orchard, ironwood, sprout
+    pub flags: u8,
+    pub fee: Option<i64>,
+    pub total_output: Option<i64>,
+    pub vin_count: u32,
+    pub vout_count: u32,
+    pub sapling_spends: u32,
+    pub sapling_outputs: u32,
+    pub orchard_actions: u32,
+    pub ironwood_actions: u32,
+    pub value_balance_sapling: Option<i64>,
+    pub value_balance_orchard: Option<i64>,
+    pub value_balance_ironwood: Option<i64>,
+    pub first_input_address: Option<String>,
+    pub first_output_address: Option<String>,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BlockRecord {
+    pub height: u32,
+    pub hash: [u8; 32],
+    pub previous_hash: Option<[u8; 32]>,
+    pub time: u64,
+    pub version: i64,
+    pub merkle_root: Option<[u8; 32]>,
+    pub final_sapling_root: Option<[u8; 32]>,
+    pub final_orchard_root: Option<[u8; 32]>,
+    pub final_ironwood_root: Option<[u8; 32]>,
+    pub bits: String,
+    pub nonce: Option<[u8; 32]>,
+    /// Exact decimal text from the database.
+    pub difficulty: String,
+    pub size: u32,
+    pub tx_count: u32,
+    pub total_fees: Option<i64>,
+    pub miner_address: Option<String>,
+    pub txs: Vec<BlockTx>,
+}
+
+fn put_text(out: &mut Vec<u8>, text: &str) {
+    put(out, text.len() as u64);
+    out.extend_from_slice(text.as_bytes());
+}
+
+fn read_text(r: &mut Reader) -> Result<String, String> {
+    let len = r.var()? as usize;
+    String::from_utf8(r.take(len)?.to_vec()).map_err(|_| "text is not UTF-8".into())
+}
+
+impl BlockRecord {
+    pub fn encode(&self) -> Vec<u8> {
+        let mut out = Vec::with_capacity(256 + self.txs.len() * 96);
+        out.push(BLOCK_VERSION);
+        let hashes = [&self.previous_hash, &self.merkle_root, &self.final_sapling_root, &self.final_orchard_root, &self.final_ironwood_root, &self.nonce];
+        let presence = hashes.iter().enumerate().fold(0u8, |b, (i, h)| b | (u8::from(h.is_some()) << i))
+            | u8::from(self.total_fees.is_some()) << 6 | u8::from(self.miner_address.is_some()) << 7;
+        out.push(presence);
+        put(&mut out, u64::from(self.height));
+        out.extend_from_slice(&self.hash);
+        for hash in hashes.into_iter().flatten() {
+            out.extend_from_slice(hash);
+        }
+        put(&mut out, self.time);
+        put_signed(&mut out, self.version);
+        put_text(&mut out, &self.bits);
+        put_text(&mut out, &self.difficulty);
+        put(&mut out, u64::from(self.size));
+        put(&mut out, u64::from(self.tx_count));
+        if let Some(fees) = self.total_fees {
+            put_signed(&mut out, fees);
+        }
+        if let Some(miner) = &self.miner_address {
+            let at = out.len();
+            out.push(0);
+            out[at] = put_address(&mut out, miner);
+        }
+        put(&mut out, self.txs.len() as u64);
+        for tx in &self.txs {
+            out.extend_from_slice(&tx.txid);
+            let optionals = [tx.fee, tx.total_output, tx.value_balance_sapling, tx.value_balance_orchard, tx.value_balance_ironwood];
+            let presence = optionals.iter().enumerate().fold(0u8, |b, (i, v)| b | (u8::from(v.is_some()) << i))
+                | u8::from(tx.first_input_address.is_some()) << 5 | u8::from(tx.first_output_address.is_some()) << 6;
+            out.push(tx.flags);
+            out.push(presence);
+            for value in optionals.into_iter().flatten() {
+                put_signed(&mut out, value);
+            }
+            for count in [tx.vin_count, tx.vout_count, tx.sapling_spends, tx.sapling_outputs, tx.orchard_actions, tx.ironwood_actions] {
+                put(&mut out, u64::from(count));
+            }
+            for address in [&tx.first_input_address, &tx.first_output_address].into_iter().flatten() {
+                let at = out.len();
+                out.push(0);
+                out[at] = put_address(&mut out, address);
+            }
+        }
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, String> {
+        let mut r = Reader { bytes, at: 0 };
+        if r.byte()? != BLOCK_VERSION {
+            return Err("unsupported block record version".into());
+        }
+        let presence = r.byte()?;
+        let mut block = BlockRecord { height: r.var32()?, hash: r.hash()?, ..BlockRecord::default() };
+        let mut hashes: [Option<[u8; 32]>; 6] = [None; 6];
+        for (i, slot) in hashes.iter_mut().enumerate() {
+            if presence & (1 << i) != 0 {
+                *slot = Some(r.hash()?);
+            }
+        }
+        [block.previous_hash, block.merkle_root, block.final_sapling_root, block.final_orchard_root, block.final_ironwood_root, block.nonce] = hashes;
+        block.time = r.var()?;
+        block.version = r.signed()?;
+        block.bits = read_text(&mut r)?;
+        block.difficulty = read_text(&mut r)?;
+        block.size = r.var32()?;
+        block.tx_count = r.var32()?;
+        if presence & (1 << 6) != 0 {
+            block.total_fees = Some(r.signed()?);
+        }
+        if presence & (1 << 7) != 0 {
+            let kind = r.byte()?;
+            block.miner_address = Some(read_address(&mut r, kind)?);
+        }
+        let count = r.var()? as usize;
+        for _ in 0..count {
+            let mut tx = BlockTx { txid: r.hash()?, flags: r.byte()?, ..BlockTx::default() };
+            let presence = r.byte()?;
+            let mut optionals = [None; 5];
+            for (i, slot) in optionals.iter_mut().enumerate() {
+                if presence & (1 << i) != 0 {
+                    *slot = Some(r.signed()?);
+                }
+            }
+            [tx.fee, tx.total_output, tx.value_balance_sapling, tx.value_balance_orchard, tx.value_balance_ironwood] = optionals;
+            tx.vin_count = r.var32()?;
+            tx.vout_count = r.var32()?;
+            tx.sapling_spends = r.var32()?;
+            tx.sapling_outputs = r.var32()?;
+            tx.orchard_actions = r.var32()?;
+            tx.ironwood_actions = r.var32()?;
+            if presence & (1 << 5) != 0 {
+                let kind = r.byte()?;
+                tx.first_input_address = Some(read_address(&mut r, kind)?);
+            }
+            if presence & (1 << 6) != 0 {
+                let kind = r.byte()?;
+                tx.first_output_address = Some(read_address(&mut r, kind)?);
+            }
+            block.txs.push(tx);
+        }
+        if r.at != bytes.len() {
+            return Err("trailing bytes after block record".into());
+        }
+        Ok(block)
+    }
+
+    /// The block with only its first transactions, as many as fit in `max`
+    /// bytes; `tx_count` keeps the full count.
+    pub fn preview(&self, max: usize) -> Vec<u8> {
+        let mut cut = self.clone();
+        let (mut low, mut high) = (0, self.txs.len());
+        while low < high {
+            let mid = (low + high + 1) / 2;
+            cut.txs = self.txs[..mid].to_vec();
+            if cut.encode().len() <= max { low = mid } else { high = mid - 1 }
+        }
+        cut.txs = self.txs[..low].to_vec();
+        cut.encode()
+    }
+
+    /// Shaped like the public `/api/block/:height` fields; zatoshi amounts as
+    /// decimal strings.
+    pub fn to_json(&self) -> Value {
+        let zat = |v: Option<i64>| v.map(|v| v.to_string());
+        let hex32 = |h: &Option<[u8; 32]>| h.map(hex::encode);
+        json!({
+            "height": self.height,
+            "hash": hex::encode(self.hash),
+            "previous_block_hash": hex32(&self.previous_hash),
+            "timestamp": self.time,
+            "version": self.version,
+            "merkle_root": hex32(&self.merkle_root),
+            "final_sapling_root": hex32(&self.final_sapling_root),
+            "final_orchard_root": hex32(&self.final_orchard_root),
+            "final_ironwood_root": hex32(&self.final_ironwood_root),
+            "bits": self.bits,
+            "nonce": hex32(&self.nonce),
+            "difficulty": self.difficulty,
+            "size": self.size,
+            "transaction_count": self.tx_count,
+            "total_fees": zat(self.total_fees),
+            "miner_address": self.miner_address,
+            "transactions": self.txs.iter().map(|tx| json!({
+                "txid": hex::encode(tx.txid),
+                "is_coinbase": tx.flags & 1 != 0,
+                "has_sapling": tx.flags & 2 != 0,
+                "has_orchard": tx.flags & 4 != 0,
+                "has_ironwood": tx.flags & 8 != 0,
+                "has_sprout": tx.flags & 16 != 0,
+                "fee": zat(tx.fee),
+                "total_output": zat(tx.total_output),
+                "vin_count": tx.vin_count,
+                "vout_count": tx.vout_count,
+                "sapling_spend_count": tx.sapling_spends,
+                "sapling_output_count": tx.sapling_outputs,
+                "orchard_actions": tx.orchard_actions,
+                "ironwood_actions": tx.ironwood_actions,
+                "value_balance_sapling": zat(tx.value_balance_sapling),
+                "value_balance_orchard": zat(tx.value_balance_orchard),
+                "value_balance_ironwood": zat(tx.value_balance_ironwood),
+                "first_input_address": tx.first_input_address,
+                "first_output_address": tx.first_output_address,
+            })).collect::<Vec<_>>(),
+        })
+    }
+}
+
+/// Parses one line of the block export (see `blocks.sql`): 16 block columns
+/// and the per-transaction summaries joined with \x1f fields and \x1e items.
+pub fn parse_block_line(line: &str) -> Result<BlockRecord, String> {
+    let f: Vec<&str> = line.split('\t').collect();
+    if f.len() != 17 {
+        return Err(format!("expected 17 columns, found {}", f.len()));
+    }
+    let hash = |field: &str| null(field).map(hash_field).transpose();
+    let mut block = BlockRecord {
+        height: f[0].parse().map_err(|_| "bad height")?,
+        hash: hash_field(f[1])?,
+        previous_hash: hash(f[2])?,
+        time: f[3].parse().map_err(|_| "bad timestamp")?,
+        version: f[4].parse().map_err(|_| "bad version")?,
+        merkle_root: hash(f[5])?,
+        final_sapling_root: hash(f[6])?,
+        final_orchard_root: hash(f[7])?,
+        final_ironwood_root: hash(f[8])?,
+        bits: null(f[9]).unwrap_or("").to_owned(),
+        nonce: hash(f[10])?,
+        difficulty: null(f[11]).unwrap_or("").to_owned(),
+        size: opt(f[12])?.unwrap_or(0),
+        tx_count: opt(f[13])?.unwrap_or(0),
+        total_fees: opt(f[14])?,
+        miner_address: null(f[15]).map(str::to_owned),
+        txs: Vec::new(),
+    };
+    if let Some(items) = null(f[16]) {
+        for item in items.split('\u{1e}') {
+            let p: Vec<&str> = item.split('\u{1f}').collect();
+            if p.len() != 19 {
+                return Err(format!("expected 19 transaction fields, found {}", p.len()));
+            }
+            let int = |s: &str| -> Result<u32, String> { opt(s).map(|v| v.unwrap_or(0)) };
+            block.txs.push(BlockTx {
+                txid: hash_field(p[0])?,
+                flags: (0..5).fold(0u8, |b, i| b | (u8::from(p[1 + i] == "t") << i)),
+                fee: opt(p[6])?,
+                total_output: opt(p[7])?,
+                vin_count: int(p[8])?,
+                vout_count: int(p[9])?,
+                sapling_spends: int(p[10])?,
+                sapling_outputs: int(p[11])?,
+                orchard_actions: int(p[12])?,
+                ironwood_actions: int(p[13])?,
+                value_balance_sapling: opt(p[14])?,
+                value_balance_orchard: opt(p[15])?,
+                value_balance_ironwood: opt(p[16])?,
+                first_input_address: null(p[17]).map(str::to_owned),
+                first_output_address: null(p[18]).map(str::to_owned),
+            });
+        }
+    }
+    Ok(block)
+}
+
+#[cfg(test)]
+mod block_tests {
+    use super::*;
+
+    #[test]
+    fn block_round_trips_and_previews() {
+        let tx = |i: u8| BlockTx {
+            txid: [i; 32], flags: u8::from(i == 0), fee: (i > 0).then_some(1_000), total_output: Some(5_000_000 + i64::from(i)),
+            vin_count: 1, vout_count: 2, orchard_actions: 2, value_balance_orchard: Some(-7), first_input_address: None,
+            first_output_address: Some("t1aTey5i7FzJQ2FC238SomgzMfbZxXBWPMX".into()), ..BlockTx::default()
+        };
+        let block = BlockRecord {
+            height: 3_541_000, hash: [9; 32], previous_hash: Some([8; 32]), time: 1_793_751_208, version: 4,
+            merkle_root: Some([7; 32]), bits: "1b7b6a9a".into(), nonce: Some([6; 32]), difficulty: "278404404.866183".into(),
+            size: 1646, tx_count: 300, total_fees: Some(0), miner_address: Some("t1TVdjqU1APVQmCRRnzbqfjz6wR2qtBnnoc".into()),
+            txs: (0..=255).map(tx).collect(), ..BlockRecord::default()
+        };
+        let bytes = block.encode();
+        assert_eq!(BlockRecord::decode(&bytes).unwrap(), block);
+        let preview = BlockRecord::decode(&block.preview(2_048)).unwrap();
+        assert!(!preview.txs.is_empty() && preview.txs.len() < block.txs.len());
+        assert_eq!(preview.tx_count, 300);
+        assert_eq!(preview.txs[..], block.txs[..preview.txs.len()]);
+        assert_ne!(block_height_key(1), block_height_key(2));
+    }
+}

@@ -65,6 +65,7 @@ const input = [
   `@import "${resolve(APP, 'node_modules/tailwindcss/index.css')}" source(none);`,
   `@source "${resolve(ROOT, 'components')}";`,
   `@source "${resolve(ROOT, 'app/tx')}";`,
+  `@source "${resolve(ROOT, 'app/block')}";`,
   `@source "${HERE}";`,
   css, additional,
 ].join('\n');

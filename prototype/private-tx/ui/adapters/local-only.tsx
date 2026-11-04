@@ -3,8 +3,17 @@ import { CopyButton } from '@/components/CopyButton';
 
 // These build-only adapters leave production components untouched. Navigation,
 // remote enrichments and selectors in resource URLs are excluded from this app.
-export default function LocalText({ children, className, title }: { children: ReactNode; className?: string; title?: string; [key: string]: unknown }) {
-  return <span className={className} title={title}>{children}</span>;
+// Links to transactions and blocks become in-page fragments, which the app
+// turns into private lookups (a fragment is never sent to any server). Every
+// other destination is plain text: the private page navigates nowhere else.
+export default function LocalLink({ children, className, title, href }: { children: ReactNode; className?: string; title?: string; href?: unknown; [key: string]: unknown }) {
+  const path = typeof href === 'string' ? href : '';
+  const tx = /^\/tx\/([a-f\d]{64})$/i.exec(path);
+  const block = /^\/block\/(\d{1,10}|[a-f\d]{64})$/i.exec(path);
+  const fragment = tx ? `#tx=${tx[1].toLowerCase()}` : block ? `#block=${block[1].toLowerCase()}` : null;
+  return fragment
+    ? <a href={fragment} className={className} title={title}>{children}</a>
+    : <span className={className} title={title}>{children}</span>;
 }
 
 export function AddressWithLabel({ address, truncate = true, className = '' }: { address: string; truncate?: boolean; className?: string; [key: string]: unknown }) {

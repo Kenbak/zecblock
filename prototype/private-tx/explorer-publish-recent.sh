@@ -12,6 +12,8 @@
 # (export queries with :a/:b), REPLICA (ssh target), KEY (Ed25519 PEM),
 # ROOT_DIR (holds base/, recent/, blocks/, blocks-recent/). Optional:
 # BASE_TIP (defaults to the current base's tip), DATABASE, GROUP, WAIT_LOCK.
+# A tx run also publishes the recent address table, derived from the same
+# records, into addresses-recent.
 set -euo pipefail
 KIND=${1:?usage: explorer-publish-recent.sh tx|block}
 DATABASE=${DATABASE:-zcash_explorer_mainnet}
@@ -52,18 +54,31 @@ if [[ -e "$ROOT/current/manifest.json" ]] && (( tip == $(manifest_field "$ROOT/c
   exit 0
 fi
 
-name="$PREFIX-$tip-$(date +%s)"
-"$BIN" "$BUILD" "$work/records.bin" "$work/$name" "$tip" "$BASE_TIP" > "$work/build.json"
-openssl pkeyutl -sign -rawin -inkey "$KEY" -in "$work/$name/manifest.json" -out "$work/$name/manifest.sig"
-"$BIN" explorer-verify "$work/$name/manifest.json" "$work/$name/manifest.sig" > /dev/null
-chgrp -R "$GROUP" "$work/$name"
-chmod -R g+rX,o-rwx "$work/$name"
-mv "$work/$name" "$ROOT/$name"
-ln -sfn "$name" "$ROOT/current.tmp"
-mv -Tf "$ROOT/current.tmp" "$ROOT/current"
+# Signs and checks a built publication, moves it under <root>, points
+# <root>/current at it and keeps the newest nine (the server loads eight).
+publish() {
+  local dir=$1 root=$2 prefix=$3 name
+  name=$(basename "$dir")
+  openssl pkeyutl -sign -rawin -inkey "$KEY" -in "$dir/manifest.json" -out "$dir/manifest.sig"
+  "$BIN" explorer-verify "$dir/manifest.json" "$dir/manifest.sig" > /dev/null
+  chgrp -R "$GROUP" "$dir"
+  chmod -R g+rX,o-rwx "$dir"
+  install -d -m 0750 -g "$GROUP" "$root"
+  mv "$dir" "$root/$name"
+  ln -sfn "$name" "$root/current.tmp"
+  mv -Tf "$root/current.tmp" "$root/current"
+  ls -1dt "$root/$prefix"-* | tail -n +10 | xargs -r rm -rf
+}
 
-# The server keeps the newest eight loaded; keep nine on disk.
-ls -1dt "$ROOT/$PREFIX"-* | tail -n +10 | xargs -r rm -rf
+stamp=$(date +%s)
+name="$PREFIX-$tip-$stamp"
+"$BIN" "$BUILD" "$work/records.bin" "$work/$name" "$tip" "$BASE_TIP" > "$work/build.json"
+if [[ "$KIND" == tx ]]; then
+  "$BIN" explorer-addresses-from-tx "$work/records.bin" "$work/addresses.bin" > "$work/addresses.json"
+  "$BIN" explorer-build-addresses "$work/addresses.bin" "$work/ar-$tip-$stamp" "$tip" "$BASE_TIP" > /dev/null
+  publish "$work/ar-$tip-$stamp" "$ROOT_DIR/addresses-recent" ar
+fi
+publish "$work/$name" "$ROOT" "$PREFIX"
 
 python3 - "$KIND" "$work/build.json" "$started" "$exported" <<'PY'
 import json, sys, time

@@ -8,35 +8,24 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 # WASM essentials
-wasm-bindgen = "0.2"
+wasm-bindgen = "=0.2.127"
 console_error_panic_hook = "0.1"
-getrandom = { version = "0.2", features = ["js"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 
-# Zakura Common — optimized Zcash cryptography (1.5x faster trial decrypt)
-# Only zakura-orchard is used; zakura-primitives is excluded because it pulls
-# secp256k1 (C code) via zcash_transparent, which cannot compile to wasm32.
-# Transaction parsing is handled by a minimal ZIP-225 v5 parser instead.
-orchard = { package = "zakura-orchard", version = "1.0", default-features = false, features = ["std"] }
-
-# Note encryption interface (stays upstream per Zakura guidance)
-zcash_note_encryption = "0.4"
-
-subtle = "2.6"
+# Use one compatible Common release for parser, protocol types and note encryption.
+# secp256k1 is optional in Common 4; do not enable transparent-inputs/circuits.
+orchard = { package = "zakura-orchard", version = "=4.0.0", default-features = false, features = ["std", "backend-halo2", "zip32-addresses"] }
+zcash_primitives = { package = "zakura-primitives", version = "=4.0.0", default-features = false, features = ["std", "backend-halo2"] }
+zcash_note_encryption = { package = "zakura-note-encryption", version = "=4.0.0" }
 
 # Encoding
 hex = "0.4"
-bech32 = "0.11"
 bs58 = { version = "0.5", features = ["check"] }
 
 # Zcash address parsing (for UFVK)
-zcash_address = "0.13"
-zcash_protocol = "0.10"
-
-[dependencies.web-sys]
-version = "0.3"
-features = ["console"]
+zcash_address = { package = "zakura-address", version = "=4.0.0" }
+zcash_protocol = { package = "zakura-protocol", version = "=4.0.0" }
 
 [profile.release]
 opt-level = 3       # Favor repeated scan throughput; see BUILD.md benchmark

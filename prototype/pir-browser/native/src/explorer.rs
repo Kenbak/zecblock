@@ -492,13 +492,12 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             })
             .collect::<Result<_, _>>()?;
         latest.sort_unstable_by(|a, b| b.height.cmp(&a.height));
-        // Newest blocks first; shielded activity looks further back.
-        latest.truncate(2000);
-        let blocks: Vec<Value> = latest.iter().take(10).map(|b| json!({"height":b.height,"hash":hex::encode(b.hash),"timestamp":b.time,
+        latest.truncate(10);
+        let blocks: Vec<Value> = latest.iter().map(|b| json!({"height":b.height,"hash":hex::encode(b.hash),"timestamp":b.time,
             "transaction_count":b.tx_count,"size":b.size,"total_fees":b.total_fees.map(|f| f.to_string()),"miner_address":b.miner_address})).collect();
         // Transactions newest first (block height, then position), in the
         // public transaction-list shape; amounts are zatoshi strings.
-        let newest = || latest.iter().flat_map(|b| b.txs.iter().enumerate().rev().map(move |(i, t)| (b, i, t)));
+        let newest = latest.iter().flat_map(|b| b.txs.iter().enumerate().rev().map(move |(i, t)| (b, i, t)));
         let tx_json = |(b, i, t): (&BlockRecord, usize, &BlockTx)| json!({
             "txid":hex::encode(t.txid),"block_height":b.height,"block_time":b.time,"timestamp":b.time,"tx_index":i,
             "vin_count":t.vin_count,"vout_count":t.vout_count,"is_coinbase":t.flags & 1 != 0,"has_sapling":t.flags & 2 != 0,
@@ -507,10 +506,8 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
             "value_balance_sapling":t.value_balance_sapling.map(|v| v.to_string()),"value_balance_orchard":t.value_balance_orchard.map(|v| v.to_string()),
             "value_balance_ironwood":t.value_balance_ironwood.map(|v| v.to_string()),"total_output":t.total_output.map(|v| v.to_string()),
             "fee":t.fee.map(|v| v.to_string())});
-        let txs: Vec<Value> = newest().take(10).map(tx_json).collect();
-        // Same rule as the public shielded summary: any Sapling, Orchard or Ironwood part.
-        let shielded: Vec<Value> = newest().filter(|(_, _, t)| t.flags & 0b1110 != 0).take(10).map(tx_json).collect();
-        let bytes = serde_json::to_vec(&json!({"snapshotTip":snapshot_tip,"blocks":blocks,"transactions":txs,"shielded":shielded})).map_err(io_err)?;
+        let txs: Vec<Value> = newest.take(10).map(tx_json).collect();
+        let bytes = serde_json::to_vec(&json!({"snapshotTip":snapshot_tip,"blocks":blocks,"transactions":txs})).map_err(io_err)?;
         Some(bytes)
     } else {
         None

@@ -5,8 +5,8 @@
  *
  * Features:
  * - 100% client-side memo decryption (viewing key never leaves browser)
- * - Batch compact block filtering (13x faster than sequential)
- * - Web Worker compatible (zero UI freeze)
+ * - Orchard/Ironwood compact block filtering
+ * - Web Worker compatible for large scans
  * - TypeScript support
  *
  * @example
@@ -41,7 +41,7 @@ export declare class ZcashWASM {
      * const wasm = await ZcashWASM.init();
      * ```
      */
-    static init(): Promise<ZcashWASM>;
+    static init(wasmInput?: ArrayBuffer | Uint8Array): Promise<ZcashWASM>;
     /**
      * Load the WASM module from the wasm/ directory
      */
@@ -65,16 +65,11 @@ export declare class ZcashWASM {
      */
     decryptMemo(txHex: string, viewingKey: string): Promise<DecryptedOutput>;
     /**
-     * Patch unknown consensus branch IDs to NU5 for parsing.
-     * NU6/NU6.1/NU6.2 use the same v5 tx format — only proof rules changed.
-     * The WASM only needs to parse structure for decryption, not validate proofs.
-     */
-    private static patchBranchId;
-    /**
      * Filter compact blocks to find transactions matching the viewing key
      *
      * This is much faster than full decryption as it only checks compact block data.
-     * Use this for "birthday scans" to find all transactions for a viewing key.
+     * This returns Orchard/Ironwood matches only; it does not scan Sapling outputs.
+     * Mixed blocks keep supported matches; Sapling-only input is unsupported.
      *
      * @param compactBlocks - Array of compact blocks from Lightwalletd
      * @param viewingKey - Unified Full Viewing Key (UFVK)

@@ -15,4 +15,6 @@ class LocalBoundary extends Component<{ children: ReactNode }, { failed: boolean
 }
 
 const root = document.getElementById('app');
-if (root) createRoot(root).render(<LocalBoundary><App /></LocalBoundary>);
+// No console reporting: an error object could carry decoded transaction data.
+const quiet = () => {};
+if (root) createRoot(root, { onCaughtError: quiet, onUncaughtError: quiet, onRecoverableError: quiet }).render(<LocalBoundary><App /></LocalBoundary>);

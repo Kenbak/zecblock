@@ -338,7 +338,7 @@ impl Kind {
         match self {
             Kind::Tx => Ok(Record::decode(key, full)?.preview(max)),
             Kind::Block => Ok(BlockRecord::decode(full)?.preview(max)),
-            Kind::Address | Kind::AddressPage => Err("address entries are always inline".into()),
+            Kind::Address | Kind::AddressPage => Ok(AddressRecord::decode(full)?.preview(max)),
         }
     }
 
@@ -504,7 +504,10 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip
         None
     };
     estimate += markers.iter().map(|(_, bitmap)| (ENTRY_HEADER + bitmap.len()) as u64).sum::<u64>();
-    let (instances, rows) = instance_rows((estimate as f64 / (PAYLOAD as f64 * TARGET_FILL)).ceil() as usize);
+    // Address entries are large (up to a full 50-transaction page), so their
+    // buckets get more headroom against crowding.
+    let fill = if matches!(kind, Kind::Address | Kind::AddressPage) { 0.6 } else { TARGET_FILL };
+    let (instances, rows) = instance_rows((estimate as f64 / (PAYLOAD as f64 * fill)).ceil() as usize);
     let bucket_bytes = instances * PAYLOAD;
     // Items below index.len() are records; the rest are spent markers.
     let key_of = |item: usize| if item < index.len() { txid_at(item) } else { markers[item - index.len()].0 };

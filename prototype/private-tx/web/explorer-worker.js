@@ -247,6 +247,14 @@ const add = (a, b) => (BigInt(a ?? 0) + BigInt(b ?? 0)).toString();
 // so totals add up and the recent transactions come first.
 async function lookupAddress(address) {
   const outcome = await queryPair(addresses, address_key(address));
+  // A summary cut short in a crowded bucket: fetch its full form now, with
+  // the same padded request (and dummy to the other table) as "Load all".
+  for (const side of ['fromBase', 'fromRecent']) {
+    if (outcome[side]?.found && outcome[side].partial) {
+      const owner = side === 'fromBase' ? 'base' : 'recent';
+      outcome[side] = await fetchFull({ pair: addresses, owner, used: outcome.used, usedBase: outcome.usedBase });
+    }
+  }
   const base = outcome.fromBase?.found ? outcome.fromBase : null;
   const recent = outcome.fromRecent?.found ? outcome.fromRecent : null;
   if (!base && !recent) return { ...outcome, result: null };
@@ -327,6 +335,21 @@ async function lookup({ requestId, txid, query }) {
   } catch {
     self.postMessage({ type: 'error', requestId, message: 'The private lookup could not complete. No retry or public lookup was made.' });
   } finally { busy = false; }
+}
+
+// The padded full form of a previewed record from `owner`; the other
+// publication of the pair receives the same number of dummy row queries.
+async function fetchFull({ pair, owner, used, usedBase }) {
+  const ownerBrowser = owner === 'recent' ? used.browser : usedBase.browser;
+  const upload = ownerBrowser.query_full();
+  const count = new DataView(upload.buffer, upload.byteOffset).getUint32(0, true);
+  const ownerPath = owner === 'recent' ? `/${pair.recentSet}/${used.id}/query/overflow` : `/${pair.baseSet}/${usedBase.id}/query/overflow`;
+  const other = owner === 'recent' ? { browser: usedBase.browser, path: `/${pair.baseSet}/${usedBase.id}/query/overflow` }
+    : used ? { browser: used.browser, path: `/${pair.recentSet}/${used.id}/query/overflow` } : null;
+  const replies = Promise.all([ask(ownerPath, upload), other ? ask(other.path, other.browser.query_dummy(count)) : null]);
+  ownerBrowser.prepare_decode();
+  const [reply] = await replies;
+  return JSON.parse(ownerBrowser.decode_full(reply.body));
 }
 
 // Only on an explicit request: the padded full form of a previewed record.

@@ -1386,6 +1386,20 @@ impl AddressRecord {
         Ok(record)
     }
 
+    /// The record with only its newest transactions, as many as fit in `max`
+    /// bytes (a crowded bucket); totals and page count are unchanged.
+    pub fn preview(&self, max: usize) -> Vec<u8> {
+        let mut cut = self.clone();
+        let (mut low, mut high) = (0, self.txs.len());
+        while low < high {
+            let mid = (low + high + 1) / 2;
+            cut.txs = self.txs[..mid].to_vec();
+            if cut.encode().len() <= max { low = mid } else { high = mid - 1 }
+        }
+        cut.txs = self.txs[..low].to_vec();
+        cut.encode()
+    }
+
     pub fn to_json(&self) -> Value {
         let mut json = json!({
             "address": self.address,

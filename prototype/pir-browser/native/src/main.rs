@@ -375,12 +375,13 @@ fn main() {
             index_spike::run(entries, rows, row_bytes, &threads, queries)
         })(),
         [_, mode, out] if mode == "explorer-encode" => explorer::encode(Path::new(out)),
-        [_, mode, records, dir, tip] if mode == "explorer-build" => tip
-            .parse()
-            .map_err(|_| "invalid snapshot tip".into())
-            .and_then(|tip| explorer::build(Path::new(records), Path::new(dir), tip)),
-        [_, mode, dir, port, threads, web @ ..] if mode == "explorer-serve" && web.len() <= 1 => match (port.parse(), threads.parse()) {
-            (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads, web.first().map(Path::new)),
+        [_, mode, records, dir, tip, base @ ..] if mode == "explorer-build" && base.len() <= 1 => match (tip.parse(), base.first().map(|b| b.parse()).transpose()) {
+            (Ok(tip), Ok(base_tip)) => explorer::build(Path::new(records), Path::new(dir), tip, base_tip),
+            _ => Err("invalid snapshot or base tip".into()),
+        },
+        // Optional trailing arguments: web directory, then recent-publication root.
+        [_, mode, dir, port, threads, web @ ..] if mode == "explorer-serve" && web.len() <= 2 => match (port.parse(), threads.parse()) {
+            (Ok(port), Ok(threads)) => explorer::serve(Path::new(dir), port, threads, web.first().map(Path::new), web.get(1).map(Path::new)),
             _ => Err("invalid port or threads".into()),
         },
         [_, mode, addr, txid, full @ ..] if mode == "explorer-lookup" && (full.is_empty() || full == ["full"]) => {

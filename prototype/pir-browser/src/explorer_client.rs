@@ -117,15 +117,29 @@ impl ExplorerPirBrowser {
             return Err(JsValue::from_str("no main query is pending"));
         };
         let rows = self.main.decode(&secrets, reply).map_err(|e| JsValue::from_str(&e))?;
-        match layout::find(&rows[0].concat(), &txid).map_err(|e| JsValue::from_str(&e))? {
-            layout::Entry::Absent => Ok(json!({"found":false,"txid":hex::encode(txid),"snapshotTip":self.snapshot_tip}).to_string()),
-            layout::Entry::Inline(bytes) => self.finish(txid, &bytes, None),
+        let bucket = rows[0].concat();
+        // Only a recent publication carries these; a base bucket never does.
+        let spent = layout::find_spent(&bucket, &txid).map_err(|e| JsValue::from_str(&e))?;
+        let mut result = match layout::find(&bucket, &txid).map_err(|e| JsValue::from_str(&e))? {
+            layout::Entry::Absent => json!({"found":false,"txid":hex::encode(txid),"snapshotTip":self.snapshot_tip}),
+            layout::Entry::Inline(bytes) => self.finish(txid, &bytes, None)?,
             layout::Entry::Preview { preview, start, len } => {
                 let rows = layout::padded_rows(layout::overflow_rows(start, len).count());
                 self.pending = Some(Pending::Preview { txid, start, len });
-                self.finish(txid, &preview, Some(rows))
+                self.finish(txid, &preview, Some(rows))?
             }
+        };
+        if let Some(indices) = spent {
+            result["outputsSpentSinceBase"] = json!(indices);
         }
+        Ok(result.to_string())
+    }
+
+    /// `count` overflow queries for row 0, sent to the publication that does
+    /// not hold the record while the other fetches its full form, so both
+    /// tables always see the same padded request.
+    pub fn query_dummy(&self, count: usize) -> Result<Vec<u8>, JsValue> {
+        Ok(self.overflow.query(&vec![0; count.max(1)]).map_err(|e| JsValue::from_str(&e))?.1)
     }
 
     /// Padded overflow request for the full form of the last preview.
@@ -150,7 +164,7 @@ impl ExplorerPirBrowser {
         let bytes: Vec<u8> = globals.iter().zip(&rows).flat_map(|(g, per)| per[*g as usize / self.overflow.rows].clone()).collect();
         let offset = (start - globals[0] * layout::ROW_BYTES as u64) as usize;
         let record = bytes.get(offset..offset + len).ok_or_else(|| JsValue::from_str("overflow record exceeds fetched rows"))?;
-        self.finish(txid, record, None)
+        Ok(self.finish(txid, record, None)?.to_string())
     }
 
     #[wasm_bindgen(getter)]
@@ -158,7 +172,7 @@ impl ExplorerPirBrowser {
         self.snapshot_tip as f64
     }
 
-    fn finish(&self, txid: [u8; 32], bytes: &[u8], full_rows: Option<usize>) -> Result<String, JsValue> {
+    fn finish(&self, txid: [u8; 32], bytes: &[u8], full_rows: Option<usize>) -> Result<serde_json::Value, JsValue> {
         let mut json = Record::decode(txid, bytes).map_err(|e| JsValue::from_str(&e))?.to_json();
         json["found"] = json!(true);
         json["snapshotTip"] = json!(self.snapshot_tip);
@@ -166,6 +180,6 @@ impl ExplorerPirBrowser {
         if let Some(rows) = full_rows {
             json["fullRows"] = json!(rows);
         }
-        Ok(json.to_string())
+        Ok(json)
     }
 }

@@ -29,9 +29,8 @@ use std::{
 use zakura_pir_client::transparent::native::TableClientExt as _;
 use zakura_pir_protocol::native::D;
 
-use super::explorer_record::layout::{self, BUCKET_HEADER, ENTRY_HEADER, PREVIEW_FLAG, ROW_BYTES, TAG, preview_body, row_of};
-use sha2::Digest as _;
-use std::collections::HashSet;
+use super::explorer_record::layout::{self, BUCKET_HEADER, ENTRY_HEADER, PREVIEW_FLAG, ROW_BYTES, TAG, preview_body, row_of, spent_bitmap, spent_tag};
+use std::collections::{HashMap, HashSet};
 /// Records up to this size are stored whole; larger ones get a preview.
 const INLINE_MAX: usize = 4_096;
 const PREVIEW_MAX: usize = 2_048;
@@ -150,15 +149,17 @@ fn table_files(dir: &Path, kind: &str, instances: usize, rows: usize) -> Result<
 enum Body<'a> {
     Full(&'a [u8]),
     Preview { full: &'a [u8], bytes: Vec<u8> },
+    /// Bitmap of a base transaction's outputs spent after the base snapshot.
+    Spent(&'a [u8]),
 }
 
 impl<'a> Body<'a> {
     fn entry_bytes(&self) -> usize {
-        ENTRY_HEADER + match self { Body::Full(full) => full.len(), Body::Preview { bytes, .. } => PREVIEW_POINTER + bytes.len() }
+        ENTRY_HEADER + match self { Body::Full(full) | Body::Spent(full) => full.len(), Body::Preview { bytes, .. } => PREVIEW_POINTER + bytes.len() }
     }
     /// Halves the entry's preview budget; false when it cannot get smaller.
     fn shrink(&mut self, txid: [u8; 32]) -> Result<bool, String> {
-        let full: &'a [u8] = match self { Body::Full(full) | Body::Preview { full, .. } => full };
+        let full: &'a [u8] = match self { Body::Full(full) | Body::Preview { full, .. } => full, Body::Spent(_) => return Ok(false) };
         let current = self.entry_bytes();
         let bytes = Record::decode(txid, full)?.preview((current - ENTRY_HEADER - PREVIEW_POINTER).min(PREVIEW_MAX) / 2);
         if ENTRY_HEADER + PREVIEW_POINTER + bytes.len() >= current {
@@ -169,7 +170,28 @@ impl<'a> Body<'a> {
     }
 }
 
-pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Result<(), String> {
+/// Spent markers for a recent publication: outputs of transactions outside
+/// this records file (so in the base table) spent by a transaction in it.
+fn spent_markers(data: &[u8], index: &[(usize, usize)]) -> Result<Vec<([u8; 32], Vec<u8>)>, String> {
+    let txid_at = |i: usize| -> [u8; 32] { data[index[i].0..index[i].0 + 32].try_into().unwrap() };
+    let own: HashSet<[u8; 32]> = (0..index.len()).map(txid_at).collect();
+    let spends: Vec<Vec<([u8; 32], u32)>> = (0..index.len()).into_par_iter().map(|i| {
+        let (offset, len) = index[i];
+        let record = Record::decode(txid_at(i), &data[offset + 36..offset + 36 + len])?;
+        Ok(record.inputs.iter().filter_map(|input| Some((input.prev_txid?, input.prev_vout?))).filter(|(prev, _)| !own.contains(prev)).collect())
+    }).collect::<Result<_, String>>()?;
+    let mut by_tx: HashMap<[u8; 32], Vec<u32>> = HashMap::new();
+    for (prev, vout) in spends.into_iter().flatten() {
+        by_tx.entry(prev).or_default().push(vout);
+    }
+    let mut markers: Vec<_> = by_tx.into_iter().map(|(txid, vouts)| (txid, spent_bitmap(vouts))).collect();
+    markers.sort_unstable();
+    Ok(markers)
+}
+
+/// `base_tip` marks a recent publication: blocks after the base snapshot,
+/// plus spent markers for base transactions those blocks spend.
+pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64, base_tip: Option<u64>) -> Result<(), String> {
     fs::create_dir(dir).map_err(io_err)?;
     let start = Instant::now();
     let file = File::open(records_path).map_err(io_err)?;
@@ -193,12 +215,18 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
         return Err("truncated records file".into());
     }
     let txid_at = |i: usize| -> [u8; 32] { data[index[i].0..index[i].0 + 32].try_into().unwrap() };
+    let markers = if base_tip.is_some() { spent_markers(&data, &index)? } else { Vec::new() };
+    estimate += markers.iter().map(|(_, bitmap)| (ENTRY_HEADER + bitmap.len()) as u64).sum::<u64>();
     let (instances, rows) = instance_rows((estimate as f64 / (ROW_BYTES as f64 * TARGET_FILL)).ceil() as usize);
     let bucket_bytes = instances * ROW_BYTES;
-    let mut order: Vec<(u32, u32)> = (0..index.len()).into_par_iter().map(|i| (row_of(&txid_at(i), rows as u64) as u32, i as u32)).collect();
+    // Items below index.len() are records; the rest are spent markers.
+    let key_of = |item: usize| if item < index.len() { txid_at(item) } else { markers[item - index.len()].0 };
+    let mut order: Vec<(u32, u32)> = (0..index.len() + markers.len()).into_par_iter().map(|i| (row_of(&key_of(i), rows as u64) as u32, i as u32)).collect();
     order.par_sort_unstable();
-    // Demotions of small records also land in overflow; reserve a margin.
-    let overflow_capacity = (overflow_bytes + overflow_bytes / 10 + (64 << 20)) as usize;
+    // Demotions of small records also land in overflow; reserve a margin. A
+    // recent table stays small, and its preparation time scales with rows.
+    let floor: u64 = if base_tip.is_some() { 4 << 20 } else { 64 << 20 };
+    let overflow_capacity = (overflow_bytes + overflow_bytes / 10 + floor) as usize;
     let (overflow_instances, overflow_rows) = instance_rows(overflow_capacity.div_ceil(ROW_BYTES));
     let mut main = table_files(dir, "main", instances, rows)?;
     let mut overflow = table_files(dir, "overflow", overflow_instances, overflow_rows)?;
@@ -208,10 +236,19 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
     for group in order.chunk_by(|a, b| a.0 == b.0) {
         let bucket = group[0].0 as usize;
         let mut tags = HashSet::with_capacity(group.len());
-        let mut entries: Vec<([u8; 32], Body)> = Vec::with_capacity(group.len());
+        let mut entries: Vec<([u8; TAG], [u8; 32], Body)> = Vec::with_capacity(group.len());
         for &(_, i) in group {
+            if i as usize >= index.len() {
+                let (txid, bitmap) = &markers[i as usize - index.len()];
+                if !tags.insert(spent_tag(txid)) {
+                    return Err(format!("duplicate tag in bucket {bucket}"));
+                }
+                entries.push((spent_tag(txid), *txid, Body::Spent(bitmap)));
+                continue;
+            }
             let txid = txid_at(i as usize);
-            if !tags.insert(<[u8; TAG]>::try_from(&txid[..TAG]).unwrap()) {
+            let tag = <[u8; TAG]>::try_from(&txid[..TAG]).unwrap();
+            if !tags.insert(tag) {
                 return Err(format!("duplicate tag in bucket {bucket}"));
             }
             let (offset, len) = index[i as usize];
@@ -221,16 +258,16 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
             } else {
                 Body::Preview { full, bytes: Record::decode(txid, full)?.preview(PREVIEW_MAX) }
             };
-            entries.push((txid, body));
+            entries.push((tag, txid, body));
         }
-        let mut used: usize = BUCKET_HEADER + entries.iter().map(|(_, b)| b.entry_bytes()).sum::<usize>();
+        let mut used: usize = BUCKET_HEADER + entries.iter().map(|(_, _, b)| b.entry_bytes()).sum::<usize>();
         if used > bucket_bytes {
             demoted_buckets += 1;
             let mut frozen = vec![false; entries.len()];
             while used > bucket_bytes {
-                let pick = (0..entries.len()).filter(|&i| !frozen[i]).max_by_key(|&i| entries[i].1.entry_bytes())
+                let pick = (0..entries.len()).filter(|&i| !frozen[i]).max_by_key(|&i| entries[i].2.entry_bytes())
                     .ok_or_else(|| format!("bucket {bucket} cannot fit even zero-list previews"))?;
-                let (txid, body) = &mut entries[pick];
+                let (_, txid, body) = &mut entries[pick];
                 let (before, was_full) = (body.entry_bytes(), matches!(body, Body::Full(_)));
                 if body.shrink(*txid)? {
                     used = used - before + body.entry_bytes();
@@ -243,16 +280,16 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
         buffer[..used.max(BUCKET_HEADER)].fill(0);
         buffer[..2].copy_from_slice(&(entries.len() as u16).to_le_bytes());
         let mut at = BUCKET_HEADER;
-        for (txid, body) in &entries {
+        for (tag, _, body) in &entries {
             let (payload, flag) = match body {
-                Body::Full(full) => (full.to_vec(), 0),
+                Body::Full(full) | Body::Spent(full) => (full.to_vec(), 0),
                 Body::Preview { full, bytes } => {
                     previews += 1;
                     let start = write_overflow(&mut overflow, &mut cursor, overflow_rows, overflow_limit, full)?;
                     (preview_body(start, full.len(), bytes), PREVIEW_FLAG)
                 }
             };
-            buffer[at..at + TAG].copy_from_slice(&txid[..TAG]);
+            buffer[at..at + TAG].copy_from_slice(tag);
             buffer[at + TAG..at + ENTRY_HEADER].copy_from_slice(&(payload.len() as u16 | flag).to_le_bytes());
             buffer[at + ENTRY_HEADER..at + ENTRY_HEADER + payload.len()].copy_from_slice(&payload);
             at += ENTRY_HEADER + payload.len();
@@ -266,7 +303,8 @@ pub(super) fn build(records_path: &Path, dir: &Path, snapshot_tip: u64) -> Resul
     for map in main.iter().chain(overflow.iter()) {
         map.flush().map_err(io_err)?;
     }
-    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"records":index.len(),"rowBytes":ROW_BYTES,
+    let manifest = json!({"schema":layout::SCHEMA_NAME,"snapshotTip":snapshot_tip,"baseTip":base_tip,"spentMarkers":markers.len(),
+        "records":index.len(),"rowBytes":ROW_BYTES,"builtAt":std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map_err(io_err)?.as_secs(),
         "rowHashDomain":String::from_utf8_lossy(layout::ROW_HASH_DOMAIN),"tagBytes":TAG,"inlineMax":INLINE_MAX,"previewMax":PREVIEW_MAX,
         "main":{"instances":instances,"rows":rows,"bucketBytes":bucket_bytes,"meanBucketBytesUsed":total_used as f64 / rows as f64,
             "maxBucketBytesUsed":max_used,"previews":previews,"demotedSmallRecords":demoted_small,"bucketsWithDemotions":demoted_buckets},
@@ -321,6 +359,78 @@ impl Table {
     }
 }
 
+/// One loaded publication of the recent table, addressed by a content id so
+/// a client never mixes public parameters and queries across rebuilds.
+struct Recent {
+    id: String,
+    target: PathBuf,
+    manifest: Vec<u8>,
+    main: Table,
+    overflow: Table,
+}
+
+impl Recent {
+    fn load(target: &Path, pool: &rayon::ThreadPool) -> Result<Self, String> {
+        let bytes = fs::read(target.join("manifest.json")).map_err(io_err)?;
+        let mut manifest: Value = serde_json::from_slice(&bytes).map_err(io_err)?;
+        if manifest["schema"] != layout::SCHEMA_NAME || manifest["baseTip"].as_u64().is_none() {
+            return Err("not a recent publication".into());
+        }
+        let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad recent manifest");
+        let (main, _) = pool.install(|| Table::load(target, "main", count("main", "instances")?, count("main", "rows")?))?;
+        let (overflow, _) = pool.install(|| Table::load(target, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
+        let id = hex::encode(&sha2::Sha256::digest(&bytes)[..12]);
+        manifest["id"] = json!(id);
+        Ok(Recent { id, target: target.to_owned(), manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main, overflow })
+    }
+}
+
+type RecentSet = std::sync::Arc<std::sync::RwLock<Vec<std::sync::Arc<Recent>>>>;
+
+/// Follows `<root>/current`; keeps the newest two publications so lookups
+/// started just before a swap can still finish.
+fn watch_recent(root: PathBuf, set: RecentSet) {
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(4).build().expect("recent loader pool");
+    loop {
+        if let Ok(target) = fs::canonicalize(root.join("current")) {
+            let loaded = set.read().unwrap().last().map(|r| r.target.clone());
+            if loaded.as_ref() != Some(&target) {
+                let start = Instant::now();
+                match Recent::load(&target, &pool) {
+                    Ok(recent) => {
+                        eprintln!("{}", json!({"recentLoaded":target.display().to_string(),"id":recent.id,"seconds":start.elapsed().as_secs_f64()}));
+                        let mut set = set.write().unwrap();
+                        set.push(std::sync::Arc::new(recent));
+                        let excess = set.len().saturating_sub(2);
+                        set.drain(..excess);
+                    }
+                    Err(error) => eprintln!("{}", json!({"recentLoadError":error,"target":target.display().to_string()})),
+                }
+            }
+        }
+        std::thread::sleep(std::time::Duration::from_secs(5));
+    }
+}
+
+fn answer_query(pool: &rayon::ThreadPool, t: &Table, body: &[u8]) -> Result<(Vec<u8>, String), String> {
+    let count = body.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).ok_or("missing upload count")?;
+    let body = &body[4..];
+    if count == 0 || count > 256 || body.len() % count != 0 {
+        return Err("bad upload length".into());
+    }
+    let request_bytes = body.len() / count;
+    let start = Instant::now();
+    let mut out = Vec::new();
+    let (mut scan, mut pack) = (0, 0);
+    for upload in body.chunks(request_bytes) {
+        let (reply, s, p) = pool.install(|| t.answer(upload))?;
+        out.extend(reply);
+        scan += s;
+        pack += p;
+    }
+    Ok((out, format!("X-Server-Ns: {}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\n", start.elapsed().as_nanos())))
+}
+
 fn read_request(stream: &mut TcpStream) -> Result<(String, Vec<u8>), String> {
     let mut reader = BufReader::new(stream.try_clone().map_err(io_err)?);
     let mut line = String::new();
@@ -353,7 +463,7 @@ fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: 
     stream.write_all(body)
 }
 
-pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -> Result<(), String> {
+pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>, recent_root: Option<&Path>) -> Result<(), String> {
     let manifest: Value = serde_json::from_slice(&fs::read(dir.join("manifest.json")).map_err(io_err)?).map_err(io_err)?;
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
     let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad manifest");
@@ -361,6 +471,11 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -
     let (overflow, overflow_load) =
         pool.install(|| Table::load(dir, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
     eprintln!("{}", json!({"loaded":[main_load, overflow_load],"threads":threads}));
+    let recent: RecentSet = Default::default();
+    if let Some(root) = recent_root {
+        let (root, set) = (root.to_owned(), recent.clone());
+        std::thread::spawn(move || watch_recent(root, set));
+    }
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(io_err)?;
     eprintln!("Private explorer test listening on http://127.0.0.1:{port}");
     for stream in listener.incoming() {
@@ -380,24 +495,28 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -
                     respond(&mut stream, "200 OK", "application/octet-stream", "", t.publics.get(i).ok_or("bad instance")?).map_err(io_err)
                 }
                 r if r.starts_with("POST /query/") => {
-                    let t = table(&r["POST /query/".len()..])?;
-                    let count = body.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).ok_or("missing upload count")?;
-                    let body = &body[4..];
-                    if count == 0 || count > 256 || body.len() % count != 0 {
-                        return Err("bad upload length".into());
-                    }
-                    let request_bytes = body.len() / count;
-                    let start = Instant::now();
-                    let mut out = Vec::new();
-                    let (mut scan, mut pack) = (0, 0);
-                    for upload in body.chunks(request_bytes) {
-                        let (reply, s, p) = pool.install(|| t.answer(upload))?;
-                        out.extend(reply);
-                        scan += s;
-                        pack += p;
-                    }
-                    let timing = format!("X-Server-Ns: {}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\n", start.elapsed().as_nanos());
+                    let (out, timing) = answer_query(&pool, table(&r["POST /query/".len()..])?, &body)?;
                     respond(&mut stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
+                }
+                "GET /recent/manifest" => match recent.read().unwrap().last() {
+                    Some(current) => respond(&mut stream, "200 OK", "application/json", "", &current.manifest).map_err(io_err),
+                    None => respond(&mut stream, "404 Not Found", "text/plain", "", b"no recent publication").map_err(io_err),
+                },
+                r if r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
+                    let path = &r[r.find("/recent/").unwrap() + "/recent/".len()..];
+                    let (id, rest) = path.split_once('/').ok_or("bad recent path")?;
+                    let Some(publication) = recent.read().unwrap().iter().find(|p| p.id == id).cloned() else {
+                        return respond(&mut stream, "410 Gone", "text/plain", "", b"recent publication replaced").map_err(io_err);
+                    };
+                    let table = |name: &str| match name { "main" => Ok(&publication.main), "overflow" => Ok(&publication.overflow), _ => Err("unknown table".to_string()) };
+                    match (r.starts_with("POST"), rest.split_once('/')) {
+                        (false, Some(("publics", kind))) => respond(&mut stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
+                        (true, Some(("query", kind))) => {
+                            let (out, timing) = answer_query(&pool, table(kind)?, &body)?;
+                            respond(&mut stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
+                        }
+                        _ => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
+                    }
                 }
                 r if r.starts_with("GET /") && web.is_some() && !r.contains("..") => {
                     let name = match r["GET /".len()..].split('?').next().unwrap_or("") { "" => "index.html", other => other };
@@ -455,41 +574,47 @@ struct Remote {
     profile: TableProfile,
     publics: Vec<Vec<u8>>,
     rows: usize,
+    /// Route prefix: "" for the base publication, "/recent/<id>" for recent.
+    prefix: String,
 }
 
 impl Remote {
-    fn fetch(http: &Http, cache: &Path, manifest: &Value, kind: &str) -> Result<Self, String> {
+    fn fetch(http: &Http, cache: &Path, manifest: &Value, kind: &str, prefix: &str) -> Result<Self, String> {
         let rows = manifest[kind]["rows"].as_u64().ok_or("bad manifest")? as usize;
         let instances = manifest[kind]["instances"].as_u64().ok_or("bad manifest")? as usize;
-        let publics = (0..instances)
-            .map(|i| {
-                let path = cache.join(format!("{kind}-{i:02}.public"));
-                if let Ok(bytes) = fs::read(&path) {
-                    return Ok(bytes);
-                }
-                let (bytes, _) = http.call("GET", &format!("/public/{kind}/{i}"), &[])?;
+        let profile = profile_for(kind, rows)?;
+        let path = cache.join(format!("{kind}.publics"));
+        let bytes = match fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                let (bytes, _) = http.call("GET", &format!("{prefix}/publics/{kind}"), &[])?;
                 fs::write(&path, &bytes).map_err(io_err)?;
-                Ok(bytes)
-            })
-            .collect::<Result<_, String>>()?;
-        Ok(Remote { profile: profile_for(kind, rows)?, publics, rows })
+                bytes
+            }
+        };
+        let size = profile.scheme.public_bytes;
+        if bytes.len() != size * instances {
+            return Err(format!("{kind} public parameters have the wrong length"));
+        }
+        Ok(Remote { publics: bytes.chunks(size).map(<[u8]>::to_vec).collect(), profile, rows, prefix: prefix.to_owned() })
     }
 
-    /// Queries `row` of every instance with one shared upload; returns all rows.
-    fn rows(&self, http: &Http, kind: &str, local_rows: &[usize], timing: &mut BTreeMap<String, u128>) -> Result<Vec<Vec<Vec<u8>>>, String> {
+    /// Queries each local row of every instance with one shared upload per row.
+    fn rows(&self, http: &Http, label: &str, local_rows: &[usize], timing: &mut BTreeMap<String, u128>) -> Result<Vec<Vec<Vec<u8>>>, String> {
+        let kind = if label.ends_with("overflow") || label.ends_with("Overflow") { "overflow" } else { "main" };
         let start = Instant::now();
         let (secrets, uploads): (Vec<_>, Vec<_>) = local_rows.iter().map(|&r| self.profile.prepare(r)).collect::<Result<Vec<_>, _>>()?.into_iter().unzip();
-        *timing.entry(format!("{kind}ClientPrepareNs")).or_default() += start.elapsed().as_nanos();
+        *timing.entry(format!("{label}ClientPrepareNs")).or_default() += start.elapsed().as_nanos();
         let start = Instant::now();
         let mut body = (uploads.len() as u32).to_le_bytes().to_vec();
         body.extend(uploads.concat());
-        let (reply, headers) = http.call("POST", &format!("/query/{kind}"), &body)?;
-        *timing.entry(format!("{kind}RoundTripNs")).or_default() += start.elapsed().as_nanos();
+        let (reply, headers) = http.call("POST", &format!("{}/query/{kind}", self.prefix), &body)?;
+        *timing.entry(format!("{label}RoundTripNs")).or_default() += start.elapsed().as_nanos();
         for (name, header) in [("ServerNs", "x-server-ns"), ("ScanNs", "x-scan-ns"), ("PackNs", "x-pack-ns")] {
-            *timing.entry(format!("{kind}{name}")).or_default() += headers.get(header).and_then(|v| v.parse().ok()).unwrap_or(0);
+            *timing.entry(format!("{label}{name}")).or_default() += headers.get(header).and_then(|v| v.parse().ok()).unwrap_or(0);
         }
-        *timing.entry(format!("{kind}UploadBytes")).or_default() += uploads.iter().map(|u| u.len() as u128).sum::<u128>();
-        *timing.entry(format!("{kind}ReplyBytes")).or_default() += reply.len() as u128;
+        *timing.entry(format!("{label}UploadBytes")).or_default() += uploads.iter().map(|u| u.len() as u128).sum::<u128>();
+        *timing.entry(format!("{label}ReplyBytes")).or_default() += reply.len() as u128;
         let size = self.profile.scheme.response_bytes;
         if reply.len() != local_rows.len() * self.publics.len() * size {
             return Err("unexpected reply length".into());
@@ -500,8 +625,36 @@ impl Remote {
             .zip(&secrets)
             .map(|(replies, secret)| replies.chunks(size).zip(&self.publics).map(|(r, p)| self.profile.decode(secret, p, r)).collect())
             .collect::<Result<Vec<Vec<_>>, String>>()?;
-        *timing.entry(format!("{kind}ClientDecodeNs")).or_default() += start.elapsed().as_nanos();
+        *timing.entry(format!("{label}ClientDecodeNs")).or_default() += start.elapsed().as_nanos();
         Ok(decoded)
+    }
+}
+
+/// A publication's two tables: the base snapshot, or the recent blocks.
+struct Publication {
+    main: Remote,
+    overflow: Remote,
+    tip: u64,
+}
+
+impl Publication {
+    fn open(http: &Http, cache: &Path, manifest_bytes: &[u8], prefix: &str) -> Result<Self, String> {
+        let manifest: Value = serde_json::from_slice(manifest_bytes).map_err(io_err)?;
+        if manifest["schema"] != layout::SCHEMA_NAME {
+            return Err("unsupported private explorer manifest".into());
+        }
+        // Public parameters belong to one exact publication, not just its tip.
+        let cache = cache.join(hex::encode(&sha2::Sha256::digest(manifest_bytes)[..16]));
+        fs::create_dir_all(&cache).map_err(io_err)?;
+        Ok(Publication {
+            main: Remote::fetch(http, &cache, &manifest, "main", prefix)?,
+            overflow: Remote::fetch(http, &cache, &manifest, "overflow", prefix)?,
+            tip: manifest["snapshotTip"].as_u64().ok_or("bad manifest")?,
+        })
+    }
+
+    fn bucket(&self, http: &Http, label: &str, txid: &[u8; 32], timing: &mut BTreeMap<String, u128>) -> Result<Vec<u8>, String> {
+        Ok(self.main.rows(http, label, &[row_of(txid, self.main.rows as u64) as usize], timing)?.remove(0).concat())
     }
 }
 
@@ -510,21 +663,33 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
     let total = Instant::now();
     let http = Http { addr: addr.to_owned() };
     let mut timing = BTreeMap::new();
-    let (manifest_bytes, _) = http.call("GET", "/manifest", &[])?;
-    let manifest: Value = serde_json::from_slice(&manifest_bytes).map_err(io_err)?;
-    if manifest["schema"] != layout::SCHEMA_NAME {
-        return Err("unsupported private explorer manifest".into());
-    }
-    // Public parameters belong to one exact publication, not just its tip.
-    let cache = cache.join(hex::encode(&sha2::Sha256::digest(&manifest_bytes)[..16]));
-    fs::create_dir_all(&cache).map_err(io_err)?;
     let start = Instant::now();
-    let main = Remote::fetch(&http, &cache, &manifest, "main")?;
-    let overflow = Remote::fetch(&http, &cache, &manifest, "overflow")?;
+    let (base_manifest, _) = http.call("GET", "/manifest", &[])?;
+    let base = Publication::open(&http, cache, &base_manifest, "")?;
+    // No recent publication yet is a normal state: every client then asks the base only.
+    let recent = match http.call("GET", "/recent/manifest", &[]) {
+        Ok((bytes, _)) => {
+            let id = serde_json::from_slice::<Value>(&bytes).map_err(io_err)?["id"].as_str().ok_or("recent manifest has no id")?.to_owned();
+            Some(Publication::open(&http, cache, &bytes, &format!("/recent/{id}"))?)
+        }
+        Err(_) => None,
+    };
     timing.insert("publicParamsNs".into(), start.elapsed().as_nanos());
-    let rows = main.rows(&http, "main", &[row_of(&txid, main.rows as u64) as usize], &mut timing)?;
+    let tip = recent.as_ref().map_or(base.tip, |r| r.tip);
+    // Every lookup asks both tables with the same shape, found or not.
+    let base_bucket = base.bucket(&http, "main", &txid, &mut timing)?;
+    let recent_bucket = recent.as_ref().map(|r| r.bucket(&http, "recentMain", &txid, &mut timing)).transpose()?;
+    let (owner, entry) = match recent_bucket.as_ref().map(|b| layout::find(b, &txid)).transpose()? {
+        Some(entry) if entry != layout::Entry::Absent => (recent.as_ref(), entry),
+        _ => (Some(&base), layout::find(&base_bucket, &txid)?),
+    };
+    let spent_since: Vec<u32> = match (&recent_bucket, std::ptr::eq(owner.unwrap(), &base)) {
+        (Some(bucket), true) => layout::find_spent(bucket, &txid)?.unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let owner = owner.unwrap();
     let mut partial = false;
-    let record = match layout::find(&rows[0].concat(), &txid)? {
+    let record = match entry {
         layout::Entry::Absent => None,
         layout::Entry::Inline(body) => Some(body),
         layout::Entry::Preview { preview, .. } if !full => {
@@ -535,10 +700,15 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
             let wanted: Vec<usize> = layout::overflow_rows(start, len).map(|g| g as usize).collect();
             let first = wanted[0];
             // Padding repeats the first row; the server cannot see which rows.
-            let mut asked: Vec<usize> = wanted.iter().map(|g| g % overflow.rows).collect();
+            let mut asked: Vec<usize> = wanted.iter().map(|g| g % owner.overflow.rows).collect();
             asked.resize(layout::padded_rows(wanted.len()), asked[0]);
-            let fetched = overflow.rows(&http, "overflow", &asked, &mut timing)?;
-            let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / overflow.rows].clone()).collect();
+            // The other publication gets the same number of dummy queries, so
+            // the server cannot tell an old large transaction from a recent one.
+            for other in [Some(&base), recent.as_ref()].into_iter().flatten().filter(|p| !std::ptr::eq(*p, owner)) {
+                other.overflow.rows(&http, "dummyOverflow", &vec![0; asked.len()], &mut timing)?;
+            }
+            let fetched = owner.overflow.rows(&http, "overflow", &asked, &mut timing)?;
+            let bytes: Vec<u8> = wanted.iter().zip(&fetched).flat_map(|(g, per)| per[g / owner.overflow.rows].clone()).collect();
             timing.insert("overflowRows".into(), asked.len() as u128);
             Some(bytes[start as usize - first * ROW_BYTES..][..len].to_vec())
         }
@@ -546,11 +716,16 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
     let result = match record {
         None => json!({"found":false,"txid":txid_hex}),
         Some(bytes) => {
-            let mut json = Record::decode(txid, &bytes)?.to_json();
-            let tip = manifest["snapshotTip"].as_u64().unwrap_or(0);
-            json["confirmationsAtSnapshot"] = json!(tip.saturating_sub(json["blockHeight"].as_u64().unwrap_or(0)) + 1);
+            let mut record = Record::decode(txid, &bytes)?;
+            for output in &mut record.outputs {
+                output.spent |= spent_since.contains(&output.index);
+            }
+            let mut json = record.to_json();
+            json["confirmations"] = json!(tip.saturating_sub(json["blockHeight"].as_u64().unwrap_or(0)) + 1);
             json["found"] = json!(true);
             json["partial"] = json!(partial);
+            json["fromRecent"] = json!(!std::ptr::eq(owner, &base));
+            json["outputsSpentSinceBase"] = json!(spent_since);
             json
         }
     };
@@ -558,7 +733,7 @@ pub(super) fn lookup(addr: &str, txid_hex: &str, cache: &Path, full: bool) -> Re
     let ms: BTreeMap<_, _> = timing.iter().map(|(k, v)| {
         if k.ends_with("Ns") { (k.trim_end_matches("Ns").to_owned() + "Ms", json!((*v as f64 / 1e6 * 10.0).round() / 10.0)) } else { (k.clone(), json!(*v as u64)) }
     }).collect();
-    println!("{}", serde_json::to_string_pretty(&json!({"snapshotTip":manifest["snapshotTip"],"result":result,"timing":ms})).map_err(io_err)?);
+    println!("{}", serde_json::to_string_pretty(&json!({"baseTip":base.tip,"tip":tip,"result":result,"timing":ms})).map_err(io_err)?);
     Ok(())
 }
 

@@ -645,6 +645,23 @@ mod tests {
         assert_eq!(overflow_rows(70_000, 40_000), 4..=6);
         assert_eq!(padded_rows(3), 4);
     }
+
+    #[test]
+    fn spent_markers_share_the_txid_bucket_without_matching_its_record() {
+        use layout::*;
+        let txid = [7u8; 32];
+        let bitmap = spent_bitmap([0, 9, 1_252]);
+        assert_eq!(spent_indices(&bitmap), vec![0, 9, 1_252]);
+        let mut bucket = vec![0u8; ROW_BYTES];
+        bucket[..2].copy_from_slice(&1u16.to_le_bytes());
+        let at = BUCKET_HEADER;
+        bucket[at..at + TAG].copy_from_slice(&spent_tag(&txid));
+        bucket[at + TAG..at + ENTRY_HEADER].copy_from_slice(&(bitmap.len() as u16).to_le_bytes());
+        bucket[at + ENTRY_HEADER..at + ENTRY_HEADER + bitmap.len()].copy_from_slice(&bitmap);
+        assert_eq!(find(&bucket, &txid).unwrap(), Entry::Absent);
+        assert_eq!(find_spent(&bucket, &txid).unwrap(), Some(vec![0, 9, 1_252]));
+        assert_eq!(find_spent(&bucket, &[8u8; 32]).unwrap(), None);
+    }
 }
 
 // ---- table layout shared by builder, server and clients ----------------------
@@ -720,7 +737,43 @@ pub mod layout {
         Preview { preview: Vec<u8>, start: u64, len: usize },
     }
 
+    /// Tag of a "spent since the base snapshot" marker for a base txid. It
+    /// sits in the txid's own bucket, so the same single query returns it.
+    pub fn spent_tag(txid: &[u8; 32]) -> [u8; TAG] {
+        Sha256::new().chain_update(b"zecblock-explorer-spent-v1").chain_update(txid).finalize()[..TAG].try_into().unwrap()
+    }
+
+    /// Output indices encoded as a little-endian bitmap.
+    pub fn spent_bitmap(indices: impl IntoIterator<Item = u32>) -> Vec<u8> {
+        let mut out = Vec::new();
+        for index in indices {
+            let byte = index as usize / 8;
+            if out.len() <= byte {
+                out.resize(byte + 1, 0);
+            }
+            out[byte] |= 1 << (index % 8);
+        }
+        out
+    }
+
+    pub fn spent_indices(bitmap: &[u8]) -> Vec<u32> {
+        bitmap.iter().enumerate().flat_map(|(byte, bits)| (0..8).filter(move |bit| bits & (1 << bit) != 0).map(move |bit| (byte * 8 + bit) as u32)).collect()
+    }
+
+    /// Output indices of a base transaction spent after its snapshot, when
+    /// this (recent) bucket carries a marker for it.
+    pub fn find_spent(bucket: &[u8], txid: &[u8; 32]) -> Result<Option<Vec<u32>>, String> {
+        Ok(match find_tag(bucket, &spent_tag(txid))? {
+            Entry::Inline(bitmap) => Some(spent_indices(&bitmap)),
+            _ => None,
+        })
+    }
+
     pub fn find(bucket: &[u8], txid: &[u8; 32]) -> Result<Entry, String> {
+        find_tag(bucket, &txid[..TAG])
+    }
+
+    fn find_tag(bucket: &[u8], tag: &[u8]) -> Result<Entry, String> {
         if bucket.is_empty() || bucket.len() % ROW_BYTES != 0 {
             return Err("bucket has the wrong length".into());
         }
@@ -731,7 +784,7 @@ pub mod layout {
             let raw = u16::from_le_bytes([header[TAG], header[TAG + 1]]);
             let len = (raw & !PREVIEW_FLAG) as usize;
             let body = bucket.get(at + ENTRY_HEADER..at + ENTRY_HEADER + len).ok_or("bucket entry exceeds bucket")?;
-            if header[..TAG] == txid[..TAG] {
+            if header[..TAG] == *tag {
                 if raw & PREVIEW_FLAG == 0 {
                     return Ok(Entry::Inline(body.to_vec()));
                 }

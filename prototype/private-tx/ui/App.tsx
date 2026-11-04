@@ -141,6 +141,7 @@ export function App() {
         }
         return;
       }
+      if (data.type === 'tip') { setManifest(data.manifest ?? null); return; }
       if (data.type === 'publication-warning') return;
       if (data.requestId !== undefined && data.requestId !== requestRef.current) return;
       if (data.type === 'result') {
@@ -264,7 +265,7 @@ export function App() {
     <footer className="private-footer">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
         <span className="inline-flex items-center gap-1.5"><LockIcon />Searches are private by design{measurements ? <span id="metrics" className="text-muted"> · {(measurements.totalMs / 1000).toFixed(2)} s</span> : null}</span>
-        <span>{height ? `Snapshot · block ${height.toLocaleString()}` : ''}</span>
+        <span>{height ? `Up to block ${height.toLocaleString()}` : ''}</span>
         <a href="https://zecblock.com" rel="noopener noreferrer" className="hover:text-primary transition-colors">zecblock.com</a>
       </div>
     </footer>

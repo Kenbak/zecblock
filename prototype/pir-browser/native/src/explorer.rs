@@ -485,6 +485,12 @@ struct Job {
     reply: mpsc::Sender<Result<(Vec<u8>, String), String>>,
 }
 
+/// Set EXPLORER_TIMING_HEADERS=1 to report server timing and batch size.
+fn timing_headers() -> bool {
+    static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *ON.get_or_init(|| std::env::var("EXPLORER_TIMING_HEADERS").is_ok_and(|v| v == "1"))
+}
+
 fn split_uploads(body: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let count = body.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).ok_or("missing upload count")?;
     let body = &body[4..];
@@ -537,8 +543,13 @@ fn schedule(jobs: mpsc::Receiver<Job>, pool: rayon::ThreadPool) {
                 let server = started.elapsed().as_nanos();
                 for job in batch {
                     let body: Vec<u8> = replies.by_ref().take(job.uploads.len()).flatten().collect();
-                    let headers = format!("X-Server-Ns: {server}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\nX-Queue-Ns: {}\r\nX-Batch: {selections}\r\n",
-                        started.duration_since(job.queued).as_nanos());
+                    // Timing and batch size are diagnostics; production replies omit them.
+                    let headers = if timing_headers() {
+                        format!("X-Server-Ns: {server}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\nX-Queue-Ns: {}\r\nX-Batch: {selections}\r\n",
+                            started.duration_since(job.queued).as_nanos())
+                    } else {
+                        String::new()
+                    };
                     let _ = job.reply.send(Ok((body, headers)));
                 }
             }

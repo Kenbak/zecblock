@@ -80,7 +80,7 @@ async function lookup({ requestId, txid }) {
     const result = JSON.parse(browser.decode_main(main.body));
     const decoded = performance.now();
     if (result.found !== true) {
-      self.postMessage({ type: 'error', requestId, message: `No confirmed transaction with this ID up to block ${manifest.snapshot.height.toLocaleString()}. The server cannot tell this lookup from a found one, and no public lookup was made.` });
+      self.postMessage({ type: 'notfound', requestId, snapshotHeight: manifest.snapshot.height });
       return;
     }
     self.postMessage({ type: 'result', requestId, result: toRecord(result), partial: partialOf(result), measurements: {

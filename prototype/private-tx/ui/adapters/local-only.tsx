@@ -23,7 +23,7 @@ export function useAddressLabel(address: string): { label: string; description?:
 
 export function PrivacyRiskInline(props?: { txid?: string; variant?: string; embedded?: boolean }) {
   void props;
-  return <p className="text-caption text-muted border-t border-cipher-border pt-3">Privacy-risk enrichment is unavailable in this publication. No additional request is made.</p>;
+  return null;
 }
 
 export function TokenChainIcon({ token, chain }: { token: string; chain: string; size?: number }) {

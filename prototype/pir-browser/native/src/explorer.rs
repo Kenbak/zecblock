@@ -407,6 +407,8 @@ pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>) -
                         Some("wasm") => "application/wasm",
                         Some("css") => "text/css",
                         Some("woff2") => "font/woff2",
+                        Some("png") => "image/png",
+                        Some("svg") => "image/svg+xml",
                         _ => "application/octet-stream",
                     };
                     match fs::read(web.unwrap().join(name)) {

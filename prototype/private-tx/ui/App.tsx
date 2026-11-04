@@ -1,63 +1,127 @@
 import { useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
-import { Badge } from '@/components/ui/Badge';
 import { Card, CardBody } from '@/components/ui/Card';
+import { TxLoadingSkeleton } from '@/app/tx/[txid]/components/TxLoadingSkeleton';
 import { transformExpressTxData } from '@/app/tx/[txid]/components/transform-tx-data';
 import type { TransactionData } from '@/app/tx/[txid]/components/types';
 import { TransactionView } from './TransactionView';
-import type { PrivateRecord } from './TransactionView';
+import type { PartialView, PrivateRecord } from './TransactionView';
 
-type Snapshot = { height: number; hash: string; publishedAt: string };
-type PublishedRange = { startHeight: number; endHeight: number; transactionCount?: number };
 type Manifest = {
   schema?: string;
   publicationId?: string;
-  collectionId?: string;
-  network?: string;
-  snapshot?: Snapshot;
-  coverage?: { startHeight: number; endHeight: number; complete?: boolean; ranges?: PublishedRange[]; [key: string]: unknown };
-  layerCount?: number;
+  snapshot?: { height: number; hash: string; publishedAt: string };
   sourceSummary?: { recordCount?: number };
 };
-type Sample = { txid: string; label?: string; height?: number };
-type Measurements = { queryBytes: number; responseBytes: number; encryptMs: number; requestMs: number; decodeMs: number; totalMs: number; [key: string]: number };
+type Measurements = { totalMs: number; [key: string]: number };
+type View =
+  | { kind: 'home' }
+  | { kind: 'loading'; txid: string }
+  | { kind: 'result'; record: PrivateRecord; data: TransactionData; partial: PartialView | null }
+  | { kind: 'notfound'; txid: string; height: number | null }
+  | { kind: 'error'; message: string };
+
 const TXID = /^[a-f\d]{64}$/i;
-const EXPLORER = 'zecblock-private-explorer-test-v2';
-type PartialView = { rows: number; shownInputs: number; shownOutputs: number; totalInputs: number; totalOutputs: number };
+const EXAMPLES = [
+  { label: 'Large transaction', txid: '84dcfb4394c4420eed9de74444a875d4b8a2576e664d6a7ef9765458e96826d9' },
+];
 
 function fullRecord(value: unknown): PrivateRecord | null {
   if (!value || typeof value !== 'object') return null;
   const record = value as PrivateRecord;
   if (record.schema !== 'zecblock-private-tx-record-v1' || record.found !== true || record.network !== 'mainnet'
       || !TXID.test(record.txid) || !record.detail
-      // The all-transactions explorer test carries no raw bytes; other publications must.
       || (record.raw !== null && (!record.raw || typeof record.raw.hex !== 'string' || !record.raw.decoded))
       || !record.snapshot || !Number.isSafeInteger(record.snapshot.height)
       || typeof record.snapshot.publishedAt !== 'string' || !record.coverage) return null;
   return record;
 }
 
-function formatMs(value: number | undefined) { return Number.isFinite(value) ? `${Math.round(value!).toLocaleString()} ms` : '—'; }
+function toTransaction(record: PrivateRecord): TransactionData | null {
+  try {
+    // API BIGINTs are decimal strings; the shared components expect a number height.
+    const raw = record.detail.blockHeight;
+    const blockHeight = typeof raw === 'number' ? raw : typeof raw === 'string' && /^(0|[1-9]\d*)$/.test(raw) ? Number(raw) : NaN;
+    if (!Number.isSafeInteger(blockHeight) || blockHeight < 0) return null;
+    const data = transformExpressTxData({ ...record.detail, blockHeight });
+    if (data.txid !== record.txid || !Number.isFinite(data.timestamp) || !Array.isArray(data.inputs) || !Array.isArray(data.outputs)) return null;
+    return data;
+  } catch { return null; }
+}
+
+function BrandLogo() {
+  return <span className="brand-logo" role="img" aria-label="ZecBlock">
+    <img className="brand-logo-on-dark" src="/brand/zecblock-logotype.png" alt="ZecBlock" width={422} height={98} />
+    <img className="brand-logo-on-light" src="/brand/zecblock-logotype-light.png" alt="ZecBlock" width={422} height={98} />
+  </span>;
+}
+
+function ThemeToggle() {
+  const [light, setLight] = useState(() => document.documentElement.classList.contains('light'));
+  function toggle() {
+    const next = light ? 'dark' : 'light';
+    document.documentElement.classList.remove('light', 'dark');
+    document.documentElement.classList.add(next);
+    try { localStorage.setItem('theme', next); localStorage.setItem('theme-user-set', '1'); } catch { /* storage blocked */ }
+    setLight(!light);
+  }
+  return <button type="button" onClick={toggle} className="relative p-1.5 rounded-lg theme-toggle-btn hover:opacity-80 transition duration-200 group" aria-label={`Switch to ${light ? 'dark' : 'light'} mode`} title={`Switch to ${light ? 'dark' : 'light'} mode`}>
+    <svg className="w-4 h-4 text-muted group-hover:text-primary transition-colors duration-150" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+      {light
+        ? <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" />
+        : <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" />}
+    </svg>
+  </button>;
+}
+
+const LockIcon = ({ className = 'w-3.5 h-3.5' }: { className?: string }) => <svg className={className} fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 11V7a4 4 0 00-8 0v4m-2 0h12a1 1 0 011 1v8a1 1 0 01-1 1H6a1 1 0 01-1-1v-8a1 1 0 011-1z" /></svg>;
+
+function SearchForm({ hero, idSuffix = '', value, onChange, onSubmit, disabled, inputRef }: {
+  hero: boolean; idSuffix?: string; value: string; onChange: (value: string) => void; onSubmit: (event: FormEvent<HTMLFormElement>) => void;
+  disabled: boolean; inputRef?: React.RefObject<HTMLInputElement | null>;
+}) {
+  const common = {
+    ref: inputRef, value, disabled, type: 'text', name: 'private-record', autoComplete: 'off', spellCheck: false, autoCapitalize: 'off', maxLength: 64,
+    'aria-label': 'Transaction ID', onChange: (event: React.ChangeEvent<HTMLInputElement>) => onChange(event.target.value),
+  } as const;
+  if (!hero) return <form onSubmit={onSubmit} className="w-full" autoComplete="off" role="search">
+    <div className="relative">
+      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-cipher-gold font-mono text-xs">{'>'}</div>
+      <input {...common} id={`txid-compact${idSuffix ? `-${idSuffix}` : ''}`} placeholder="Search a transaction privately" className="w-full pl-7 pr-3 py-2 text-xs font-mono search-input" />
+    </div>
+  </form>;
+  return <form id="lookup-form" onSubmit={onSubmit} className="max-w-3xl mr-auto relative z-50" autoComplete="off" role="search">
+    <div className="relative">
+      <div className="absolute left-4 sm:left-5 top-1/2 -translate-y-1/2 text-cipher-gold font-mono text-lg sm:text-xl font-semibold">{'>'}</div>
+      <input {...common} id="txid" placeholder="Search a transaction ID..." className="w-full pl-10 sm:pl-12 pr-14 py-3 sm:py-3.5 text-data sm:text-sm font-mono search-input-hero border rounded-md text-primary placeholder:text-muted transition duration-300 border-cipher-border hover:border-cipher-gold/50 focus:border-cipher-gold focus:outline-none" />
+      <button type="submit" id="lookup-button" aria-label="Search privately" disabled={disabled} className="absolute right-2 top-1/2 -translate-y-1/2 inline-flex items-center justify-center w-9 h-9 sm:w-10 sm:h-10 rounded-lg text-primary border border-cipher-border hover:border-cipher-gold/50 hover:bg-cipher-hover transition duration-150 disabled:opacity-50">
+        <svg className="w-4 h-4 sm:w-[18px] sm:h-[18px]" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+      </button>
+    </div>
+  </form>;
+}
 
 export function App() {
   const workerRef = useRef<Worker | null>(null);
   const requestRef = useRef(0);
-  const publicationRef = useRef<string | null>(null);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const editedRef = useRef(false);
-  const [txid, setTxid] = useState('');
+  const [query, setQuery] = useState('');
   const [ready, setReady] = useState(false);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState('');
-  const [status, setStatus] = useState('Preparing the browser client and public setup.');
-  const [stage, setStage] = useState<string | null>(null);
   const [manifest, setManifest] = useState<Manifest | null>(null);
-  const [publicationWarning, setPublicationWarning] = useState('');
-  const [samples, setSamples] = useState<Sample[]>([]);
-  const [record, setRecord] = useState<PrivateRecord | null>(null);
-  const [transaction, setTransaction] = useState<TransactionData | null>(null);
+  const [view, setView] = useState<View>({ kind: 'home' });
+  const [inputError, setInputError] = useState('');
+  const [loadingFull, setLoadingFull] = useState(false);
   const [measurements, setMeasurements] = useState<Measurements | null>(null);
-  const [partial, setPartial] = useState<PartialView | null>(null);
+  const viewRef = useRef(view);
+  viewRef.current = view;
+
+  function start(txid: string) {
+    setView({ kind: 'loading', txid });
+    setMeasurements(null);
+    workerRef.current?.postMessage({ type: 'lookup', requestId: ++requestRef.current, txid });
+    window.scrollTo({ top: 0 });
+  }
 
   useEffect(() => {
     const workerUrl = document.querySelector<HTMLMetaElement>('meta[name="private-worker"]')?.content || '/worker.js';
@@ -68,190 +132,141 @@ export function App() {
       if (data.type === 'ready') {
         setReady(true);
         setManifest(data.manifest ?? null);
-        const publication = typeof data.manifest?.publicationId === 'string' ? data.manifest.publicationId : null;
-        const changed = publicationRef.current !== null && publication !== null && publicationRef.current !== publication;
-        publicationRef.current = publication;
-        if (changed) {
-          setRecord(null); setPartial(null);
-          setTransaction(null);
-          setMeasurements(null);
-          setError('');
-        }
-        const catalogue = data.samples ?? data.catalogue ?? data.manifest?.catalogue ?? [];
-        setSamples(Array.isArray(catalogue) ? catalogue.filter((sample: Sample | null) => sample !== null && typeof sample === 'object' && typeof sample.txid === 'string' && TXID.test(sample.txid)) : []);
-        setStatus(changed ? 'The publication changed. Previous results were cleared; enter a transaction from the new coverage.' : 'Ready. The selected transaction ID stays in your browser.');
-        if ((data.manifest?.schema === 'zecblock-private-global-v1' || data.manifest?.schema === EXPLORER) && !fragmentHandled) {
+        if (!fragmentHandled) {
           fragmentHandled = true;
           const match = /^#tx=([a-f\d]{64})$/i.exec(window.location.hash);
+          // The fragment never reaches a server; drop it from history too.
           if (window.location.hash) window.history.replaceState(null, '', window.location.pathname);
-          if (match && !editedRef.current) {
-            const selected = match[1].toLowerCase();
-            setTxid(selected); setBusy(true); setStage('query');
-            setStatus('Preparing the private lookup in this browser.');
-            worker.postMessage({ type: 'lookup', requestId: ++requestRef.current, txid: selected });
-          }
+          if (match && !editedRef.current) { const txid = match[1].toLowerCase(); setQuery(txid); start(txid); }
         }
         return;
       }
-      if (data.type === 'publication-warning') {
-        setPublicationWarning(typeof data.message === 'string' ? data.message : '');
-        return;
-      }
+      if (data.type === 'publication-warning') return;
       if (data.requestId !== undefined && data.requestId !== requestRef.current) return;
-      if (data.type === 'stage') {
-        setStage(data.stage);
-        const part = Number.isSafeInteger(data.chunk) && Number.isSafeInteger(data.chunks) ? ` (${data.chunk} of ${data.chunks})` : '';
-        setStatus(data.stage === 'server' ? `Retrieving the encrypted record from the PIR service${part}.` : data.stage === 'decode' ? `Decoding and checking the record in this browser${part}.` : 'Preparing the private lookup in this browser.');
-      } else if (data.type === 'result') {
-        const decoded = fullRecord(data.result?.record ?? data.result);
-        setBusy(false);
-        setStage(null);
-        if (!decoded) {
-          setError('The private response is not a supported full transaction record. No public API lookup was attempted.');
-          setStatus('Stopped safely.');
-          return;
-        }
-        let transformed: TransactionData;
-        try {
-          // API BIGINTs are decimal strings. Normalize the bounded block
-          // height for the existing presentation components while retaining
-          // the exact original detail/raw objects in the decrypted record.
-          const rawHeight = decoded.detail.blockHeight;
-          const blockHeight = typeof rawHeight === 'number' ? rawHeight
-            : typeof rawHeight === 'string' && /^(0|[1-9]\d*)$/.test(rawHeight) ? Number(rawHeight) : NaN;
-          if (!Number.isSafeInteger(blockHeight) || blockHeight < 0) throw new Error('Invalid snapshot block height');
-          transformed = transformExpressTxData({ ...decoded.detail, blockHeight });
-        } catch {
-          setError('The decoded transaction metadata could not be rendered safely. No public API lookup was attempted.');
-          setStatus('Stopped safely.');
-          return;
-        }
-        if (transformed.txid !== decoded.txid || !Number.isFinite(transformed.blockHeight) || !Number.isFinite(transformed.timestamp)
-            || !Array.isArray(transformed.inputs) || !Array.isArray(transformed.outputs)) {
-          setError('The decoded record is inconsistent with its transaction metadata. No public API lookup was attempted.');
-          setStatus('Stopped safely.');
-          return;
-        }
-        setRecord(decoded);
-        setTransaction(transformed);
-        setMeasurements(data.measurements);
-        setPartial(data.partial ?? null);
-        setStatus('Lookup complete. Transaction data was decoded locally.');
+      if (data.type === 'result') {
+        setLoadingFull(false);
+        const record = fullRecord(data.result?.record ?? data.result);
+        const transaction = record && toTransaction(record);
+        if (!record || !transaction) { setView({ kind: 'error', message: 'This transaction could not be decoded safely.' }); return; }
+        setView({ kind: 'result', record, data: transaction, partial: data.partial ?? null });
+        setMeasurements(data.measurements ?? null);
+      } else if (data.type === 'notfound') {
+        const current = viewRef.current;
+        setView({ kind: 'notfound', txid: current.kind === 'loading' ? current.txid : '', height: Number.isSafeInteger(data.snapshotHeight) ? data.snapshotHeight : null });
       } else if (data.type === 'error') {
-        setBusy(false);
-        setStage(null);
-        setRecord(null); setPartial(null);
-        setTransaction(null);
-        setError(typeof data.message === 'string' ? data.message : 'The private lookup could not complete. No public lookup was attempted.');
-        setStatus('Stopped safely. No ordinary transaction lookup was attempted.');
+        setLoadingFull(false);
+        setView({ kind: 'error', message: typeof data.message === 'string' ? data.message : 'The private lookup could not complete.' });
       }
     });
     worker.addEventListener('error', event => {
       event.preventDefault();
       setReady(false);
-      setBusy(false);
-      setRecord(null); setPartial(null);
-      setTransaction(null);
-      setStage(null);
-      setError('The browser worker could not continue. Reload this local page to restart it.');
-      setStatus('Stopped safely. No ordinary transaction lookup was attempted.');
+      setView({ kind: 'error', message: 'The private client stopped. Reload the page to restart it.' });
     });
     worker.postMessage({ type: 'initialize' });
     return () => { workerRef.current = null; worker.terminate(); };
   }, []);
 
-  function lookup(event: FormEvent<HTMLFormElement>) {
+  const busy = view.kind === 'loading' || loadingFull;
+
+  function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     if (!ready || busy) return;
-    setError('');
-    const selected = txid.trim().toLowerCase();
-    if (!TXID.test(selected)) {
-      setRecord(null); setPartial(null);
-      setTransaction(null);
-      setMeasurements(null);
-      setError('Enter exactly 64 hexadecimal characters. Validation stays in this browser.');
-      return;
-    }
-    setBusy(true);
-    setRecord(null); setPartial(null);
-    setTransaction(null);
-    setMeasurements(null);
-    setStage('query');
-    setStatus('Preparing the private lookup in this browser.');
-    workerRef.current?.postMessage({ type: 'lookup', requestId: ++requestRef.current, txid: selected });
+    const txid = query.trim().toLowerCase();
+    if (!TXID.test(txid)) { setInputError('Enter a 64-character transaction ID.'); return; }
+    setInputError('');
+    start(txid);
   }
 
   function loadFull() {
-    if (!ready || busy || !partial) return;
-    setBusy(true);
-    setStage('query');
-    setStatus('Preparing the padded full-record request in this browser.');
+    if (!ready || busy || view.kind !== 'result' || !view.partial) return;
+    setLoadingFull(true);
     workerRef.current?.postMessage({ type: 'loadFull', requestId: requestRef.current });
   }
 
-  function clear() {
+  function home() {
     if (busy) return;
-    setTxid('');
-    setRecord(null); setPartial(null);
-    setTransaction(null);
-    setMeasurements(null);
-    setError('');
-    setStatus('Ready. The selected transaction ID stays in your browser.');
-    inputRef.current?.focus();
+    setView({ kind: 'home' }); setQuery(''); setInputError(''); setMeasurements(null);
+    setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  const coverage = manifest?.coverage;
-  const snapshot = manifest?.snapshot;
-  const collection = manifest?.schema === 'zecblock-private-tx-collection-v1';
-  const global = manifest?.schema === 'zecblock-private-global-v1';
-  const explorer = manifest?.schema === EXPLORER;
-  const coverageLabel = explorer
-    ? `${manifest?.sourceSummary?.recordCount?.toLocaleString() ?? 'Unknown'} transactions · every confirmed block to ${manifest?.snapshot?.height.toLocaleString()}`
-    : global
-    ? `${manifest?.sourceSummary?.recordCount?.toLocaleString() ?? 'Unknown'} published records · global index experiment`
-    : coverage && (collection
-    ? `Published ranges: ${coverage.ranges?.map(range => range.startHeight === range.endHeight
-      ? range.startHeight.toLocaleString()
-      : `${range.startHeight.toLocaleString()}–${range.endHeight.toLocaleString()}`).join(' · ') || 'unavailable'}`
-    : `Blocks ${coverage.startHeight.toLocaleString()}–${coverage.endHeight.toLocaleString()}`);
+  const onQuery = (value: string) => { editedRef.current = true; setQuery(value); setInputError(''); };
+  const height = manifest?.snapshot?.height;
+  const count = manifest?.sourceSummary?.recordCount;
 
   return <>
-    <header className="private-header"><div className="private-shell private-header-inner"><span className="private-brand">ZecBlock<span>.</span></span><div className="flex items-center gap-2"><Badge color="gold" variant="subtle">PRIVATE</Badge><span className="private-header-local">ISOLATED PILOT</span></div></div></header>
-    <main className="private-shell private-main">
-      <div className="private-page-heading"><div><p className="text-caption text-muted font-mono uppercase tracking-widest mb-2">EXPLORER / PRIVATE LOOKUP</p><h1>Private transaction explorer</h1><p className="private-intro">Explore a confirmed mainnet publication with browser-side private information retrieval.</p></div><span className={`private-runtime ${ready ? 'ready' : ''}`} id="runtime-status">{ready ? 'Browser client ready' : 'Loading client'}</span></div>
+    <nav aria-label="Main navigation" className="navbar-container backdrop-blur-xl sticky top-0 z-50">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="flex justify-between items-center h-16 gap-3">
+          <a href="/" onClick={event => { event.preventDefault(); home(); }} className="shrink-0 py-2 flex items-center gap-2.5" aria-label="ZecBlock Private home">
+            <BrandLogo />
+            <span className="private-pill"><LockIcon className="w-3 h-3" />Private</span>
+          </a>
+          {view.kind !== 'home' && <div className="hidden md:block flex-1 max-w-md ml-auto">
+            <SearchForm hero={false} value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} />
+          </div>}
+          <div className={`flex items-center gap-2 ${view.kind === 'home' ? 'ml-auto' : ''}`}>
+            <ThemeToggle />
+          </div>
+        </div>
+        {view.kind !== 'home' && <div className="md:hidden pb-3">
+          <SearchForm hero={false} idSuffix="mobile" value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} />
+        </div>}
+      </div>
+    </nav>
 
-      <section className="private-search" aria-labelledby="lookup-title"><Card><CardBody>
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4"><h2 className="text-sm font-medium text-primary" id="lookup-title">Transaction lookup</h2>{coverageLabel && <span className="text-caption text-muted font-mono" id="publication-coverage">{coverageLabel}</span>}</div>
-        <form id="lookup-form" onSubmit={lookup} autoComplete="off"><label className="sr-only" htmlFor="txid">Transaction ID</label><div className="private-search-row"><input ref={inputRef} id="txid" name="private-record" value={txid} onChange={event => { editedRef.current = true; setTxid(event.target.value); }} disabled={busy} type="text" inputMode="text" spellCheck={false} autoCapitalize="off" autoComplete="off" maxLength={64} placeholder="Search a transaction ID in this publication" aria-describedby="input-help" aria-invalid={error && !TXID.test(txid.trim()) ? true : undefined} /><button className="btn btn-primary btn-md" id="lookup-button" type="submit" disabled={!ready || busy}>{busy ? 'Retrieving privately…' : 'Look up privately'}<svg className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" aria-hidden="true"><path strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" d="M5 12h14m-5-5 5 5-5 5" /></svg></button></div></form>
-        <p className="text-caption text-muted mt-3" id="input-help">Lookup uses this page's pinned publication. The identifier stays in browser memory; no public API fallback.</p>
-        {collection && coverage?.complete === false && <p className="text-caption text-muted mt-3" id="coverage-warning">Only the listed ranges are published. Transactions in the gaps are unavailable in this publication.</p>}
-        <div className="flex flex-wrap items-center justify-between gap-3 mt-3"><p className="text-caption text-muted">Publication pinned for this page. All encrypted replies arrive before decoding; refresh is manual.</p><button type="button" id="refresh-publication" className="private-clear" disabled={busy} onClick={() => window.location.reload()}>Refresh publication</button></div>
-        <div className="private-search-status"><span id="lookup-status" role="status" aria-live="polite">{status}</span>{record && <button type="button" id="clear-button" className="private-clear" onClick={clear}>Clear</button>}</div>
-        {error && <p className="private-error" id="lookup-error" role="alert">{error}</p>}
-        {busy && <div className="private-query-stages" aria-label="Lookup progress"><span className={stage === 'query' ? 'active' : ''}>Encrypt locally</span><span className={stage === 'server' ? 'active' : ''}>Retrieve privately</span><span className={stage === 'decode' ? 'active' : ''}>Decode locally</span></div>}
-        {samples.length > 0 && !record && !busy && <div id="sample-area" className="private-samples"><span className="private-sample-label">PUBLIC CATALOGUE</span><div id="samples" className="flex flex-wrap gap-2">{samples.slice(0, 8).map(sample => <button key={sample.txid} type="button" className="private-sample" onClick={() => { setTxid(sample.txid); setError(''); inputRef.current?.focus(); }} title={sample.txid}>{sample.txid.slice(0, 8)}…{sample.txid.slice(-6)}{sample.height ? <span>#{sample.height.toLocaleString()}</span> : null}</button>)}</div><p>Every browser receives the same catalogue. Only the encrypted query depends on your selection.</p></div>}
-      </CardBody></Card></section>
+    <main id="main-content" className="private-main">
+      {view.kind === 'home' && <section className="home-hero-band">
+        <div className="home-hero relative z-30 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="home-introduction">
+            <h1 className="text-primary">The Zcash Private Explorer</h1>
+            <p className="home-hero-intro text-secondary">Look up any Zcash transaction without revealing which one. Your search is encrypted in your browser, so not even ZecBlock can see it.</p>
+          </div>
+          <div className="home-command">
+            <SearchForm hero value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} inputRef={inputRef} />
+            <div className="search-examples mt-2 sm:mt-2.5 flex flex-wrap gap-1.5 sm:gap-2 items-center">
+              <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
+              {EXAMPLES.map(example => <button key={example.txid} type="button" className="example-tag example-tag-default" disabled={!ready || busy} onClick={() => { onQuery(example.txid); start(example.txid); }}>{example.label}</button>)}
+            </div>
+            {inputError && <p className="text-xs text-danger mt-3" id="lookup-error" role="alert">{inputError}</p>}
+            <p className="private-status" id="runtime-status" role="status" aria-live="polite">
+              <span className={`private-dot ${ready ? 'ready' : ''}`} aria-hidden="true" />
+              {ready
+                ? <>Mainnet{count ? ` · ${count.toLocaleString()} transactions` : ''}{height ? ` · up to block ${height.toLocaleString()}` : ''}</>
+                : 'Preparing private search…'}
+            </p>
+          </div>
+        </div>
+      </section>}
 
-      {publicationWarning && <p className="private-publication-warning" id="publication-warning" role="status" aria-live="polite">{publicationWarning} Displayed records remain tied to their captured snapshot.</p>}
-      {collection && <p className="text-caption text-muted mb-4" id="collection-snapshot-warning">{snapshot ? 'The collection head is the newest segment snapshot. Older segments retain their captured observations; each result shows its own snapshot.' : 'The collection snapshot is unavailable.'} Current confirmation counts and spent status are unavailable.</p>}
-      {explorer && <p className="text-caption text-muted mb-4" id="explorer-warning">All-transactions test. Every lookup is one encrypted request of the same size to every main table, so the server cannot tell which transaction you chose, whether it exists or how large it is. Large transactions show their first inputs and outputs; loading the rest is a separate request you choose to make. Raw transaction bytes are not included.</p>}
-      {global && <p className="text-caption text-muted mb-4" id="global-index-warning">This experimental index covers the published records only. Every lookup receives the same complete encrypted bundle; results retain their own original snapshot. Full-history coverage and independent cryptographic review are pending.</p>}
-      {snapshot && !record && <div className="private-publication"><span>{collection ? 'Collection head snapshot' : 'Publication snapshot'}</span><span>Block {snapshot.height.toLocaleString()}</span><span>{new Date(snapshot.publishedAt).toLocaleString(undefined, { timeZoneName: 'short' })}</span></div>}
-      {record && transaction && partial && <div className="private-publication-warning" id="partial-warning" role="status"><p>Large transaction: showing the first {partial.shownInputs.toLocaleString()} of {partial.totalInputs.toLocaleString()} inputs and {partial.shownOutputs.toLocaleString()} of {partial.totalOutputs.toLocaleString()} outputs. Fee, totals and counts are complete.</p><p className="text-caption text-muted mt-2">Loading the rest sends a second request for {partial.rows} encrypted rows. The server still cannot see which transaction, but it learns you opened a large one of about that size.</p><button type="button" className="btn btn-primary btn-md mt-3" id="load-full" disabled={busy} onClick={loadFull}>{busy ? 'Retrieving privately…' : 'Load all inputs and outputs privately'}</button></div>}
-      {record && transaction && <TransactionView key={`${record.publicationId}:${record.txid}`} record={record} data={transaction} />}
-      {measurements && <details className="private-measurements" id="metrics"><summary>Private retrieval measurements · {formatMs(measurements.totalMs)}</summary><dl>{[
-        ['Encrypted upload', `${measurements.queryBytes.toLocaleString()} bytes`],
-        ['Encrypted download', `${measurements.responseBytes.toLocaleString()} bytes`],
-        ['Browser encryption', formatMs(measurements.encryptMs)],
-        [measurements.decodePrepareMs === undefined ? 'PIR request' : 'Request with overlapping browser preparation', formatMs(measurements.requestMs)],
-        ...(measurements.decodePrepareMs === undefined ? [] : [['Browser reply preparation (overlaps request)', formatMs(measurements.decodePrepareMs)]]),
-        ['Browser decoding and verification', formatMs(measurements.decodeMs)],
-        ...(measurements.serverMs === undefined ? [] : [['Server computation (all tables)', formatMs(measurements.serverMs)]]),
-        ...(measurements.overflowRows ? [['Overflow rows fetched (padded)', String(measurements.overflowRows)]] : []),
-        ...(measurements.decoderCoefficientBytes === undefined ? [] : [['Cached public coefficients', `${measurements.decoderCoefficientBytes.toLocaleString()} bytes`]]),
-      ].map(([label, value]) => <div key={label}><dt>{label}</dt><dd>{value}</dd></div>)}</dl>{measurements.decodePrepareMs !== undefined && <p>Browser reply preparation overlaps the request; these times cannot be added together. Coefficient bytes exclude other browser memory.</p>}</details>}
+      {view.kind === 'loading' && <div aria-busy="true">
+        <p className="sr-only" role="status">Searching privately</p>
+        <TxLoadingSkeleton />
+      </div>}
 
-      <aside className="private-footer-note"><p><strong>Isolated pilot.</strong> Coverage is limited to this page's pinned publication. Complete fixed-size request batches are dispatched before replies are decoded. This does not provide live mempool or full-history search. Connection operators can still observe IP, timing and sizes.</p><p>Your browser trusts the delivered client code. Public blockchain data and bundled enrichments remain publisher-supplied facts, not a cryptographic proof of completeness.</p></aside>
+      {view.kind === 'result' && <TransactionView key={`${view.record.publicationId}:${view.record.txid}`} record={view.record} data={view.data} partial={view.partial} loadingFull={loadingFull} onLoadFull={loadFull} />}
+
+      {(view.kind === 'notfound' || view.kind === 'error') && <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-12 animate-fade-in">
+        <Card role="alert"><CardBody><div className="text-center py-12">
+          <div className="w-14 h-14 mx-auto mb-5 rounded-xl bg-cipher-surface border border-white/[0.04] flex items-center justify-center">
+            <svg className="w-7 h-7 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" /></svg>
+          </div>
+          <h1 className="text-lg font-semibold text-primary mb-2">{view.kind === 'notfound' ? 'Transaction Not Found' : 'Lookup Failed'}</h1>
+          <p className="text-sm text-secondary mb-6 max-w-md mx-auto" id="lookup-error">{view.kind === 'notfound'
+            ? `No confirmed transaction with this ID${view.height ? ` up to block ${view.height.toLocaleString()}` : ''}.`
+            : view.message}</p>
+          {view.kind === 'notfound' && view.txid && <p className="text-xs font-mono text-muted break-all max-w-xl mx-auto mb-6">{view.txid}</p>}
+          <button type="button" onClick={home} className="text-cipher-gold hover:text-cipher-yellow transition-colors font-mono text-sm">&larr; New search</button>
+        </div></CardBody></Card>
+      </div>}
     </main>
+
+    <footer className="private-footer">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 flex flex-wrap items-center justify-between gap-x-6 gap-y-2">
+        <span className="inline-flex items-center gap-1.5"><LockIcon />Searches are private by design{measurements ? <span id="metrics" className="text-muted"> · {(measurements.totalMs / 1000).toFixed(2)} s</span> : null}</span>
+        <span>{height ? `Snapshot · block ${height.toLocaleString()}` : ''}</span>
+        <a href="https://zecblock.com" rel="noopener noreferrer" className="hover:text-primary transition-colors">zecblock.com</a>
+      </div>
+    </footer>
   </>;
 }

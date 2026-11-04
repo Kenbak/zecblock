@@ -10,7 +10,7 @@ class LocalBoundary extends Component<{ children: ReactNode }, { failed: boolean
     // Do not emit decoded records or selectors to console/error telemetry.
   }
   render() {
-    return this.state.failed ? <main className="private-shell private-main"><h1>Private transaction explorer</h1><p className="private-error" role="alert">This record could not be rendered safely. Reload the local prototype to restart. No public lookup was attempted.</p></main> : this.props.children;
+    return this.state.failed ? <main className="max-w-7xl mx-auto px-4 py-12"><h1 className="text-lg font-semibold text-primary">Something went wrong</h1><p className="text-sm text-secondary mt-2" role="alert">This transaction could not be displayed. Reload the page to try again.</p></main> : this.props.children;
   }
 }
 

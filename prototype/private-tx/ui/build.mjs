@@ -78,4 +78,7 @@ const geist = resolve(APP, 'node_modules/geist/dist/fonts');
 await copyFile(resolve(geist, 'geist-sans/Geist-Variable.woff2'), resolve(OUT, 'fonts/geist-sans.woff2'));
 await copyFile(resolve(geist, 'geist-mono/GeistMono-Variable.woff2'), resolve(OUT, 'fonts/geist-mono.woff2'));
 await copyFile(resolve(APP, 'node_modules/geist/LICENSE.txt'), resolve(OUT, 'fonts/LICENSE.txt'));
+await mkdir(resolve(OUT, 'brand'), { recursive: true });
+for (const file of ['zecblock-logotype.png', 'zecblock-logotype-light.png']) await copyFile(resolve(ROOT, 'public/brand', file), resolve(OUT, 'brand', file));
+await copyFile(resolve(ROOT, 'public/favicon-32x32.png'), resolve(OUT, 'favicon.png'));
 process.stdout.write(`Built private React transaction view from ${Object.keys(bundled.metafile.inputs).length} local source modules.\n`);

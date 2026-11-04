@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { useCallback, useState } from 'react';
 import { ChartShareControl } from '@/components/charts/ChartShareControl';
 import { NETWORK } from '@/lib/api-config';
@@ -36,7 +37,7 @@ function CardShare({ id }: { id: Nu7CardId }) {
 export function Nu7ShareCards({ cards }: { cards: readonly Nu7CardId[] }) {
   return <section aria-labelledby="nu7-share-heading" className="mt-5">
     <h3 id="nu7-share-heading" className="text-sm font-semibold text-primary mb-1">Share NU7</h3>
-    <p className="text-caption text-muted mb-3">Live images, ready to post. Each links back to its data.</p>
+    <p className="text-caption text-muted mb-3">Live images, ready to post. Each links back to its data. <Link href="/cards" className="text-primary hover:underline">More Zcash data cards</Link></p>
     {/* Phones swipe through the cards; wider screens see them side by side. */}
     <div className={`-mx-4 flex snap-x snap-mandatory gap-3 overflow-x-auto px-4 pb-1 no-scrollbar sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 ${cards.length === 3 ? 'xl:grid-cols-3' : 'xl:grid-cols-4'}`}>
       {cards.map(id => <CardShare key={id} id={id} />)}

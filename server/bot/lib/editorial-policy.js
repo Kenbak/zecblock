@@ -194,12 +194,19 @@ function venueIdentity(swap, into) {
   return { zecTxid: principal[0].txid, zecTxids: [...new Set(legs.map(leg => leg.txid))].sort() };
 }
 
+// Minimum swap size (provider-reported source USD) per venue. Every swap must
+// also be in the top 1% of its own venue's 30-day history, so the floor only
+// keeps routine swaps out. THORChain's ZEC swaps are smaller: none reached
+// $50K in the 30 days to 2026-11-04 (largest ≈$35K, 99th percentile ≈$30K).
+const MIN_SWAP_USD = Object.freeze({ near: 50000, maya: 50000, thorchain: 25000 });
+
 function swapStory(swap) {
   const venue = swap.venue || 'near';
+  const floor = Object.hasOwn(MIN_SWAP_USD, venue) ? MIN_SWAP_USD[venue] : null;
   const venueName = Object.hasOwn(f.VENUES, venue) ? f.VENUES[venue] : null;
   const usd = Number(swap.source_amount_usd), n = Number(swap.sample_count);
   const larger = Number(swap.greater_count), equal = Number(swap.equal_count);
-  if (!venueName || !Number.isFinite(usd) || usd < 50000 || !Number.isSafeInteger(n) || n < 100
+  if (!venueName || !floor || !Number.isFinite(usd) || usd < floor || !Number.isSafeInteger(n) || n < 100
     || ![larger, equal].every(v => Number.isSafeInteger(v) && v >= 0) || larger + equal > n
     || !swap.source_chain || !swap.dest_chain) return null;
   const tailPct = 100 * (larger + equal + 1) / (n + 1);
@@ -628,5 +635,5 @@ function select(candidates, history, now) {
   return { selected, skipped };
 }
 
-module.exports = { candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory, swapZecTxids,
+module.exports = { MIN_SWAP_USD, candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory, swapZecTxids,
   migrationStory, reorgStory, crosschainStory, hashStory, signalStory, milestoneStories, poolDrainStories, select, editorialRank, eventTime, isNew };

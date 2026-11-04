@@ -54,7 +54,7 @@ async function venueSwapCandidates(db, now) {
     ), candidates AS (
       SELECT * FROM valid WHERE status_observed_at >= $1::timestamptz-interval '1 hour'
         AND swap_created_at >= $1::timestamptz-interval '24 hours'
-        AND source_amount_usd>=50000 ORDER BY source_amount_usd DESC,id LIMIT 20
+        AND source_amount_usd>=$3::numeric ORDER BY source_amount_usd DESC,id LIMIT 20
     ) SELECT c.id,c.venue,c.source_chain,c.dest_chain,c.source_asset,c.dest_asset,
       c.source_amount::text AS source_amount,c.dest_amount::text AS dest_amount,
       c.zec_amount_zat::text AS zec_amount_zat,c.source_amount_usd::text AS source_amount_usd,
@@ -69,7 +69,7 @@ async function venueSwapCandidates(db, now) {
           count(*) FILTER(WHERE h.source_amount_usd=c.source_amount_usd) AS equal_count
         FROM valid h WHERE h.swap_created_at<c.swap_created_at
           AND h.swap_created_at>=c.swap_created_at-interval '30 days'
-      ) s`, [now.toISOString(), venue]);
+      ) s`, [now.toISOString(), venue, policy.MIN_SWAP_USD[venue]]);
     for (const row of rows) {
       const story = policy.swapStory(row);
       if (story) candidates.push(story);

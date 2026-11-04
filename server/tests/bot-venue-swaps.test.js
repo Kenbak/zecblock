@@ -56,6 +56,19 @@ test('venue swaps name their venue, keep a venue-scoped dedup key and approximat
   assert.doesNotMatch(near.content, /≈/);
 });
 
+test('swap size floor is per venue: THORChain from $25K, NEAR and Maya from $50K', () => {
+  assert.deepEqual({ ...p.MIN_SWAP_USD }, { near: 50000, maya: 50000, thorchain: 25000 });
+  const thor = usd => p.swapStory(venueRow({ id: `thorchain-swap-${tx('f')}`, venue: 'thorchain', source_amount_usd: usd }));
+  assert.match(thor('30151.20').content, /^🟨 ≈\$30,151 just crossed from Bitcoin into ZEC via THORChain\./);
+  assert.ok(thor('25000'), 'the floor itself qualifies');
+  assert.equal(thor('24999.99'), null);
+  assert.equal(p.swapStory(venueRow({ source_amount_usd: '30151.20' })), null, 'Maya keeps $50K');
+  assert.equal(p.swapStory(nearRow({ source_amount_usd: 30151 })), null, 'NEAR keeps $50K');
+  assert.equal(p.swapStory(venueRow({ venue: 'unknown', source_amount_usd: '900000' })), null);
+  // The floor never overrides rarity: a $30K THORChain swap outside its venue's top 1% is not posted.
+  assert.equal(p.swapStory(venueRow({ venue: 'thorchain', source_amount_usd: '30000', greater_count: '20' })), null);
+});
+
 test('venue swaps without a resolvable native-ZEC identity, with partial returns or wrong direction are never posted', () => {
   assert.equal(p.swapStory(venueRow({ canonical_identity: null })), null, 'unresolved overlap identity');
   assert.equal(p.swapStory(venueRow({ zec_legs: [{ side: 'out', txid: null, address: 't1x' }] })), null, 'missing ZEC hash');
@@ -200,10 +213,27 @@ test('venue SQL: fresh complete index, settled-in-window selection and per-venue
       // An incomplete THORChain traversal is not a 30-day baseline.
       assert.deepEqual(result.decisions.find(d => d.key === 'crosschain:thorchain'), { key: 'crosschain:thorchain', reason: 'venue-baseline-incomplete' });
 
+      // With a complete baseline, THORChain's lower floor applies in SQL; Maya keeps $50K.
+      for (let i = 0; i < 250; i++) {
+        await insert('thorchain', `thorchain-swap-base${String(i).padStart(3, '0')}`, { usd: 500 + i,
+          created: new Date(now - (i + 2) * 2 * 3600000).toISOString() });
+      }
+      await insert('thorchain', 'thorchain-swap-mid-i', { usd: '30151.2', created: '2026-11-04T09:35:00Z',
+        legs: [{ side: 'out', txid: tx('9'), address: 't1' }] });
+      await insert('thorchain', 'thorchain-swap-small-j', { usd: '24999.99', created: '2026-11-04T09:36:00Z' });
+      await insert('maya', 'maya-swap-mid-k', { usd: '30151.2', created: '2026-11-04T09:37:00Z' });
+      await db.query(`UPDATE crosschain_venue_sync SET completed_at='2026-10-29T10:00:00Z', last_checked_at='2026-11-04T09:56:00Z'
+        WHERE venue='thorchain'`);
+      result = await data.venueSwapCandidates(db, now);
+      const keys = result.candidates.map(c => c.key);
+      assert.ok(keys.includes('cross_chain:thorchain:thorchain-swap-mid-i'), keys.join());
+      assert.match(result.candidates.find(c => c.key.endsWith('mid-i')).content, /≈\$30,151 just crossed from Bitcoin into ZEC via THORChain/);
+      assert.ok(!JSON.stringify(result).includes('small-j') && !JSON.stringify(result).includes('mid-k'));
+
       // Stale venue sync publishes nothing for that venue.
       await db.query(`UPDATE crosschain_venue_sync SET last_checked_at='2026-11-04T09:30:00Z' WHERE venue='maya'`);
       result = await data.venueSwapCandidates(db, now);
-      assert.equal(result.candidates.length, 0);
+      assert.deepEqual(result.candidates.filter(c => c.evidence.venue === 'maya'), []);
       assert.ok(result.decisions.some(d => d.key === 'crosschain:maya' && d.reason === 'venue-sync-unavailable-or-stale'));
     } finally {
       if (db) await db.end();

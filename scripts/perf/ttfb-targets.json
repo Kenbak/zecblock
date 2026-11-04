@@ -130,6 +130,12 @@
       "core": true
     },
     {
+      "id": "cards",
+      "routeGroup": "/cards",
+      "path": "/cards",
+      "core": true
+    },
+    {
       "id": "reorgs",
       "routeGroup": "/reorgs",
       "path": "/reorgs",

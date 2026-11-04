@@ -11,6 +11,7 @@ import { AddressView } from './AddressView';
 import type { PrivateAddress } from './AddressView';
 import type { BlockPartial, PrivateBlock } from './BlockView';
 import { HomeFeeds, type Feed } from './HomeFeeds';
+import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
 
 type Manifest = {
   schema?: string;
@@ -35,8 +36,14 @@ const HEIGHT = /^\d{1,10}$/;
 const FRAGMENT = /^#(tx|block|address)=([a-f\d]{64}|\d{1,10}|t[13][1-9A-HJ-NP-Za-km-z]{33})$/i;
 const ADDRESS = /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/;
 
+// The same kind of examples as the public search bar: the Ironwood
+// activation block, a transaction and a transparent address. Each starts a
+// private lookup like any other search.
+const IRONWOOD_HEIGHT = HISTORICAL_UPGRADES.find(upgrade => upgrade.id === 'nu63')!.heights.mainnet;
 const EXAMPLES = [
-  { label: 'Large transaction', txid: '84dcfb4394c4420eed9de74444a875d4b8a2576e664d6a7ef9765458e96826d9' },
+  { label: `Block #${IRONWOOD_HEIGHT}`, term: String(IRONWOOD_HEIGHT) },
+  { label: 'Transaction', term: '84dcfb4394c4420eed9de74444a875d4b8a2576e664d6a7ef9765458e96826d9' },
+  { label: 't-address', term: 't1KfwsnwJeNRVjQGBDZhwKskpQbih2qx5Ua' },
 ];
 
 function fullRecord(value: unknown): PrivateRecord | null {
@@ -282,7 +289,7 @@ export function App() {
             <SearchForm hero placeholder={placeholder} value={query} onChange={onQuery} onSubmit={submit} disabled={!ready || busy} inputRef={inputRef} />
             <div className="search-examples mt-2 sm:mt-2.5 flex flex-wrap gap-1.5 sm:gap-2 items-center">
               <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
-              {EXAMPLES.map(example => <button key={example.txid} type="button" className="example-tag example-tag-default" disabled={!ready || busy} onClick={() => { onQuery(example.txid); start(example.txid); }}>{example.label}</button>)}
+              {EXAMPLES.filter(example => !HEIGHT.test(example.term) || manifest?.blocks).filter(example => !ADDRESS.test(example.term) || manifest?.addresses).map(example => <button key={example.term} type="button" className="example-tag example-tag-default" disabled={!ready || busy} onClick={() => { onQuery(example.term); start(example.term); }}>{example.label}</button>)}
             </div>
             {inputError && <p className="text-xs text-danger mt-3" id="lookup-error" role="alert">{inputError}</p>}
             <p className="private-status" id="runtime-status" role="status" aria-live="polite">

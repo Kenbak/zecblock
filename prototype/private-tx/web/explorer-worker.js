@@ -19,10 +19,21 @@ const addresses = { name: 'address', baseSet: 'addresses', recentSet: 'addresses
 let pages = null, lastAddress = null;
 const ADDRESS = /^t[13][1-9A-HJ-NP-Za-km-z]{33}$/;
 let busy = false, last = null, ready = null, feed = null;
-const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: 'same-origin', referrerPolicy: 'no-referrer', signal });
+// Where encrypted queries go: this page's own origin, or the HTTPS origin
+// named by the page (`explorer-worker.js?pir=https://pir.example`) when the
+// page and the PIR service are hosted apart. No cookies are ever sent.
+const PIR = (() => {
+  const value = new URL(self.location.href).searchParams.get('pir');
+  if (!value) return '';
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.origin !== value.replace(/\/$/, '')) throw new Error('PIR origin must be an https origin');
+  return url.origin;
+})();
+const at = path => PIR + path;
+const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: PIR ? 'cors' : 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
 async function bytes(path, init = {}) {
-  const response = await fetch(path, { ...options(AbortSignal.timeout(300_000)), ...init });
+  const response = await fetch(at(path), { ...options(AbortSignal.timeout(300_000)), ...init });
   if (response.status === 410) throw new Gone();
   if (!response.ok) throw new Error('transport');
   return { body: new Uint8Array(await response.arrayBuffer()), response };
@@ -38,7 +49,7 @@ const publicationId = async manifest => (await sha256(manifest)).slice(0, 24);
 // signature is from the pinned ZecBlock key; rows are then checked against
 // its roots on every decode. Returns null when the server has none.
 async function open(set, manifestPath) {
-  const response = await fetch(manifestPath, options(AbortSignal.timeout(30_000)));
+  const response = await fetch(at(manifestPath), options(AbortSignal.timeout(30_000)));
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('transport');
   const manifest = new Uint8Array(await response.arrayBuffer());
@@ -79,7 +90,7 @@ async function loadFeed() {
 
 async function refreshPair(pair) {
   if (!pair.base) return;
-  const response = await fetch(`/${pair.recentSet}/manifest`, options(AbortSignal.timeout(30_000)));
+  const response = await fetch(at(`/${pair.recentSet}/manifest`), options(AbortSignal.timeout(30_000)));
   if (response.status === 404) { pair.recent = null; return; }
   if (!response.ok) throw new Error('transport');
   const manifest = new Uint8Array(await response.arrayBuffer());

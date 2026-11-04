@@ -160,11 +160,10 @@ pub fn decode_unified_address(ua_string: &str) -> Result<String, String> {
                 addr_bytes.extend_from_slice(&data);
                 components.transparent_address = Some(bs58::encode(&addr_bytes).with_check().into_string());
             },
-            Receiver::Sapling(data) => {
+            Receiver::Sapling(_) => {
                 components.has_sapling = true;
-                // Encode as zs address using bech32
-                // For sapling, we just show the raw hex since bech32 encoding is complex
-                components.sapling_address = Some(format!("zs1...{}", hex::encode(&data[..4])));
+                // Encoding a standalone Sapling address is unsupported here.
+                // Keep the nullable field empty rather than fabricate an address.
             },
             Receiver::Orchard(_) => {
                 components.has_orchard = true;
@@ -666,6 +665,16 @@ mod scan_tests {
         let mut bad = tx; bad[24] = 253; bad.insert(25, 1); bad.insert(26, 0);
         assert!(parse_orchard_actions(&bad).is_err());
         assert!(parse_orchard_actions(&vec![0; MAX_TX_BYTES+1]).is_err());
+    }
+
+    #[test]
+    fn sapling_receiver_has_no_fabricated_payment_address() {
+        for network in [zcash_protocol::consensus::NetworkType::Main, zcash_protocol::consensus::NetworkType::Test] {
+            let address = UnifiedAddress::try_from_items(vec![Receiver::Sapling([0; 43])]).unwrap().encode(&network);
+            let decoded: serde_json::Value = serde_json::from_str(&decode_unified_address(&address).unwrap()).unwrap();
+            assert_eq!(decoded["has_sapling"], true);
+            assert!(decoded["sapling_address"].is_null());
+        }
     }
 
     #[test]

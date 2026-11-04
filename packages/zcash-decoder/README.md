@@ -39,6 +39,11 @@ queried transaction ID to the selected API, and keep the viewing key local.
   therefore cover only Orchard/Ironwood, not all pools. Previous documentation incorrectly claimed Sapling
   domain support; the published 1.0.6 artifact did not implement it.
 
+The low-level WASM `decode_unified_address` helper reports receiver presence.
+Its `sapling_address` field is `null` even when `has_sapling` is `true`, because
+standalone Sapling address encoding is unsupported. It never fabricates a
+payment address. This helper is not exposed by the main TypeScript wrapper.
+
 This is a decoder, not a consensus verifier: successful parsing/decryption does
 not validate proofs, signatures, fees, chain membership or activation height.
 Unknown branch IDs, invalid encodings, trailing bytes and incomplete transactions

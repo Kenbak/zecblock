@@ -40,11 +40,12 @@ test('flow rank uses same-direction samples, includes ties and never invents pre
 
 test('swap uses explicit provider sample and preserves full provenance URL',()=>{
   const c=p.swapStory({id:1,source_amount_usd:1500000,source_chain:'sol',dest_chain:'zec',sample_count:10000,greater_count:2,equal_count:1,zec_txid:'b'.repeat(64)});
-  assert.match(c.content,/^🟨 \$1,500,000 just crossed from Solana into ZEC\./);
-  assert.match(c.content,/One of the largest 0.04% of ZEC swaps we've tracked on NEAR Intents in 30 days/);
+  assert.match(c.content,/^🟨 \$1,500,000 just crossed from Solana into ZEC via NEAR Intents\./);
+  assert.match(c.content,/One of the largest 0.04% of NEAR Intents ZEC swaps we've tracked in 30 days/);
+  assert.equal(c.key,'cross_chain:1');assert.equal(c.evidence.venue,'near');assert.equal(c.evidence.card.kicker,'Cross-chain · NEAR Intents');
   assert.equal(c.evidence.exceptional,true);assert.ok(c.content.endsWith('b'.repeat(64)));
   assert.equal(p.swapStory({id:2,source_amount_usd:1500000,source_chain:'sol',dest_chain:'eth',sample_count:10000,greater_count:2,equal_count:1}),null);
-  assert.match(p.swapStory({id:3,source_amount_usd:90000,source_chain:'zec',dest_chain:'eth',sample_count:10000,greater_count:0,equal_count:0}).content,/The largest ZEC swap/);
+  assert.match(p.swapStory({id:3,source_amount_usd:90000,source_chain:'zec',dest_chain:'eth',sample_count:10000,greater_count:0,equal_count:0}).content,/The largest NEAR Intents ZEC swap/);
 });
 
 test('migrations, reorgs and cross-chain days read as plain events with exact context',()=>{

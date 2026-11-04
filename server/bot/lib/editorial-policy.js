@@ -179,10 +179,27 @@ function flowStory(flow) {
     { ...flow, tailPct, usd, card, editorial: { topic: 'public_flow_event', lens: largest ? 'record_high' : 'large_event' } }, amount / 1e8);
 }
 
+const TXID = /^[a-f0-9]{64}$/;
+
+// Indexed Maya/THORChain actions must carry a complete native-ZEC identity, so a
+// later post through another venue (or NEAR) can be recognized as the same
+// economic swap. Unresolved identities, partial source returns and internal
+// actions are never posted. Returns null or { zecTxid, zecTxids }.
+function venueIdentity(swap, into) {
+  const legs = Array.isArray(swap.zec_legs) ? swap.zec_legs : null;
+  if (!swap.canonical_identity || !legs?.length || swap.partial_return !== false) return null;
+  if (!legs.every(leg => TXID.test(leg?.txid || '') && ['in', 'out'].includes(leg.side))) return null;
+  const principal = legs.filter(leg => leg.side === (into ? 'out' : 'in'));
+  if (!principal.length) return null;
+  return { zecTxid: principal[0].txid, zecTxids: [...new Set(legs.map(leg => leg.txid))].sort() };
+}
+
 function swapStory(swap) {
+  const venue = swap.venue || 'near';
+  const venueName = Object.hasOwn(f.VENUES, venue) ? f.VENUES[venue] : null;
   const usd = Number(swap.source_amount_usd), n = Number(swap.sample_count);
   const larger = Number(swap.greater_count), equal = Number(swap.equal_count);
-  if (!Number.isFinite(usd) || usd < 50000 || !Number.isSafeInteger(n) || n < 100
+  if (!venueName || !Number.isFinite(usd) || usd < 50000 || !Number.isSafeInteger(n) || n < 100
     || ![larger, equal].every(v => Number.isSafeInteger(v) && v >= 0) || larger + equal > n
     || !swap.source_chain || !swap.dest_chain) return null;
   const tailPct = 100 * (larger + equal + 1) / (n + 1);
@@ -190,20 +207,43 @@ function swapStory(swap) {
   if (![swap.source_chain, swap.dest_chain].every(c => /^[a-z0-9_-]{1,16}$/i.test(c))) return null;
   const into = swap.dest_chain.toLowerCase() === 'zec';
   if (!into && swap.source_chain.toLowerCase() !== 'zec') return null;
+  if (into && swap.source_chain.toLowerCase() === 'zec') return null;
+  const near = venue === 'near';
+  if (!near && swap.direction !== (into ? 'inflow' : 'outflow')) return null;
+  const identity = near ? { zecTxid: swap.zec_txid, zecTxids: TXID.test(swap.zec_txid || '') ? [swap.zec_txid] : [] }
+    : venueIdentity(swap, into);
+  if (!identity) return null;
   const other = into ? swap.source_chain : swap.dest_chain;
   const route = into ? `from ${f.chainName(other)} into ZEC` : `from ZEC to ${f.chainName(other)}`;
   const largest = larger === 0 && equal === 0;
   const tail = f.tailText(tailPct);
-  const url = /^[a-f0-9]{64}$/.test(swap.zec_txid || '') ? `${BASE}/tx/${swap.zec_txid}` : `${BASE}/crosschain`;
-  const content = `${MARK} $${number(usd)} just crossed ${route}.\n\n`
-    + `${largest ? 'The largest ZEC swap' : `One of the largest ${tail}% of ZEC swaps`} we've tracked on NEAR Intents in 30 days.\n\n${url}`;
-  const card = { kicker: 'Cross-chain · NEAR Intents', title: `A ZEC swap crossed ${route}.`, hero: `$${number(usd)}`, tone: into ? 'in' : 'out',
-    line: `crossed ${route}.`, qualifier: largest ? 'Largest ZEC swap in 30 days.' : `Top ${tail}% of ZEC swaps in 30 days.`,
-    source: url.startsWith(`${BASE}/tx/`) ? `zecblock.com/tx/${f.shortTxid(swap.zec_txid)}` : 'zecblock.com/crosschain',
+  const url = TXID.test(identity.zecTxid || '') ? `${BASE}/tx/${identity.zecTxid}` : `${BASE}/crosschain`;
+  // NEAR source USD is provider-reported. Venue USD is an estimate from the
+  // provider's first-stream-interval asset price, so it is marked approximate.
+  const hero = `${near ? '' : '≈'}$${number(usd)}`;
+  const sample = near ? 'we\'ve tracked' : 'we\'ve indexed';
+  const content = `${MARK} ${hero} just crossed ${route} via ${venueName}.\n\n`
+    + `${largest ? `The largest ${venueName} ZEC swap` : `One of the largest ${tail}% of ${venueName} ZEC swaps`} ${sample} in 30 days.\n\n${url}`;
+  const card = { kicker: `Cross-chain · ${venueName}`, title: `A ZEC swap crossed ${route}.`, hero, tone: into ? 'in' : 'out',
+    line: `crossed ${route}.`,
+    qualifier: largest ? `Largest ${venueName} swap in 30 days.` : `Top ${tail}% of ${venueName} swaps in 30 days.`,
+    source: url.startsWith(`${BASE}/tx/`) ? `zecblock.com/tx/${f.shortTxid(identity.zecTxid)}` : 'zecblock.com/crosschain',
     date: f.timeText(Date.parse(swap.swap_created_at) / 1000),
     visual: { kind: 'swap', from: swap.source_chain.toLowerCase(), to: swap.dest_chain.toLowerCase() } };
-  return candidate('swap', `cross_chain:${swap.id}`, content,
-    { ...swap, tailPct, exceptional: usd >= 1000000 && tailPct <= 0.1, card }, usd);
+  // NEAR keeps its original `cross_chain:<id>` namespace so swaps posted before
+  // venue support stay deduplicated. Indexed venues always name their venue.
+  const key = near ? `cross_chain:${swap.id}` : `cross_chain:${venue}:${swap.id}`;
+  return candidate('swap', key, content,
+    { ...swap, venue, zec_txid: identity.zecTxid || null, zecTxids: identity.zecTxids,
+      tailPct, exceptional: usd >= 1000000 && tailPct <= 0.1, card }, usd);
+}
+
+// The same native ZEC transaction can appear in NEAR and in an indexed venue.
+// Venue totals are separate observations; one economic swap is posted once.
+function swapZecTxids(story) {
+  const e = story.evidence || story.metadata || {};
+  if (Array.isArray(e.zecTxids)) return e.zecTxids.filter(t => TXID.test(t || ''));
+  return TXID.test(e.zec_txid || '') ? [e.zec_txid] : [];
 }
 
 function migrationStory(row) {
@@ -538,6 +578,11 @@ function select(candidates, history, now) {
         && now - new Date(latest.created_at) < 6 * 3600000) reason = 'recent-flow-topic';
     }
     if (!reason && c.type === 'swap') {
+      const txids = new Set(swapZecTxids(c));
+      if (txids.size && eligibleHistory.some(p => typeOf(p) === 'swap' && ['posted', 'posting', 'uncertain'].includes(p.status)
+        && swapZecTxids(p).some(t => txids.has(t)))) reason = 'swap-overlap-already-posted';
+    }
+    if (!reason && c.type === 'swap') {
       const exceptional = c.evidence.exceptional;
       const slot = exceptional ? 'exceptional' : now.getUTCHours() < 12 ? 'am' : 'pm';
       if (dayPosts.some(p => p.metadata?.slot === slot)) reason = `swap-${slot}-slot-used`;
@@ -577,10 +622,11 @@ function select(candidates, history, now) {
     if (reason) { skipped.push({ key: c.key, reason }); continue; }
     c.evidence.editorialSelection = rank;
     selected.push(c); used.add(c.key);
-    recent.push({ post_type: c.type, status: 'posting', created_at: now.toISOString(), metadata: c.evidence });
+    const claimed = { post_type: c.type, status: 'posting', created_at: now.toISOString(), metadata: c.evidence };
+    recent.push(claimed); eligibleHistory.push(claimed);
   }
   return { selected, skipped };
 }
 
-module.exports = { candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory,
+module.exports = { candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory, swapZecTxids,
   migrationStory, reorgStory, crosschainStory, hashStory, signalStory, milestoneStories, poolDrainStories, select, editorialRank, eventTime, isNew };

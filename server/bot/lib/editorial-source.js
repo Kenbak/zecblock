@@ -30,6 +30,7 @@ function chartSource(story, original) {
 
 function scope(story) {
   const type = story.type, e = story.evidence || {};
+  if (type === 'swap' && ['maya', 'thorchain'].includes(e.venue)) return `Successful native-ZEC ${e.venue === 'maya' ? 'Maya' : 'THORChain'} swaps indexed from Midgard. USD uses the provider's first-stream-interval price, not settlement value. Venues are not summed.`;
   if (type === 'swap' || type === 'crosschain_daily') return 'Tracked successful NEAR Intents swaps; provider-reported source USD.';
   if (type.startsWith('flow_')) return 'Public pool-boundary flow; private transferred amounts are not visible.';
   if (type === 'migration') return 'Pool migration, not new shielding.';

@@ -32,7 +32,7 @@ function withZiftHandoff(selection) {
   return task(selection.name, validator, `${selection.instruction}\nIf answering needs a custom query over public Zcash chain data (a calendar period, filter, comparison or measure that the tools above cannot express), use intent=needs_query with spec, flowQuery, blockQuery, transactionQuery${selection.validator.shape.analyticsPlan ? ', analyticsPlan' : ''} null and topics []. Never use needs_query for questions that are not about Zcash data.`);
 }
 // SQL drafting guidance shared by the classifier and the agent's run_sql.
-const researchDraftingGuidance = `For a requested change comparison, return each period's baseline, value and signed delta needed by the explanation. For a preceding-observation window, expand the source input to include the required lookback observations before computing windows. Apply the requested output-period filter only after window calculations. Never restrict an upstream CTE to the output period and then require a full preceding baseline that its input cannot contain. Preserve the requested time series; do not replace every non-leading change with NULL. For nullable ranked values, PostgreSQL descending order places NULL first unless specified: use DESC NULLS LAST or rank known values when seeking the largest measured change. Preserve genuine missing observations and honor an explicitly requested unknown-first order rather than filling missing changes with zero.
+const researchDraftingGuidance = `For a requested change comparison, return each period's baseline, value and signed delta needed by the explanation. Only the first twelve result columns reach the written answer: put the columns that answer the question, including any comparison measures, first and source or coverage columns last. For a preceding-observation window, expand the source input to include the required lookback observations before computing windows. Apply the requested output-period filter only after window calculations. Never restrict an upstream CTE to the output period and then require a full preceding baseline that its input cannot contain. Preserve the requested time series; do not replace every non-leading change with NULL. For nullable ranked values, PostgreSQL descending order places NULL first unless specified: use DESC NULLS LAST or rank known values when seeking the largest measured change. Preserve genuine missing observations and honor an explicitly requested unknown-first order rather than filling missing changes with zero.
 When a question requests a table or a given set of records and also asks for a leading finding, return the requested records as well as any derived columns needed by the explanation. Do not reduce the table to LIMIT 1 just to explain its leader. Preserve an explicitly requested first/latest record count and ordering; a narrative summary is separate from the result table.
 For totals or shares across a specified period, aggregate across that whole period for each explicitly requested group. Do not add a daily date breakdown unless the user requests one. Period shares use the aggregated numerator divided by the aggregated denominator, not an average of daily percentages; an explicitly requested average of daily shares remains supported. For shielded share of all transactions, use the published transactions count as denominator, which includes unclassified; shielded plus transparent counts alone represent classified transactions only. Preserve an explicitly requested classified-only denominator. Keep requested time series, rankings and groupings when the question asks for them.
 Daily summaries are aggregate rows. In flow_daily, SUM(records) counts underlying public boundary records, while COUNT(*) counts daily pool/direction rows. SUM(missing_amounts) counts missing underlying amounts; counting NULL daily totals counts different observations. Use the aggregate fields at the grain the question requests, and retain unavailable totals when any underlying amount is missing. Counting summary rows remains useful when the user explicitly asks for observation days or coverage.
@@ -130,8 +130,54 @@ const growthClarification = {
 };
 // The agent's clarify tool for a named-but-unspecified measure or window.
 const measureClarification = { en: 'Which measure and which periods should I compare? For example: transaction counts, shielded transaction counts, fees, pool balances or public shielding/deshielding volume, and the two date ranges to compare.' };
-function clarifyReply(kind, locale) {
-  return { answer: kind === 'growth' ? growthClarification[locale] || growthClarification.en : measureClarification[locale] || growthClarification[locale] || measureClarification.en, sources: [], spec: null, locale };
+// Choices a clarifying question may offer: what the public catalogue holds.
+const clarifyChoices = 'measures: transaction counts, shielded transaction counts, transaction or block fees, block counts, pool balances, public shielding/deshielding volume, cross-chain swap volume or counts, transparent address activity; pools: Orchard, Ironwood, Sapling, Sprout, transparent; windows: the last 7, 30 or 90 days, the past year, a named month or year, or two equal windows to compare';
+const clarifyMeasure = /\b(?:transactions?|shielded|transparent|fees?|blocks?|balances?|pools?|orchard|ironwood|sapling|sprout|shielding|deshielding|flows?|swaps?|volumes?|address(?:es)?)\b/gi;
+const clarifyWindow = /\b(?:days?|weeks?|months?|years?|periods?|windows?|baselines?|comparisons?|dates?|ranges?)\b/gi;
+const clarifyAdvice = /\b(?:buy|sell|invest(?:s|ed|ing|ment|ors?)?|prices?|bullish|bearish|moon|pump|dump|guarantee[sd]?|predict(?:s|ed|ion)?|forecasts?)\b/i;
+const clarifyIdentifier = /\b(?:t1|t3|u1|zs1)[A-Za-z0-9]{20,}\b|\b[0-9a-fA-F]{64}\b/g;
+const clarifyNames = new Set('zcash zec zecblock zift orchard ironwood sapling sprout usd utc nu'.split(' '));
+const clarifyOpeners = new Set('which what should would do did is are how for in on over by compare do or and the a i you shall'.split(' '));
+// A model-written clarifying question is shown only when it is a short,
+// on-topic question that offers catalogue choices and asserts nothing: no
+// numbers beyond the visitor's own and standard window lengths, no
+// identifiers, no invented names, links, markup or advice. Returns the text
+// or {reason} for the fixed-copy fallback.
+function checkedClarification(raw, { locale = 'en', question = '', history = [] } = {}) {
+  const text = String(raw || '').replace(/\s+/g, ' ').trim();
+  const asked = [question, ...history].join(' ');
+  if (text.length < 12 || text.length > 320) return { reason: 'length' };
+  if (!/[?？؟]$/.test(text)) return { reason: 'not_a_question' };
+  if (/[{}<>|`\\]|https?:|www\./i.test(text)) return { reason: 'markup' };
+  if ((text.match(/[.!?。！？؟]+(?=\s|$)/g) || []).length > 3) return { reason: 'too_long' };
+  if (clarifyAdvice.test(text)) return { reason: 'advice' };
+  for (const [id] of text.matchAll(clarifyIdentifier)) if (!asked.includes(id)) return { reason: 'identifier' };
+  const spoken = new Set([...asked.matchAll(/\d+/g)].map(([n]) => n));
+  for (const [n] of text.matchAll(/\d+/g)) if (!spoken.has(n) && !['7', '30', '90', '365'].includes(n)) return { reason: 'number' };
+  if (locale === 'en') {
+    const vocabulary = new Set(asked.toLowerCase().split(/[^\p{L}]+/u));
+    for (const [word] of text.matchAll(/\p{Lu}[\p{L}'’-]*/gu)) {
+      const lower = word.toLowerCase().replace(/['’]s$/, '');
+      if (!clarifyNames.has(lower) && !clarifyOpeners.has(lower) && !vocabulary.has(lower)) return { reason: 'unknown_name' };
+    }
+    // Concrete options: at least two catalogue terms, one of them a measure or
+    // pool, so a question about dates alone never leaves the measure open.
+    const terms = pattern => new Set([...text.matchAll(pattern)].map(([term]) => term.toLowerCase().replace(/(?:es|s)$/, '')));
+    const measures = terms(clarifyMeasure);
+    if (!measures.size) return { reason: 'no_measure' };
+    if (measures.size + terms(clarifyWindow).size < 2) return { reason: 'no_options' };
+    // A visitor who named no time span is asked for one in so many words.
+    if (!/\b(?:periods?|windows?|dates?|days?|weeks?|months?|years?|today|yesterday|20\d\d)\b/i.test(asked) && !/\b(?:periods?|windows?|dates?)\b/i.test(text)) return { reason: 'no_period' };
+  }
+  return { text };
+}
+// written: the model's question from the clarify tool; input: the request,
+// whose question and history bound which numbers it may repeat.
+function clarifyReply(kind, locale, written = null, input = {}, report = () => {}) {
+  const fixed = kind === 'growth' ? growthClarification[locale] || growthClarification.en : measureClarification[locale] || growthClarification[locale] || measureClarification.en;
+  const checked = written === null ? { reason: 'none' } : checkedClarification(written, { locale, question: input.question, history: input.history });
+  report(checked.text ? { outcome: 'written' } : { outcome: 'fallback', reason: checked.reason });
+  return { answer: checked.text || fixed, sources: [], spec: null, locale };
 }
 // zips: only the no-AI fallback answers ZIP questions from index text;
 // with AI available they go to the model, which cites the same records.
@@ -174,10 +220,12 @@ function directSelection(input) {
 }
 // preselected: a selection made by the agent's tool call. It skips the routing
 // call and renders through the same checked paths.
+// The research classifier drafts SQL from instructionsFor's schemas, so it is
+// not sent the plan catalogue.
 async function chat(input, run, internalClient, signal, analysisInstructions, cache, analytics, preselected = null) {
   const page = pageById(input.page);
   const publicExplain = !input.history.length && /^explain this (page|view|chart)[?.!]?$/i.test(input.question.trim());
-  const selection = preselected ? { topics: [], ...preselected } : directSelection(input) || await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { analyticsCatalogue: analytics.catalogue, utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
+  const selection = preselected ? { topics: [], ...preselected } : directSelection(input) || await run({ ...input, challenge: undefined, page, catalogue: knowledge.map(({ id, title }) => ({ id, title })), ...(analytics ? { ...(input.page === 'ask' && analytics.researchEnabled ? {} : { analyticsCatalogue: analytics.catalogue }), utcDate: new Date().toISOString().slice(0,10) } : {}) }, (input.page!=='ask'&&analytics?.researchEnabled?withZiftHandoff:value=>value)(selectionTask(analysisInstructions, input.page==='ask'?analytics:analytics?{...analytics,researchEnabled:false}:null)));
   const locale = input.locale === 'auto' ? selection.locale : input.locale;
   // The page widget has no SQL research route. A question that needs one is
   // offered to Zift instead of refused (no SQL is compiled or run here); an
@@ -326,4 +374,4 @@ async function transactionReply(query, input, client, signal, run, locale = 'en'
   }
   return { answer, spec: null, locale: run && evidence.status === 'found' ? locale : 'en', sources: publicSources(records), transactions: { status: evidence.status, query: evidence.query, rows: evidence.rows, retrievedAt: evidence.retrievedAt }, dataContext: evidence.dataContext, evidenceKey: evidence.evidenceKey, ...(!run ? { mode: 'guided', scope: 'Public API lookup · AI not connected' } : {}) };
 }
-module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported, ziftHandoff, declineReply, clarifyReply, directSelection, researchDraftingGuidance };
+module.exports = { transactionReply, blockReply, chat, guidedReply, selectionTask, answerTask, answerTaskFor, unsupported, ziftHandoff, declineReply, clarifyReply, checkedClarification, clarifyChoices, directSelection, researchDraftingGuidance };

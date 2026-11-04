@@ -18,6 +18,18 @@ test('admission acknowledges only the installed helper or legacy zero-error rule
   else assert.match(statements[1],/sum\(apply_error_count\+sync_error_count\),0\)=0/);
  }
 });
+test('only a pending baseline uses the release form, and only once v2 is installed',async()=>{
+ for(const baselinePending of [false,true])for(const release_mode of [false,true]){
+  const statements=[];
+  const client={query:async sql=>{statements.push(sql);return {rows:[statements.length===1?{installed:true,release_mode}:{acknowledged:true}]};}};
+  assert.equal(await replicationErrorsAcknowledged(client,{baselinePending}),true);
+  if(baselinePending&&release_mode)assert.match(statements[1],/^SELECT analytics_meta\.replication_errors_acknowledged\(false\)/);
+  else assert.match(statements[1],/^SELECT analytics_meta\.replication_errors_acknowledged\(\)/);
+ }
+ const legacy=[];
+ await replicationErrorsAcknowledged({query:async sql=>{legacy.push(sql);return {rows:[legacy.length===1?{installed:false,release_mode:false}:{acknowledged:true}]};}},{baselinePending:true});
+ assert.match(legacy[1],/sum\(apply_error_count\+sync_error_count\),0\)=0/);
+});
 test('missing helper evidence and helper execution errors never become a legacy fallback',async()=>{
  await assert.rejects(replicationErrorsAcknowledged({query:async()=>({rows:[]})}),/availability unknown/);
  let calls=0;
@@ -42,7 +54,7 @@ test('isolated PG16 acknowledgement ledger preserves real errors, epochs and ope
  await admin.query('CREATE DATABASE ask_recovery_source');
  db=new Pool({host:socket,user:'postgres',database:'ask_analytics',max:1,ssl:false});
  publisher=new Pool({host:socket,user:'postgres',database:'ask_recovery_source',max:1,ssl:false});
- for(const name of ['subscriber-core-v1.sql','admission-v1.sql','replication-recovery-v1.sql'])await db.query(fs.readFileSync(path.join(deploy,name),'utf8'));
+ for(const name of ['subscriber-core-v1.sql','admission-v1.sql','replication-recovery-v1.sql','replication-recovery-v2.sql'])await db.query(fs.readFileSync(path.join(deploy,name),'utf8'));
  await db.query(`UPDATE analytics_meta.sync_state SET state='stale',source_id='00000000-0000-4000-8000-000000000001',source_system_identifier='1234567890123456789';
   UPDATE analytics_meta.admission_control SET baseline_verified=true;
   INSERT INTO analytics_feed_meta.signal VALUES(true,'00000000-0000-4000-8000-000000000001','1234567890123456789',2,clock_timestamp(),0,repeat('a',64),'0/0')`);
@@ -91,6 +103,19 @@ test('isolated PG16 acknowledgement ledger preserves real errors, epochs and ope
  await record('e',{identity:'9999999999999999999'});assert.equal(await acknowledged(),false);
  await record('f',{timeline:3});assert.equal(await acknowledged(),false);
  await db.query('UPDATE analytics_meta.replication_recovery_ack SET event_id=$1 WHERE subid=$2',['c'.repeat(64),subid]);assert.equal(await acknowledged(),true);
+ // replication-recovery-v2: a cleared baseline closes the strict form; only the
+ // release form passes, and still only for the matching epoch and a released store.
+ const release=async()=>{await db.query('SELECT pg_stat_clear_snapshot()');return (await db.query('SELECT analytics_meta.replication_errors_acknowledged(false) AS ok')).rows[0].ok;};
+ assert.equal(await release(),true);
+ await db.query('UPDATE analytics_meta.admission_control SET baseline_verified=false');
+ assert.equal(await acknowledged(),false,'the strict form still requires a verified baseline');
+ assert.equal(await release(),true,'a pending baseline may run for the acknowledged epoch');
+ await db.query("UPDATE analytics_meta.sync_state SET state='quarantined'");assert.equal(await release(),false,'a quarantine is released only by an operator');
+ await db.query("UPDATE analytics_meta.sync_state SET state='stale'");
+ await record('1',{generation:'00000000-0000-4000-8000-000000000002'});assert.equal(await release(),false);
+ await db.query('UPDATE analytics_meta.replication_recovery_ack SET event_id=$1 WHERE subid=$2',['c'.repeat(64),subid]);assert.equal(await release(),true);
+ await db.query('UPDATE analytics_meta.admission_control SET baseline_verified=true');assert.equal(await acknowledged(),true);
+ await assert.rejects(db.query(fs.readFileSync(path.join(deploy,'replication-recovery-v2.sql'),'utf8')),/v2 not yet applied/);
  for(const sql of ['UPDATE analytics_meta.replication_recovery_events SET evidence=\'{}\'','DELETE FROM analytics_meta.replication_recovery_events','TRUNCATE analytics_meta.replication_recovery_events CASCADE'])await assert.rejects(db.query(sql),/append-only/);
  for(const role of ['analytics_owner','ask_public_reader','ask_public_view_owner']){
   // Pool.query releases a client with its query error, discarding that session.
@@ -99,10 +124,15 @@ test('isolated PG16 acknowledgement ledger preserves real errors, epochs and ope
   try{
    await roleClient.query('SET ROLE '+role);
    assert.equal((await roleClient.query('SELECT current_user AS role')).rows[0].role,role);
-   for(const sql of ['SELECT * FROM analytics_meta.replication_recovery_events','SELECT * FROM analytics_meta.replication_recovery_ack','SELECT analytics_meta.replication_errors_acknowledged()'])await assert.rejects(roleClient.query(sql),{code:'42501'},role+' must be denied: '+sql);
+   for(const sql of ['SELECT * FROM analytics_meta.replication_recovery_events','SELECT * FROM analytics_meta.replication_recovery_ack','SELECT analytics_meta.replication_errors_acknowledged()','SELECT analytics_meta.replication_errors_acknowledged(false)'])await assert.rejects(roleClient.query(sql),{code:'42501'},role+' must be denied: '+sql);
   }finally{await roleClient.query('RESET ROLE');roleClient.release();}
  }
  const fn=(await db.query("SELECT prosecdef,pg_get_userbyid(proowner) AS owner FROM pg_proc WHERE oid='analytics_meta.replication_errors_acknowledged()'::regprocedure")).rows[0];
  assert.deepEqual(fn,{prosecdef:false,owner:'postgres'});
  await db.query('ALTER SUBSCRIPTION ask_public_core_v1 RENAME TO unexpected_subscription');assert.equal(await acknowledged(),false);
+ await db.query('ALTER SUBSCRIPTION unexpected_subscription RENAME TO ask_public_core_v1');assert.equal(await acknowledged(),true);
+ await db.query(fs.readFileSync(path.join(deploy,'replication-recovery-v2-rollback.sql'),'utf8'));
+ assert.equal((await db.query("SELECT to_regprocedure('analytics_meta.replication_errors_acknowledged(boolean)') IS NULL AS gone")).rows[0].gone,true);
+ assert.equal(await acknowledged(),true,'rollback restores the strict v1 body');
+ await db.query('UPDATE analytics_meta.admission_control SET baseline_verified=false');assert.equal(await acknowledged(),false);
 });

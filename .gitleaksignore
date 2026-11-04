@@ -23,3 +23,4 @@ c999a3d8eb6f03eb66caaa92d9d0a8f61006b6fc:test-lightwalletd-api.sh:zcash-private-
 # IndexNow test fixture (fake key, replaced in the next commit).
 4203eb1c467a966c56f6cc5d0fbc4a13eb67656a:server/api/test/indexnow.test.js:generic-api-key:11
 4203eb1c467a966c56f6cc5d0fbc4a13eb67656a:server/tests/indexnow.test.js:generic-api-key:11
+a70bd366545f3ba2317a1dc44ae8fa4bc5edf726:server/api/test/v1/mcp-sql.test.js:generic-api-key:14

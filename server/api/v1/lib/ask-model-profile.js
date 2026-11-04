@@ -2,7 +2,7 @@
 // Operator evaluation profiles only. Selecting a candidate here never changes
 // ASK_MODEL, production defaults, provider credentials or application budgets.
 // Reservation minimums are USD per million tokens. Sol assumes the existing
-// hard 48000-byte request limit (+4096 overhead) and Standard global processing.
+// MAX_CONTEXT_BYTES request limit (+4096 overhead) and Standard global processing.
 const profiles=Object.freeze({
  'luna-candidate':Object.freeze({id:'luna-candidate',status:'candidate',provider:'openai',model:'gpt-6-luna',reasoningEffort:'none',minimumInputReservationRate:0.25,minimumOutputReservationRate:0.75,documentation:'https://developers.openai.com/api/docs/models/gpt-6-luna'}),
  'sol-candidate':Object.freeze({id:'sol-candidate',status:'candidate',provider:'openai',model:'gpt-6-sol',reasoningEffort:'none',minimumInputReservationRate:2.5,minimumOutputReservationRate:10,documentation:'https://developers.openai.com/api/docs/models/gpt-6-sol'}),

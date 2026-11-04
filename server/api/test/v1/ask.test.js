@@ -126,7 +126,7 @@ test('testnet and Crosslink cannot expose Ask', async t => {
 test('shared quota denial or Redis failure cannot reach the paid provider', async t => {
   let calls = 0;
   for (const failure of ['quota', 'redis']) {
-    const api = await serve(t, 'mainnet', env, { redis: { isReady: true, eval: async script => { assert.equal(script, ADMIT); if (failure === 'redis') throw new Error('redis down'); return -1; } }, fetch: async () => { calls++; } });
+    const api = await serve(t, 'mainnet', env, { redis: { isReady: true, eval: async script => { assert.equal(script, ADMIT); if (failure === 'redis') throw new Error('redis down'); return -3; } }, fetch: async () => { calls++; } });
     const result = await api.post({ question: 'show my supported dataset', context: null });
     assert.equal(result.status, failure === 'quota' ? 429 : 503);
   }
@@ -136,7 +136,7 @@ test('shared quota denial or Redis failure cannot reach the paid provider', asyn
 test('paid requests reserve a shared daily slot, release concurrency and retain the consumed reservation', async t => {
   let removed = false; let reserved = false; const admissions = { request: 0, ai: 0 };
   const api = await serve(t, 'mainnet', env, {
-    redis: { isReady: true, eval: async (script, options) => { if (script === ADMIT) { admissions.request++; assert.equal(options.keys.length, 4); return 1; } if (script === ADMIT_WORK) { assert.match(options.keys[0], /:work:ai:/); admissions.ai++; return 1; } assert.equal(script, RESERVE); assert.equal(options.arguments[2], '5'); reserved = true; return 1; }, zRem: async () => { removed = true; } },
+    redis: { isReady: true, eval: async (script, options) => { if (script === ADMIT) { admissions.request++; assert.equal(options.keys.length, 2, 'site-wide hour and day only'); assert.ok(options.keys.every(key => !/[a-f0-9]{64}|:ip:/.test(key))); return 1; } if (script === ADMIT_WORK) { assert.match(options.keys[0], /:work:ai:/); admissions.ai++; return 1; } assert.equal(script, RESERVE); assert.equal(options.arguments[2], '5'); reserved = true; return 1; }, zRem: async () => { removed = true; } },
     fetch: async () => { assert.equal(reserved, true); return Response.json({ choices: [{ finish_reason: 'stop', message: { content: JSON.stringify({ spec: sample }) } }] }); },
   });
   const result = await api.post({ question: 'interpret this question', context: null });
@@ -194,10 +194,10 @@ test('an explanation response contains only validated narrative for the exact ch
 });
 
 
-test('connection admission reports its actual minute/day reset without reaching provider or relaxing limits', async t => {
+test('site-wide admission reports its actual hour/day reset without reaching the provider', async t => {
   const now = Date.parse('2026-10-06T23:42:32Z'); t.mock.method(Date, 'now', () => now);
   let providerCalls=0;
-  for (const [denial,code,seconds] of [[-2,'ask-request-day','1048'],[-1,'ask-request-minute','28']]) {
+  for (const [denial,code,seconds] of [[-4,'ask-request-global-day','1048'],[-3,'ask-request-global-hour','1048']]) {
     const api=await serve(t,'mainnet',env,{redis:{isReady:true,eval:async script=>{assert.equal(script,ADMIT);return denial;}},fetch:async()=>{providerCalls++;}});
     const response=await api.post({question:'Rank the latest blocks',context:null});
     assert.equal(response.status,429);assert.equal(response.headers.get('retry-after'),seconds);assert.equal((await response.json()).code,code);

@@ -5,6 +5,11 @@ const {readFile}=require('node:fs/promises');
 const {askError}=require('./ask-errors');
 const CGROUP='/sys/fs/cgroup/system.slice/system-postgresql.slice/postgresql@16-main.service';
 const TTL_MS=200,EVENT_HOLD_MS=30000;
+// memory.events high also counts routine page-cache reclaim: a cgroup kept full
+// by warm table cache crosses memory.high on almost any new read. Such a high
+// event holds admission only while reclaimable cache is below this share of
+// memory.high, i.e. when the kernel is reclaiming more than spare cache.
+const CACHE_FLOOR=0.25;
 function integer(value){if(!/^\d+$/.test(value)||!Number.isSafeInteger(Number(value)))throw Error('Invalid counter');return Number(value);}
 function eventCounters(raw){
  const entries=raw.trim().split('\n').map(line=>line.trim().split(/\s+/));
@@ -38,9 +43,10 @@ function createMemoryPressure(env,{read=readFile,now=()=>performance.now()}={}){
   if(!valid)return false;
   try{
    const [current,high,max,events,pressure,stat]=await Promise.all(['memory.current','memory.high','memory.max','memory.events','memory.pressure','memory.stat'].map(name=>read(path+'/'+name,'utf8')));
-   const used=Math.max(0,integer(current.trim())-inactiveFile(stat)),soft=integer(high.trim()),hard=integer(max.trim()),counters=eventCounters(events);
+   const cache=inactiveFile(stat),used=Math.max(0,integer(current.trim())-cache),soft=integer(high.trim()),hard=integer(max.trim()),counters=eventCounters(events);
    if(soft<=0||hard<=soft)return false;
-   if(previous&&['high','max','oom','oom_kill'].some(key=>counters[key]>previous[key]||counters[key]<previous[key]))holdUntil=now()+EVENT_HOLD_MS;
+   const cacheReclaim=cache>=soft*CACHE_FLOOR;
+   if(previous&&['high','max','oom','oom_kill'].some(key=>counters[key]<previous[key]||counters[key]>previous[key]&&!(key==='high'&&cacheReclaim)))holdUntil=now()+EVENT_HOLD_MS;
    previous=counters;
    return used<soft*percent/100&&psi(pressure)<psiPercent&&now()>=holdUntil;
   }catch{return false;}
@@ -53,4 +59,4 @@ function createMemoryPressure(env,{read=readFile,now=()=>performance.now()}={}){
   if(!available)throw askError('resource');
  }};
 }
-module.exports={createMemoryPressure,CGROUP,TTL_MS,EVENT_HOLD_MS};
+module.exports={createMemoryPressure,CGROUP,TTL_MS,EVENT_HOLD_MS,CACHE_FLOOR};

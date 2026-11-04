@@ -22,7 +22,7 @@ function workspace(handoff) {
     '@/components/ask/AskChallenge': {AskChallenge:() => null},
     '@/components/ask/AskTransactions': {AskTransactions:record('transactions')}, '@/components/ask/AskBlocks': {AskBlocks:record('blocks')}, '@/components/ask/AskTransfers': {AskTransfers:record('transfers')}, '@/components/ask/AskAnalytics': {AskAnalytics:record('analytics')}, '@/components/ask/AskSources': {AskSources:({sources}) => React.createElement('aside', {'aria-label':'Sources'}, sources.map(source => source.label).join(' '))},
     '@/lib/ask/client': {peekAskHandoff:() => handoff}, '@/lib/ask/composer': {sqlDraft:() => null},
-    '@/components/ask/AskFeedback': {AskFeedback:() => null, AskFailureFeedback:() => null, useAskFeedback:() => ({blocked:false,blockedFor:()=>false})},
+    '@/components/ask/AskAnswerRating':{AskAnswerRating:()=>null},'@/components/ask/AskFeedback': {AskFeedback:() => null, AskFailureFeedback:() => null, useAskFeedback:() => ({blocked:false,blockedFor:()=>false})},
     '@/lib/ask/data': require('../../lib/ask/data'),
     '@/lib/ask/research-share': require('../../lib/ask/research-share'),
     '@/lib/ask/follow-ups': require('../../lib/ask/follow-ups'),

@@ -2,7 +2,6 @@
 const test = require('node:test'), assert = require('node:assert/strict');
 const { spawn } = require('node:child_process');
 const { mkdtemp, rm } = require('node:fs/promises');
-const { createHmac } = require('node:crypto');
 const { createClient } = require('redis');
 const { admit, admitWork, reserve, maximumCost, billedCost, budgetConfig, REQUEST_LIMITS, WORK_LIMITS } = require('../../v1/lib/ask-budget');
 const R = REQUEST_LIMITS, W = WORK_LIMITS;
@@ -12,11 +11,16 @@ const config = { abuseSecret: 'isolated-budget-fixture-secret-at-least-32-charac
 const request = (ip = '203.0.113.7') => ({ ip, body: {}, v1: { authenticatedStaging: true, abortSignal: new AbortController().signal } });
 const resetAfter = (now, window) => Math.max(1, Math.ceil((window - now % window) / 1000));
 const quota = (code, retryAfter) => error => error.quota === true && error.quotaCode === code && Number.isInteger(error.retryAfter) && error.retryAfter === retryAfter;
-function keys(req, now = NOW) {
+// Site-wide counters only: nothing in any key identifies the visitor.
+function keys(now = NOW) {
   const day = new Date(now).toISOString().slice(0, 10), minute = Math.floor(now / 60000);
-  const identity = createHmac('sha256', config.abuseSecret).update(`${day}:${req.ip}`).digest('hex');
-  const pair = prefix => [`${prefix}:${minute}`, `${prefix}:day`];
-  return { ordinary: [...pair(`ask:{mainnet}:requests:ip:${identity}`), `ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], ai: pair(`ask:{mainnet}:work:ai:${identity}`), sql: pair(`ask:{mainnet}:work:sql:${identity}`), legacy: pair(`ask:{mainnet}:ip:${identity}`) };
+  const work = kind => [`ask:{mainnet}:work:${kind}:all:${day}:${minute}`, `ask:{mainnet}:work:${kind}:all:${day}:day`];
+  return { ordinary: [`ask:{mainnet}:requests:hour:${new Date(now).toISOString().slice(0, 13)}`, `ask:{mainnet}:requests:day:${day}`], ai: work('ai'), sql: work('sql') };
+}
+const visitors = count => Array.from({ length: count }, (_, i) => request(`198.51.100.${(i % 250) + 1}`));
+// Every key written must be free of IP addresses and of 64-hex (hashed) identities.
+async function assertNoVisitorKeys(redis) {
+  for (const key of await redis.keys('*')) assert.doesNotMatch(key, /\d+\.\d+\.\d+\.\d+|[a-f0-9]{64}|:ip:/, key);
 }
 async function fixture(t) {
   // Only this disposable Unix-socket Redis is touched; never use TEST_REDIS_URL.
@@ -53,48 +57,26 @@ async function fixture(t) {
   } catch (error) { await close(); throw error; }
 }
 
-test('ordinary requests atomically admit their per-minute limit without spending AI, SQL or legacy allowances', async t => {
-  const redis = await fixture(t), req = request(), bucket = keys(req); t.mock.method(Date, 'now', () => NOW);
-  const results = await Promise.allSettled(Array.from({ length: R.minute + 20 }, () => admit(redis, config, req)));
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, R.minute);
-  for (const result of results.filter(result => result.status === 'rejected')) assert.ok(quota('ask-request-minute', 4)(result.reason));
-  assert.deepEqual(await redis.mGet(bucket.ordinary), Array(4).fill(String(R.minute)));
-  assert.deepEqual(await redis.mGet([...bucket.ai, ...bucket.sql, ...bucket.legacy]), Array(6).fill(null));
+test('ordinary requests count only site-wide hour and day totals, shared by every visitor', async t => {
+  const redis = await fixture(t), bucket = keys(); t.mock.method(Date, 'now', () => NOW);
+  const results = await Promise.allSettled(visitors(60).map(req => admit(redis, config, req)));
+  assert.equal(results.filter(result => result.status === 'fulfilled').length, 60, 'no per-visitor minute or day limit');
+  assert.deepEqual(await redis.mGet(bucket.ordinary), ['60', '60']);
+  assert.deepEqual(await redis.mGet([...bucket.ai, ...bucket.sql]), Array(4).fill(null));
   assert.equal(await redis.exists('ask:{mainnet}:calls:2026-10-27'), 0);
-  await assert.rejects(admit(redis, config, req), quota('ask-request-minute', 4));
-  assert.deepEqual(await redis.mGet(bucket.ordinary), Array(4).fill(String(R.minute)));
+  await assertNoVisitorKeys(redis);
 });
 
-test('AI and SQL work each retain independent per-minute allowances under simultaneous requests', async t => {
-  const redis = await fixture(t), req = request(), bucket = keys(req);
+test('AI and SQL work each keep an independent site-wide per-minute allowance', async t => {
+  const redis = await fixture(t), bucket = keys();
   for (const kind of ['ai', 'sql']) {
-    const results = await Promise.allSettled(Array.from({ length: W[kind].minute + 20 }, () => admitWork(redis, config, req, kind, NOW)));
+    const results = await Promise.allSettled(visitors(W[kind].minute + 20).map(req => admitWork(redis, config, req, kind, NOW)));
     assert.equal(results.filter(result => result.status === 'fulfilled').length, W[kind].minute);
     for (const result of results.filter(result => result.status === 'rejected')) assert.ok(quota(`ask-${kind}-minute`, 4)(result.reason));
-    assert.deepEqual(await redis.mGet(bucket[kind]), Array(2).fill(String(W[kind].minute)));
+    assert.deepEqual(await redis.mGet(bucket[kind]), Array(2).fill(String(W[kind].minute)), 'denials change nothing');
   }
-  assert.deepEqual(await redis.mGet(bucket.ordinary), Array(4).fill(null));
-  assert.deepEqual(await redis.mGet(bucket.legacy), [null, null]);
-  assert.equal(await redis.exists('ask:{mainnet}:calls:2026-10-27'), 0);
-});
-
-test('historical admission is a read-only maximum baseline for each work class, including concurrent daily exhaustion', async t => {
-  const redis = await fixture(t), req = request(), bucket = keys(req);
-  for (const kind of ['ai', 'sql']) {
-    await redis.set(bucket.legacy[0], '4'); await redis.set(bucket.legacy[1], String(W[kind].day - 1));
-    const results = await Promise.allSettled(Array.from({ length: 20 }, () => admitWork(redis, config, req, kind, NOW)));
-    assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
-    for (const result of results.filter(result => result.status === 'rejected')) assert.ok(quota(`ask-${kind}-day`, resetAfter(NOW, 86400000))(result.reason));
-    assert.deepEqual(await redis.mGet(bucket[kind]), ['5', String(W[kind].day)]);
-    assert.deepEqual(await redis.mGet(bucket.legacy), ['4', String(W[kind].day - 1)]);
-  }
-  // A newer work counter cannot be reduced by a smaller historical counter.
-  const other = request('203.0.113.8'), next = keys(other);
-  await redis.set(next.legacy[0], '1'); await redis.set(next.legacy[1], '8');
-  await redis.set(next.ai[0], '3'); await redis.set(next.ai[1], '10');
-  await admitWork(redis, config, other, 'ai', NOW);
-  assert.deepEqual(await redis.mGet(next.ai), ['4', '11']);
-  assert.deepEqual(await redis.mGet(next.legacy), ['1', '8']);
+  assert.deepEqual(await redis.mGet(bucket.ordinary), [null, null]);
+  await assertNoVisitorKeys(redis);
 });
 
 test('work day allowance survives minute changes and naturally changes at the UTC day boundary', async t => {
@@ -105,34 +87,21 @@ test('work day allowance survives minute changes and naturally changes at the UT
     const later = NOW + minutes * 60000;
     await assert.rejects(admitWork(redis, config, req, kind, later), quota(`ask-${kind}-day`, resetAfter(later, 86400000)));
     await admitWork(redis, config, req, kind, Date.UTC(2026, 9, 28));
-    assert.equal((await redis.mGet(keys(req)[kind]))[1], String(day));
-    assert.deepEqual(await redis.mGet(keys(req, Date.UTC(2026, 9, 28))[kind]), ['1', '1']);
+    assert.equal((await redis.mGet(keys(later)[kind]))[1], String(day));
+    assert.deepEqual(await redis.mGet(keys(Date.UTC(2026, 9, 28))[kind]), ['1', '1']);
   }
 });
 
-test('ordinary day exhaustion is atomic and denied traffic changes none of its four counters', async t => {
-  const redis = await fixture(t), req = request(), bucket = keys(req); t.mock.method(Date, 'now', () => NOW);
-  await redis.set(bucket.ordinary[1], String(R.day - 1));
-  const results = await Promise.allSettled(Array.from({ length: 30 }, () => admit(redis, config, req)));
-  assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
-  for (const result of results.filter(result => result.status === 'rejected')) assert.ok(quota('ask-request-day', resetAfter(NOW, 86400000))(result.reason));
-  assert.deepEqual(await redis.mGet(bucket.ordinary), ['1', String(R.day), '1', '1']);
-});
-
-for (const [name, index, count, window] of [['hour', 2, R.globalHour, 3600000], ['day', 3, R.globalDay, 86400000]]) {
-  test(`site-wide ordinary ${name} cap is shared across IPs and denial creates no per-IP usage`, async t => {
-    const redis = await fixture(t), shared = keys(request()).ordinary; t.mock.method(Date, 'now', () => NOW);
+for (const [name, index, count, window] of [['hour', 0, R.globalHour, 3600000], ['day', 1, R.globalDay, 86400000]]) {
+  test(`site-wide ordinary ${name} cap is atomic and a denial changes no counter`, async t => {
+    const redis = await fixture(t), shared = keys().ordinary; t.mock.method(Date, 'now', () => NOW);
     await redis.set(shared[index], String(count - 1));
-    const requests = Array.from({ length: 30 }, (_, i) => request(`198.51.100.${i + 1}`));
-    const results = await Promise.allSettled(requests.map(req => admit(redis, config, req)));
+    const results = await Promise.allSettled(visitors(30).map(req => admit(redis, config, req)));
     assert.equal(results.filter(result => result.status === 'fulfilled').length, 1);
+    for (const result of results.filter(result => result.status === 'rejected')) assert.ok(quota(`ask-request-global-${name}`, resetAfter(NOW, window))(result.reason));
     assert.equal(await redis.get(shared[index]), String(count));
-    assert.equal(await redis.get(shared[index === 2 ? 3 : 2]), '1');
-    for (const [i, result] of results.entries()) {
-      const own = keys(requests[i]).ordinary.slice(0, 2);
-      if (result.status === 'fulfilled') assert.deepEqual(await redis.mGet(own), ['1', '1']);
-      else { assert.ok(quota(`ask-request-global-${name}`, resetAfter(NOW, window))(result.reason)); assert.deepEqual(await redis.mGet(own), [null, null]); }
-    }
+    assert.equal(await redis.get(shared[1 - index]), '1');
+    await assertNoVisitorKeys(redis);
   });
 }
 
@@ -174,14 +143,15 @@ for (const code of ['ask-ai-calls-day', 'ask-ai-budget-month']) {
 }
 
 test('verification succeeds before ordinary admission and never consumes a work allowance', async t => {
-  const redis = await fixture(t), req = request(), bucket = keys(req); t.mock.method(Date, 'now', () => NOW);
+  const redis = await fixture(t), req = request(), bucket = keys(); t.mock.method(Date, 'now', () => NOW);
   await assert.rejects(admit(redis, config, { ...req, v1: { ...req.v1, authenticatedStaging: false } }), error => error.askKind === 'verification');
   const production = { ...config, authenticatedStaging: false, challengeSecret: 'fixture-only', challengeHostname: 'example.test' };
   const challenged = { ...req, body: { challenge: 'fixture-only' } };
   await assert.rejects(admit(redis, production, challenged, async () => Response.json({ success: true, action: 'ask', hostname: 'wrong.test' })), error => error.askKind === 'verification');
   await admit(redis, production, challenged, async () => Response.json({ success: true, action: 'ask', hostname: 'example.test' }));
-  assert.deepEqual(await redis.mGet(bucket.ordinary), ['1', '1', '1', '1']);
+  assert.deepEqual(await redis.mGet(bucket.ordinary), ['1', '1']);
   assert.deepEqual(await redis.mGet([...bucket.ai, ...bucket.sql]), [null, null, null, null]);
+  await assertNoVisitorKeys(redis);
 });
 
 test('rejected public challenges and spoofed staging metadata never touch Redis', async () => {
@@ -205,8 +175,8 @@ test('a verified request charges its actual post-verification UTC window before 
   const req = { ...request(), body: { challenge: 'verified-fixture-token' } }, production = { ...config, authenticatedStaging: false, challengeSecret: 'fixture-only', challengeHostname: 'example.test' };
   const stages = [], redis = { eval: async (_script, options) => {
     assert.ok(clock === after, 'Verification must complete before admission');
-    if (!stages.length) { assert.deepEqual(options.keys, keys(req, after).ordinary); stages.push('request'); }
-    else { assert.deepEqual(options.keys.slice(0, 2), keys(req, after).ai); stages.push('ai'); }
+    if (!stages.length) { assert.deepEqual(options.keys, keys(after).ordinary); stages.push('request'); }
+    else { assert.deepEqual(options.keys.slice(0, 2), keys(after).ai); stages.push('ai'); }
     return 1;
   } };
   await admit(redis, production, req, async () => { clock = after; return Response.json({ success: true, action: 'ask', hostname: 'example.test' }); });

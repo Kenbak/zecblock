@@ -2,7 +2,9 @@
 // Opt-in local PG16 capability/transport fixture only. No serving database,
 // provider, Redis, copied production data, readiness or historical-coverage claim.
 const test=require('node:test'),assert=require('node:assert/strict');
-const {cases}=require('../../v1/lib/ask-research-eval-cases');
+const {cases:published,pendingCases}=require('../../v1/lib/ask-research-eval-cases');
+// Pending cases need unpublished datasets; the fixture executes them in preview.
+const cases=[...published,...pendingCases],preview={preview:true};
 const {compileResearchSQL,researchEvidence}=require('../../v1/lib/ask-research-sql');
 const {comparisonQuery,splitComparison,matchRoles}=require('../../v1/lib/ask-research-eval');
 const when='2026-10-28T00:00:00Z';
@@ -35,6 +37,18 @@ CREATE TABLE fixture_private.swaps(timestamp timestamptz,direction text,chain te
 CREATE TABLE fixture_private.addresses(address text PRIMARY KEY,balance bigint,received bigint,sent bigint,transactions integer,first_seen bigint,last_seen bigint);
 CREATE TABLE fixture_private.address_activity(address text,txid text,height integer,timestamp bigint,tx_index integer,is_input boolean,is_output boolean,received bigint,sent bigint);
 CREATE TABLE fixture_private.activity_daily(date date PRIMARY KEY,blocks bigint,transactions bigint,shielded_transactions bigint,transparent_transactions bigint,unclassified_transactions bigint,bytes numeric,fees numeric,missing_fees bigint,missing_bytes bigint);
+CREATE TABLE fixture_private.address_daily(date date PRIMARY KEY,active_addresses bigint,sending_addresses bigint,receiving_addresses bigint,new_addresses bigint,incidences bigint,input_incidences bigint,output_incidences bigint);
+CREATE TABLE fixture_private.supply_daily(date date PRIMARY KEY,height bigint,hash text,timestamp bigint,chain_supply bigint,lockbox bigint,circulating_supply bigint,net_change bigint);
+CREATE TABLE fixture_private.issuance(height bigint PRIMARY KEY,hash text,timestamp bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint,fees bigint);
+CREATE TABLE fixture_private.mining_daily(date date,pool text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,pool));
+CREATE TABLE fixture_private.software_daily(date date,software text,blocks bigint,day_blocks bigint,PRIMARY KEY(date,software));
+CREATE TABLE fixture_private.block_timing(height bigint PRIMARY KEY,hash text,timestamp bigint,miner text,first_seen numeric,lag_seconds numeric,observed_by text);
+CREATE TABLE fixture_private.reorgs(reorg_id integer PRIMARY KEY,fork_height bigint,depth integer,reported_orphans integer,orphans bigint,detected_at bigint);
+CREATE TABLE fixture_private.orphaned_blocks(height bigint,hash text PRIMARY KEY,canonical_hash text,timestamp bigint,miner text,transactions integer,bytes integer,reorg_id integer,detected_at bigint,canonical_now boolean);
+CREATE TABLE fixture_private.utxo_daily(date date PRIMARY KEY,utxos bigint,unspent bigint,age_lt_1m bigint,age_1_3m bigint,age_3_6m bigint,age_6_12m bigint,age_1_2y bigint,age_gt_2y bigint,spent_outputs bigint,cdd numeric,avg_dormancy_days numeric,realized_cap_usd numeric,avg_cost_basis_usd numeric);
+CREATE TABLE fixture_private.value_pools_daily(date date PRIMARY KEY,height bigint,hash text,observed_blocks bigint,day_blocks bigint,transparent bigint,sprout bigint,sapling bigint,orchard bigint,ironwood bigint,lockbox bigint,nsm bigint,chain_supply bigint);
+CREATE TABLE fixture_private.swap_daily(date date,venue text,direction text,chain text,token text,swaps bigint,zec bigint,usd bigint,missing_zec bigint,missing_usd bigint,PRIMARY KEY(date,venue,direction,chain,token));
+CREATE TABLE fixture_private.issuance_daily(date date PRIMARY KEY,first_height bigint,last_height bigint,blocks bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint);
 CREATE TABLE fixture_private.flow_daily(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
 CREATE VIEW analytics_public.blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.blocks;
 CREATE VIEW analytics_public.transactions_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.transactions;
@@ -45,6 +59,18 @@ CREATE VIEW analytics_public.addresses_query WITH(security_barrier=true) AS SELE
 CREATE VIEW analytics_public.address_activity_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_activity;
 CREATE VIEW analytics_public.activity_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.activity_daily;
 CREATE VIEW analytics_public.flow_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.flow_daily;
+CREATE VIEW analytics_public.address_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.address_daily;
+CREATE VIEW analytics_public.supply_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.supply_daily;
+CREATE VIEW analytics_public.issuance_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance;
+CREATE VIEW analytics_public.mining_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.mining_daily;
+CREATE VIEW analytics_public.software_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.software_daily;
+CREATE VIEW analytics_public.block_timing_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.block_timing;
+CREATE VIEW analytics_public.issuance_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.issuance_daily;
+CREATE VIEW analytics_public.reorgs_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.reorgs;
+CREATE VIEW analytics_public.orphaned_blocks_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.orphaned_blocks;
+CREATE VIEW analytics_public.swap_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.swap_daily;
+CREATE VIEW analytics_public.value_pools_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.value_pools_daily;
+CREATE VIEW analytics_public.utxo_daily_query WITH(security_barrier=true) AS SELECT * FROM fixture_private.utxo_daily;
 REVOKE ALL ON ALL TABLES IN SCHEMA fixture_private,analytics_public FROM PUBLIC;
 GRANT USAGE ON SCHEMA analytics_public TO ask_eval_reader;
 GRANT SELECT ON ALL TABLES IN SCHEMA analytics_public TO ask_eval_reader;
@@ -59,6 +85,27 @@ INSERT INTO fixture_private.flow_daily SELECT DATE '2026-08-25'+i,p,d,2,CASE WHE
 INSERT INTO fixture_private.swaps SELECT (DATE '2026-08-25'+i)::timestamptz,d,'fixture_chain','fixture_token',CASE WHEN i=7 THEN NULL ELSE 100*(CASE WHEN i=23 THEN 2 ELSE 1 END) END FROM generate_series(0,36) i CROSS JOIN(VALUES('inflow'),('outflow')) directions(d);
 INSERT INTO fixture_private.addresses VALUES('fixture_address_a',1000000000,2000000000,1000000000,2,1788220800,1788220800),('fixture_address_b',500000000,500000000,0,1,1788220800,1788220800);
 INSERT INTO fixture_private.address_activity VALUES('fixture_address_a','fixture_tx_0',3500000,1788220800,0,true,true,100,50),('fixture_address_b','fixture_tx_0',3500000,1788220800,0,false,true,50,0),('fixture_address_a','fixture_tx_1',3500001,1788220875,1,true,false,0,50);
+-- The same three September 1 incidences, summarized; other September dates have blocks but no incidences.
+INSERT INTO fixture_private.address_daily SELECT DATE '2026-09-01'+i,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 1 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 3 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END,CASE WHEN i=0 THEN 2 ELSE 0 END FROM generate_series(0,29) i;
+-- Year-end and September 2026 supply dates (2016-12-31 through 2026-10-28) with steady 1150-block days.
+INSERT INTO fixture_private.supply_daily SELECT d,3000000+i,'fixture_hash',extract(epoch FROM d)::bigint+86000,1500000000000000+i*179687500000,7000000000000,1500000000000000+i*179687500000-7000000000000,CASE WHEN i>0 THEN 179687500000 END FROM generate_series(DATE '2016-12-31',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT (n-1)::bigint AS i) x;
+-- Daily blocks in 2025 and September 2026 at the post-2726400 split, one per hour.
+INSERT INTO fixture_private.issuance SELECT 2900000+n,'fixture_hash',extract(epoch FROM t)::bigint,156250000,125000000,0,12500000,18750000,0,1000 FROM generate_series(TIMESTAMP '2025-01-01',TIMESTAMP '2026-10-28','1 hour') WITH ORDINALITY g(t,n);
+-- Pools over the 40 completed days before today: 1,150 blocks a day.
+INSERT INTO fixture_private.mining_daily SELECT d,p,b,1150 FROM generate_series(CURRENT_DATE-40,CURRENT_DATE-1,'1 day') d CROSS JOIN (VALUES('ViaBTC',400),('F2Pool',250),('Foundry USA',200),('AntPool',100),('Unknown',200)) v(p,b);
+INSERT INTO fixture_private.software_daily SELECT d,s,b,1150 FROM generate_series(DATE '2026-08-25',DATE '2026-10-05','1 day') d CROSS JOIN (VALUES('zebra',300),('zakura',150),('unknown',700),('missing',0)) v(s,b);
+-- Three payout addresses with distinct clock offsets, one block every 10 minutes.
+INSERT INTO fixture_private.block_timing SELECT 3530000+n,'fixture_hash',extract(epoch FROM t)::bigint,m,extract(epoch FROM t)::bigint+o,o,'node-block-stream' FROM generate_series(TIMESTAMP '2026-10-18',TIMESTAMP '2026-10-29','10 minutes') WITH ORDINALITY g(t,n) CROSS JOIN LATERAL (SELECT CASE n%3 WHEN 0 THEN 't1fast' WHEN 1 THEN 't1slow' ELSE 't1ahead' END AS m,CASE n%3 WHEN 0 THEN 0.5 WHEN 1 THEN 4.25 ELSE -2.75 END AS o) x;
+INSERT INTO fixture_private.issuance_daily SELECT d,1000*i+1,1000*(i+1),1000,156250000000,125000000000,0,12500000000,18750000000,0 FROM generate_series(DATE '2024-12-01',DATE '2026-10-28','1 day') WITH ORDINALITY g(d,n) CROSS JOIN LATERAL (SELECT n::bigint AS i) x;
+-- One depth-1 reorg every 2.5 days in September-November 2026, one depth-2; each orphan replaced by fixture_block_0's miner.
+INSERT INTO fixture_private.reorgs SELECT n,3510000+n*100,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,CASE WHEN n=20 THEN 2 ELSE 1 END,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint FROM generate_series(1,36) n;
+INSERT INTO fixture_private.orphaned_blocks SELECT 3510000+n*100,'fixture_orphan_'||n,'fixture_block_0',extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint-60,CASE n%3 WHEN 0 THEN 't1orphanA' WHEN 1 THEN 't1orphanB' ELSE 'fixture_miner' END,2,500,n,extract(epoch FROM TIMESTAMP '2026-09-01'+n*INTERVAL '60 hours')::bigint,n=7 FROM generate_series(1,36) n;
+-- Transparent UTXO set for 2026: 12M ZEC unspent, 15% older than two years, 10,000 outputs spent a day.
+INSERT INTO fixture_private.utxo_daily SELECT d,27000000+i,u,u*20/100,u*15/100,u*15/100,u*20/100,u*15/100,u*15/100,10000,4000000+i,280,8000000000,700 FROM (SELECT d::date,row_number() OVER(ORDER BY d) AS i FROM generate_series(DATE '2026-01-01',DATE '2026-11-15','1 day') d) x,LATERAL (SELECT 1200000000000000-i*100000000 AS u) v;
+-- Node pool snapshots from 2026-09-28: transparent shrinks 10 ZEC a day, the lockbox grows 216 ZEC a day, NSM stays zero before NU7.
+INSERT INTO fixture_private.value_pools_daily SELECT d,3498000+i*1150,'fixture_pools_'||i,1145,1150,t,1300000000000,42000000000000,34000000000000,419000000000000,l,0,t+1300000000000+42000000000000+34000000000000+419000000000000+l FROM (SELECT d::date,row_number() OVER(ORDER BY d) AS i FROM generate_series(DATE '2026-09-28',DATE '2026-11-15','1 day') d) x,LATERAL (SELECT 119700000000000000/100-i*1000000000 AS t,7000000000000+i*21600000000 AS l) v;
+-- Daily swaps per venue in September-November 2026: NEAR Intents busiest, Maya next, THORChain small and folded into other.
+INSERT INTO fixture_private.swap_daily SELECT d,v,dir,ch,tk,n,CASE WHEN n>=5 THEN n*z END,CASE WHEN n>=5 THEN n*z*400 END,0,0 FROM generate_series(DATE '2026-09-01',DATE '2026-11-15','1 day') d CROSS JOIN (VALUES('near-intents','inflow','eth','ETH',40,3),('near-intents','outflow','tron','USDT',35,2),('maya','inflow','btc','BTC',8,4),('maya','outflow','btc','BTC',12,5),('thorchain','inflow','other','other',2,6)) x(v,dir,ch,tk,n,z);
 RESET ROLE;`;
 
 // Independent, fixed mathematical oracles; these do not trust case.fixtureRows.
@@ -121,9 +168,9 @@ test('disposable PG16 catalogue SQL and exact wire transport',{skip:process.env.
  });
 
  for(const item of cases.filter(entry=>entry.kind==='research'))await t.test('native syntax/comparison capability: '+item.id,async()=>{
-  const compiled=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true}),candidate=await read(compiled);
+  const compiled=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true,...preview}),candidate=await read(compiled);
   assert.equal(candidate.truncated,false);assert.equal(candidate.columns.length,item.roles.length);
-  const combined=await comparisonQuery(item,candidate),verification=await read(await compileResearchSQL(combined,{extended:true}));
+  const combined=await comparisonQuery(item,candidate),verification=await read(await compileResearchSQL(combined,{extended:true,...preview}));
   const pair=splitComparison(item,candidate,verification);
   const mapping=matchRoles(item,pair.reference,pair.observed,candidate.columns);
   assert.ok(mapping,'native typed rows retain an equivalent role mapping');assert.equal(new Set(mapping).size,item.roles.length);

@@ -7,25 +7,25 @@
 openapi: 3.1.0
 info:
   title: ZecBlock API v1
-  version: 1.0.0-preview
+  version: 1.0.0
   summary: >-
     Versioned, contract-stable read/write API for the Zcash blockchain data and privacy-intelligence
     features exposed by ZecBlock.
   description: >-
-    This is the v1 contract layer. It is gated behind API_V1_ENABLED and, pre-launch, an
-    X-API-Preview-Key header (see the previewKey security scheme) — see server/api/v1/README.md in
-    the repository for exact mount instructions and current caveats. Every success response uses the
-    {data, meta} envelope; every error response is an RFC 9457 problem+json document. Every public
-    inventory entry is adapted; The manifest explicitly identifies retained operational routes and
+    This is the v1 contract layer. Public production reads need no API key or preview header;
+    protected deployments may still require X-API-Preview-Key. Individual operations document their
+    own credentials (for example X-Node-Token). Every success response uses the {data, meta}
+    envelope; every error response is an RFC 9457 problem+json document. Every public inventory
+    entry is adapted; The manifest explicitly identifies retained operational routes and
     payment-protected services.
   contact:
     name: ZecBlock / Atmosphere Labs
 servers:
-  - url: https://api.zecblock.com
+  - url: 'https://api.zecblock.com'
     description: Mainnet API host.
-  - url: https://api.testnet.zecblock.com
+  - url: 'https://api.testnet.zecblock.com'
     description: Testnet API host.
-  - url: http://127.0.0.1:3002
+  - url: 'http://127.0.0.1:3002'
     description: Private read-only development preview.
 tags:
   - name: address
@@ -52,15 +52,7 @@ tags:
   - name: transactions
   - name: transparent
   - name: valuation
-security:
-  - previewKey: []
 components:
-  securitySchemes:
-    previewKey:
-      type: apiKey
-      in: header
-      name: X-API-Preview-Key
-      description: Required while API_V1_LAUNCHED=false. Dropped once v1 is generally available.
   schemas:
     Problem:
       type: object
@@ -216,7 +208,7 @@ components:
                 - 'null'
     ZatoshiString:
       type: string
-      pattern: ^-?[0-9]+$
+      pattern: '^-?[0-9]+$'
       description: >-
         Integer amount in zatoshis (1 ZEC = 100,000,000 zatoshis), encoded as a decimal string to
         avoid float precision loss. Never a JSON number.
@@ -224,7 +216,7 @@ paths:
   /v1/network/accounting/history:
     get:
       operationId: get_network_Accounting_History
-      summary: Canonical block fee allocations, shielded activity and sampled NSM/supply history.
+      summary: 'Canonical block fee allocations, shielded activity and sampled NSM/supply history.'
       tags:
         - network
       parameters:
@@ -266,7 +258,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Canonical block fee allocations, shielded activity and sampled NSM/supply history.
+          description: 'Canonical block fee allocations, shielded activity and sampled NSM/supply history.'
           content:
             application/json:
               schema:
@@ -289,7 +281,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -357,7 +349,10 @@ paths:
         Contextual mainnet questions with reviewed public sources, supported languages and bounded
         history. Optional restricted replica analytics return dated count/pool rankings by day, week
         or month. Paid answers require bot verification and shared spend limits; analytics
-        additionally require private-worker query quotas. Arbitrary SQL is never accepted.
+        additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies
+        carry a server-written turnScope that the client may send back, schema-checked, for
+        follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress
+        lines before one result or problem line holding the usual body.
       tags:
         - ask
       requestBody:
@@ -495,12 +490,12 @@ paths:
                         start:
                           anyOf:
                             - type: string
-                              pattern: ^\d{4}-\d{2}-\d{2}$
+                              pattern: '^\d{4}-\d{2}-\d{2}$'
                             - type: 'null'
                         end:
                           anyOf:
                             - type: string
-                              pattern: ^\d{4}-\d{2}-\d{2}$
+                              pattern: '^\d{4}-\d{2}-\d{2}$'
                             - type: 'null'
                       required:
                         - version
@@ -514,10 +509,10 @@ paths:
                     - type: 'null'
                 transaction:
                   type: string
-                  pattern: ^[a-fA-F0-9]{64}$
+                  pattern: '^[a-fA-F0-9]{64}$'
                 block:
                   type: string
-                  pattern: ^(?:0|[1-9]\d{0,8}|[a-fA-F0-9]{64})$
+                  pattern: '^(?:0|[1-9]\d{0,8}|[a-fA-F0-9]{64})$'
                 locale:
                   default: auto
                   type: string
@@ -557,10 +552,10 @@ paths:
                         - swaps
                     start:
                       type: string
-                      pattern: ^20\d{2}-\d{2}-\d{2}$
+                      pattern: '^20\d{2}-\d{2}-\d{2}$'
                     end:
                       type: string
-                      pattern: ^20\d{2}-\d{2}-\d{2}$
+                      pattern: '^20\d{2}-\d{2}-\d{2}$'
                     bucket:
                       type: string
                       enum:
@@ -573,7 +568,7 @@ paths:
                       type: array
                       items:
                         type: string
-                        pattern: ^[a-z][a-z_]{0,31}$
+                        pattern: '^[a-z][a-z_]{0,31}$'
                     filters:
                       maxItems: 4
                       type: array
@@ -582,7 +577,7 @@ paths:
                         properties:
                           field:
                             type: string
-                            pattern: ^[a-z][a-z_]{0,31}$
+                            pattern: '^[a-z][a-z_]{0,31}$'
                           op:
                             type: string
                             enum:
@@ -608,7 +603,7 @@ paths:
                         properties:
                           field:
                             type: string
-                            pattern: ^[a-z][a-z_]{0,31}$
+                            pattern: '^[a-z][a-z_]{0,31}$'
                           operation:
                             type: string
                             enum:
@@ -626,7 +621,7 @@ paths:
                               properties:
                                 field:
                                   type: string
-                                  pattern: ^[a-z][a-z_]{0,31}$
+                                  pattern: '^[a-z][a-z_]{0,31}$'
                                 op:
                                   type: string
                                   enum:
@@ -724,6 +719,128 @@ paths:
                     - sql
                     - limit
                   additionalProperties: false
+                turnScope:
+                  type: object
+                  properties:
+                    version:
+                      type: number
+                      const: 1
+                    kind:
+                      type: string
+                      enum:
+                        - sql
+                        - chart
+                        - block
+                        - transaction
+                    datasets:
+                      maxItems: 6
+                      type: array
+                      items:
+                        type: string
+                        enum:
+                          - blocks
+                          - transactions
+                          - flows
+                          - daily
+                          - swaps
+                          - addresses
+                          - address_activity
+                          - activity_daily
+                          - address_daily
+                          - flow_daily
+                          - supply_daily
+                          - issuance
+                          - mining_daily
+                          - software_daily
+                          - block_timing
+                          - issuance_daily
+                          - reorgs
+                          - orphaned_blocks
+                          - utxo_daily
+                          - value_pools_daily
+                          - swap_daily
+                          - labels
+                    measures:
+                      maxItems: 6
+                      type: array
+                      items:
+                        type: string
+                        pattern: '^[a-z][a-z0-9_]{0,47}$'
+                    pools:
+                      maxItems: 5
+                      type: array
+                      items:
+                        type: string
+                        enum:
+                          - orchard
+                          - ironwood
+                          - sapling
+                          - sprout
+                          - transparent
+                    window:
+                      anyOf:
+                        - type: object
+                          properties:
+                            start:
+                              type: string
+                              pattern: '^20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$'
+                            end:
+                              type: string
+                              pattern: '^20\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\d|3[01])$'
+                          required:
+                            - start
+                            - end
+                          additionalProperties: false
+                        - type: 'null'
+                    period:
+                      anyOf:
+                        - type: string
+                          enum:
+                            - 30d
+                            - 90d
+                            - 1y
+                        - type: 'null'
+                    grain:
+                      anyOf:
+                        - type: string
+                          enum:
+                            - day
+                            - week
+                            - month
+                            - year
+                        - type: 'null'
+                    metric:
+                      anyOf:
+                        - type: string
+                          enum:
+                            - balances
+                            - flows
+                            - activity
+                            - swap_volume
+                            - swap_count
+                            - transactions
+                            - pulse
+                            - migration_share
+                            - chain_inflows
+                            - chain_outflows
+                        - type: 'null'
+                    subject:
+                      anyOf:
+                        - type: string
+                          pattern: '^[a-z][a-z0-9_]{0,47}$'
+                        - type: 'null'
+                  required:
+                    - version
+                    - kind
+                    - datasets
+                    - measures
+                    - pools
+                    - window
+                    - period
+                    - grain
+                    - metric
+                    - subject
+                  additionalProperties: false
                 challenge:
                   type: string
                   maxLength: 2048
@@ -745,7 +862,10 @@ paths:
             bounded history. Optional restricted replica analytics return dated count/pool rankings
             by day, week or month. Paid answers require bot verification and shared spend limits;
             analytics additionally require private-worker query quotas. Arbitrary SQL is never
-            accepted.
+            accepted. Replies carry a server-written turnScope that the client may send back,
+            schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may
+            stream stage-only progress lines before one result or problem line holding the usual
+            body.
           content:
             application/json:
               schema:
@@ -768,7 +888,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -800,7 +920,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -887,12 +1007,12 @@ paths:
                     start:
                       anyOf:
                         - type: string
-                          pattern: ^\d{4}-\d{2}-\d{2}$
+                          pattern: '^\d{4}-\d{2}-\d{2}$'
                         - type: 'null'
                     end:
                       anyOf:
                         - type: string
-                          pattern: ^\d{4}-\d{2}-\d{2}$
+                          pattern: '^\d{4}-\d{2}-\d{2}$'
                         - type: 'null'
                   required:
                     - version
@@ -905,7 +1025,7 @@ paths:
                   additionalProperties: false
                 evidenceKey:
                   type: string
-                  pattern: ^[a-f0-9]{64}$
+                  pattern: '^[a-f0-9]{64}$'
                 challenge:
                   type: string
                   maxLength: 2048
@@ -944,7 +1064,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -976,7 +1096,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -1070,7 +1190,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1102,7 +1222,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -1204,7 +1324,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1236,7 +1356,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -1306,7 +1426,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1338,7 +1458,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -1430,12 +1550,12 @@ paths:
                         start:
                           anyOf:
                             - type: string
-                              pattern: ^\d{4}-\d{2}-\d{2}$
+                              pattern: '^\d{4}-\d{2}-\d{2}$'
                             - type: 'null'
                         end:
                           anyOf:
                             - type: string
-                              pattern: ^\d{4}-\d{2}-\d{2}$
+                              pattern: '^\d{4}-\d{2}-\d{2}$'
                             - type: 'null'
                       required:
                         - version
@@ -1486,7 +1606,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1518,7 +1638,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '429':
-          description: Per-IP, shared daily or concurrent request limit reached.
+          description: 'Per-IP, shared daily or concurrent request limit reached.'
           content:
             application/problem+json:
               schema:
@@ -1588,7 +1708,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1649,7 +1769,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/network/attestations/{id}:
+  '/v1/network/attestations/{id}':
     get:
       operationId: get_network_Attestations_Id
       summary: >-
@@ -1663,7 +1783,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/network/attestations/:id
+      x-cipherscan-legacy-path: '/api/network/attestations/:id'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -1694,7 +1814,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1790,7 +1910,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1886,7 +2006,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -1995,7 +2115,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2056,7 +2176,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/names/{name}/events:
+  '/v1/names/{name}/events':
     get:
       operationId: get_names_Name_Events
       summary: Recent public name registry events.
@@ -2068,7 +2188,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/name/:name/events
+      x-cipherscan-legacy-path: '/api/name/:name/events'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: native
@@ -2097,7 +2217,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2158,7 +2278,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/names/{name}:
+  '/v1/names/{name}':
     get:
       operationId: get_names_Name
       summary: Name registration or pricing when unregistered.
@@ -2170,7 +2290,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/name/:name
+      x-cipherscan-legacy-path: '/api/name/:name'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: native
@@ -2199,7 +2319,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2295,7 +2415,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2397,7 +2517,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2493,7 +2613,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2567,8 +2687,8 @@ paths:
           schema:
             type: string
             format: date
-            description: Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.
-          description: Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.
+            description: 'Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.'
+          description: 'Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.'
         - name: max_fees
           in: query
           required: false
@@ -2711,8 +2831,8 @@ paths:
               - ZEC Mining Pool
               - unattributed
             default: all
-            description: Mining-pool payout-address attribution, independent of software markers.
-          description: Mining-pool payout-address attribution, independent of software markers.
+            description: 'Mining-pool payout-address attribution, independent of software markers.'
+          description: 'Mining-pool payout-address attribution, independent of software markers.'
         - name: software
           in: query
           required: false
@@ -2739,8 +2859,8 @@ paths:
           schema:
             type: string
             format: date
-            description: Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.
-          description: Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.
+            description: 'Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.'
+          description: 'Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.'
         - name: limit
           in: query
           required: false
@@ -2782,7 +2902,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2843,7 +2963,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/blocks/{heightOrHash}:
+  '/v1/blocks/{heightOrHash}':
     get:
       operationId: get_blocks_HeightOrHash
       summary: Block detail by height or hash.
@@ -2861,7 +2981,7 @@ paths:
           schema:
             type: string
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
-      x-cipherscan-legacy-path: /api/block/:heightOrHash
+      x-cipherscan-legacy-path: '/api/block/:heightOrHash'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -2890,7 +3010,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -2951,7 +3071,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/search/anchors/{root}:
+  '/v1/search/anchors/{root}':
     get:
       operationId: get_search_Anchors_Root
       summary: Look up the block containing a given Orchard/Sapling anchor root.
@@ -2963,7 +3083,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/search/anchor/:root
+      x-cipherscan-legacy-path: '/api/search/anchor/:root'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -2992,7 +3112,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3102,7 +3222,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3163,7 +3283,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/blocks/{hashOrHeight}/archive:
+  '/v1/blocks/{hashOrHeight}/archive':
     get:
       operationId: get_blocks_HashOrHeight_Archive
       summary: Orphaned/non-canonical block archive lookup.
@@ -3175,7 +3295,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/block-archive/:hashOrHeight
+      x-cipherscan-legacy-path: '/api/block-archive/:hashOrHeight'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -3204,7 +3324,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3313,7 +3433,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3413,7 +3533,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3477,7 +3597,7 @@ paths:
   /v1/network/accounting:
     get:
       operationId: get_network_Accounting
-      summary: Latest canonical block fees, miner receipts and separate authoritative NSM reserve balance.
+      summary: 'Latest canonical block fees, miner receipts and separate authoritative NSM reserve balance.'
       tags:
         - network
       x-cipherscan-legacy-path: /api/network/accounting
@@ -3511,7 +3631,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3613,7 +3733,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3709,7 +3829,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3805,7 +3925,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3901,7 +4021,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -3997,7 +4117,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4093,7 +4213,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4189,7 +4309,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4253,7 +4373,7 @@ paths:
   /v1/network/circulating-supply:
     get:
       operationId: get_network_Circulating-supply
-      summary: Circulating supply, plain-number legacy format.
+      summary: 'Circulating supply, plain-number legacy format.'
       tags:
         - network
       parameters:
@@ -4269,7 +4389,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Circulating supply, plain-number legacy format.
+          description: 'Circulating supply, plain-number legacy format.'
           content:
             application/json:
               schema:
@@ -4292,7 +4412,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4388,7 +4508,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4492,7 +4612,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4600,7 +4720,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4696,7 +4816,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4802,7 +4922,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -4898,7 +5018,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5008,7 +5128,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5129,7 +5249,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5225,7 +5345,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5321,7 +5441,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5417,7 +5537,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5513,7 +5633,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5609,7 +5729,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5718,7 +5838,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5818,7 +5938,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -5918,7 +6038,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6046,7 +6166,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6155,7 +6275,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6258,7 +6378,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6361,7 +6481,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6470,7 +6590,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6548,8 +6668,8 @@ paths:
             enum:
               - hour
               - day
-            description: Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.
-          description: Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.
+            description: 'Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.'
+          description: 'Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.'
         - name: period
           in: query
           required: false
@@ -6609,7 +6729,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6684,7 +6804,7 @@ paths:
           required: false
           schema:
             type: string
-            pattern: ^[a-z0-9_-]{1,32}$
+            pattern: '^[a-z0-9_-]{1,32}$'
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
         - name: cursor
           in: query
@@ -6727,8 +6847,8 @@ paths:
           schema:
             type: string
             format: date-time
-            description: Inclusive UTC ISO timestamp, overrides the period start.
-          description: Inclusive UTC ISO timestamp, overrides the period start.
+            description: 'Inclusive UTC ISO timestamp, overrides the period start.'
+          description: 'Inclusive UTC ISO timestamp, overrides the period start.'
         - name: limit
           in: query
           required: false
@@ -6789,8 +6909,8 @@ paths:
           schema:
             type: string
             maxLength: 200
-            description: Exact deposit, recipient or sender address, or source/destination transaction hash.
-          description: Exact deposit, recipient or sender address, or source/destination transaction hash.
+            description: 'Exact deposit, recipient or sender address, or source/destination transaction hash.'
+          description: 'Exact deposit, recipient or sender address, or source/destination transaction hash.'
         - name: sourceAsset
           in: query
           required: false
@@ -6818,8 +6938,8 @@ paths:
           schema:
             type: string
             format: date-time
-            description: Exclusive UTC ISO timestamp, fixes the end of the window.
-          description: Exclusive UTC ISO timestamp, fixes the end of the window.
+            description: 'Exclusive UTC ISO timestamp, fixes the end of the window.'
+          description: 'Exclusive UTC ISO timestamp, fixes the end of the window.'
         - name: token
           in: query
           required: false
@@ -6867,7 +6987,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -6943,7 +7063,7 @@ paths:
           schema:
             type: string
             maxLength: 2048
-            pattern: ^[A-Za-z0-9_-]+$
+            pattern: '^[A-Za-z0-9_-]+$'
             description: Opaque data.nextCursor from this venue; do not construct or edit.
           description: Opaque data.nextCursor from this venue; do not construct or edit.
         - name: limit
@@ -7000,7 +7120,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7078,8 +7198,8 @@ paths:
             enum:
               - hour
               - day
-            description: Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.
-          description: Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.
+            description: 'Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.'
+          description: 'Defaults to hour for 24h/7d, day otherwise. Hour is only accepted for 24h/7d.'
         - name: period
           in: query
           required: false
@@ -7130,7 +7250,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7205,7 +7325,7 @@ paths:
           required: false
           schema:
             type: string
-            pattern: ^[a-z0-9_-]{1,32}$
+            pattern: '^[a-z0-9_-]{1,32}$'
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
         - name: cursor
           in: query
@@ -7248,8 +7368,8 @@ paths:
           schema:
             type: string
             format: date-time
-            description: Inclusive UTC ISO timestamp, overrides the period start.
-          description: Inclusive UTC ISO timestamp, overrides the period start.
+            description: 'Inclusive UTC ISO timestamp, overrides the period start.'
+          description: 'Inclusive UTC ISO timestamp, overrides the period start.'
         - name: limit
           in: query
           required: false
@@ -7310,8 +7430,8 @@ paths:
           schema:
             type: string
             maxLength: 200
-            description: Exact deposit, recipient or sender address, or source/destination transaction hash.
-          description: Exact deposit, recipient or sender address, or source/destination transaction hash.
+            description: 'Exact deposit, recipient or sender address, or source/destination transaction hash.'
+          description: 'Exact deposit, recipient or sender address, or source/destination transaction hash.'
         - name: sourceAsset
           in: query
           required: false
@@ -7339,8 +7459,8 @@ paths:
           schema:
             type: string
             format: date-time
-            description: Exclusive UTC ISO timestamp, fixes the end of the window.
-          description: Exclusive UTC ISO timestamp, fixes the end of the window.
+            description: 'Exclusive UTC ISO timestamp, fixes the end of the window.'
+          description: 'Exclusive UTC ISO timestamp, fixes the end of the window.'
         - name: token
           in: query
           required: false
@@ -7379,7 +7499,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7475,7 +7595,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7584,7 +7704,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7693,7 +7813,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7789,7 +7909,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -7885,7 +8005,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8005,7 +8125,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8136,7 +8256,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8243,7 +8363,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8304,7 +8424,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/crosschain/addresses/{address}:
+  '/v1/crosschain/addresses/{address}':
     get:
       operationId: get_crosschain_Addresses_Address
       summary: Cross-chain swap history for one ZEC address.
@@ -8316,7 +8436,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/crosschain/address/:address
+      x-cipherscan-legacy-path: '/api/crosschain/address/:address'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -8345,7 +8465,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8441,7 +8561,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8537,7 +8657,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8601,7 +8721,7 @@ paths:
   /v1/crosschain/wrapped-zec/supply:
     get:
       operationId: get_crosschain_Wrapped-zec_Supply
-      summary: Wrapped ZEC supply across chains (read-only RPC, no shared DB).
+      summary: 'Wrapped ZEC supply across chains (read-only RPC, no shared DB).'
       tags:
         - crosschain
       x-cipherscan-legacy-path: /api/wrapped-zec/supply
@@ -8610,7 +8730,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Wrapped ZEC supply across chains (read-only RPC, no shared DB).
+          description: 'Wrapped ZEC supply across chains (read-only RPC, no shared DB).'
           content:
             application/json:
               schema:
@@ -8633,7 +8753,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8743,7 +8863,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8853,7 +8973,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -8963,7 +9083,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9120,7 +9240,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9254,7 +9374,7 @@ paths:
           schema:
             anyOf:
               - type: string
-                pattern: ^[a-fA-F0-9]{64}$
+                pattern: '^[a-fA-F0-9]{64}$'
               - {}
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
       x-cipherscan-legacy-path: /api/privacy/linkage-edges
@@ -9286,7 +9406,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9445,7 +9565,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9604,7 +9724,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9665,7 +9785,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/privacy/graph/{txid}:
+  '/v1/privacy/graph/{txid}':
     get:
       operationId: get_privacy_Graph_Txid
       summary: Privacy linkage graph rooted at a transaction.
@@ -9677,7 +9797,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/privacy/graph/:txid
+      x-cipherscan-legacy-path: '/api/privacy/graph/:txid'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -9706,7 +9826,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9767,7 +9887,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/privacy/shield/{txid}/batch:
+  '/v1/privacy/shield/{txid}/batch':
     get:
       operationId: get_privacy_Shield_Txid_Batch
       summary: Batch-shield linkage for a transaction.
@@ -9779,7 +9899,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/privacy/shield/:txid/batch
+      x-cipherscan-legacy-path: '/api/privacy/shield/:txid/batch'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -9808,7 +9928,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -9929,7 +10049,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10044,7 +10164,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10155,7 +10275,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10258,7 +10378,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10361,7 +10481,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10464,7 +10584,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10567,7 +10687,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10670,7 +10790,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10773,7 +10893,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10848,7 +10968,7 @@ paths:
             type: number
             exclusiveMinimum: 0
             maximum: 21000000
-          description: Amount in ZEC, greater than zero and at most 21 million.
+          description: 'Amount in ZEC, greater than zero and at most 21 million.'
       x-cipherscan-legacy-path: /api/blend-check
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
@@ -10878,7 +10998,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -10953,7 +11073,7 @@ paths:
             type: number
             exclusiveMinimum: 0
             maximum: 21000000
-          description: Amount in ZEC, greater than zero and at most 21 million.
+          description: 'Amount in ZEC, greater than zero and at most 21 million.'
       x-cipherscan-legacy-path: /api/blend-check/split
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
@@ -10983,7 +11103,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11079,7 +11199,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11200,7 +11320,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11279,7 +11399,7 @@ paths:
               - 90d
               - 1y
             default: 30d
-          description: Trailing complete UTC calendar days, excluding today. One year means 365 days.
+          description: 'Trailing complete UTC calendar days, excluding today. One year means 365 days.'
       x-cipherscan-legacy-path: /api/pools/activity
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
@@ -11309,7 +11429,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11412,7 +11532,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11504,8 +11624,8 @@ paths:
           schema:
             type: string
             format: date
-            description: Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.
-          description: Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.
+            description: 'Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.'
+          description: 'Inclusive UTC date, YYYY-MM-DD. Mining software history requires period=custom.'
         - name: period
           in: query
           required: false
@@ -11533,8 +11653,8 @@ paths:
           schema:
             type: string
             format: date
-            description: Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.
-          description: Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.
+            description: 'Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.'
+          description: 'Inclusive UTC end date, YYYY-MM-DD. Mining software history requires period=custom.'
       x-cipherscan-legacy-path: /api/mining/software
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
@@ -11566,7 +11686,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11669,7 +11789,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11772,7 +11892,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11875,7 +11995,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -11978,7 +12098,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12042,7 +12162,7 @@ paths:
   /v1/mining/miner-behavior:
     get:
       operationId: get_mining_Miner-behavior
-      summary: Attributed miner payout reward-date cohorts with exact earned, moved and unspent zatoshis.
+      summary: 'Attributed miner payout reward-date cohorts with exact earned, moved and unspent zatoshis.'
       tags:
         - mining
       parameters:
@@ -12083,7 +12203,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12186,7 +12306,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12282,7 +12402,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12378,7 +12498,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12474,7 +12594,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12577,7 +12697,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12641,7 +12761,7 @@ paths:
   /v1/migration/summary:
     get:
       operationId: get_migration_Summary
-      summary: Small, fixed-size digest of migration activity (headline totals + 24h/7d windows).
+      summary: 'Small, fixed-size digest of migration activity (headline totals + 24h/7d windows).'
       tags:
         - migration
       x-cipherscan-legacy-path: /api/migration/summary
@@ -12650,7 +12770,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Small, fixed-size digest of migration activity (headline totals + 24h/7d windows).
+          description: 'Small, fixed-size digest of migration activity (headline totals + 24h/7d windows).'
           content:
             application/json:
               schema:
@@ -12673,7 +12793,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12773,7 +12893,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -12904,7 +13024,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13000,7 +13120,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13100,7 +13220,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13196,7 +13316,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13307,7 +13427,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13418,7 +13538,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13529,7 +13649,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13650,7 +13770,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13746,7 +13866,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13819,7 +13939,7 @@ paths:
           required: false
           schema:
             type: string
-            pattern: ^t[a-zA-Z0-9]+$
+            pattern: '^t[a-zA-Z0-9]+$'
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
         - name: limit
           in: query
@@ -13887,7 +14007,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -13983,7 +14103,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14079,7 +14199,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14140,7 +14260,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/labels/{address}:
+  '/v1/labels/{address}':
     get:
       operationId: get_labels_Address
       summary: Label for one address.
@@ -14152,7 +14272,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/label/:address
+      x-cipherscan-legacy-path: '/api/label/:address'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -14181,7 +14301,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14290,7 +14410,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14351,7 +14471,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/addresses/{address}:
+  '/v1/addresses/{address}':
     get:
       operationId: get_addresses_Address
       summary: >-
@@ -14393,7 +14513,7 @@ paths:
             minimum: 1
             maximum: 9007199254740991
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
-      x-cipherscan-legacy-path: /api/address/:address
+      x-cipherscan-legacy-path: '/api/address/:address'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -14428,7 +14548,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14489,7 +14609,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/addresses/{address}/graph:
+  '/v1/addresses/{address}/graph':
     get:
       operationId: get_addresses_Address_Graph
       summary: Address cluster/linkage graph.
@@ -14501,7 +14621,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/address/:address/graph
+      x-cipherscan-legacy-path: '/api/address/:address/graph'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -14530,7 +14650,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14633,7 +14753,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14694,7 +14814,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/crosslink/finalizers/{pubkey}/participation:
+  '/v1/crosslink/finalizers/{pubkey}/participation':
     get:
       operationId: get_crosslink_Finalizers_Pubkey_Participation
       summary: Finalizer participation history.
@@ -14712,7 +14832,7 @@ paths:
           schema:
             type: string
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
-      x-cipherscan-legacy-path: /api/finalizer/:pubkey/participation
+      x-cipherscan-legacy-path: '/api/finalizer/:pubkey/participation'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -14741,7 +14861,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14844,7 +14964,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -14947,7 +15067,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15008,7 +15128,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/crosslink/finalizers/{pubkey}:
+  '/v1/crosslink/finalizers/{pubkey}':
     get:
       operationId: get_crosslink_Finalizers_Pubkey
       summary: Single finalizer detail.
@@ -15020,7 +15140,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/finalizer/:pubkey
+      x-cipherscan-legacy-path: '/api/finalizer/:pubkey'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -15049,7 +15169,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15145,7 +15265,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15241,7 +15361,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15337,7 +15457,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15440,7 +15560,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15536,7 +15656,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15600,7 +15720,7 @@ paths:
   /v1/crosslink/fork-monitor/checks:
     post:
       operationId: post_crosslink_Fork-monitor_Checks
-      summary: Live hash comparison at up to 10 heights (read-only RPC, no writes).
+      summary: 'Live hash comparison at up to 10 heights (read-only RPC, no writes).'
       tags:
         - crosslink
       requestBody:
@@ -15626,7 +15746,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Live hash comparison at up to 10 heights (read-only RPC, no writes).
+          description: 'Live hash comparison at up to 10 heights (read-only RPC, no writes).'
           content:
             application/json:
               schema:
@@ -15649,7 +15769,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15710,7 +15830,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/crosslink/block-hash/{height}:
+  '/v1/crosslink/block-hash/{height}':
     get:
       operationId: get_crosslink_Block-hash_Height
       summary: Block hash at a given height (used by external fork-finder scripts).
@@ -15722,7 +15842,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/crosslink/block-hash/:height
+      x-cipherscan-legacy-path: '/api/crosslink/block-hash/:height'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -15751,7 +15871,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15840,7 +15960,7 @@ paths:
                   maximum: 100000000
                 tip_hash:
                   type: string
-                  pattern: ^[a-fA-F0-9]{64}$
+                  pattern: '^[a-fA-F0-9]{64}$'
                 peers:
                   type: integer
                   minimum: 0
@@ -15867,7 +15987,7 @@ paths:
                         maximum: 100000000
                       hash:
                         type: string
-                        pattern: ^[a-fA-F0-9]{64}$
+                        pattern: '^[a-fA-F0-9]{64}$'
       parameters:
         - name: X-Node-Token
           in: header
@@ -15908,7 +16028,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -15969,7 +16089,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/crosslink/fork-monitor/nodes/{name}:
+  '/v1/crosslink/fork-monitor/nodes/{name}':
     delete:
       operationId: delete_crosslink_Fork-monitor_Nodes_Name
       summary: Delete a node report using its registration ownership token.
@@ -15989,7 +16109,7 @@ paths:
           description: >-
             Ownership token returned when registering the node. Required to modify or remove an
             existing registration.
-      x-cipherscan-legacy-path: /api/crosslink/fork-monitor/report/:name
+      x-cipherscan-legacy-path: '/api/crosslink/fork-monitor/report/:name'
       x-cipherscan-legacy-method: DELETE
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -16018,7 +16138,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16127,7 +16247,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16236,7 +16356,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16297,7 +16417,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/uncles/{hash}:
+  '/v1/uncles/{hash}':
     get:
       operationId: get_uncles_Hash
       summary: Single orphaned block detail.
@@ -16309,7 +16429,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/uncle/:hash
+      x-cipherscan-legacy-path: '/api/uncle/:hash'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -16338,7 +16458,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16402,7 +16522,7 @@ paths:
   /v1/uncles/reports:
     post:
       operationId: post_uncles_Reports
-      summary: Report an observed tip hash for comparison (IP rate limited, PoW-shape validated upstream).
+      summary: 'Report an observed tip hash for comparison (IP rate limited, PoW-shape validated upstream).'
       tags:
         - reorgs
       requestBody:
@@ -16421,7 +16541,7 @@ paths:
                   maximum: 100000000
                 hash:
                   type: string
-                  pattern: ^[a-fA-F0-9]{64}$
+                  pattern: '^[a-fA-F0-9]{64}$'
                 node_id:
                   type: string
       x-cipherscan-legacy-path: /api/uncle/report
@@ -16455,7 +16575,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16551,7 +16671,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16647,7 +16767,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16762,7 +16882,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -16826,7 +16946,7 @@ paths:
   /v1/transactions/shielded:
     get:
       operationId: get_transactions_Shielded
-      summary: Shielding, deshielding and fully shielded transaction collection.
+      summary: 'Shielding, deshielding and fully shielded transaction collection.'
       tags:
         - transactions
       parameters:
@@ -16868,7 +16988,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Shielding, deshielding and fully shielded transaction collection.
+          description: 'Shielding, deshielding and fully shielded transaction collection.'
           content:
             application/json:
               schema:
@@ -16889,7 +17009,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17041,7 +17161,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17102,7 +17222,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/transactions/{txid}/linkability:
+  '/v1/transactions/{txid}/linkability':
     get:
       operationId: get_transactions_Txid_Linkability
       summary: Linkability analysis for one transaction.
@@ -17132,7 +17252,7 @@ paths:
             minimum: 0.0001
             maximum: 0.1
           description: Endpoint-specific filter or range; accepted values follow this endpoint’s data source.
-      x-cipherscan-legacy-path: /api/tx/:txid/linkability
+      x-cipherscan-legacy-path: '/api/tx/:txid/linkability'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -17161,7 +17281,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17239,7 +17359,7 @@ paths:
               properties:
                 rawTx:
                   type: string
-                  pattern: ^[a-fA-F0-9]+$
+                  pattern: '^[a-fA-F0-9]+$'
                   description: Already signed serialized transaction. No private key is accepted.
       x-cipherscan-legacy-path: /api/tx/broadcast
       x-cipherscan-legacy-method: POST
@@ -17270,7 +17390,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17366,7 +17486,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17427,7 +17547,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/mempool/{txid}:
+  '/v1/mempool/{txid}':
     get:
       operationId: get_mempool_Txid
       summary: Single mempool transaction detail.
@@ -17439,7 +17559,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/mempool/tx/:txid
+      x-cipherscan-legacy-path: '/api/mempool/tx/:txid'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -17468,7 +17588,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17529,7 +17649,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/transactions/{txid}/raw:
+  '/v1/transactions/{txid}/raw':
     get:
       operationId: get_transactions_Txid_Raw
       summary: Raw transaction hex.
@@ -17541,7 +17661,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/tx/:txid/raw
+      x-cipherscan-legacy-path: '/api/tx/:txid/raw'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -17570,7 +17690,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17631,7 +17751,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/transactions/{txid}/verbose:
+  '/v1/transactions/{txid}/verbose':
     get:
       operationId: get_transactions_Txid_Verbose
       summary: Verbose decoded transaction (zebra getrawtransaction verbose=1).
@@ -17643,7 +17763,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/tx/:txid/verbose
+      x-cipherscan-legacy-path: '/api/tx/:txid/verbose'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
@@ -17672,7 +17792,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17754,7 +17874,7 @@ paths:
                   maxItems: 100
                   items:
                     type: string
-                    pattern: ^[a-fA-F0-9]{64}$
+                    pattern: '^[a-fA-F0-9]{64}$'
       x-cipherscan-legacy-path: /api/tx/raw/batch
       x-cipherscan-legacy-method: POST
       x-cipherscan-classification: public
@@ -17784,7 +17904,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17845,7 +17965,7 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/transactions/{txid}/summary:
+  '/v1/transactions/{txid}/summary':
     get:
       operationId: get_transactions_Txid_Summary
       summary: Lightweight metadata for server-rendered titles/JSON-LD.
@@ -17857,7 +17977,7 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/seo/tx/:txid
+      x-cipherscan-legacy-path: '/api/seo/tx/:txid'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: internal
       x-cipherscan-v1-status: adapter
@@ -17886,7 +18006,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -17947,10 +18067,10 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
-  /v1/transactions/{txid}:
+  '/v1/transactions/{txid}':
     get:
       operationId: get_transactions_Txid
-      summary: Full transaction detail (inputs, outputs, cross-chain bridge match).
+      summary: 'Full transaction detail (inputs, outputs, cross-chain bridge match).'
       tags:
         - transactions
       parameters:
@@ -17959,13 +18079,13 @@ paths:
           required: true
           schema:
             type: string
-      x-cipherscan-legacy-path: /api/tx/:txid
+      x-cipherscan-legacy-path: '/api/tx/:txid'
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Full transaction detail (inputs, outputs, cross-chain bridge match).
+          description: 'Full transaction detail (inputs, outputs, cross-chain bridge match).'
           content:
             application/json:
               schema:
@@ -17988,7 +18108,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18105,7 +18225,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18222,7 +18342,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18286,7 +18406,7 @@ paths:
   /v1/sitemaps/blocks:
     get:
       operationId: get_sitemaps_Blocks
-      summary: Block sitemap shard data, consumed by app/sitemap.ts.
+      summary: 'Block sitemap shard data, consumed by app/sitemap.ts.'
       tags:
         - sitemaps
       parameters:
@@ -18308,7 +18428,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Block sitemap shard data, consumed by app/sitemap.ts.
+          description: 'Block sitemap shard data, consumed by app/sitemap.ts.'
           content:
             application/json:
               schema:
@@ -18331,7 +18451,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18427,7 +18547,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18556,7 +18676,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18691,7 +18811,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:
@@ -18826,7 +18946,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Problem'
         '401':
-          description: Preview or endpoint authentication required.
+          description: Endpoint credential required or invalid.
           content:
             application/problem+json:
               schema:

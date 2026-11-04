@@ -60,7 +60,7 @@
   {
     "method": "POST",
     "path": "/v1/ask/chat",
-    "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
+    "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies carry a server-written turnScope that the client may send back, schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress lines before one result or problem line holding the usual body.",
     "category": "ask",
     "query": [],
     "listKey": null,
@@ -520,6 +520,179 @@
             "version",
             "sql",
             "limit"
+          ],
+          "additionalProperties": false
+        },
+        "turnScope": {
+          "type": "object",
+          "properties": {
+            "version": {
+              "type": "number",
+              "const": 1
+            },
+            "kind": {
+              "type": "string",
+              "enum": [
+                "sql",
+                "chart",
+                "block",
+                "transaction"
+              ]
+            },
+            "datasets": {
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "blocks",
+                  "transactions",
+                  "flows",
+                  "daily",
+                  "swaps",
+                  "addresses",
+                  "address_activity",
+                  "activity_daily",
+                  "address_daily",
+                  "flow_daily",
+                  "supply_daily",
+                  "issuance",
+                  "mining_daily",
+                  "software_daily",
+                  "block_timing",
+                  "issuance_daily",
+                  "reorgs",
+                  "orphaned_blocks",
+                  "utxo_daily",
+                  "value_pools_daily",
+                  "swap_daily",
+                  "labels"
+                ]
+              }
+            },
+            "measures": {
+              "maxItems": 6,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "pattern": "^[a-z][a-z0-9_]{0,47}$"
+              }
+            },
+            "pools": {
+              "maxItems": 5,
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "orchard",
+                  "ironwood",
+                  "sapling",
+                  "sprout",
+                  "transparent"
+                ]
+              }
+            },
+            "window": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "start": {
+                      "type": "string",
+                      "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                    },
+                    "end": {
+                      "type": "string",
+                      "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                    }
+                  },
+                  "required": [
+                    "start",
+                    "end"
+                  ],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "period": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "30d",
+                    "90d",
+                    "1y"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "grain": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "day",
+                    "week",
+                    "month",
+                    "year"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "metric": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "enum": [
+                    "balances",
+                    "flows",
+                    "activity",
+                    "swap_volume",
+                    "swap_count",
+                    "transactions",
+                    "pulse",
+                    "migration_share",
+                    "chain_inflows",
+                    "chain_outflows"
+                  ]
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "subject": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z][a-z0-9_]{0,47}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          },
+          "required": [
+            "version",
+            "kind",
+            "datasets",
+            "measures",
+            "pools",
+            "window",
+            "period",
+            "grain",
+            "metric",
+            "subject"
           ],
           "additionalProperties": false
         },
@@ -1442,7 +1615,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Height-bounded 30-day history; incomplete boundary days remain complete:false. The latest seven-day summary is null when scan coverage is insufficient; after activation it intentionally covers only the active era. Values use consecutive canonical block-header intervals and serving-node targets.",
+    "note": "Height-bounded 30-day history; incomplete boundary days remain complete:false. The latest seven-day summary is null when scan coverage is insufficient; after activation it intentionally covers only the active era. Values use consecutive canonical block-header intervals and serving-node targets. Each summary carries distribution: interval counts in buckets of <0.25, 0.25-1, 1-2, 2-4 and >=4 times its target spacing (null without a target).",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

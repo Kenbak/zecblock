@@ -8,6 +8,7 @@ const { catalogue, views } = require('./ask-query-plan');
 const { coreCatalogue, coreViews } = require('./ask-core-catalogue');
 const { queryEvidence } = require('./ask-query-evidence');
 const {compileResearchSQL,researchEvidence}=require('./ask-research-sql');
+const {coreGatedIds}=require('../../../../lib/ask/research-catalogue');
 const { askError } = require('./ask-errors');
 const { sqlQuotaError } = require('./ask-sql-quota');
 const { databaseFeedback, costFeedback } = require('../../../../lib/ask/sql-feedback');
@@ -194,9 +195,9 @@ function createAnalytics(env, dependencies = {}) {
         // Extended relation readiness precedes execution and cache lookup. A failed
         // copy/refresh is never reported as an empty dataset.
         let datasetCheckpoints=[];
-        if(research&&compiled.datasets.some(d=>!['blocks','transactions','flows','labels'].includes(d))){
-          datasetCheckpoints=(await client.query('SELECT dataset,ready,generation,verified_at,source_through FROM analytics_public.dataset_coverage WHERE dataset=ANY($1::text[])',[compiled.datasets.filter(d=>!['blocks','transactions','flows','labels'].includes(d))])).rows;
-          if(datasetCheckpoints.length!==compiled.datasets.filter(d=>!['blocks','transactions','flows','labels'].includes(d)).length||datasetCheckpoints.some(d=>d.ready!==true))throw askError('dataset');
+        if(research&&compiled.datasets.some(d=>!coreGatedIds.includes(d))){
+          datasetCheckpoints=(await client.query('SELECT dataset,ready,generation,verified_at,source_through FROM analytics_public.dataset_coverage WHERE dataset=ANY($1::text[])',[compiled.datasets.filter(d=>!coreGatedIds.includes(d))])).rows;
+          if(datasetCheckpoints.length!==compiled.datasets.filter(d=>!coreGatedIds.includes(d)).length||datasetCheckpoints.some(d=>d.ready!==true))throw askError('dataset');
           // Independent refresh generations invalidate cached joined research.
           checkpoint={...checkpoint,datasetCheckpoints};
           const times=datasetCheckpoints.map(d=>Date.parse(d.source_through)).filter(Number.isFinite);

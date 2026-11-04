@@ -262,9 +262,11 @@ require separate bounds. Existing per-request body and output limits still apply
 Sol Standard prices are **$2 input / $10 output** per million tokens; cache
 writes are **$2.50**. Its profile requires minimum reservation rates of
 `ASK_MAX_INPUT_USD_PER_MILLION=2.5` and
-`ASK_MAX_OUTPUT_USD_PER_MILLION=10`. These bounds rely on the existing hard
-**48,000-byte** serialized request limit plus **4,096** overhead allowance,
-keeping input well below the **272,000-token** long-context threshold, and the
+`ASK_MAX_OUTPUT_USD_PER_MILLION=10`. These bounds rely on the hard
+serialized request limit (`MAX_CONTEXT_BYTES` in `ask-budget.js`, **162,496**
+bytes since November 3, 2026; previously **48,000**) plus **4,096** overhead
+allowance, keeping input well below the **272,000-token** long-context
+threshold, and the
 wrapper's Standard global-processing pin. If that bound or processing mode
 changes, re-review prices; Sol long-context/cache-write bounds would be **5/15**.
 The mini/Luna profiles retain minimum reservation rates **0.25/0.75**; do not

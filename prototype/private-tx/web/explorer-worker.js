@@ -9,7 +9,7 @@
 import init, { ExplorerPirBrowser } from '/wasm/zecblock_pir_browser.js';
 
 const SCHEMA = 'zecblock-private-explorer-test-v2';
-let base, baseInfo, recent = null, busy = false, last = null;
+let base, baseInfo, recent = null, busy = false, last = null, ready = null;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
 async function bytes(path, init = {}) {
@@ -43,6 +43,8 @@ async function initialize() {
   base = new ExplorerPirBrowser(text, main.body, overflow.body);
   await refreshRecent().catch(() => {});
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
+  // The same public manifest for everyone, polled independently of lookups.
+  setInterval(() => { if (!busy) refreshRecent().catch(() => {}); }, 20_000);
 }
 
 // Same public manifest for everyone; fetched before each lookup.
@@ -98,19 +100,36 @@ function partialOf(result) {
   } : null;
 }
 
-async function lookupOnce(txid) {
-  await refreshRecent();
+// Encrypts the selection and computes its decoding products before anything
+// is sent. Called ahead of time when the page has a complete txid, so a
+// submitted lookup costs only the network round trip and the final decrypt.
+function prepare(txid, ahead) {
+  if (ready?.txid === txid && ready.used === recent) return ready;
   const started = performance.now();
   const used = recent;
   const baseUpload = base.query_main(txid);
   const recentUpload = used?.browser.query_main(txid);
+  if (ahead) { base.prepare_decode(); used?.browser.prepare_decode(); }
+  ready = { txid, used, baseUpload, recentUpload, ahead, encryptMs: performance.now() - started };
+  return ready;
+}
+
+async function lookupOnce(txid) {
+  const started = performance.now();
+  const { used, baseUpload, recentUpload, encryptMs, ahead } = prepare(txid, false);
+  ready = null;
   const encrypted = performance.now();
-  const [baseReply, recentReply] = await Promise.all([
+  const replies = Promise.all([
     ask('/query/main', baseUpload),
     used ? ask(`/recent/${used.id}/query/main`, recentUpload) : null,
   ]);
+  // No-ops when prepared ahead; otherwise overlaps the network round trip.
+  base.prepare_decode();
+  used?.browser.prepare_decode();
+  const [baseReply, recentReply] = await replies;
   const received = performance.now();
   const fromBase = JSON.parse(base.decode_main(baseReply.body));
+  const baseDecoded = performance.now();
   const fromRecent = used ? JSON.parse(used.browser.decode_main(recentReply.body)) : null;
   const decoded = performance.now();
   const owner = fromRecent?.found === true ? 'recent' : fromBase.found === true ? 'base' : null;
@@ -118,8 +137,8 @@ async function lookupOnce(txid) {
   last = owner ? { owner, used, spent } : null;
   const measurements = {
     queryBytes: baseUpload.length + (recentUpload?.length ?? 0), responseBytes: baseReply.body.length + (recentReply?.body.length ?? 0),
-    encryptMs: encrypted - started, requestMs: received - encrypted, serverMs: baseReply.serverMs + (recentReply?.serverMs ?? 0),
-    decodeMs: decoded - received, totalMs: decoded - started,
+    encryptMs: ahead ? 0 : encryptMs, preparedAheadMs: ahead ? encryptMs : 0, requestMs: received - encrypted, serverMs: baseReply.serverMs + (recentReply?.serverMs ?? 0),
+    decodeMs: decoded - received, baseDecodeMs: baseDecoded - received, recentDecodeMs: decoded - baseDecoded, totalMs: decoded - started,
   };
   return { owner, result: owner === 'recent' ? fromRecent : markSpent(fromBase, spent), measurements };
 }
@@ -130,7 +149,12 @@ async function lookup({ requestId, txid }) {
   try {
     let outcome;
     // A rebuild can land between the manifest and the query; retry once.
-    try { outcome = await lookupOnce(txid); } catch (error) { if (!(error instanceof Gone)) throw error; outcome = await lookupOnce(txid); }
+    try { outcome = await lookupOnce(txid); } catch (error) {
+      if (!(error instanceof Gone)) throw error;
+      ready = null;
+      await refreshRecent();
+      outcome = await lookupOnce(txid);
+    }
     if (!outcome.owner) {
       self.postMessage({ type: 'notfound', requestId, snapshotHeight: tip() });
       return;
@@ -156,7 +180,9 @@ async function loadFull({ requestId }) {
     const other = owner === 'recent' ? { browser: base, path: '/query/overflow' } : used ? { browser: used.browser, path: `/recent/${used.id}/query/overflow` } : null;
     const dummy = other?.browser.query_dummy(count);
     const encrypted = performance.now();
-    const [reply, dummyReply] = await Promise.all([ask(ownerPath, upload), other ? ask(other.path, dummy) : null]);
+    const replies = Promise.all([ask(ownerPath, upload), other ? ask(other.path, dummy) : null]);
+    ownerBrowser.prepare_decode();
+    const [reply, dummyReply] = await replies;
     const received = performance.now();
     const result = markSpent(JSON.parse(ownerBrowser.decode_full(reply.body)), spent);
     const decoded = performance.now();
@@ -172,5 +198,6 @@ async function loadFull({ requestId }) {
 self.addEventListener('message', event => {
   if (event.data?.type === 'initialize') initialize().catch(() => self.postMessage({ type: 'error', message: 'The private explorer publication could not be initialized.' }));
   else if (event.data?.type === 'lookup') lookup(event.data);
+  else if (event.data?.type === 'prepare' && base && !busy && /^[a-f\d]{64}$/.test(event.data.txid)) { try { prepare(event.data.txid, true); } catch { ready = null; } }
   else if (event.data?.type === 'loadFull') loadFull(event.data);
 });

@@ -14,7 +14,7 @@
 //! chosen, whether it exists or how large it is. Only an explicit request for
 //! a preview's full lists touches the overflow table; that request is padded
 //! to a power-of-two row count and reveals the coarse size class.
-use super::chunk_spike::{parallel_multiply, preprocess_blocks};
+use super::chunk_spike::{parallel_multiply, parallel_multiply_batch, preprocess_blocks};
 use super::explorer_record::{Record, parse_export_line};
 use super::*;
 use memmap2::{Mmap, MmapMut};
@@ -24,6 +24,7 @@ use std::{
     io::{BufReader, BufWriter, Read},
     net::{TcpListener, TcpStream},
     path::PathBuf,
+    sync::{Arc, Mutex, RwLock, mpsc},
     time::Instant,
 };
 use zakura_pir_client::transparent::native::TableClientExt as _;
@@ -324,6 +325,10 @@ struct Table {
     publics: Vec<Vec<u8>>,
 }
 
+/// Most selections answered by one pass over a table. The scan is bound by
+/// memory bandwidth, so sharing it between waiting lookups raises throughput.
+const MAX_BATCH: usize = 8;
+
 impl Table {
     fn load(dir: &Path, kind: &str, instances: usize, rows: usize) -> Result<(Self, Value), String> {
         let profile = profile_for(kind, rows)?;
@@ -343,17 +348,29 @@ impl Table {
         Ok((table, json!({"kind":kind,"instances":instances,"rows":rows,"preprocessSeconds":start.elapsed().as_secs_f64()})))
     }
 
-    fn answer(&self, upload: &[u8]) -> Result<(Vec<u8>, u128, u128), String> {
-        let (keys, selection) = self.profile.parse(upload)?;
+    /// Replies for several uploads, in order, from one scan of each instance.
+    /// Returns the replies plus the shared scan and total pack nanoseconds.
+    fn answer_batch(&self, uploads: &[&[u8]]) -> Result<(Vec<Vec<u8>>, u128, u128), String> {
+        let parsed: Vec<_> = uploads.iter().map(|u| self.profile.parse(u)).collect::<Result<_, _>>()?;
+        let selections: Vec<&[u64]> = parsed.iter().map(|(_, s)| s.as_slice()).collect();
+        let mut out: Vec<Vec<u8>> = vec![Vec::with_capacity(self.databases.len() * self.profile.scheme.response_bytes); uploads.len()];
         let (mut scan, mut pack) = (0, 0);
-        let mut out = Vec::with_capacity(self.databases.len() * self.profile.scheme.response_bytes);
         for (database, blocks) in self.databases.iter().zip(&self.blocks) {
             let start = Instant::now();
-            let intermediate = parallel_multiply(database, ROW_BYTES, &selection);
+            let intermediates = if selections.len() == 1 {
+                vec![parallel_multiply(database, ROW_BYTES, selections[0])]
+            } else {
+                parallel_multiply_batch(database, ROW_BYTES, &selections, 16, 256)
+            };
             scan += start.elapsed().as_nanos();
             let start = Instant::now();
-            out.extend(self.profile.native.pack(blocks, &keys, &intermediate)?);
+            let packed: Vec<Vec<u8>> = parsed.par_iter().zip(&intermediates)
+                .map(|((keys, _), intermediate)| self.profile.native.pack(blocks, keys, intermediate))
+                .collect::<Result<_, _>>()?;
             pack += start.elapsed().as_nanos();
+            for (reply, part) in out.iter_mut().zip(packed) {
+                reply.extend(part);
+            }
         }
         Ok((out, scan, pack))
     }
@@ -365,8 +382,8 @@ struct Recent {
     id: String,
     target: PathBuf,
     manifest: Vec<u8>,
-    main: Table,
-    overflow: Table,
+    main: Arc<Table>,
+    overflow: Arc<Table>,
 }
 
 impl Recent {
@@ -381,11 +398,11 @@ impl Recent {
         let (overflow, _) = pool.install(|| Table::load(target, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
         let id = hex::encode(&sha2::Sha256::digest(&bytes)[..12]);
         manifest["id"] = json!(id);
-        Ok(Recent { id, target: target.to_owned(), manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main, overflow })
+        Ok(Recent { id, target: target.to_owned(), manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main: Arc::new(main), overflow: Arc::new(overflow) })
     }
 }
 
-type RecentSet = std::sync::Arc<std::sync::RwLock<Vec<std::sync::Arc<Recent>>>>;
+type RecentSet = Arc<RwLock<Vec<Arc<Recent>>>>;
 
 /// Follows `<root>/current`; keeps the newest two publications so lookups
 /// started just before a swap can still finish.
@@ -400,7 +417,7 @@ fn watch_recent(root: PathBuf, set: RecentSet) {
                     Ok(recent) => {
                         eprintln!("{}", json!({"recentLoaded":target.display().to_string(),"id":recent.id,"seconds":start.elapsed().as_secs_f64()}));
                         let mut set = set.write().unwrap();
-                        set.push(std::sync::Arc::new(recent));
+                        set.push(Arc::new(recent));
                         let excess = set.len().saturating_sub(2);
                         set.drain(..excess);
                     }
@@ -412,23 +429,73 @@ fn watch_recent(root: PathBuf, set: RecentSet) {
     }
 }
 
-fn answer_query(pool: &rayon::ThreadPool, t: &Table, body: &[u8]) -> Result<(Vec<u8>, String), String> {
+/// A count-prefixed query body waiting for the scheduler.
+struct Job {
+    table: Arc<Table>,
+    uploads: Vec<Vec<u8>>,
+    queued: Instant,
+    reply: mpsc::Sender<Result<(Vec<u8>, String), String>>,
+}
+
+fn split_uploads(body: &[u8]) -> Result<Vec<Vec<u8>>, String> {
     let count = body.get(..4).map(|c| u32::from_le_bytes(c.try_into().unwrap()) as usize).ok_or("missing upload count")?;
     let body = &body[4..];
     if count == 0 || count > 256 || body.len() % count != 0 {
         return Err("bad upload length".into());
     }
-    let request_bytes = body.len() / count;
-    let start = Instant::now();
-    let mut out = Vec::new();
-    let (mut scan, mut pack) = (0, 0);
-    for upload in body.chunks(request_bytes) {
-        let (reply, s, p) = pool.install(|| t.answer(upload))?;
-        out.extend(reply);
-        scan += s;
-        pack += p;
+    Ok(body.chunks(body.len() / count).map(<[u8]>::to_vec).collect())
+}
+
+/// Runs queued jobs. Each round takes the oldest job and every other waiting
+/// job for the same table, up to MAX_BATCH selections, and answers them all
+/// from one scan. A job larger than the cap (a padded full-record fetch) runs
+/// in chunks of MAX_BATCH.
+fn schedule(jobs: mpsc::Receiver<Job>, pool: rayon::ThreadPool) {
+    let mut waiting: std::collections::VecDeque<Job> = Default::default();
+    loop {
+        if waiting.is_empty() {
+            match jobs.recv() {
+                Ok(job) => waiting.push_back(job),
+                Err(_) => return,
+            }
+        }
+        while let Ok(job) = jobs.try_recv() {
+            waiting.push_back(job);
+        }
+        let first = waiting.pop_front().unwrap();
+        let mut batch = vec![first];
+        let mut selections = batch[0].uploads.len();
+        let mut rest = std::collections::VecDeque::new();
+        while let Some(job) = waiting.pop_front() {
+            if Arc::ptr_eq(&job.table, &batch[0].table) && selections + job.uploads.len() <= MAX_BATCH {
+                selections += job.uploads.len();
+                batch.push(job);
+            } else {
+                rest.push_back(job);
+            }
+        }
+        waiting = rest;
+        let table = batch[0].table.clone();
+        let started = Instant::now();
+        let uploads: Vec<&[u8]> = batch.iter().flat_map(|job| job.uploads.iter().map(Vec::as_slice)).collect();
+        let answered = uploads.chunks(MAX_BATCH)
+            .map(|chunk| pool.install(|| table.answer_batch(chunk)))
+            .collect::<Result<Vec<_>, String>>();
+        match answered {
+            Err(error) => batch.into_iter().for_each(|job| { let _ = job.reply.send(Err(error.clone())); }),
+            Ok(parts) => {
+                let (scan, pack): (u128, u128) = (parts.iter().map(|p| p.1).sum(), parts.iter().map(|p| p.2).sum());
+                let mut replies = parts.into_iter().flat_map(|p| p.0);
+                let server = started.elapsed().as_nanos();
+                for job in batch {
+                    let body: Vec<u8> = replies.by_ref().take(job.uploads.len()).flatten().collect();
+                    let headers = format!("X-Server-Ns: {server}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\nX-Queue-Ns: {}\r\nX-Batch: {selections}\r\n",
+                        started.duration_since(job.queued).as_nanos());
+                    let _ = job.reply.send(Ok((body, headers)));
+                }
+            }
+        }
     }
-    Ok((out, format!("X-Server-Ns: {}\r\nX-Scan-Ns: {scan}\r\nX-Pack-Ns: {pack}\r\n", start.elapsed().as_nanos())))
 }
 
 fn read_request(stream: &mut TcpStream) -> Result<(String, Vec<u8>), String> {
@@ -463,84 +530,123 @@ fn respond(stream: &mut TcpStream, status: &str, kind: &str, extra: &str, body: 
     stream.write_all(body)
 }
 
+/// Everything a connection thread needs; query work goes to the scheduler.
+struct Shared {
+    manifest: Vec<u8>,
+    main: Arc<Table>,
+    overflow: Arc<Table>,
+    recent: RecentSet,
+    web: Option<PathBuf>,
+    jobs: Mutex<mpsc::Sender<Job>>,
+}
+
+impl Shared {
+    fn query(&self, table: Arc<Table>, body: &[u8]) -> Result<(Vec<u8>, String), String> {
+        let (reply, answer) = mpsc::channel();
+        let job = Job { table, uploads: split_uploads(body)?, queued: Instant::now(), reply };
+        self.jobs.lock().unwrap().send(job).map_err(|_| "scheduler stopped".to_string())?;
+        answer.recv().map_err(|_| "scheduler stopped".to_string())?
+    }
+
+    fn handle(&self, stream: &mut TcpStream) -> Result<(), String> {
+        let (route, body) = read_request(stream)?;
+        let table = |name: &str| match name { "main" => Ok(self.main.clone()), "overflow" => Ok(self.overflow.clone()), _ => Err("unknown table".to_string()) };
+        match route.as_str() {
+            "GET /manifest" => respond(stream, "200 OK", "application/json", "", &self.manifest).map_err(io_err),
+            r if r.starts_with("GET /publics/") => respond(stream, "200 OK", "application/octet-stream", "", &table(&r["GET /publics/".len()..])?.publics.concat()).map_err(io_err),
+            r if r.starts_with("GET /public/") => {
+                let mut parts = r["GET /public/".len()..].split('/');
+                let t = table(parts.next().unwrap_or(""))?;
+                let i: usize = parts.next().and_then(|p| p.parse().ok()).ok_or("bad instance")?;
+                respond(stream, "200 OK", "application/octet-stream", "", t.publics.get(i).ok_or("bad instance")?).map_err(io_err)
+            }
+            r if r.starts_with("POST /query/") => {
+                let (out, timing) = self.query(table(&r["POST /query/".len()..])?, &body)?;
+                respond(stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
+            }
+            "GET /recent/manifest" => match self.recent.read().unwrap().last() {
+                Some(current) => respond(stream, "200 OK", "application/json", "", &current.manifest).map_err(io_err),
+                None => respond(stream, "404 Not Found", "text/plain", "", b"no recent publication").map_err(io_err),
+            },
+            r if r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
+                let path = &r[r.find("/recent/").unwrap() + "/recent/".len()..];
+                let (id, rest) = path.split_once('/').ok_or("bad recent path")?;
+                let Some(publication) = self.recent.read().unwrap().iter().find(|p| p.id == id).cloned() else {
+                    return respond(stream, "410 Gone", "text/plain", "", b"recent publication replaced").map_err(io_err);
+                };
+                let table = |name: &str| match name { "main" => Ok(publication.main.clone()), "overflow" => Ok(publication.overflow.clone()), _ => Err("unknown table".to_string()) };
+                match (r.starts_with("POST"), rest.split_once('/')) {
+                    (false, Some(("publics", kind))) => respond(stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
+                    (true, Some(("query", kind))) => {
+                        let (out, timing) = self.query(table(kind)?, &body)?;
+                        respond(stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
+                    }
+                    _ => respond(stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
+                }
+            }
+            r if r.starts_with("GET /") && self.web.is_some() && !r.contains("..") => {
+                let name = match r["GET /".len()..].split('?').next().unwrap_or("") { "" => "index.html", other => other };
+                let kind = match name.rsplit('.').next() {
+                    Some("html") => "text/html; charset=utf-8",
+                    Some("js") => "text/javascript",
+                    Some("wasm") => "application/wasm",
+                    Some("css") => "text/css",
+                    Some("woff2") => "font/woff2",
+                    Some("png") => "image/png",
+                    Some("svg") => "image/svg+xml",
+                    _ => "application/octet-stream",
+                };
+                match fs::read(self.web.as_ref().unwrap().join(name)) {
+                    Ok(bytes) => respond(stream, "200 OK", kind, "Cache-Control: no-store\r\n", &bytes).map_err(io_err),
+                    Err(_) => respond(stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
+                }
+            }
+            _ => respond(stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
+        }
+    }
+}
+
+/// Most connections handled at once; further ones wait in the listen backlog.
+const MAX_CONNECTIONS: usize = 256;
+
 pub(super) fn serve(dir: &Path, port: u16, threads: usize, web: Option<&Path>, recent_root: Option<&Path>) -> Result<(), String> {
-    let manifest: Value = serde_json::from_slice(&fs::read(dir.join("manifest.json")).map_err(io_err)?).map_err(io_err)?;
+    let manifest_bytes = fs::read(dir.join("manifest.json")).map_err(io_err)?;
+    let manifest: Value = serde_json::from_slice(&manifest_bytes).map_err(io_err)?;
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
     let count = |kind: &str, field: &str| manifest[kind][field].as_u64().map(|v| v as usize).ok_or("bad manifest");
     let (main, main_load) = pool.install(|| Table::load(dir, "main", count("main", "instances")?, count("main", "rows")?))?;
     let (overflow, overflow_load) =
         pool.install(|| Table::load(dir, "overflow", count("overflow", "instances")?, count("overflow", "rows")?))?;
-    eprintln!("{}", json!({"loaded":[main_load, overflow_load],"threads":threads}));
+    eprintln!("{}", json!({"loaded":[main_load, overflow_load],"threads":threads,"maxBatch":MAX_BATCH}));
     let recent: RecentSet = Default::default();
     if let Some(root) = recent_root {
         let (root, set) = (root.to_owned(), recent.clone());
         std::thread::spawn(move || watch_recent(root, set));
     }
+    let (sender, jobs) = mpsc::channel();
+    std::thread::spawn(move || schedule(jobs, pool));
+    let shared = Arc::new(Shared {
+        manifest: serde_json::to_vec(&manifest).map_err(io_err)?, main: Arc::new(main), overflow: Arc::new(overflow),
+        recent, web: web.map(Path::to_owned), jobs: Mutex::new(sender),
+    });
+    let active = Arc::new(std::sync::atomic::AtomicUsize::new(0));
     let listener = TcpListener::bind(("127.0.0.1", port)).map_err(io_err)?;
     eprintln!("Private explorer test listening on http://127.0.0.1:{port}");
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
-        let result = read_request(&mut stream).and_then(|(route, body)| -> Result<(), String> {
-            let table = |name: &str| if name == "main" { Ok(&main) } else if name == "overflow" { Ok(&overflow) } else { Err("unknown table".to_string()) };
-            match route.as_str() {
-                "GET /manifest" => respond(&mut stream, "200 OK", "application/json", "", &serde_json::to_vec(&manifest).unwrap()).map_err(io_err),
-                r if r.starts_with("GET /publics/") => {
-                    let t = table(&r["GET /publics/".len()..])?;
-                    respond(&mut stream, "200 OK", "application/octet-stream", "", &t.publics.concat()).map_err(io_err)
-                }
-                r if r.starts_with("GET /public/") => {
-                    let mut parts = r["GET /public/".len()..].split('/');
-                    let t = table(parts.next().unwrap_or(""))?;
-                    let i: usize = parts.next().and_then(|p| p.parse().ok()).ok_or("bad instance")?;
-                    respond(&mut stream, "200 OK", "application/octet-stream", "", t.publics.get(i).ok_or("bad instance")?).map_err(io_err)
-                }
-                r if r.starts_with("POST /query/") => {
-                    let (out, timing) = answer_query(&pool, table(&r["POST /query/".len()..])?, &body)?;
-                    respond(&mut stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
-                }
-                "GET /recent/manifest" => match recent.read().unwrap().last() {
-                    Some(current) => respond(&mut stream, "200 OK", "application/json", "", &current.manifest).map_err(io_err),
-                    None => respond(&mut stream, "404 Not Found", "text/plain", "", b"no recent publication").map_err(io_err),
-                },
-                r if r.starts_with("GET /recent/") || r.starts_with("POST /recent/") => {
-                    let path = &r[r.find("/recent/").unwrap() + "/recent/".len()..];
-                    let (id, rest) = path.split_once('/').ok_or("bad recent path")?;
-                    let Some(publication) = recent.read().unwrap().iter().find(|p| p.id == id).cloned() else {
-                        return respond(&mut stream, "410 Gone", "text/plain", "", b"recent publication replaced").map_err(io_err);
-                    };
-                    let table = |name: &str| match name { "main" => Ok(&publication.main), "overflow" => Ok(&publication.overflow), _ => Err("unknown table".to_string()) };
-                    match (r.starts_with("POST"), rest.split_once('/')) {
-                        (false, Some(("publics", kind))) => respond(&mut stream, "200 OK", "application/octet-stream", "", &table(kind)?.publics.concat()).map_err(io_err),
-                        (true, Some(("query", kind))) => {
-                            let (out, timing) = answer_query(&pool, table(kind)?, &body)?;
-                            respond(&mut stream, "200 OK", "application/octet-stream", &timing, &out).map_err(io_err)
-                        }
-                        _ => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
-                    }
-                }
-                r if r.starts_with("GET /") && web.is_some() && !r.contains("..") => {
-                    let name = match r["GET /".len()..].split('?').next().unwrap_or("") { "" => "index.html", other => other };
-                    let kind = match name.rsplit('.').next() {
-                        Some("html") => "text/html; charset=utf-8",
-                        Some("js") => "text/javascript",
-                        Some("wasm") => "application/wasm",
-                        Some("css") => "text/css",
-                        Some("woff2") => "font/woff2",
-                        Some("png") => "image/png",
-                        Some("svg") => "image/svg+xml",
-                        _ => "application/octet-stream",
-                    };
-                    match fs::read(web.unwrap().join(name)) {
-                        Ok(bytes) => respond(&mut stream, "200 OK", kind, "Cache-Control: no-store\r\n", &bytes).map_err(io_err),
-                        Err(_) => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
-                    }
-                }
-                _ => respond(&mut stream, "404 Not Found", "text/plain", "", b"not found").map_err(io_err),
-            }
-        });
-        if let Err(error) = result {
-            let _ = respond(&mut stream, "400 Bad Request", "text/plain", "", error.as_bytes());
+        if active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= MAX_CONNECTIONS {
+            active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            let _ = respond(&mut stream, "503 Service Unavailable", "text/plain", "Retry-After: 1\r\n", b"busy");
+            continue;
         }
+        let (shared, active) = (shared.clone(), active.clone());
+        std::thread::spawn(move || {
+            let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
+            if let Err(error) = shared.handle(&mut stream) {
+                let _ = respond(&mut stream, "400 Bad Request", "text/plain", "", error.as_bytes());
+            }
+            active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        });
     }
     Ok(())
 }
@@ -610,7 +716,7 @@ impl Remote {
         body.extend(uploads.concat());
         let (reply, headers) = http.call("POST", &format!("{}/query/{kind}", self.prefix), &body)?;
         *timing.entry(format!("{label}RoundTripNs")).or_default() += start.elapsed().as_nanos();
-        for (name, header) in [("ServerNs", "x-server-ns"), ("ScanNs", "x-scan-ns"), ("PackNs", "x-pack-ns")] {
+        for (name, header) in [("ServerNs", "x-server-ns"), ("ScanNs", "x-scan-ns"), ("PackNs", "x-pack-ns"), ("QueueNs", "x-queue-ns"), ("Batch", "x-batch")] {
             *timing.entry(format!("{label}{name}")).or_default() += headers.get(header).and_then(|v| v.parse().ok()).unwrap_or(0);
         }
         *timing.entry(format!("{label}UploadBytes")).or_default() += uploads.iter().map(|u| u.len() as u128).sum::<u128>();

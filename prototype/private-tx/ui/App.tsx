@@ -191,7 +191,12 @@ export function App() {
     setTimeout(() => inputRef.current?.focus(), 0);
   }
 
-  const onQuery = (value: string) => { editedRef.current = true; setQuery(value); setInputError(''); };
+  const onQuery = (value: string) => {
+    editedRef.current = true; setQuery(value); setInputError('');
+    // Encrypt ahead in the worker once the ID is complete; nothing is sent until submit.
+    const txid = value.trim().toLowerCase();
+    if (ready && TXID.test(txid)) workerRef.current?.postMessage({ type: 'prepare', txid });
+  };
   const height = manifest?.snapshot?.height;
   const count = manifest?.sourceSummary?.recordCount;
 

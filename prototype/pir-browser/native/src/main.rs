@@ -354,6 +354,10 @@ fn main() {
         [_, mode, dir] if mode == "serve-global" => global::serve_global(Path::new(dir)),
         [_, mode, dir] if mode == "serve-global-cached" => global::serve_global_cached(Path::new(dir)),
         [_, mode, dir, options @ ..] if mode == "profile-global" => global::profile_global(Path::new(dir), options),
+        [_, mode, file, row_bytes, threads] if mode == "scan-bench" => match (row_bytes.parse(), threads.parse()) {
+            (Ok(row_bytes), Ok(threads)) => chunk_spike::scan_bench(Path::new(file), row_bytes, threads),
+            _ => Err("invalid row bytes or threads".into()),
+        },
         [_, mode, dir] if mode == "benchmark-matvec" => benchmark_matvec(Path::new(dir), 15),
         [_, mode, dir, iterations] if mode == "benchmark-matvec" => iterations
             .parse::<usize>()

@@ -69,6 +69,92 @@ pub(super) fn parallel_multiply(database: &[u8], row_bytes: usize, query: &[u64]
     out
 }
 
+/// Answers several selections in one pass over the database: each block of
+/// `block_rows` rows is visited one column tile at a time, so the running
+/// sums for every selection stay in L1 while the block's bytes are reused.
+/// Exact for the same reason as `parallel_multiply`: wrapping in 2^64 then
+/// masking to Q = 2^54.
+pub(super) fn parallel_multiply_batch(database: &[u8], row_bytes: usize, queries: &[&[u64]], block_rows: usize, tile: usize) -> Vec<Vec<u64>> {
+    let k = queries.len();
+    let rows = queries[0].len();
+    assert!(queries.iter().all(|q| q.len() == rows) && database.len() == rows * row_bytes);
+    let rows_per_task = rows.div_ceil(rayon::current_num_threads() * 4).max(block_rows);
+    let total = (0..rows.div_ceil(rows_per_task))
+        .into_par_iter()
+        .map(|task| {
+            let (r0, r1) = (task * rows_per_task, ((task + 1) * rows_per_task).min(rows));
+            let mut sums = vec![0u64; k * row_bytes];
+            let mut acc = vec![0u64; k * tile];
+            for b0 in (r0..r1).step_by(block_rows) {
+                let b1 = (b0 + block_rows).min(r1);
+                for c0 in (0..row_bytes).step_by(tile) {
+                    let w = tile.min(row_bytes - c0);
+                    acc[..k * w].fill(0);
+                    for r in b0..b1 {
+                        let row = &database[r * row_bytes + c0..r * row_bytes + c0 + w];
+                        for (q, query) in queries.iter().enumerate() {
+                            let c = query[r];
+                            for (sum, &value) in acc[q * w..(q + 1) * w].iter_mut().zip(row) {
+                                *sum = sum.wrapping_add(u64::from(value).wrapping_mul(c));
+                            }
+                        }
+                    }
+                    for q in 0..k {
+                        for (sum, &a) in sums[q * row_bytes + c0..q * row_bytes + c0 + w].iter_mut().zip(&acc[q * w..(q + 1) * w]) {
+                            *sum = sum.wrapping_add(a);
+                        }
+                    }
+                }
+            }
+            sums
+        })
+        .reduce(
+            || vec![0u64; k * row_bytes],
+            |mut left, right| {
+                for (a, b) in left.iter_mut().zip(right) {
+                    *a = a.wrapping_add(b);
+                }
+                left
+            },
+        );
+    total.chunks_exact(row_bytes).map(|sums| sums.iter().map(|s| s & (Q - 1)).collect()).collect()
+}
+
+/// Times the current single-selection scan against the batched tiled scan on
+/// one real table file. Selections are public pseudo-random test vectors.
+pub(super) fn scan_bench(file: &Path, row_bytes: usize, threads: usize) -> Result<(), String> {
+    let map = unsafe { memmap2::Mmap::map(&std::fs::File::open(file).map_err(|e| e.to_string())?) }.map_err(|e| e.to_string())?;
+    let rows = map.len() / row_bytes;
+    let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(|e| e.to_string())?;
+    let queries: Vec<Vec<u64>> = (0..8u64).map(|seed| {
+        let mut state = 0x6a09_e667_f3bc_c909u64 ^ seed.wrapping_mul(0x9e37_79b9_7f4a_7c15);
+        (0..rows).map(|_| { state = state.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407); state >> 10 }).collect()
+    }).collect();
+    let expected: Vec<Vec<u64>> = pool.install(|| queries.iter().map(|q| parallel_multiply(&map, row_bytes, q)).collect());
+    let time = |f: &(dyn Fn() -> Vec<Vec<u64>> + Sync), k: usize| -> Result<f64, String> {
+        let mut best = f64::MAX;
+        for _ in 0..5 {
+            let start = Instant::now();
+            let out = pool.install(f);
+            best = best.min(start.elapsed().as_secs_f64() * 1e3);
+            if out[..] != expected[..k] {
+                return Err("batched scan mismatch".into());
+            }
+        }
+        Ok(best)
+    };
+    let mut results = vec![json!({"kernel":"current","k":1,"ms":time(&|| vec![parallel_multiply(&map, row_bytes, &queries[0])], 1)?})];
+    for (block_rows, tile) in [(16, 256), (32, 512), (64, 1024), (8, 2048)] {
+        for k in [1, 2, 4, 8] {
+            let refs: Vec<&[u64]> = queries[..k].iter().map(Vec::as_slice).collect();
+            let ms = time(&|| parallel_multiply_batch(&map, row_bytes, &refs, block_rows, tile), k)?;
+            results.push(json!({"kernel":"tiled","blockRows":block_rows,"tile":tile,"k":k,"ms":ms,"msPerQuery":ms / k as f64}));
+        }
+    }
+    println!("{}", json!({"file":file.display().to_string(),"rows":rows,"bytes":map.len(),"threads":threads,"results":results}));
+    Ok(())
+}
+
 pub(super) fn preprocess_blocks(database: &[u8], profile: &TableProfile) -> Result<Vec<NativePreprocessed>, String> {
     (0..profile.blocks())
         .into_par_iter()

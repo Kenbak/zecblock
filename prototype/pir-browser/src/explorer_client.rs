@@ -5,7 +5,9 @@ use crate::explorer_record::{Record, layout};
 use serde::Deserialize;
 use serde_json::json;
 use wasm_bindgen::prelude::*;
+use reinspiring::native::{NativeDecoder, NativeDecodingState};
 use zakura_pir_client::transparent::native::{NativeSecret, TableClientExt, TableProfile};
+use zakura_pir_protocol::native::{D, Q_BITS, bits::contiguous_bytes_to_u64s};
 
 const TABLE: &str = "txdirectory";
 
@@ -28,8 +30,18 @@ struct Manifest {
 
 struct Table {
     profile: TableProfile,
-    publics: Vec<Vec<u8>>,
+    instances: usize,
     rows: usize,
+    /// Public mask transforms for every instance, built once per publication,
+    /// so a reply decodes without redoing them.
+    decoder: NativeDecoder,
+}
+
+/// One encrypted selection and, once prepared, its request-local decoding
+/// products (computed from the secret alone while the reply is in flight).
+struct Query {
+    secret: NativeSecret,
+    state: Option<NativeDecodingState>,
 }
 
 impl Table {
@@ -39,40 +51,75 @@ impl Table {
         if side.instances == 0 || publics.len() != size * side.instances {
             return Err(format!("{kind} public parameters have the wrong length"));
         }
-        Ok(Table { publics: publics.chunks(size).map(<[u8]>::to_vec).collect(), profile, rows: side.rows })
+        if profile.native.entry_bytes() != 1 {
+            return Err("the explorer decoder requires one byte per entry".into());
+        }
+        let (mut first, mut other) = (Vec::new(), Vec::new());
+        for setup in publics.chunks_exact(size) {
+            let masks: Vec<u64> = contiguous_bytes_to_u64s(setup, profile.native.mask_bits)
+                .into_iter()
+                .map(|value| value << (Q_BITS - profile.native.mask_bits))
+                .collect();
+            if masks.len() != 2 * profile.cols {
+                return Err(format!("{kind} public mask shape mismatch"));
+            }
+            first.extend(masks[..profile.cols].chunks_exact(D).map(<[u64]>::to_vec));
+            other.extend(masks[profile.cols..].chunks_exact(D).map(<[u64]>::to_vec));
+        }
+        let decoder = NativeDecoder::new(&profile.native.params(), &first, Some(&other)).map_err(|e| e.to_string())?;
+        Ok(Table { profile, instances: side.instances, rows: side.rows, decoder })
     }
 
     /// Count-prefixed body asking every instance for each local row.
-    fn query(&self, local_rows: &[usize]) -> Result<(Vec<NativeSecret>, Vec<u8>), String> {
+    fn query(&self, local_rows: &[usize]) -> Result<(Vec<Query>, Vec<u8>), String> {
         let mut body = (local_rows.len() as u32).to_le_bytes().to_vec();
-        let mut secrets = Vec::with_capacity(local_rows.len());
+        let mut queries = Vec::with_capacity(local_rows.len());
         for &row in local_rows {
             let (secret, upload) = self.profile.prepare(row)?;
-            secrets.push(secret);
+            queries.push(Query { secret, state: None });
             body.extend(upload);
         }
-        Ok((secrets, body))
+        Ok((queries, body))
+    }
+
+    fn prepare(&self, queries: &mut [Query]) -> Result<(), String> {
+        for query in queries.iter_mut().filter(|q| q.state.is_none()) {
+            query.state = Some(self.decoder.prepare_request(&query.secret).map_err(|e| e.to_string())?);
+        }
+        Ok(())
     }
 
     /// Decoded rows: one Vec per query, one row per instance.
-    fn decode(&self, secrets: &[NativeSecret], reply: &[u8]) -> Result<Vec<Vec<Vec<u8>>>, String> {
+    fn decode(&self, queries: &mut [Query], reply: &[u8]) -> Result<Vec<Vec<Vec<u8>>>, String> {
         let size = self.profile.scheme.response_bytes;
-        if reply.len() != secrets.len() * self.publics.len() * size {
+        if reply.len() != queries.len() * self.instances * size {
             return Err("reply has the wrong length".into());
         }
+        self.prepare(queries)?;
+        let shift = Q_BITS - self.profile.native.response_bits;
         reply
-            .chunks(size * self.publics.len())
-            .zip(secrets)
-            .map(|(per, secret)| per.chunks(size).zip(&self.publics).map(|(r, p)| self.profile.decode(secret, p, r)).collect())
+            .chunks(size * self.instances)
+            .zip(queries.iter())
+            .map(|(per, query)| {
+                let bodies: Vec<u64> = per.chunks_exact(size)
+                    .flat_map(|response| contiguous_bytes_to_u64s(response, self.profile.native.response_bits))
+                    .map(|value| value << shift)
+                    .collect();
+                let values = query.state.as_ref().unwrap().decrypt(&bodies).map_err(|e| e.to_string())?;
+                if values.len() != self.instances * self.profile.cols {
+                    return Err("decoded reply has the wrong shape".to_string());
+                }
+                Ok(values.chunks_exact(self.profile.cols).map(|row| row[..self.profile.row_bytes].iter().map(|&v| v as u8).collect()).collect())
+            })
             .collect()
     }
 }
 
 enum Pending {
-    Main { txid: [u8; 32], secrets: Vec<NativeSecret> },
+    Main { txid: [u8; 32], queries: Vec<Query> },
     /// A preview was shown; the full record can be fetched on request.
     Preview { txid: [u8; 32], start: u64, len: usize },
-    Full { txid: [u8; 32], start: u64, len: usize, globals: Vec<u64>, secrets: Vec<NativeSecret> },
+    Full { txid: [u8; 32], start: u64, len: usize, globals: Vec<u64>, queries: Vec<Query> },
 }
 
 #[wasm_bindgen]
@@ -104,19 +151,30 @@ impl ExplorerPirBrowser {
             .and_then(|b| b.try_into().ok())
             .ok_or_else(|| JsValue::from_str("Enter a 64-character transaction ID"))?;
         let row = layout::row_of(&txid, self.main.rows as u64) as usize;
-        let (secrets, body) = self.main.query(&[row]).map_err(|e| JsValue::from_str(&e))?;
-        self.pending = Some(Pending::Main { txid, secrets });
+        let (queries, body) = self.main.query(&[row]).map_err(|e| JsValue::from_str(&e))?;
+        self.pending = Some(Pending::Main { txid, queries });
         Ok(body)
+    }
+
+    /// Computes the pending query's decoding products from its secret alone.
+    /// Call it after sending the request, while the reply is in flight.
+    pub fn prepare_decode(&mut self) -> Result<(), JsValue> {
+        match &mut self.pending {
+            Some(Pending::Main { queries, .. }) => self.main.prepare(queries),
+            Some(Pending::Full { queries, .. }) => self.overflow.prepare(queries),
+            _ => Ok(()),
+        }
+        .map_err(|e| JsValue::from_str(&e))
     }
 
     /// The result JSON. A large transaction comes back as a preview with
     /// `partial: true` and `fullRows`, the padded row count `query_full`
     /// would request.
     pub fn decode_main(&mut self, reply: &[u8]) -> Result<String, JsValue> {
-        let Some(Pending::Main { txid, secrets }) = self.pending.take() else {
+        let Some(Pending::Main { txid, mut queries }) = self.pending.take() else {
             return Err(JsValue::from_str("no main query is pending"));
         };
-        let rows = self.main.decode(&secrets, reply).map_err(|e| JsValue::from_str(&e))?;
+        let rows = self.main.decode(&mut queries, reply).map_err(|e| JsValue::from_str(&e))?;
         let bucket = rows[0].concat();
         // Only a recent publication carries these; a base bucket never does.
         let spent = layout::find_spent(&bucket, &txid).map_err(|e| JsValue::from_str(&e))?;
@@ -151,16 +209,16 @@ impl ExplorerPirBrowser {
         let mut local: Vec<usize> = globals.iter().map(|g| *g as usize % self.overflow.rows).collect();
         // Padding repeats the first row; the server cannot see which rows.
         local.resize(layout::padded_rows(local.len()), local[0]);
-        let (secrets, body) = self.overflow.query(&local).map_err(|e| JsValue::from_str(&e))?;
-        self.pending = Some(Pending::Full { txid, start, len, globals, secrets });
+        let (queries, body) = self.overflow.query(&local).map_err(|e| JsValue::from_str(&e))?;
+        self.pending = Some(Pending::Full { txid, start, len, globals, queries });
         Ok(body)
     }
 
     pub fn decode_full(&mut self, reply: &[u8]) -> Result<String, JsValue> {
-        let Some(Pending::Full { txid, start, len, globals, secrets }) = self.pending.take() else {
+        let Some(Pending::Full { txid, start, len, globals, mut queries }) = self.pending.take() else {
             return Err(JsValue::from_str("no full-record fetch is pending"));
         };
-        let rows = self.overflow.decode(&secrets, reply).map_err(|e| JsValue::from_str(&e))?;
+        let rows = self.overflow.decode(&mut queries, reply).map_err(|e| JsValue::from_str(&e))?;
         let bytes: Vec<u8> = globals.iter().zip(&rows).flat_map(|(g, per)| per[*g as usize / self.overflow.rows].clone()).collect();
         let offset = (start - globals[0] * layout::ROW_BYTES as u64) as usize;
         let record = bytes.get(offset..offset + len).ok_or_else(|| JsValue::from_str("overflow record exceeds fetched rows"))?;

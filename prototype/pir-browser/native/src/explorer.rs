@@ -215,6 +215,8 @@ pub(super) fn encode_addresses(summaries: &Path, pages: Option<&Path>) -> Result
 /// into hash partitions on disk; pass two groups each partition in memory.
 pub(super) fn addresses_from_tx(records: &Path, summaries: &Path, pages: Option<&Path>) -> Result<(), String> {
     const PARTITIONS: usize = 64;
+    // Partition row after the address: txid 32, height 4, tx index 4, time 8, value in 8, value out 8.
+    const ROW: usize = 64;
     let start = Instant::now();
     let file = File::open(records).map_err(io_err)?;
     let data = unsafe { Mmap::map(&file) }.map_err(io_err)?;
@@ -247,7 +249,7 @@ pub(super) fn addresses_from_tx(records: &Path, summaries: &Path, pages: Option<
                 }
             }
             Ok(per.into_iter().map(|(address, (value_in, value_out))| {
-                let mut row = Vec::with_capacity(address.len() + 69);
+                let mut row = Vec::with_capacity(1 + address.len() + ROW);
                 row.push(address.len() as u8);
                 row.extend_from_slice(address.as_bytes());
                 row.extend_from_slice(&record.txid);
@@ -280,7 +282,7 @@ pub(super) fn addresses_from_tx(records: &Path, summaries: &Path, pages: Option<
         while at < bytes.len() {
             let len = bytes[at] as usize;
             let address = String::from_utf8(bytes[at + 1..at + 1 + len].to_vec()).map_err(|_| "address is not UTF-8")?;
-            let r = &bytes[at + 1 + len..at + 1 + len + 68];
+            let r = bytes.get(at + 1 + len..at + 1 + len + ROW).ok_or("truncated address partition")?;
             let tx = AddressTx {
                 txid: r[..32].try_into().unwrap(),
                 height: u32::from_le_bytes(r[32..36].try_into().unwrap()),
@@ -291,7 +293,7 @@ pub(super) fn addresses_from_tx(records: &Path, summaries: &Path, pages: Option<
             };
             max_height = max_height.max(tx.height);
             groups.entry(address).or_default().push(tx);
-            at += 1 + len + 68;
+            at += 1 + len + ROW;
         }
         fs::remove_file(&path).map_err(io_err)?;
         let encoded: Vec<Vec<([u8; 32], Vec<u8>, bool)>> = groups.into_par_iter()

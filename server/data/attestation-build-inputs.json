@@ -6,7 +6,7 @@
     "zecrocks-mainnet": {
       "app_source": {
         "branch": "main",
-        "commit": "a6067268a04d14f9821edf6c83d3bdd94dab3776",
+        "commit": "e0c834cc9f1554f04c489639ce377ea0408d417e",
         "urls": [
           "https://github.com/zecrocks/zeronym-shim-mainnet-deploy"
         ]
@@ -16,17 +16,17 @@
         "commit": "9582e25239430070667fdd0a6b64d887f1c308df",
         "type": "git_archive",
         "urls": [
-          "https://git.distrust.co/public/enclaveos/archive/9582e25239430070667fdd0a6b64d887f1c308df.tar.gz"
+          "https://codeberg.org/caution/enclaveos/archive/9582e25239430070667fdd0a6b64d887f1c308df.tar.gz"
         ]
       },
       "enclaveos_commit": "9582e25239430070667fdd0a6b64d887f1c308df",
       "framework_source": {
-        "commit": "ecd876be560cb61d683c250a064acca658111411",
+        "commit": "d0f3ca9ba594705324caccc69a57f31c115041fa",
         "type": "git_archive",
-        "url": "https://codeberg.org/caution/platform/archive/ecd876be560cb61d683c250a064acca658111411.tar.gz"
+        "url": "https://codeberg.org/caution/platform/archive/d0f3ca9ba594705324caccc69a57f31c115041fa.tar.gz"
       },
       "powered_by": "https://caution.co",
-      "run_command": "export ZIS_BACKEND=199.170.132.107:443\nexport ZIS_BACKEND_TLS=na-jfk.metal.zec.rocks\nexport ZIS_HUB=54.251.201.143:443\nexport ZIS_HUB_TLS=hub.zcash.caution.co\nexport ZIS_LISTEN=0.0.0.0:8083\n/zero-indexer-shim",
+      "run_command": "export ZIS_BACKEND=199.170.132.107:443\nexport ZIS_BACKEND_TLS=na-jfk.metal.zec.rocks\nexport ZIS_HUB=54.151.176.23:443\nexport ZIS_HUB_TLS=hub.zcash.caution.co\nexport ZIS_LISTEN=0.0.0.0:8083\n/zero-indexer-shim",
       "version": "1.0"
     },
     "shieldedlabs-shim": {
@@ -84,7 +84,7 @@
     "zecrocks-testnet": {
       "app_source": {
         "branch": "main",
-        "commit": "da024a0e3113810a4a10ffc085d43bb849f1a1a0",
+        "commit": "656c99fcfb4168e6f1685e8239c918bcc20c07b2",
         "urls": [
           "https://github.com/zecrocks/zeronym-shim-deploy.git"
         ]
@@ -94,14 +94,14 @@
         "commit": "9582e25239430070667fdd0a6b64d887f1c308df",
         "type": "git_archive",
         "urls": [
-          "https://git.distrust.co/public/enclaveos/archive/9582e25239430070667fdd0a6b64d887f1c308df.tar.gz"
+          "https://codeberg.org/caution/enclaveos/archive/9582e25239430070667fdd0a6b64d887f1c308df.tar.gz"
         ]
       },
       "enclaveos_commit": "9582e25239430070667fdd0a6b64d887f1c308df",
       "framework_source": {
-        "commit": "ecd876be560cb61d683c250a064acca658111411",
+        "commit": "d0f3ca9ba594705324caccc69a57f31c115041fa",
         "type": "git_archive",
-        "url": "https://codeberg.org/caution/platform/archive/ecd876be560cb61d683c250a064acca658111411.tar.gz"
+        "url": "https://codeberg.org/caution/platform/archive/d0f3ca9ba594705324caccc69a57f31c115041fa.tar.gz"
       },
       "powered_by": "https://caution.co",
       "run_command": "export ZIS_BACKEND=199.170.132.107:443\nexport ZIS_BACKEND_TLS=na-jfk.testnet.metal.zec.rocks\nexport ZIS_LISTEN=0.0.0.0:8083\n/zero-indexer-shim",

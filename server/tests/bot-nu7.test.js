@@ -221,3 +221,11 @@ test('Ironwood share milestones start at 85% and post each whole percent once', 
   assert.equal(poolDrainStories(rows(i => (i === 59 ? 0.84 : 0.83)), target).filter(s => s.evidence.metric === 'ironwood_share').length, 0, 'below 85%');
   assert.equal(poolDrainStories(rows(i => (i === 59 ? 0.855 : i === 30 ? 0.851 : 0.84)), target).filter(s => s.evidence.metric === 'ironwood_share').length, 0, 'not a new high');
 });
+
+test('chain stall alert uses the scheduled spacing and never guesses it', () => {
+  const { formatChainStall } = require('../bot/lib/formatter');
+  const base = { lastBlockTime: 1793883738, gapSeconds: 900 };
+  assert.match(formatChainStall({ ...base, targetSeconds: 25 }), /Expected: ~25 seconds between blocks/);
+  assert.doesNotMatch(formatChainStall(base), /Expected:/);
+  assert.doesNotMatch(formatChainStall(base), /75 seconds/);
+});

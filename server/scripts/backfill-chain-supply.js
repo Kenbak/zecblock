@@ -13,9 +13,9 @@ const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '../api/.env') });
 
 const { Pool } = require('pg');
+const { networkSchedule, heightBefore, targetSpacing } = require('../api/lib/network-schedule');
 
 const DAYS = parseInt(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || '400', 10);
-const BLOCKS_PER_DAY = 1152;
 const ZEBRA_RPC_URL = process.env.ZEBRA_RPC_URL || 'http://127.0.0.1:8232';
 const ZEBRA_COOKIE_FILE = process.env.ZEBRA_RPC_COOKIE_FILE || '/root/.cache/zebra/.cookie';
 
@@ -53,10 +53,10 @@ async function callZebraRPC(method, params = []) {
   return data.result;
 }
 
-async function getDailyEmissionZat(height) {
+async function getPerBlockSubsidyZat(height) {
   const sub = await callZebraRPC('getblocksubsidy', [height]);
-  const perBlock = sub?.totalblocksubsidy != null ? Math.round(sub.totalblocksubsidy * 1e8) : 156250000;
-  return perBlock * BLOCKS_PER_DAY;
+  if (sub?.totalblocksubsidy == null) throw new Error(`No block subsidy from Zebra at height ${height}`);
+  return Math.round(sub.totalblocksubsidy * 1e8);
 }
 
 async function main() {
@@ -67,6 +67,8 @@ async function main() {
   let height = parseInt(info.blocks, 10) || 0;
 
   if (supplyZat <= 0) throw new Error('Could not read chain supply from Zebra');
+  const schedule = networkSchedule(info);
+  if (!schedule) throw new Error('Could not read the network upgrade schedule from Zebra');
 
   log(`Current: ${(supplyZat / 1e8).toFixed(4)} ZEC at height ${height.toLocaleString()}`);
 
@@ -87,15 +89,17 @@ async function main() {
     );
     updated += 1;
 
-    const eraKey = Math.floor(height / 100000);
-    let dailyEmission = emissionCache.get(eraKey);
-    if (dailyEmission == null) {
-      dailyEmission = await getDailyEmissionZat(height);
-      emissionCache.set(eraKey, dailyEmission);
+    // Subsidy per block changes with spacing (NU7) as well as halvings.
+    const eraKey = `${Math.floor(height / 100000)}:${targetSpacing(schedule, height)}`;
+    let perBlock = emissionCache.get(eraKey);
+    if (perBlock == null) {
+      perBlock = await getPerBlockSubsidyZat(height);
+      emissionCache.set(eraKey, perBlock);
     }
 
-    supplyZat = Math.max(0, supplyZat - dailyEmission);
-    height = Math.max(0, height - BLOCKS_PER_DAY);
+    const previousHeight = Math.max(0, heightBefore(schedule, height, 86400));
+    supplyZat = Math.max(0, supplyZat - perBlock * (height - previousHeight));
+    height = previousHeight;
   }
 
   log(`Updated ${updated} daily rows (newest → oldest, monotonic when read forward)`);

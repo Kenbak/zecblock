@@ -42,17 +42,27 @@ API_GRPC_STATUS_URL="${API_GRPC_STATUS_URL:-http://127.0.0.1:3001/api/grpc-statu
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 TELEGRAM_API_BASE="${TELEGRAM_API_BASE:-https://api.telegram.org}"
+# "off" once the fleet monitor alerts from the metrics below (cipherscan-rust
+# deploy/monitoring, rules OpsCheckFailing/OpsCheckDegraded/OpsHealthCheckStale).
+TELEGRAM_ALERTS="${OPS_HEALTH_TELEGRAM_ALERTS:-on}"
+# node_exporter textfile collector directory; empty disables metrics.
+METRICS_DIR="${OPS_HEALTH_METRICS_DIR-/var/lib/prometheus/node-exporter}"
 HOST_LABEL="$(hostname -f 2>/dev/null || hostname)"
 
 mkdir -p "${STATE_DIR}"
 
-if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
-  echo "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set" >&2
+if [[ "${TELEGRAM_ALERTS}" != "on" && "${TELEGRAM_ALERTS}" != "off" ]]; then
+  echo "OPS_HEALTH_TELEGRAM_ALERTS must be on or off" >&2
+  exit 2
+fi
+if [[ "${TELEGRAM_ALERTS}" == "on" && ( -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ) ]]; then
+  echo "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or OPS_HEALTH_TELEGRAM_ALERTS=off)" >&2
   exit 2
 fi
 
 send_telegram() {
   local message="$1"
+  [[ "${TELEGRAM_ALERTS}" == "on" ]] || return 0
   curl -fsS -X POST \
     "${TELEGRAM_API_BASE}/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
@@ -321,6 +331,42 @@ for k in "${!check_results[@]}"; do
   fi
 done
 failing=$(( total_checks - passing ))
+
+# Metrics for the fleet monitor: one 0/1 series per check that ran, with a
+# stable slug and a display name; no failure details (they change every run
+# and can include paths). Written atomically; never fatal.
+check_slug() {
+  case "$1" in
+    "Disk") echo "disk|Disk" ;;
+    "Backup") echo "backup|Backup" ;;
+    "WAL") echo "wal|WAL archiving" ;;
+    "Redis") echo "redis|Redis" ;;
+    "PG pool") echo "pg_pool|PostgreSQL pool" ;;
+    "Indexer") echo "indexer|Indexer" ;;
+    "Replication") echo "replication|Replication" ;;
+    "Replica") echo "replica|Replica" ;;
+    "Node sync") echo "node_sync|Node sync" ;;
+    "API realtime") echo "api_realtime|API real-time bridge" ;;
+    *) return 1 ;;
+  esac
+}
+write_metrics() {
+  [[ -n "${METRICS_DIR}" && -d "${METRICS_DIR}" ]] || return 0
+  local tmp="${METRICS_DIR}/.zecblock_ops_health.prom.$$" name slug label
+  {
+    echo "# HELP zecblock_ops_check_ok 1 if the check passed in the last ops health run."
+    echo "# TYPE zecblock_ops_check_ok gauge"
+    for name in "${!check_results[@]}"; do
+      label="$(check_slug "${name}")" || continue
+      slug="${label%%|*}"
+      printf 'zecblock_ops_check_ok{check="%s",name="%s"} %s\n' "${slug}" "${label#*|}" "${check_results[${name}]}"
+    done
+    echo "# HELP zecblock_ops_health_last_run_timestamp_seconds Unix time of the last ops health run."
+    echo "# TYPE zecblock_ops_health_last_run_timestamp_seconds gauge"
+    echo "zecblock_ops_health_last_run_timestamp_seconds ${now}"
+  } > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${METRICS_DIR}/zecblock_ops_health.prom" || rm -f "${tmp}"
+}
+write_metrics
 
 build_check_line() {
   local name="$1"

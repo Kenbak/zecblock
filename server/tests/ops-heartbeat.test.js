@@ -78,7 +78,10 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
   const messages = path.join(dir, 'messages');
   const env = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEST_STATE: state,
     TEST_MESSAGES: messages, TEST_NOW: String(now), TELEGRAM_BOT_TOKEN: 'fixture', TELEGRAM_CHAT_ID: 'fixture',
-    OPS_HEALTH_STATE_DIR: path.join(dir, 'monitor'), OPS_HEALTH_DISK_PATHS: '/does-not-exist', REPLICA_HOST: '' };
+    OPS_HEALTH_STATE_DIR: path.join(dir, 'monitor'), OPS_HEALTH_DISK_PATHS: '/does-not-exist', REPLICA_HOST: '',
+    OPS_HEALTH_METRICS_DIR: path.join(dir, 'metrics') };
+  mkdirSync(env.OPS_HEALTH_METRICS_DIR);
+  const metrics = () => readFileSync(path.join(env.OPS_HEALTH_METRICS_DIR, 'zecblock_ops_health.prom'), 'utf8');
   const run = () => spawnSync('bash', [monitor], { env, encoding: 'utf8' });
   try {
     writeFileSync(state, `100|100|${now - 3600}|${now - 5}|none\n`);
@@ -88,6 +91,10 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
     result = run();
     assert.equal(result.status, 1, result.stderr);
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 1);
+    assert.match(metrics(), /^zecblock_ops_check_ok\{check="indexer",name="Indexer"\} 0$/m);
+    assert.match(metrics(), /^zecblock_ops_check_ok\{check="redis",name="Redis"\} 1$/m);
+    assert.match(metrics(), new RegExp(`^zecblock_ops_health_last_run_timestamp_seconds ${now}$`, 'm'));
+    assert.doesNotMatch(metrics(), /check="disk"[^\n]*\} 0|does-not-exist/, 'no failure details or paths');
     env.TEST_NOW = String(now + 60);
     result = run();
     assert.equal(result.status, 1, result.stderr);
@@ -102,5 +109,13 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 3, 'one recovery message');
     assert.equal(run().status, 0);
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 3);
+    assert.match(metrics(), /^zecblock_ops_check_ok\{check="indexer",name="Indexer"\} 1$/m);
+    // With Telegram off the monitor needs no token and sends nothing, but still writes metrics.
+    writeFileSync(state, `100|101|${now - 3600}|${now - 5}|${now - 601}\n`);
+    const quiet = spawnSync('bash', [monitor], { env: { ...env, OPS_HEALTH_TELEGRAM_ALERTS: 'off',
+      TELEGRAM_BOT_TOKEN: '', TELEGRAM_CHAT_ID: '', OPS_HEALTH_STATE_DIR: path.join(dir, 'quiet') }, encoding: 'utf8' });
+    assert.equal(quiet.status, 1, quiet.stderr);
+    assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 3, 'no Telegram send when off');
+    assert.match(metrics(), /^zecblock_ops_check_ok\{check="indexer",name="Indexer"\} 0$/m);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

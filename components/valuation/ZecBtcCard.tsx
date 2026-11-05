@@ -4,7 +4,6 @@ import { useEffect, useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
-import { MarketSectionIcon } from '@/components/icons/home-section';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
@@ -95,7 +94,7 @@ export function ZecBtcCard() {
     : historyDelayed ? 'Delayed history' : valid.length < points.length ? 'Limited history' : null;
 
   return <section id="zec-btc" className="scroll-mt-64 lg:scroll-mt-44 mb-12">
-    <SectionHeader label="ZEC_BTC" icon={<MarketSectionIcon />} actions={
+    <SectionHeader label="ZEC_BTC" actions={
       <PeriodPillTags options={PERIODS} value={period} onChange={setPeriod} aria-label="ZEC / BTC history period" />
     } />
     <div className="card card-static min-w-0"><div className="card-body">

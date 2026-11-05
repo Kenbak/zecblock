@@ -7,7 +7,6 @@ import {
   useSwapSearchParams,
 } from "./SwapFilterLink";
 import { TokenChainIcon } from "@/components/TokenChainIcon";
-import { TransactionSectionIcon } from "@/components/icons/home-section";
 import { useApiQuery } from "@/hooks/useApiQuery";
 import { useCrosschainVenue } from "./VenueContext";
 import { PanelTitle } from "./PanelTitle";
@@ -195,7 +194,6 @@ export function SwapExplorer({
     <section className="card space-y-4" aria-label="Recent swaps">
       <PanelTitle
         title={venue === "near" ? "Recent swaps" : "Recent swaps & refunds"}
-        icon={<TransactionSectionIcon />}
         controls={IS_DEMO ? (
           <span
             className="text-xs text-cipher-orange"

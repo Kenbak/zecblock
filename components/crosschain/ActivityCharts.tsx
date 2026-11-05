@@ -14,7 +14,6 @@ import {
 } from "recharts";
 import { ChartTooltip as Tooltip } from "@/components/charts/ChartTooltip";
 import { ChartCard } from "@/components/network/ChartCard";
-import { ActivitySectionIcon } from "@/components/icons/home-section";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
 import { Analytics, Unit, value } from "./model";
@@ -83,7 +82,6 @@ export function ActivityCharts({
       {panel === "volume" && (
         <ChartCard
           title="Volume & activity"
-          icon={<ActivitySectionIcon />}
           share={{ title: `ZEC cross-chain swap volume and activity (${data.period})`, fileName: `zecblock-crosschain-activity-${data.period}`, csv: () => objectRowsCsv(points) }}
           height={300}
           controls={

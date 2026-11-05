@@ -27,26 +27,9 @@ interface RateWindow {
 }
 /** Present only once the NU7 activation block is indexed. */
 interface Nu7Comparison { activationHeight: number | null; activationTimestamp: string; before: RateWindow; since: RateWindow }
-interface CaptureAudit {
-  checkedAt: string;
-  status: 'ok' | 'error';
-  uncapturedForkBlocks: number;
-  canonicalBlocksChecked: number | null;
-  canonicalBlocksMissing: number | null;
-}
-/** Self-measured against this explorer's node, from measuredSince only. */
-interface CaptureMeasurement {
-  observer: string;
-  measuredSince: string;
-  streamingFraction: number | null;
-  audit: CaptureAudit | null;
-}
 interface OrphanRates {
   method: string;
-  capture?: {
-    startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string;
-    measurement?: CaptureMeasurement[] | null;
-  };
+  capture?: { startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string };
   asOf: string;
   indexedHeight: number | null;
   indexedTimestamp: string | null;
@@ -58,11 +41,6 @@ function percent(rate: number | null) {
   if (rate === null) return 'Unavailable';
   // Keep an observed positive loss from rounding to a misleading zero.
   return rate > 0 && rate < 0.0001 ? '<0.01%' : `${(rate * 100).toFixed(2)}%`;
-}
-
-function streamed(fraction: number) {
-  // Never round a partial outage up to a clean 100%.
-  return fraction < 1 && fraction >= 0.9999 ? '>99.99%' : `${(fraction * 100).toFixed(2)}%`;
 }
 
 function utc(value: string) {
@@ -77,7 +55,6 @@ export function OrphanRateSection() {
   const windows = supported ? [...data.periods, ...(nu7 ? [nu7.before, nu7.since] : [])] : [];
   // A shared NU7 link opened before activation falls back to the default window.
   const selected = windows.find(window => window.period === period) ?? windows.find(window => window.period === '30d') ?? null;
-  const measured = supported ? data.capture?.measurement?.[0] ?? null : null;
 
   return (
     <section id="orphans" className="scroll-mt-36 mb-12">
@@ -89,19 +66,12 @@ export function OrphanRateSection() {
             : 'Blocks observed by this explorer that left the canonical chain during a reorganization, as a share of canonical blocks plus observed orphans.'}
         </p>
         <p className="text-caption text-muted mb-5">
-          {measured
-            ? 'Coverage is measured only against this explorer\'s node, so competing blocks that never reached it are missed.'
-            : 'Competing blocks may be missed, and collection uptime is not verified.'}
-          {' '}These observations do not establish the full network or any pool&apos;s true orphan rate.
+          Competing blocks may be missed, and collection uptime is not verified. These observations do not establish the full network or any pool&apos;s true orphan rate.
         </p>
         {supported && data.capture && <p className="text-caption text-muted mb-5">
           Competing-block collector: {data.capture.status === 'collecting' ? 'collecting' : 'currently unavailable'}.
           {data.capture.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
           {' '}Saved observations remain included during interruptions.
-          {measured?.streamingFraction != null && ` Since ${utc(measured.measuredSince)} UTC it streamed ${streamed(measured.streamingFraction)} of the time.`}
-          {measured?.audit && (measured.audit.status === 'ok'
-            ? ` Latest node fork check (${utc(measured.audit.checkedAt)} UTC): ${measured.audit.uncapturedForkBlocks.toLocaleString('en-US')} node-validated fork ${measured.audit.uncapturedForkBlocks === 1 ? 'block' : 'blocks'} not captured${measured.audit.canonicalBlocksChecked != null && measured.audit.canonicalBlocksMissing != null ? `; ${measured.audit.canonicalBlocksMissing.toLocaleString('en-US')} of the last ${measured.audit.canonicalBlocksChecked.toLocaleString('en-US')} canonical blocks missing` : ''}.`
-            : ` Latest node fork check (${utc(measured.audit.checkedAt)} UTC) did not complete.`)}
         </p>}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>

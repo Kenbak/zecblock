@@ -12,7 +12,10 @@ WITH clock AS (
 ), capture AS (
   SELECT min(collection_started_at) AS capture_start, max(heartbeat_at) AS capture_heartbeat,
     count(*) FILTER (WHERE stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)::integer AS healthy_observers,
-    count(*)::integer AS observers
+    count(*)::integer AS observers,
+    -- Private identifiers only; formatOrphanRates maps them to public city names.
+    coalesce(jsonb_agg(jsonb_build_object('network', network, 'observer', observer,
+      'healthy', stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)), '[]'::jsonb) AS observer_rows
   FROM block_capture_observers
 ), activation AS (
   -- The canonical NU7 activation block's header time; absent until it is indexed.
@@ -67,6 +70,31 @@ SELECT w.*, capture.*, h.history_start, t.height AS indexed_height, t.hash AS in
 FROM windows w CROSS JOIN history h CROSS JOIN capture LEFT JOIN tip t ON true
 LEFT JOIN counts c ON c.period = w.period
 `;
+
+// Public location of each known observer, keyed by network and private observer
+// name. Names, endpoints and IPs are never returned; an observer missing here is
+// counted only as unlisted. Keep in sync with the wiki observer host table.
+const OBSERVER_LOCATIONS = new Map([
+  ['mainnet:local-node', 'Helsinki'],
+  ['mainnet:do-nyc3', 'New York'],
+  ['mainnet:do-sgp1', 'Singapore'],
+  ['mainnet:do-syd1', 'Sydney'],
+]);
+
+function observerLocations(rows) {
+  const cities = new Map();
+  let unlisted = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const city = OBSERVER_LOCATIONS.get(`${row?.network}:${row?.observer}`);
+    if (!city) { unlisted += 1; continue; }
+    cities.set(city, (cities.get(city) ?? false) || row.healthy === true);
+  }
+  return {
+    locations: [...cities].map(([city, collecting]) => ({ city, collecting }))
+      .sort((a, b) => a.city.localeCompare(b.city)),
+    unlistedObservers: unlisted,
+  };
+}
 
 function count(value) {
   const n = Number(value);
@@ -135,6 +163,7 @@ function formatOrphanRates(rows, nu7Height = null) {
       observers: Number(first.observers ?? 0),
       healthyObservers: Number(first.healthy_observers ?? 0),
       status: Number(first.healthy_observers ?? 0) > 0 ? 'collecting' : 'unavailable',
+      ...observerLocations(first.observer_rows),
     },
     periods,
     nu7,
@@ -146,4 +175,4 @@ async function orphanRates(pool, { nu7Height = null } = {}) {
   return formatOrphanRates((await pool.query(ORPHAN_RATES_SQL, [height])).rows, height);
 }
 
-module.exports = { orphanRates, formatOrphanRates, ORPHAN_RATES_SQL };
+module.exports = { orphanRates, formatOrphanRates, observerLocations, ORPHAN_RATES_SQL };

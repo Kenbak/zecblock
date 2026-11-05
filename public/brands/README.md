@@ -150,7 +150,7 @@ Original assets retrieved unchanged 2026-10-28:
   https://www.dash.org/brand-guidelines/ . The source licenses its images under
   [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/); attribution: Dash,
   linked above. The original asset is unchanged.
-- `/chains/monad.svg`: Monad's token mark, 480px-square SVG,
+- `/chains/monad.svg`: Monad's official SVG mark, 480px-square viewBox,
   https://monad.xyz/brand-page-assets/Token.svg . Source:
   https://monad.xyz/brand-and-media-kit .
 

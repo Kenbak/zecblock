@@ -30,3 +30,7 @@ a70bd366545f3ba2317a1dc44ae8fa4bc5edf726:server/api/test/v1/mcp-sql.test.js:gene
 # randomness, and placeholder proofs/signatures. No user or funded-wallet key.
 # Acknowledge only this historical addition; future key additions remain scanned.
 e9729abf716d06b1d0a222a424dca294ffa3fb26:packages/zcash-decoder/test/fixtures/synthetic.json:zcash-private-key:1
+
+# Public Monad logo attribution: the flagged text describes SVG dimensions,
+# not a credential. Acknowledge only this historical prose addition.
+a8b40be4ceb623c7ed0c0b0e8229a9f4a2d6d9c6:public/brands/README.md:generic-api-key:153

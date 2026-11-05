@@ -131,6 +131,8 @@ export type SpeedStory = {
   points: SpeedPoint[];
   /** Measured NU7 average on the other network, as supporting evidence while mainnet is upcoming. */
   testnetNu7: SpeedSummary | null;
+  /** Highest indexed block when the story was built; places it relative to activation. */
+  tipHeight: number;
 };
 
 const HISTORY_POINTS = 21;
@@ -183,7 +185,7 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
   const measured = measuredPoints(host.days, network, network === 'testnet' ? host.days.length : HISTORY_POINTS);
   if (host.activation) {
     return {
-      network, phase: 'active', points: measured, testnetNu7: null,
+      network, phase: 'active', points: measured, testnetNu7: null, tipHeight: host.indexedHeight,
       before: network === 'mainnet' ? host.windows.beforeUpgrade : null,
       after: host.windows.latest,
       irregular: network === 'testnet' ? host.windows.beforeUpgrade : null,
@@ -191,7 +193,7 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
     };
   }
   if (network === 'testnet') {
-    return { network, phase: 'upcoming', points: measured, before: null, after: null, irregular: host.windows.latest, activation: null, testnetNu7: null };
+    return { network, phase: 'upcoming', points: measured, before: null, after: null, irregular: host.windows.latest, activation: null, testnetNu7: null, tipHeight: host.indexedHeight };
   }
   const preTarget = host.windows.latest?.targetSeconds ?? measured.at(-1)?.targetSeconds ?? null;
   const activation = upcomingActivation(host, preTarget);
@@ -199,6 +201,7 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
     network, phase: 'upcoming', before: host.windows.latest, after: null, irregular: null, activation,
     points: [...measured, ...projectedPoints(isoDay(host.tipTimestamp), activation.date, preTarget)],
     testnetNu7: peer?.network === 'test' && peer.activation ? peer.windows.latest : null,
+    tipHeight: host.indexedHeight,
   };
 }
 
@@ -228,4 +231,58 @@ export function formatSpeedup(ratio: number | null): string {
 
 export function formatDay(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** How the chart groups blocks: one bar per UTC day, or one bar per block. */
+export type SpeedZoom = 'days' | 'blocks';
+export const SPEED_ZOOMS: readonly SpeedZoom[] = ['days', 'blocks'];
+/** Per-block view leads from ~6 hours before activation at 75s blocks… */
+export const LIVE_BLOCKS_BEFORE_ACTIVATION = 288;
+/** …until ~3 days after it at 25s, when complete NU7 days start to fill the daily chart. */
+export const LIVE_BLOCKS_AFTER_ACTIVATION = 10_368;
+/** Blocks averaged by the per-block line; ZIP 315's depth for received funds. */
+export const ROLLING_BLOCKS = SPENDABLE_CONFIRMATIONS;
+
+/** Per-block around activation, when the switch itself is the news; daily otherwise. */
+export function defaultSpeedZoom(story: SpeedStory | null): SpeedZoom {
+  if (!story?.activation) return 'days';
+  const fromActivation = story.tipHeight - story.activation.height;
+  return fromActivation >= -LIVE_BLOCKS_BEFORE_ACTIVATION && fromActivation < LIVE_BLOCKS_AFTER_ACTIVATION ? 'blocks' : 'days';
+}
+
+/** One canonical block with its header-time gap from the previous block. */
+export type LiveBlock = {
+  height: number; timestamp: number; intervalSeconds: number | null; targetSeconds: number | null;
+  /** Average of the last ROLLING_BLOCKS gaps ending here; null without that many consecutive blocks. */
+  rollingSeconds: number | null;
+};
+
+const integer = (value: unknown): value is number => Number.isSafeInteger(value);
+
+/**
+ * Validates `/v1/network/block-time?period=blocks` points, keeps one consecutive
+ * run of heights ending at the newest block, and adds the rolling average.
+ * Header times can run backwards, so single gaps may be negative.
+ */
+export function readLiveBlocks(value: unknown): LiveBlock[] {
+  const points = (value as { period?: unknown; points?: unknown } | null)?.period === 'blocks'
+    ? (value as { points: unknown }).points : null;
+  if (!Array.isArray(points)) return [];
+  const valid = points.filter((point): point is { height: number; timestamp: number; intervalSeconds: number | null; targetSeconds: number | null } =>
+    point && typeof point === 'object' && integer(point.height) && point.height >= 0 && integer(point.timestamp) && point.timestamp > 0
+      && (point.intervalSeconds === null || integer(point.intervalSeconds))
+      && (point.targetSeconds === null || (typeof point.targetSeconds === 'number' && point.targetSeconds > 0)))
+    .sort((a, b) => a.height - b.height);
+  let start = valid.length - 1;
+  while (start > 0 && valid[start - 1].height === valid[start].height - 1) start--;
+  const run = valid.slice(Math.max(0, start));
+  return run.map((point, index) => {
+    // A block's own gap needs its predecessor in this run; the first block may carry one from the API.
+    const intervalSeconds = index > 0 ? point.timestamp - run[index - 1].timestamp : point.intervalSeconds;
+    const from = index - ROLLING_BLOCKS;
+    return {
+      height: point.height, timestamp: point.timestamp, intervalSeconds, targetSeconds: point.targetSeconds,
+      rollingSeconds: from >= 0 ? (point.timestamp - run[from].timestamp) / ROLLING_BLOCKS : null,
+    };
+  });
 }

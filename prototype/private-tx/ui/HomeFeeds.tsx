@@ -1,9 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { RedactedAmount } from '@/components/ui';
 import { RelativeTimeProvider } from '@/components/RelativeTime';
 import { RecentBlocksTable } from '@/components/RecentBlocksTable';
-import { RecentTransactionsTable, knownAmountZec } from '@/components/RecentTransactionsTable';
+import { FlowCell, RecentTransactionsTable, knownAmountZec } from '@/components/RecentTransactionsTable';
 import { formatBytesCompact, formatZecPrecise } from '@/lib/format-numbers';
+import { formatRelativeTime } from '@/lib/utils';
 import type { TransactionListItem } from '@/lib/transaction-list';
 
 // The homepage feed, in the public homepage's design: the same signed bytes
@@ -25,6 +27,10 @@ export type Feed = {
 };
 
 const ROWS = 5;
+// A cell is text that decrypts character by character, or one of the real
+// table's own components (flow icons, redacted amount) that appears when
+// its cipher text has run out.
+type Cell = string | { node: ReactNode; width: number };
 const GLYPHS = '0123456789abcdef';
 const REVEAL_MS = 520;
 const ROW_STAGGER_MS = 70;
@@ -37,30 +43,30 @@ const listItem = (tx: FeedTx): TransactionListItem => ({
   value_balance_ironwood: tx.value_balance_ironwood, total_output: tx.total_output, flow_type: null,
 });
 
-function age(seconds: number) {
-  const s = Math.max(0, Math.round(Date.now() / 1000 - seconds));
-  if (s < 60) return 'Just now';
-  const m = Math.floor(s / 60);
-  if (m < 60) return `${m} min${m === 1 ? '' : 's'} ago`;
-  const h = Math.floor(m / 60);
-  return `${h} hour${h === 1 ? '' : 's'} ago`;
-}
+// The same text the real table's RelativeTime renders, so nothing changes at the swap.
+const age = (seconds: number) => formatRelativeTime(seconds, Date.now());
+
+const wide = () => {
+  try { return window.matchMedia('(min-width: 640px)').matches; } catch { return true; }
+};
 
 const reducedMotion = () => {
   try { return window.matchMedia('(prefers-reduced-motion: reduce)').matches; } catch { return false; }
 };
 
-type Column = { label: string; align: 'left' | 'right'; width: number; className?: string };
+// `th` and `copySpace` mirror the real table: the Flow header's w-12, and the
+// width HashLink keeps for its hover-only copy button (gap-1 + 20 px button).
+type Column = { label: string; align: 'left' | 'right'; width: number; className?: string; th?: string; copySpace?: boolean };
 const BLOCK_COLUMNS: Column[] = [
-  { label: 'Block', align: 'left', width: 10, className: 'font-mono text-sm font-medium text-primary' },
-  { label: 'Size', align: 'right', width: 7, className: 'font-mono text-xs text-muted' },
-  { label: 'TXs', align: 'right', width: 2, className: 'font-mono text-sm text-primary' },
+  { label: 'Block', align: 'left', width: 10, className: 'font-mono text-sm font-medium text-primary tabular-nums' },
+  { label: 'Size', align: 'right', width: 7, className: 'font-mono text-xs text-muted tabular-nums' },
+  { label: 'TXs', align: 'right', width: 2, className: 'font-mono text-sm text-primary tabular-nums' },
   { label: 'Age', align: 'right', width: 9, className: 'text-sm text-muted' },
 ];
 const TX_COLUMNS: Column[] = [
-  { label: 'TxID', align: 'left', width: 19, className: 'font-mono text-sm font-medium text-primary' },
-  { label: 'Flow', align: 'left', width: 2, className: 'font-mono text-sm text-muted' },
-  { label: 'Amount', align: 'right', width: 12, className: 'font-mono text-sm text-secondary' },
+  { label: 'TxID', align: 'left', width: 19, className: 'font-mono text-sm font-medium text-primary tabular-nums', copySpace: true },
+  { label: 'Flow', align: 'left', width: 2, className: 'font-mono text-sm text-muted', th: 'w-12' },
+  { label: 'Amount', align: 'right', width: 12, className: 'font-mono text-sm text-secondary tabular-nums' },
   { label: 'Age', align: 'right', width: 9, className: 'text-sm text-muted' },
 ];
 
@@ -71,7 +77,7 @@ const scramble = (length: number) => Array.from({ length }, () => GLYPHS[Math.fl
  * decrypts left to right (rows staggered) and `onDone` fires when every cell
  * shows its real value, so the real table can replace it without a jump.
  */
-function CipherTable({ columns, targets, onDone }: { columns: Column[]; targets: string[][] | null; onDone: () => void }) {
+function CipherTable({ columns, targets, onDone }: { columns: Column[]; targets: Cell[][] | null; onDone: () => void }) {
   const [, tick] = useState(0);
   const started = useRef<number | null>(null);
   const done = useRef(false);
@@ -97,7 +103,7 @@ function CipherTable({ columns, targets, onDone }: { columns: Column[]; targets:
     <div className="overflow-x-auto no-scrollbar">
       <table className="w-full min-w-[420px]">
         <thead><tr>
-          {columns.map(c => <th key={c.label} className={`px-4 sm:px-5 py-3.5 ${c.align === 'right' ? 'text-right' : 'text-left'} text-caption font-semibold uppercase tracking-wider text-muted border-b border-cipher-border`}>{c.label}</th>)}
+          {columns.map(c => <th key={c.label} className={`px-4 sm:px-5 py-3.5 ${c.align === 'right' ? 'text-right' : 'text-left'} text-caption font-semibold uppercase tracking-wider text-muted border-b border-cipher-border ${c.th ?? ''}`}>{c.label}</th>)}
         </tr></thead>
         <tbody>
           {Array.from({ length: ROWS }, (_, row) => <tr key={row}>
@@ -105,21 +111,31 @@ function CipherTable({ columns, targets, onDone }: { columns: Column[]; targets:
               const target = targets?.[row]?.[col];
               const progress = target === undefined || started.current === null ? 0
                 : Math.min(1, Math.max(0, (now - started.current - row * ROW_STAGGER_MS) / REVEAL_MS));
-              const length = target?.length ?? c.width;
+              const cellClass = `px-4 sm:px-5 h-12 border-b border-cipher-border whitespace-nowrap ${c.align === 'right' ? 'text-right' : ''}`;
+              if (typeof target === 'object' && progress >= 1) return <td key={c.label} className={cellClass}>{target.node}</td>;
+              const length = typeof target === 'object' ? target.width : target?.length ?? c.width;
               const shown = Math.floor(progress * length);
-              const plain = target?.slice(0, shown) ?? '';
-              const cipher = still ? '·'.repeat(Math.max(0, length - shown)) : scramble(Math.max(0, length - shown));
-              return <td key={c.label} className={`px-4 sm:px-5 h-12 border-b border-cipher-border whitespace-nowrap ${c.align === 'right' ? 'text-right' : ''}`}>
-                <span className={c.className}>{plain}</span><span className="private-cipher-glyphs font-mono text-sm">{cipher}</span>
+              const plain = typeof target === 'string' ? target.slice(0, shown) : '';
+              const hidden = typeof target === 'object' ? length : Math.max(0, length - shown);
+              const cipher = still ? '·'.repeat(hidden) : scramble(hidden);
+              return <td key={c.label} className={cellClass}>
+                <span className={c.className}>{plain}</span><span className="private-cipher-glyphs font-mono text-sm">{cipher}</span>{c.copySpace && <span className="inline-block w-5 h-5 ml-1 align-middle" />}
               </td>;
             })}
           </tr>)}
         </tbody>
       </table>
     </div>
-    <div className="private-cipher-status">{targets ? '> signature ok · decrypting' : '> verifying ed25519 signature'}<span className="private-cursor" /></div>
+    <StatusFooter text={targets ? '> signature ok · decrypting' : '> verifying ed25519 signature'} cursor />
   </div>;
 }
+
+// Same box as the real table's footer, so the card keeps its height at the swap.
+const StatusFooter = ({ text, cursor = false }: { text: string; cursor?: boolean }) =>
+  <div className="px-4 py-3 border-t border-cipher-border flex items-center justify-center text-center">
+    <span className="private-cipher-status">{text}{cursor && <span className="private-cursor" />}</span>
+  </div>;
+export const VERIFIED_FOOTER = <span className="private-cipher-status">{'> signature ok · decrypted'}</span>;
 
 function blockTargets(feed: Feed) {
   return feed.blocks.slice(0, ROWS).map(b => [`#${b.height.toLocaleString()}`, b.size > 0 ? formatBytesCompact(b.size) : '—', String(b.transaction_count), age(b.timestamp)]);
@@ -127,16 +143,19 @@ function blockTargets(feed: Feed) {
 function txTargets(feed: Feed) {
   return feed.transactions.slice(0, ROWS).map(listItem).map(tx => {
     const amount = knownAmountZec(tx);
-    return [`${tx.txid.slice(0, 10)}...${tx.txid.slice(-6)}`, '··', amount === null ? '·····' : `${formatZecPrecise(amount)} ZEC`, age(tx.block_time ?? 0)];
+    // HashLink's responsive truncation: 8/4 below the sm breakpoint, 10/6 above.
+    const [lead, tail] = wide() ? [10, 6] : [8, 4];
+    return [`${tx.txid.slice(0, lead)}...${tx.txid.slice(-tail)}`, { node: <FlowCell tx={tx} />, width: 2 }, amount === null ? { node: <RedactedAmount />, width: 11 } : `${formatZecPrecise(amount)} ZEC`, age(tx.block_time ?? 0)];
   });
 }
 
-function FeedCard({ label, columns, targets, children }: { label: string; columns: Column[]; targets: string[][] | null; children: React.ReactNode }) {
+function FeedCard({ label, columns, targets, children }: { label: string; columns: Column[]; targets: Cell[][] | null; children: React.ReactNode }) {
   const [revealed, setRevealed] = useState(false);
   const reveal = useCallback(() => setRevealed(true), []);
   return <div className="home-feed min-w-0">
     <SectionHeader label={label} size="lg" />
-    {revealed ? children : <CipherTable columns={columns} targets={targets} onDone={reveal} />}
+    {/* private-revealed turns off the rows' entrance animation: they replace text already on screen. */}
+    {revealed ? <div className="private-revealed">{children}</div> : <CipherTable columns={columns} targets={targets} onDone={reveal} />}
   </div>;
 }
 
@@ -148,10 +167,10 @@ export function HomeFeeds({ feed }: { feed: Feed | null }) {
     <RelativeTimeProvider initialNow={Date.now()}>
       <div className="home-feeds home-table-section grid grid-cols-1 lg:grid-cols-2 gap-8">
         <FeedCard label="RECENT_BLOCKS" columns={BLOCK_COLUMNS} targets={blocks}>
-          {usable && <RecentBlocksTable blocks={usable.blocks.slice(0, ROWS).map(b => ({ height: b.height, timestamp: b.timestamp, transactions: b.transaction_count, size: b.size }))} />}
+          {usable && <RecentBlocksTable footer={VERIFIED_FOOTER} blocks={usable.blocks.slice(0, ROWS).map(b => ({ height: b.height, timestamp: b.timestamp, transactions: b.transaction_count, size: b.size }))} />}
         </FeedCard>
         <FeedCard label="RECENT_TRANSACTIONS" columns={TX_COLUMNS} targets={txs}>
-          {usable && <RecentTransactionsTable txs={usable.transactions.slice(0, ROWS).map(listItem)} />}
+          {usable && <RecentTransactionsTable footer={VERIFIED_FOOTER} txs={usable.transactions.slice(0, ROWS).map(listItem)} />}
         </FeedCard>
       </div>
     </RelativeTimeProvider>

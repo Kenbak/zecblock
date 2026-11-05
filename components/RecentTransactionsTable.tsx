@@ -30,7 +30,7 @@ const CoinbaseIcon = () => (
  * "Type" is reserved app-wide for pool/category (TxTypeBadge), which this
  * homepage widget deliberately omits (see file header comment).
  */
-function FlowCell({ tx }: { tx: Tx }) {
+export function FlowCell({ tx }: { tx: Tx }) {
   if (tx.is_coinbase) {
     return (
       <IconTooltip label="Coinbase" className="text-cipher-green">

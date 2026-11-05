@@ -135,7 +135,8 @@ async function initialize() {
   self.postMessage({ type: 'ready', manifest: publication(), samples: [] });
   if (feed) self.postMessage({ type: 'feed', feed: feed.data });
   // The same public manifests for everyone, polled independently of searches.
-  setInterval(() => { if (!busy) refresh().catch(() => {}); }, 20_000);
+  // Every 10 s, well under NU7's 25-second block target.
+  setInterval(() => { if (!busy) refresh().catch(() => {}); }, 10_000);
 }
 
 async function ask(path, upload) {

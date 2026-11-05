@@ -34,9 +34,23 @@ install -d -m 0750 -g "$GROUP" "$ROOT"
 exec 9>"$ROOT/.lock"
 # A base rebuild sets WAIT_LOCK so its recent table is always published.
 if [[ -n "${WAIT_LOCK:-}" ]]; then flock -w 900 9; else flock -n 9 || { echo '{"skipped":"another publish is running"}'; exit 0; }; fi
+started=$(date +%s.%N)
+
+# The timer runs every few seconds, so first ask the replica only for its tip:
+# when height and hash match the current publication (same base), nothing
+# changed and the full export is skipped. A same-height reorg changes the hash
+# and is published.
+if [[ -e "$ROOT/current/manifest.json" ]]; then
+  head=$(ssh -o BatchMode=yes "$REPLICA" "cd /tmp && sudo -u postgres psql -X -qAt -F ' ' -d $DATABASE -c 'select height, hash from blocks order by height desc limit 1'")
+  current=$(python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); print(m["snapshotTip"], m.get("tipHash") or "-", m.get("baseTip") or 0)' "$ROOT/current/manifest.json")
+  if [[ "$head $BASE_TIP" == "$current" ]]; then
+    echo "{\"kind\":\"$KIND\",\"skipped\":\"tip unchanged\",\"tip\":${head%% *}}"
+    exit 0
+  fi
+fi
+
 work=$(mktemp -d "$ROOT/.work-XXXXXX")
 trap 'rm -rf "$work"' EXIT
-started=$(date +%s.%N)
 
 sed -e "s/:a/$((BASE_TIP + 1))/; s/:b/2147483647/" "$SQL" \
   | ssh -o BatchMode=yes "$REPLICA" "cd /tmp && nice -n 19 sudo -u postgres psql -X -q -v ON_ERROR_STOP=1 -d $DATABASE" > "$work/lines.tsv"

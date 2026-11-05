@@ -1,0 +1,10 @@
+[Unit]
+Description=Daily rebuild of the private explorer base tables
+
+[Timer]
+OnCalendar=*-*-* 03:00:00 UTC
+RandomizedDelaySec=30min
+Persistent=true
+
+[Install]
+WantedBy=timers.target

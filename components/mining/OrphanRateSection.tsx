@@ -30,7 +30,12 @@ interface RateWindow {
 interface Nu7Comparison { activationHeight: number | null; activationTimestamp: string; before: RateWindow; since: RateWindow }
 interface OrphanRates {
   method: string;
-  capture?: { startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string };
+  capture?: {
+    startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string;
+    /** Public city per known observer; names, endpoints and IPs are never served. */
+    locations?: { city: string; collecting: boolean }[];
+    unlistedObservers?: number;
+  };
   asOf: string;
   indexedHeight: number | null;
   indexedTimestamp: string | null;
@@ -46,6 +51,19 @@ function percent(rate: number | null) {
 
 function utc(value: string) {
   return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
+}
+
+const CITY_LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+
+/** "Observed from Helsinki, New York and Sydney (Singapore paused)." or null when no location is known. */
+function observedFrom(capture: NonNullable<OrphanRates['capture']>): string | null {
+  const locations = capture.locations ?? [];
+  if (!locations.length) return null;
+  const paused = locations.filter(l => !l.collecting).map(l => l.city);
+  const others = capture.unlistedObservers ?? 0;
+  const cities = locations.map(l => l.city);
+  if (others > 0) cities.push(`${others} other observer${others === 1 ? '' : 's'}`);
+  return `Observed from ${CITY_LIST.format(cities)}; a competing block counts if any of them received it${paused.length ? ` (currently not collecting: ${CITY_LIST.format(paused)})` : ''}.`;
 }
 
 export function OrphanRateSection() {
@@ -73,6 +91,7 @@ export function OrphanRateSection() {
           Competing-block collector: {data.capture.status === 'collecting' ? 'collecting' : 'currently unavailable'}.
           {data.capture.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
           {' '}Saved observations remain included during interruptions.
+          {observedFrom(data.capture) && <> {observedFrom(data.capture)}</>}
         </p>}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>

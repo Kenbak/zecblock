@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { formatOrphanRates, orphanRates } = require('../api/lib/orphan-rates');
+const { formatOrphanRates, orphanRates, observerLocations } = require('../api/lib/orphan-rates');
 
 const viaBTC = 't1MKn34KBa8Xh4g8qU8psibBXvURafphVn7';
 function fixture(patch = {}) {
@@ -65,6 +65,22 @@ test('NU7 comparison uses its own windows and stays null until activation is ind
   assert.equal(late.nu7.since.rate, 30 / 3030);
 });
 
+test('observer locations expose only known cities, never names or other networks', () => {
+  const out = observerLocations([
+    { network: 'mainnet', observer: 'do-syd1', healthy: false },
+    { network: 'mainnet', observer: 'local-node', healthy: true },
+    { network: 'mainnet', observer: 'do-nyc3', healthy: true },
+    { network: 'testnet', observer: 'local-node', healthy: true },
+    { network: 'mainnet', observer: 'mystery', healthy: true },
+  ]);
+  assert.deepEqual(out.locations, [
+    { city: 'Helsinki', collecting: true }, { city: 'New York', collecting: true }, { city: 'Sydney', collecting: false },
+  ]);
+  assert.equal(out.unlistedObservers, 2);
+  assert.ok(!/mystery|do-|local-node/.test(JSON.stringify(out)));
+  assert.deepEqual(observerLocations(null), { locations: [], unlistedObservers: 0 });
+});
+
 test('public rate route returns snapshots and fails closed without leaking database errors', async t => {
   const app = express();
   let fail = false;
@@ -96,7 +112,7 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
   await db.query(`BEGIN;
     CREATE TEMP TABLE blocks(height bigint, hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text);
     CREATE TEMP TABLE captured_blocks(hash text PRIMARY KEY, height bigint, timestamp bigint, miner_address text, coinbase_hex text);
-    CREATE TEMP TABLE block_capture_observers(collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
+    CREATE TEMP TABLE block_capture_observers(observer text, network text, collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
     CREATE TEMP TABLE orphaned_blocks(hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text, source text, consensus_valid boolean);
     INSERT INTO blocks(height,hash,timestamp,miner_address) SELECT i, 'canonical-'||i,
       floor(extract(epoch FROM now()))::bigint + seconds, '${viaBTC}'
@@ -119,16 +135,22 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
     ('new-competitor',1,floor(extract(epoch FROM now()))::bigint-10,null,null),
     ('canonical-1',1,floor(extract(epoch FROM now()))::bigint-100,null,null),
     ('ahead',999999,floor(extract(epoch FROM now()))::bigint-10,null,null);
-    INSERT INTO block_capture_observers VALUES (now()-interval '1 hour',now(),true,0)`);
+    INSERT INTO block_capture_observers VALUES ('local-node','mainnet',now()-interval '1 hour',now(),true,0),
+      ('do-unknown9','mainnet',now()-interval '1 hour',now(),true,0)`);
   const captured = await orphanRates(db);
   assert.equal(captured.periods[0].orphanedBlocks, 3, 'new competitor counted, duplicate/canonical/ahead excluded');
   assert.equal(captured.capture.status, 'collecting');
+  assert.deepEqual(captured.capture.locations, [{ city: 'Helsinki', collecting: true }]);
+  assert.equal(captured.capture.unlistedObservers, 1);
+  assert.ok(!JSON.stringify(captured).includes('do-unknown9'), 'observer names stay private');
   await db.query(`UPDATE blocks SET hash='new-competitor' WHERE height=1`);
   const switched = await orphanRates(db);
   assert.equal(switched.periods[0].orphanedBlocks, 3, 'old canonical capture replaces newly canonical competitor');
   await db.query(`UPDATE blocks SET hash='canonical-1' WHERE height=1; DELETE FROM captured_blocks;
     UPDATE block_capture_observers SET heartbeat_at=now()-interval '1 minute'`);
-  assert.equal((await orphanRates(db)).capture.status, 'unavailable');
+  const stale = await orphanRates(db);
+  assert.equal(stale.capture.status, 'unavailable');
+  assert.deepEqual(stale.capture.locations, [{ city: 'Helsinki', collecting: false }]);
   // A hash becoming canonical again must disappear from both network and pool losses.
   await db.query(`INSERT INTO blocks VALUES(8,'observed',floor(extract(epoch FROM now()))::bigint-10,null,null)`);
   const restored = await orphanRates(db);

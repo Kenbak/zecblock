@@ -59,29 +59,45 @@ function utc(value: string) {
 // Partner operators credited with a link; anything else from the API renders as plain text.
 const PARTNER_LINKS: Record<string, string> = { 'zecminingpool.com': 'https://zecminingpool.com' };
 
-const chip = 'inline-flex items-center rounded border border-cipher-border px-1.5 py-0.5 font-mono text-secondary';
+type ObserverLocation = NonNullable<NonNullable<OrphanRates['capture']>['locations']>[number];
 
-/** "Observers: [Helsinki] [New York] … · via zecminingpool.com: [Austin] …"; partners link only from the allowlist. */
-function ObserverChips({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
+/** "10 observer nodes · via ZecBlock (4) and zecminingpool.com (6)", cities listed underneath per operator. */
+function ObserverSummary({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
   const locations = capture.locations ?? [];
-  const own = locations.filter(l => !l.operator);
-  const partners = new Map<string, typeof locations>();
-  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l]);
-  const cities = (list: typeof locations) => list.map(l => (
-    <span key={`${l.operator ?? ''}|${l.city}`} className={`${chip} ${l.collecting ? '' : 'opacity-50'}`} title={l.collecting ? undefined : 'Not collecting right now'}>{l.city}</span>
-  ));
-  return <>
-    <span className="text-muted">Observers</span>
-    {cities(own)}
-    {[...partners].map(([operator, list]) => {
-      const href = PARTNER_LINKS[operator];
-      return <Fragment key={operator}>
-        <span className="text-muted">· via {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : operator}</span>
-        {cities(list)}
-      </Fragment>;
-    })}
-    {capture.unlistedObservers ? <span className="text-muted">+{capture.unlistedObservers} more</span> : null}
-  </>;
+  const groups = new Map<string, ObserverLocation[]>();
+  for (const l of locations) {
+    const key = l.operator ?? 'ZecBlock';
+    groups.set(key, [...(groups.get(key) ?? []), l]);
+  }
+  const total = locations.length + (capture.unlistedObservers ?? 0);
+  const collecting = locations.filter(l => l.collecting).length;
+  const collectingAll = capture.status === 'collecting';
+  const name = (operator: string) => {
+    const href = PARTNER_LINKS[operator];
+    return href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : <span className="text-primary">{operator}</span>;
+  };
+  return (
+    <div className="mb-5 rounded-lg border border-cipher-border bg-glass-2 px-4 py-3">
+      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
+        <span aria-hidden className={`h-2 w-2 rounded-full ${collectingAll ? 'bg-cipher-green' : 'bg-muted'}`} />
+        <span className="font-mono font-semibold text-primary">{total} observer nodes</span>
+        <span className="text-muted">
+          {collectingAll ? (collecting < locations.length ? `· ${collecting} collecting now` : '· collecting') : '· collector unavailable'}
+        </span>
+        <span className="text-muted">· via</span>
+        {[...groups].map(([operator, list], i) => <Fragment key={operator}>
+          {i > 0 && <span className="text-muted">{i === groups.size - 1 ? 'and' : ','}</span>}
+          <span>{name(operator)} <span className="font-mono text-muted">({list.length})</span></span>
+        </Fragment>)}
+      </p>
+      <dl className="mt-2 grid gap-x-6 gap-y-1 text-caption sm:grid-cols-[auto_1fr]">
+        {[...groups].map(([operator, list]) => <Fragment key={operator}>
+          <dt className="text-muted">{operator}</dt>
+          <dd className="text-secondary">{list.map((l, i) => <Fragment key={l.city + i}>{i > 0 && ', '}<span className={l.collecting ? '' : 'opacity-50'} title={l.collecting ? undefined : 'Not collecting right now'}>{l.city}</span></Fragment>)}</dd>
+        </Fragment>)}
+      </dl>
+    </div>
+  );
 }
 
 export function OrphanRateSection() {
@@ -98,13 +114,7 @@ export function OrphanRateSection() {
       <Card><CardBody>
         <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
         <p className="text-sm text-muted mb-4">How often a block loses the race to a competing block, as seen by our observers.</p>
-        {supported && data.capture && <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mb-5 text-caption">
-          <span className={`inline-flex items-center gap-1.5 font-mono ${data.capture.status === 'collecting' ? 'text-cipher-green' : 'text-muted'}`}>
-            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${data.capture.status === 'collecting' ? 'bg-cipher-green' : 'bg-muted'}`} />
-            {data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}
-          </span>
-          {data.capture.locations?.length ? <><span className="text-muted">·</span><ObserverChips capture={data.capture} /></> : null}
-        </div>}
+        {supported && data.capture && (data.capture.locations?.length ? <ObserverSummary capture={data.capture} /> : <p className="mb-5 text-caption text-muted">{data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}</p>)}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>

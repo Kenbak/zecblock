@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { Bar, BarChart, CartesianGrid, Cell, ReferenceLine, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useApiQuery } from '@/hooks/useApiQuery';
@@ -23,8 +24,22 @@ function pct(rate: number | null) {
   return rate > 0 && rate < 0.0001 ? '<0.01%' : `${(rate * 100).toFixed(2)}%`;
 }
 
+/** In-plot marker labels collide on narrow screens; the legend names the markers there. */
+function useWide() {
+  const [wide, setWide] = useState(true);
+  useEffect(() => {
+    const query = window.matchMedia('(min-width: 640px)');
+    const update = () => setWide(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  return wide;
+}
+
 /** Daily observed orphan rate with dated coverage and NU7 markers. */
 export function OrphanRateDailyChart() {
+  const wide = useWide();
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const { data, loading } = useApiQuery<DailyRates>(`/v1/mining/orphan-rates/daily?days=${DAYS}`, undefined, { refreshInterval: 300_000 });
@@ -47,7 +62,7 @@ export function OrphanRateDailyChart() {
         <div className="flex flex-wrap gap-3 text-caption text-muted" aria-hidden>
           {[...new Set((data.events ?? []).map(e => e.kind))].map(kind => (
             <span key={kind} className="inline-flex items-center gap-1.5">
-              <svg width="10" height="12"><line x1="5" x2="5" y1="0" y2="12" stroke={markerColor(kind)} strokeWidth="2" strokeDasharray={kind === 'nu7' ? undefined : '3 3'} /></svg>
+              <svg width="16" height="10"><line x1="0" x2="16" y1="5" y2="5" stroke={markerColor(kind)} strokeWidth="2" strokeDasharray={kind === 'nu7' ? undefined : '4 3'} /></svg>
               {MARKER_TEXT[kind]}
             </span>
           ))}
@@ -76,7 +91,7 @@ export function OrphanRateDailyChart() {
               const nearEnd = points.findIndex(p => p.date === day) > points.length * 0.75;
               return <ReferenceLine key={day} x={day} stroke={markerColor(kind)} strokeWidth={kind === 'nu7' ? 2 : 1.5}
                 strokeDasharray={kind === 'nu7' ? undefined : '3 3'} ifOverflow="extendDomain"
-                label={{ value: events.map(e => MARKER_TEXT[e.kind]).join(' · '), position: nearEnd ? 'insideTopRight' : 'insideTopLeft', fontSize: 11, fill: colors.axis, dy: -16, dx: nearEnd ? -4 : 4 }} />;
+                label={wide ? { value: events.map(e => MARKER_TEXT[e.kind]).join(' · '), position: nearEnd ? 'insideTopRight' : 'insideTopLeft', fontSize: 11, fill: colors.axis, dy: -16, dx: nearEnd ? -4 : 4 } : undefined} />;
             })}
             <Bar dataKey="percent" isAnimationActive={false} radius={[3, 3, 0, 0]} maxBarSize={14}>
               {points.map(p => <Cell key={p.date} fill={colors.transparent} fillOpacity={p.partial ? 0.45 : 0.85} />)}

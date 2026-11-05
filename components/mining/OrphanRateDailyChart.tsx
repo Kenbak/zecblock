@@ -91,7 +91,7 @@ export function OrphanRateDailyChart() {
               const nearEnd = points.findIndex(p => p.date === day) > points.length * 0.75;
               return <ReferenceLine key={day} x={day} stroke={markerColor(kind)} strokeWidth={kind === 'nu7' ? 2 : 1.5}
                 strokeDasharray={kind === 'nu7' ? undefined : '3 3'} ifOverflow="extendDomain"
-                label={wide ? { value: events.map(e => MARKER_TEXT[e.kind]).join(' · '), position: nearEnd ? 'insideTopRight' : 'insideTopLeft', fontSize: 11, fill: colors.axis, dy: -16, dx: nearEnd ? -4 : 4 } : undefined} />;
+                label={wide ? { value: events.map(e => MARKER_TEXT[e.kind]).join(' · '), position: nearEnd ? 'insideTopRight' : 'insideTopLeft', fontSize: 12, fill: colors.axis, dy: -16, dx: nearEnd ? -4 : 4 } : undefined} />;
             })}
             <Bar dataKey="percent" isAnimationActive={false} radius={[3, 3, 0, 0]} maxBarSize={14}>
               {points.map(p => <Cell key={p.date} fill={colors.transparent} fillOpacity={p.partial ? 0.45 : 0.85} />)}

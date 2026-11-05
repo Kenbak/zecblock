@@ -28,18 +28,17 @@ function flexWeight(zat: number): number {
 
 function BandLabel({
   label,
-  zat,
+  amount,
   capPct,
   mode,
   onDarkFill,
 }: {
   label: string;
-  zat: number;
+  amount: string;
   capPct: number;
   mode: SegmentLabelMode;
   onDarkFill: boolean;
 }) {
-  const { format } = usePoolCurrency();
   if (mode === 'none') return null;
 
   const titleClass = onDarkFill ? 'text-white' : 'text-cipher-bg-dark';
@@ -52,7 +51,7 @@ function BandLabel({
       {mode === 'full' ? (
         <>
           <span className={`mt-0.5 text-caption font-mono tabular-nums sm:text-caption ${valueClass}`}>
-            {format(zat / 1e8)}
+            {amount}
           </span>
           <span className={`mt-0.5 text-caption font-mono tabular-nums ${pctClass}`}>{capPct.toFixed(1)}%</span>
         </>
@@ -87,7 +86,8 @@ function TopSegment({
   className?: string;
   style?: React.CSSProperties;
 }) {
-  const { format } = usePoolCurrency();
+  const { formatSupplySegment } = usePoolCurrency();
+  const amount = formatSupplySegment(segment);
   const ref = useRef<HTMLButtonElement>(null);
   const capPct = (segment.zat / MAX_SUPPLY_ZAT) * 100;
   const labelMode = useSegmentLabelMode(ref, capPct);
@@ -106,7 +106,7 @@ function TopSegment({
       onFocus={() => onHover(segment.key)}
       onBlur={() => onHover(null)}
       onClick={onClick}
-      aria-label={`${segment.label}, ${format(segment.zat / 1e8)}, ${capPct.toFixed(1)} percent of cap`}
+      aria-label={`${segment.label}, ${amount}, ${capPct.toFixed(1)} percent of cap`}
     >
       {segment.hatch ? (
         <div
@@ -129,7 +129,7 @@ function TopSegment({
       )}
       <BandLabel
         label={segment.label}
-        zat={segment.zat}
+        amount={amount}
         capPct={capPct}
         mode={labelMode}
         onDarkFill={onDarkFill}

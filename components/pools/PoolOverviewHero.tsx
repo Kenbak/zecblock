@@ -36,7 +36,7 @@ function snapshotDate(value: string, time = false) {
 }
 
 export function PoolOverviewHero({ data }: { data: PoolOverviewData }) {
-  const { currency, price, format } = usePoolCurrency();
+  const { currency, price, format, formatSupplySegment } = usePoolCurrency();
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [hoveredKey, setHoveredKey] = useState<SupplyPoolKey | null>(null);
@@ -70,7 +70,7 @@ export function PoolOverviewHero({ data }: { data: PoolOverviewData }) {
     fileName="zecblock-pools.png" className=""
     footerNote={`${point ? 'Historical' : 'Latest available'} snapshot · ${dateLabel}`}>
     <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 mb-5">
-      <p className="max-w-2xl text-xs leading-relaxed text-secondary">Public supply, shielded pools and remaining issuance. Map labels show each share of the 21 million ZEC cap.</p>
+      <p className="max-w-2xl text-xs leading-relaxed text-secondary">Public supply, shielded pools and remaining issuance. Map labels show each share of the 21 million ZEC cap. USD values cover issued supply only; unmined ZEC has no market value.</p>
       <div className="flex flex-wrap shrink-0 items-center gap-2"><PoolCurrencyToggle />
       <button type="button" aria-pressed={split} onClick={toggleSplit} className="shrink-0 self-start rounded-md border border-cipher-border px-3 py-2 text-caption font-mono text-secondary hover:bg-glass-3 focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold">
         {split ? 'Hide pool split' : 'Show pool split'}
@@ -79,7 +79,7 @@ export function PoolOverviewHero({ data }: { data: PoolOverviewData }) {
     <div className="overflow-hidden rounded-lg border border-cipher-border">
       <SupplyTreemap topLevel={topLevel} shieldedChildren={children} hoveredKey={hoveredKey} pinnedShielded={split} onHover={setHoveredKey} onTogglePinShielded={toggleSplit} />
     </div>
-    <dl className="sm:hidden mt-4 space-y-2 text-caption font-mono">{topLevel.map(segment => <div key={segment.key} className="flex justify-between gap-2"><dt className="text-muted">{segment.label}</dt><dd className="text-secondary">{format(zatToZec(segment.zat))} · {(segment.zat / MAX_SUPPLY_ZAT * 100).toFixed(1)}%</dd></div>)}</dl>
+    <dl className="sm:hidden mt-4 space-y-2 text-caption font-mono">{topLevel.map(segment => <div key={segment.key} className="flex justify-between gap-2"><dt className="text-muted">{segment.label}</dt><dd className="text-secondary">{formatSupplySegment(segment)} · {(segment.zat / MAX_SUPPLY_ZAT * 100).toFixed(1)}%</dd></div>)}</dl>
     <div className="flex flex-wrap gap-x-5 gap-y-2 mt-4 text-caption font-mono text-secondary">
       <span><span className="text-primary">{share == null ? '—' : `${share.toFixed(1)}%`}</span> of issued supply is shielded</span>
       {delta != null && Number.isFinite(delta) && <span><span className={delta >= 0 ? 'text-cipher-green' : 'text-cipher-orange'}>{delta >= 0 && (currency === 'zec' || price != null) ? '+' : ''}{format(zatToZec(delta))}</span> net pool change · 7 days</span>}

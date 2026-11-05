@@ -11,9 +11,9 @@ const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '../api/.env') });
 
 const { Pool } = require('pg');
+const { networkSchedule, heightBefore } = require('../api/lib/network-schedule');
 
 const DAYS = parseInt(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || '400', 10);
-const BLOCKS_PER_DAY = 1152;
 const ZEBRA_RPC_URL = process.env.ZEBRA_RPC_URL || 'http://127.0.0.1:8232';
 const ZEBRA_COOKIE_FILE = process.env.ZEBRA_RPC_COOKIE_FILE || '/root/.cache/zebra/.cookie';
 
@@ -72,6 +72,8 @@ async function main() {
   const info = await callZebraRPC('getblockchaininfo');
   const currentHeight = parseInt(info.blocks, 10) || 0;
   log(`Tip height: ${currentHeight.toLocaleString()}`);
+  const schedule = networkSchedule(info);
+  if (!schedule) throw new Error('Could not read the network upgrade schedule from Zebra');
 
   const { rows } = await pool.query(
     `SELECT date FROM privacy_trends_daily
@@ -89,7 +91,7 @@ async function main() {
   for (const row of rows) {
     const dateStr = row.date.toISOString?.().slice(0, 10) || String(row.date).slice(0, 10);
     const daysAgo = Math.max(0, Math.round((Date.now() - new Date(`${dateStr}T12:00:00Z`).getTime()) / 86400000));
-    const height = Math.max(1, currentHeight - daysAgo * BLOCKS_PER_DAY);
+    const height = Math.max(1, heightBefore(schedule, currentHeight, daysAgo * 86400));
 
     try {
       const hash = await callZebraRPC('getblockhash', [height]);

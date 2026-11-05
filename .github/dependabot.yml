@@ -21,6 +21,11 @@ updates:
         update-types:
           - minor
           - patch
+        # 0.x "minor" releases are breaking by semver; zcashname-sdk 0.12 -> 0.17
+        # changed its types and kept this whole group red for a week. It gets
+        # its own PR so the safe patches can merge.
+        exclude-patterns:
+          - "zcashname-sdk"
 
   # ----- npm: Express API backend -----
   - package-ecosystem: npm

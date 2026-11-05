@@ -74,7 +74,10 @@
     "axios": "1.14.0",
     "postcss": "8.5.28",
     "sharp": "0.35.5",
-    "braces": "$braces"
+    "braces": "$braces",
+    "@typescript-eslint/typescript-estree": {
+      "minimatch": "11.0.1"
+    }
   },
   "dependencies": {
     "@codemirror/autocomplete": "6.20.3",

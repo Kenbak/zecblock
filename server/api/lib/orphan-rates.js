@@ -68,6 +68,73 @@ FROM windows w CROSS JOIN history h CROSS JOIN capture LEFT JOIN tip t ON true
 LEFT JOIN counts c ON c.period = w.period
 `;
 
+// Migration 042 coverage measurement, read separately so the rate query keeps
+// working on databases without it. Gap reasons stay private (internal errors).
+const COVERAGE_READY_SQL = `
+SELECT to_regclass('block_capture_audit_misses') IS NOT NULL
+  AND (SELECT count(*) = 12 FROM pg_attribute
+       WHERE attrelid = to_regclass('block_capture_observers') AND NOT attisdropped
+         AND attname IN ('coverage_since','unobserved_ms','outage_since','recent_gaps','pending_bytes','journal_max_bytes',
+           'audit_checked_at','audit_status','audit_fork_tips','audit_fork_blocks','audit_canonical_checked','audit_canonical_missing')) AS ready`;
+
+const COVERAGE_SQL = `
+SELECT o.observer, o.coverage_since, o.unobserved_ms, o.outage_since, o.recent_gaps,
+  o.pending_bytes, o.journal_max_bytes, o.audit_checked_at, o.audit_status, o.audit_fork_tips,
+  o.audit_fork_blocks, o.audit_canonical_checked, o.audit_canonical_missing,
+  (SELECT count(*) FROM block_capture_audit_misses m WHERE m.observer = o.observer AND m.captured_later_at IS NULL)::integer AS uncaptured,
+  (SELECT count(*) FROM block_capture_audit_misses m WHERE m.observer = o.observer AND m.captured_later_at IS NOT NULL)::integer AS late,
+  now() AS db_now
+FROM block_capture_observers o
+ORDER BY o.observer`;
+
+const MS_PER_SECOND = 1000;
+
+function optionalCount(value) {
+  return value == null ? null : count(value);
+}
+
+function iso(value) {
+  return value == null ? null : new Date(value).toISOString();
+}
+
+// Streaming time only from coverage_since: earlier gaps were never timed.
+function formatMeasurement(row) {
+  if (row.coverage_since == null) return null;
+  const now = new Date(row.db_now).getTime();
+  const since = new Date(row.coverage_since).getTime();
+  const elapsed = Math.max(0, now - since);
+  const open = row.outage_since == null ? 0 : Math.max(0, now - Math.max(since, new Date(row.outage_since).getTime()));
+  const unobserved = count(row.unobserved_ms ?? 0) + open;
+  const gaps = Array.isArray(row.recent_gaps) ? row.recent_gaps : [];
+  return {
+    measuredSince: iso(row.coverage_since),
+    streamingFraction: elapsed > 0 ? Math.min(1, Math.max(0, 1 - unobserved / elapsed)) : null,
+    unobservedSeconds: unobserved / MS_PER_SECOND,
+    outageSince: iso(row.outage_since),
+    recentGaps: gaps.filter(g => Number.isSafeInteger(g?.start_ms) && Number.isSafeInteger(g?.end_ms) && g.end_ms >= g.start_ms)
+      .map(g => ({ start: new Date(g.start_ms).toISOString(), end: new Date(g.end_ms).toISOString(), seconds: (g.end_ms - g.start_ms) / MS_PER_SECOND })),
+    journal: { pendingBytes: optionalCount(row.pending_bytes), maxBytes: optionalCount(row.journal_max_bytes) },
+    audit: row.audit_checked_at == null ? null : {
+      checkedAt: iso(row.audit_checked_at),
+      status: row.audit_status === 'ok' ? 'ok' : 'error',
+      forkTips: optionalCount(row.audit_fork_tips),
+      forkBlocksChecked: optionalCount(row.audit_fork_blocks),
+      uncapturedForkBlocks: count(row.uncaptured),
+      lateCapturedForkBlocks: count(row.late),
+      canonicalBlocksChecked: optionalCount(row.audit_canonical_checked),
+      canonicalBlocksMissing: optionalCount(row.audit_canonical_missing),
+    },
+  };
+}
+
+async function captureMeasurement(pool) {
+  const { rows: [ready] } = await pool.query(COVERAGE_READY_SQL);
+  if (!ready?.ready) return null;
+  const { rows } = await pool.query(COVERAGE_SQL);
+  const observers = rows.map(row => ({ observer: row.observer, ...formatMeasurement(row) })).filter(o => o.measuredSince);
+  return observers.length ? observers : null;
+}
+
 function count(value) {
   const n = Number(value);
   if (!Number.isSafeInteger(n) || n < 0) throw new Error('Invalid orphan-rate count');
@@ -104,7 +171,7 @@ function formatWindow(period, selected) {
   };
 }
 
-function formatOrphanRates(rows, nu7Height = null) {
+function formatOrphanRates(rows, nu7Height = null, measurement = null) {
   // Rolling windows share the snapshot clock; NU7 windows may end at activation.
   const first = rows.find(row => row.period === PERIODS[0]);
   if (!first) throw new Error('Missing orphan-rate snapshot');
@@ -135,6 +202,9 @@ function formatOrphanRates(rows, nu7Height = null) {
       observers: Number(first.observers ?? 0),
       healthyObservers: Number(first.healthy_observers ?? 0),
       status: Number(first.healthy_observers ?? 0) > 0 ? 'collecting' : 'unavailable',
+      // Self-measured against the serving node; a single vantage point still
+      // cannot see competing blocks that never reached it, so coverage stays unverified.
+      measurement,
     },
     periods,
     nu7,
@@ -143,7 +213,10 @@ function formatOrphanRates(rows, nu7Height = null) {
 
 async function orphanRates(pool, { nu7Height = null } = {}) {
   const height = Number.isSafeInteger(nu7Height) && nu7Height > 0 ? nu7Height : null;
-  return formatOrphanRates((await pool.query(ORPHAN_RATES_SQL, [height])).rows, height);
+  const { rows } = await pool.query(ORPHAN_RATES_SQL, [height]);
+  // Measurement is supplementary: its absence or failure never hides the rates.
+  const measurement = await captureMeasurement(pool).catch(() => null);
+  return formatOrphanRates(rows, height, measurement);
 }
 
-module.exports = { orphanRates, formatOrphanRates, ORPHAN_RATES_SQL };
+module.exports = { orphanRates, formatOrphanRates, formatMeasurement, captureMeasurement, ORPHAN_RATES_SQL };

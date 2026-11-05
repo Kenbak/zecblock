@@ -37,7 +37,8 @@ current liveness, honest operation, or a remote peer connection.
 
 ## Admission, storage and public output
 
-The ingester validates direct and Tor collector snapshots independently before
+The ingester validates direct, Tor and (since migration 043) regional
+`direct-<region>` collector snapshots independently before
 merging or collapsing endpoints by IP. It requires a snapshot no older than
 three minutes, exact source endpoint membership with fresh same-snapshot proof,
 and `handshake <= proof <= receipt <= generation <= ingestion`. Handshake and
@@ -50,8 +51,12 @@ contracts fail closed. Collection via SOCKS does not classify an address as Tor.
 Migration **039** creates private `topology_gossip_snapshots` and
 `topology_gossip_edges`, owned by `zcash_user` with no PUBLIC privileges. The
 identical SQL mirror belongs in the Rust schema repository; this additive
-migration does not require an indexer restart. Ingestion replaces metadata and
-receipts atomically inside the existing advisory-locked census transaction.
+migration does not require an indexer restart. Ingestion replaces each
+source's metadata and receipts atomically inside the existing advisory-locked
+census transaction. Since the multi-vantage change, a source absent from a run
+keeps its last snapshot until its own ten-minute database-clock expiry, an older
+generation never replaces a newer one, and unconfigured sources are pruned; see
+`REGIONAL-CENSUS-VANTAGES.md`.
 Every timestamp is the original evidence time, never database insertion time.
 
 Mainnet crawl topology bypasses Redis and sends `Cache-Control: no-store`.

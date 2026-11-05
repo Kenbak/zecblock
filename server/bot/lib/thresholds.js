@@ -51,7 +51,7 @@ const DEFAULT_CONFIG = {
 
   // Chain stall
   stall: {
-    maxBlockIntervalSeconds: 600, // 10 minutes (8x target of 75s)
+    maxBlockIntervalSeconds: 600, // 10 minutes: 8x the 75s target before NU7, 24x the 25s target after
     confirmFromNodes: true,
   },
 };

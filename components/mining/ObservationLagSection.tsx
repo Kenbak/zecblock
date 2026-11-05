@@ -56,13 +56,17 @@ export function ObservationLagSection() {
       <Card><CardBody>
         <SectionHeader label="HEADER_TIME_VS_FIRST_SEEN" />
         <p className="text-sm text-muted mb-2">
-          How long after a block&apos;s miner-provided header timestamp ZecBlock first received it from our node.
+          How long after a block&apos;s header timestamp the first of our observers received it.
         </p>
-        <p className="text-caption text-muted mb-5">
-          Pools usually set the header time when they hand out mining work, so the gap includes solving time as well as propagation; it is not a network propagation delay.
-          A negative gap means the header time is later than our first observation, usually a miner clock running ahead.
-          First seen is the earlier of the node&apos;s block stream and a once-a-second tip check; blocks missed by both during outages have no observation.
-        </p>
+        <details className="mb-5 text-caption text-muted">
+          <summary className="cursor-pointer select-none text-secondary hover:text-primary">What this gap means</summary>
+          <p className="mt-2 max-w-3xl">
+            Pools usually set the header time when they hand out mining work, so the gap includes solving time as well as propagation; it is not a network propagation delay.
+            A negative gap means the header time is later than our first observation, usually a miner clock running ahead.
+            First seen is the earliest receipt across our observers (each node&apos;s block stream, plus a once-a-second tip check on the Helsinki node); before 5 November 2026 only the Helsinki node observed.
+            Blocks missed during outages have no observation.
+          </p>
+        </details>
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading header-time gaps…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Header-time gaps are temporarily unavailable.</p>
         ) : <>

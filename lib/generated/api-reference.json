@@ -2070,6 +2070,32 @@
   },
   {
     "method": "GET",
+    "path": "/v1/mining/orphan-rates/daily",
+    "description": "Daily observed orphan rate for the last 7 to 90 UTC days, with dated coverage and NU7 events for charting.",
+    "category": "mining",
+    "query": [
+      "days"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Same orphan definition and snapshot rules as /v1/mining/orphan-rates, bucketed by UTC day of the block-header timestamp. Optional days is an integer from 7 to 90 (default 60); other values return 400. Each day has date, canonicalBlocks, orphanedBlocks, rate (fraction, or null when indexed history does not cover the day or it has no canonical blocks; observed zero stays zero) and partial (true for the current day). events lists capture (competing-block capture began), observers (dated public changes in observer coverage) and nu7 (activation header time, only once the serving node reports an NU7 height and that block is indexed), limited to the charted range. Coverage changes mean rates before and after an observers event are not directly comparable. HTTP cache lifetime is 60 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "days",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/mining/observation-lag",
     "description": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
     "category": "mining",

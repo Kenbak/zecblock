@@ -8,6 +8,7 @@ import { SectionHeader } from '@/components/ui';
 import { useUrlState } from '@/lib/use-url-state';
 import { SortableDataTable } from '@/components/ui/SortableDataTable';
 import { PoolLogo } from '@/components/PoolLogo';
+import { OrphanRateDailyChart } from './OrphanRateDailyChart';
 
 type Period = '24h' | '7d' | '30d' | 'pre-nu7' | 'nu7';
 const PERIOD_LABELS: Record<Period, string> = { '24h': '24h', '7d': '7d', '30d': '30d', 'pre-nu7': 'Before NU7', nu7: 'Since NU7' };
@@ -58,29 +59,30 @@ function utc(value: string) {
 // Partner operators credited with a link; anything else from the API renders as plain text.
 const PARTNER_LINKS: Record<string, string> = { 'zecminingpool.com': 'https://zecminingpool.com' };
 
-const chip = 'inline-flex items-center rounded border border-cipher-border px-1.5 py-0.5 font-mono text-secondary';
-
-/** "Observers: [Helsinki] [New York] … · via zecminingpool.com: [Austin] …"; partners link only from the allowlist. */
-function ObserverChips({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
+/** One line: "● 10 observer nodes via ZecBlock and zecminingpool.com"; partners link only from the allowlist. */
+function ObserverSummary({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
   const locations = capture.locations ?? [];
-  const own = locations.filter(l => !l.operator);
-  const partners = new Map<string, typeof locations>();
-  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l]);
-  const cities = (list: typeof locations) => list.map(l => (
-    <span key={`${l.operator ?? ''}|${l.city}`} className={`${chip} ${l.collecting ? '' : 'opacity-50'}`} title={l.collecting ? undefined : 'Not collecting right now'}>{l.city}</span>
-  ));
-  return <>
-    <span className="text-muted">Observers</span>
-    {cities(own)}
-    {[...partners].map(([operator, list]) => {
-      const href = PARTNER_LINKS[operator];
-      return <Fragment key={operator}>
-        <span className="text-muted">· via {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : operator}</span>
-        {cities(list)}
-      </Fragment>;
-    })}
-    {capture.unlistedObservers ? <span className="text-muted">+{capture.unlistedObservers} more</span> : null}
-  </>;
+  const operators = [...new Set(locations.map(l => l.operator ?? 'ZecBlock'))];
+  const total = locations.length + (capture.unlistedObservers ?? 0);
+  const offline = locations.filter(l => !l.collecting).length;
+  const collecting = capture.status === 'collecting';
+  return (
+    <p className="mb-5 flex items-center gap-2 text-sm text-muted">
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${collecting ? 'bg-cipher-green' : 'bg-muted'}`} />
+      <span>
+        <span className="font-semibold text-primary">{total} observer nodes</span>
+        {' '}via{' '}
+        {operators.map((operator, i) => {
+          const href = PARTNER_LINKS[operator];
+          return <Fragment key={operator}>
+            {i > 0 && (i === operators.length - 1 ? ' and ' : ', ')}
+            {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : <span className="text-secondary">{operator}</span>}
+          </Fragment>;
+        })}
+        {!collecting ? ' · collector unavailable' : offline > 0 ? ` · ${offline} offline` : ''}
+      </span>
+    </p>
+  );
 }
 
 export function OrphanRateSection() {
@@ -97,17 +99,12 @@ export function OrphanRateSection() {
       <Card><CardBody>
         <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
         <p className="text-sm text-muted mb-4">How often a block loses the race to a competing block, as seen by our observers.</p>
-        {supported && data.capture && <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mb-5 text-caption">
-          <span className={`inline-flex items-center gap-1.5 font-mono ${data.capture.status === 'collecting' ? 'text-cipher-green' : 'text-muted'}`}>
-            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${data.capture.status === 'collecting' ? 'bg-cipher-green' : 'bg-muted'}`} />
-            {data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}
-          </span>
-          {data.capture.locations?.length ? <><span className="text-muted">·</span><ObserverChips capture={data.capture} /></> : null}
-        </div>}
+        {supported && data.capture && (data.capture.locations?.length ? <ObserverSummary capture={data.capture} /> : <p className="mb-5 text-caption text-muted">{data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}</p>)}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>
           {error && <p role="status" className="text-caption text-muted mb-3">Refresh failed. Showing the previous snapshot from {utc(data.asOf)} UTC.</p>}
+          <OrphanRateDailyChart />
           <div className={`grid grid-cols-2 sm:grid-cols-3 ${nu7 ? 'lg:grid-cols-5' : ''} gap-3 mb-6`}>
             {windows.map(window => (
               <button key={window.period} type="button" aria-pressed={selected?.period === window.period} onClick={() => setPeriod(window.period)}
@@ -151,6 +148,9 @@ export function OrphanRateSection() {
               <p>
                 {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.</>
                   : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.</>}
+              </p>
+              <p>
+                Coverage changed on 5 Nov 2026: one observer in Helsinki until 19:55 UTC, four regional observers from then, and ten from 22:16 UTC when the zecminingpool.com nodes joined. This was shortly before NU7, so Before NU7 mostly reflects one observer and Since NU7 reflects ten; part of any increase is better observation, not more orphaning.
               </p>
             </div>
           </details>

@@ -33,7 +33,8 @@ interface OrphanRates {
   capture?: {
     startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string;
     /** Public city per known observer; names, endpoints and IPs are never served. */
-    locations?: { city: string; collecting: boolean }[];
+    /** operator is null for ZecBlock's own observers, else the partner that runs the node. */
+    locations?: { city: string; operator?: string | null; collecting: boolean }[];
     unlistedObservers?: number;
   };
   asOf: string;
@@ -59,11 +60,17 @@ const CITY_LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction'
 function observedFrom(capture: NonNullable<OrphanRates['capture']>): string | null {
   const locations = capture.locations ?? [];
   if (!locations.length) return null;
-  const paused = locations.filter(l => !l.collecting).map(l => l.city);
+  const label = (l: { city: string; operator?: string | null }) => (l.operator ? `${l.city} (${l.operator})` : l.city);
+  const paused = locations.filter(l => !l.collecting).map(label);
+  const own = locations.filter(l => !l.operator).map(l => l.city);
+  const partners = new Map<string, string[]>();
+  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l.city]);
+  const parts = own.length ? [CITY_LIST.format(own)] : [];
+  for (const [operator, cities] of partners) parts.push(`${CITY_LIST.format(cities)} via ${operator}`);
   const others = capture.unlistedObservers ?? 0;
-  const cities = locations.map(l => l.city);
-  if (others > 0) cities.push(`${others} other observer${others === 1 ? '' : 's'}`);
-  return `Observed from ${CITY_LIST.format(cities)}; a competing block counts if any of them received it${paused.length ? ` (currently not collecting: ${CITY_LIST.format(paused)})` : ''}.`;
+  if (others > 0) parts.push(`${others} other observer${others === 1 ? '' : 's'}`);
+  const where = parts.length > 1 ? `${parts.slice(0, -1).join('; ')}; plus ${parts[parts.length - 1]}` : parts[0];
+  return `Observed from ${where}. A competing block counts if any of them received it${paused.length ? ` (currently not collecting: ${CITY_LIST.format(paused)})` : ''}.`;
 }
 
 export function OrphanRateSection() {

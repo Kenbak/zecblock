@@ -26,7 +26,6 @@ import { MiningMetricsChart } from '@/components/network/MiningMetricsChart';
 import { NetworkHashrateChart } from '@/components/network/NetworkHashrateChart';
 import { zatToZec } from '@/lib/format-numbers';
 import { PoolLogo } from '@/components/PoolLogo';
-import { MiningSectionIcon, RankingSectionIcon } from '@/components/icons/home-section';
 import { useUrlState } from '@/lib/use-url-state';
 import { ExportButton } from '@/components/ExportButton';
 import { zatToZecString } from '@/lib/csv';
@@ -163,7 +162,7 @@ function DistributionSection() {
   return (
     <section id="distribution" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-2">
       <Card><CardBody>
-        <SectionHeader label="MINING_POOL_DISTRIBUTION" icon={<MiningSectionIcon />} actions={<PeriodSelector value={period} onChange={setPeriod} />} />
+        <SectionHeader label="MINING_POOL_DISTRIBUTION" actions={<PeriodSelector value={period} onChange={setPeriod} />} />
         {loading ? (
           <ChartSkeleton height={360} />
         ) : (
@@ -208,7 +207,7 @@ function RankingSection() {
     <section id="ranking" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-3">
       <Card>
         <CardBody>
-          <SectionHeader label="POOL_RANKING" icon={<RankingSectionIcon />} actions={
+          <SectionHeader label="POOL_RANKING" actions={
             <div className="flex flex-wrap items-center gap-2">
               <PeriodSelector value={period} onChange={setPeriod} />
               {ranking.length > 0 && (
@@ -247,10 +246,6 @@ function RankingSection() {
                     cell: (pool) => (
                       <div className="flex items-center gap-2">
                         <PoolLogo name={pool.name} />
-                        <div
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: categoryColor(pool.name, theme) }}
-                        />
                         <span className="font-mono text-xs text-primary font-medium">{pool.name}</span>
                         {pool.region && (
                           <span className="text-caption font-mono text-muted px-1 py-0.5 bg-glass-3 rounded">{pool.region}</span>

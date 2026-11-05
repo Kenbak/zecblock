@@ -7,7 +7,6 @@ import { Skeleton } from '@/components/ui/Skeleton';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { CoinsSectionIcon } from '@/components/icons/home-section';
 import { HalvingPanel, type HalvingInfo } from './HalvingPanel';
 
 function formatAmount(value: number | null | undefined, decimals = 8) {
@@ -20,7 +19,7 @@ export function MiningIssuance({ initialHalving, initialEmission, initialFetched
   const emission = useApiQuery<EmissionResponse>('/v1/network/emission', undefined, { refreshInterval: 300_000, initialData: initialEmission ?? undefined, initialFetchedAt });
   const halving = data ? data : null;
   return <section id="issuance" className="network-section mb-6">
-    <SectionHeader label="ISSUANCE" icon={<CoinsSectionIcon />} />
+    <SectionHeader label="ISSUANCE" />
     <SupplyIssuanceChart data={emission.data} loading={emission.loading} error={emission.error} />
     <div className="grid md:grid-cols-2 gap-5 items-start">
       {halving ? <HalvingPanel halving={halving} /> : loading ? <Card><CardBody><p className="text-sm font-mono text-primary mb-5">Next halving</p><Skeleton className="h-10 w-48 mx-auto mb-3" /><Skeleton className="h-4 w-32 mx-auto mb-6" /><Skeleton className="h-2.5 w-full mb-6" /><div className="space-y-4">{[0,1,2,3,4].map(i => <div key={i} className="flex justify-between gap-4"><Skeleton className="h-4 w-36" /><Skeleton className="h-4 w-24" /></div>)}</div></CardBody></Card> : <Card><CardBody><p className="text-sm text-muted">{loading ? 'Loading halving observations…' : 'Halving observations are unavailable.'}</p></CardBody></Card>}

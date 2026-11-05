@@ -2,7 +2,6 @@
 
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { CoinsSectionIcon } from '@/components/icons/home-section';
 import { TokenChainIcon } from '@/components/TokenChainIcon';
 import { Tooltip } from '@/components/Tooltip';
 import { formatAmount, formatUSD, type DisplayUnit } from '@/components/crosschain/format';
@@ -49,7 +48,6 @@ export function WrappedZecTracker({
     <div className="card">
       <SectionHeader
         label="WRAPPED_ZEC"
-        icon={<CoinsSectionIcon />}
         actions={
           <div className="flex items-center gap-2">
             <Tooltip content="Live total supply of each known ZEC representation on other chains, read directly from each token's own contract via that chain's public RPC." />

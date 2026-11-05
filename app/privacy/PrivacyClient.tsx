@@ -16,8 +16,6 @@ import { PrivacyTrendsSection, type TrendChartView } from '@/components/privacy/
 import { formatRelativeUpdated } from '@/lib/privacy-trend-dates';
 import { PRIVACY_PERIODS, type Period } from '@/components/privacy/PeriodSelector';
 import { useUrlState } from '@/lib/use-url-state';
-import { ActivitySectionIcon, DistributionSectionIcon } from '@/components/icons/home-section';
-import { ShieldedIcon } from '@/components/icons/shield-flow';
 
 const INPUTS = [
   { key: 'usage', title: 'Shielded participation', window: '30 days', description: 'Shielded transactions as a share of shielded plus non-coinbase transparent transactions.' },
@@ -172,16 +170,16 @@ export default function PrivacyClient() {
         </details>
       </section>
       <section id="trends" className="scroll-mt-36 mb-10">
-        <SectionHeader label="TRENDS" icon={<ActivitySectionIcon />} />
+        <SectionHeader label="TRENDS" />
         <PrivacyTrendsSection trendHistory={trendHistory.length > 0 ? trendHistory : stats.trends.daily} privacyScore={stats.metrics.privacyScore} lastBlockScanned={stats.lastBlockScanned} theme={theme} view={trendView} onViewChange={setTrendView} period={trendPeriod} onPeriodChange={setTrendPeriod} />
       </section>
       <section id="distribution" className="scroll-mt-36 mb-10">
-        <SectionHeader label="PUBLIC_AMOUNT_PATTERNS" icon={<DistributionSectionIcon />} />
+        <SectionHeader label="PUBLIC_AMOUNT_PATTERNS" />
         <p className="text-sm text-muted mb-5 max-w-3xl">Public amounts at shielding and deshielding boundaries provide context. These charts do not measure the anonymity of a wallet or expose fully shielded amounts.</p>
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2"><AnonymitySetChart /><ShieldingDistributionChart /></div>
       </section>
       <section id="activity" className="scroll-mt-36 mb-10">
-        <SectionHeader label="RECENT_SHIELDED_ACTIVITY" icon={<ShieldedIcon />} />
+        <SectionHeader label="RECENT_SHIELDED_ACTIVITY" />
         <Card><CardBody>
           <p className="text-caption text-muted mb-5">Latest indexed transactions involving shielded pools. This feed updates separately from the score snapshot.</p>
           <RecentShieldedTxs nested limit={5} />

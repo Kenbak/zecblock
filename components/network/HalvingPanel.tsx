@@ -2,7 +2,6 @@
 
 import { Card, CardBody } from '@/components/ui/Card';
 import { formatDuration } from '@/lib/format-numbers';
-import { HalvingSectionIcon } from '@/components/icons/home-section';
 
 export interface HalvingInfo {
   halvingBlock: number | null;
@@ -33,7 +32,6 @@ export function HalvingPanel({ halving }: { halving: HalvingInfo | null }) {
     <Card>
       <CardBody>
         <div className="flex items-center gap-2 mb-5">
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true"><HalvingSectionIcon /></span>
           <h2 className="text-sm font-semibold font-mono text-secondary lowercase tracking-tight">NEXT_HALVING</h2>
         </div>
 

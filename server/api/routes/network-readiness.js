@@ -8,6 +8,8 @@ const { accountingPeriodSql, periodPayload } = require('../lib/accounting-period
 const { hasSubsidyAllocations } = require('../lib/subsidy-allocations');
 const { loadBlockSpeed } = require('../lib/block-speed');
 const cadenceCache = new WeakMap();
+/** Latest blocks returned by `period=blocks`: the per-block block-speed view. */
+const RECENT_BLOCKS = 250;
 const speedCache = new WeakMap();
 const accountingPeriodCache = new WeakMap();
 
@@ -31,8 +33,9 @@ function sharedBlockSpeed(pool, compute) {
 function registerNetworkReadinessRoutes(router) {
   router.get('/api/network/block-time', async (req, res) => {
     const period = req.query.period ?? '24h';
-    if (!['6h', '24h', '7d'].includes(period)) return res.status(400).json({ success: false, error: 'period must be 6h, 24h or 7d' });
-    const seconds = { '6h': 21600, '24h': 86400, '7d': 604800 }[period];
+    if (!['blocks', '6h', '24h', '7d'].includes(period)) return res.status(400).json({ success: false, error: 'period must be blocks, 6h, 24h or 7d' });
+    // `blocks`: the latest RECENT_BLOCKS canonical blocks, every one, never downsampled.
+    const seconds = { '6h': 21600, '24h': 86400, '7d': 604800 }[period] ?? null;
     try {
       const { pool, callZebraRPC } = req.app.locals;
       let cache = cadenceCache.get(pool);
@@ -42,6 +45,18 @@ function registerNetworkReadinessRoutes(router) {
       if (cached && cached.expires > Date.now()) return res.json(cached.payload);
       const info = await callZebraRPC('getblockchaininfo');
       const schedule = networkSchedule(info);
+      if (seconds == null) {
+        // One extra row supplies the oldest block's predecessor interval.
+        const { rows } = await pool.query(`SELECT height, timestamp FROM blocks
+          ORDER BY height DESC LIMIT $1`, [RECENT_BLOCKS + 1]);
+        const points = cadencePoints(rows, schedule, 0).slice(-RECENT_BLOCKS);
+        const payload = { success: true, period, source: 'canonical-block-header-timestamps',
+          observedAt: new Date().toISOString(), schedule, rollingIntervals: 120,
+          nodeHeight: info.blocks, indexedHeight: rows[0] ? Number(rows[0].height) : null,
+          truncated: false, downsampleEvery: 1, points };
+        cache.set(period, { expires: Date.now() + 15000, payload });
+        return res.json(payload);
+      }
       const since = Math.floor(Date.now() / 1000) - seconds;
       // Read a bounded height-index range, including predecessor intervals.
       // Avoid a timestamp/min-height plan that scans the entire chain.

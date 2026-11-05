@@ -3398,12 +3398,17 @@ paths:
           schema:
             type: string
             enum:
+              - blocks
               - 6h
               - 24h
               - 7d
             default: 24h
-            description: Trailing block-header observation window.
-          description: Trailing block-header observation window.
+            description: >-
+              Trailing block-header observation window; `blocks` returns the latest 250 canonical
+              blocks without downsampling.
+          description: >-
+            Trailing block-header observation window; `blocks` returns the latest 250 canonical
+            blocks without downsampling.
       x-cipherscan-legacy-path: /api/network/block-time
       x-cipherscan-legacy-method: GET
       x-cipherscan-classification: public

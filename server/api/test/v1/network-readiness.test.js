@@ -57,6 +57,17 @@ test('redesign network timing and accounting retain source semantics through v1'
     assert.equal(data.points.at(-1).targetSeconds, 25);
     assert.equal(data.points.at(-1).averageSeconds, 25);
   }
+  const recent = await fetch(`${base}/block-time?period=blocks`);
+  assert.equal(recent.status, 200);
+  const { data: latest } = await recent.json();
+  assert.equal(latest.period, 'blocks');
+  assert.equal(latest.downsampleEvery, 1);
+  // Every fixture block is returned, none skipped; only the oldest lacks a predecessor interval.
+  assert.equal(latest.points.length, rows.length);
+  assert.ok(latest.points.every((point, i) => i === 0 || point.height === latest.points[i - 1].height + 1));
+  assert.equal(latest.points[0].intervalSeconds, null);
+  assert.ok(latest.points.slice(1).every(point => point.intervalSeconds === 25));
+  assert.equal(latest.points.at(-1).height, height);
   assert.equal((await fetch(`${base}/block-time?period=invalid`)).status, 400);
   const response = await fetch(`${base}/accounting`);
   assert.equal(response.status, 200);

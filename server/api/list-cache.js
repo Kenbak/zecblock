@@ -1,5 +1,6 @@
 const { createHash, randomUUID } = require('node:crypto');
 const { performance } = require('node:perf_hooks');
+const { setDataHeader } = require('./lib/data-headers');
 
 const CACHE_VERSION = 1;
 const DEFAULT_MAX_ENTRIES = 1_000;
@@ -91,7 +92,7 @@ function formatServerTiming(result) {
 }
 
 function applyListCacheHeaders(res, result) {
-  res.set('X-CipherScan-Cache', result.state);
+  setDataHeader(res, 'Cache', result.state);
   res.set('Server-Timing', formatServerTiming(result));
 }
 

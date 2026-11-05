@@ -259,3 +259,47 @@ test('weekly count comparisons exclude the unfinished current UTC day', () => {
   assert.equal(result.facts.shield_previous_start, day(0));
   assert.equal(result.facts.shield_recent_value, '5,600.00 ZEC');
 });
+
+
+test('pool evidence distinguishes a wrong response format from genuinely unknown historical breakdowns',async()=>{
+ const source=points=>({dispatch:async(method,path,{query})=>{assert.equal(query.format,'zatoshi');assert.equal(query.period,'1y');return {ok:true,body:{points}};}});
+ const annual={...spec,period:'1y'};
+ await assert.rejects(loadExplanationEvidence(annual,source([{date:day(0),orchard:100,ironwood:0,hasPoolBreakdown:true}]),AbortSignal.timeout(1000)),/exact zatoshi format/);
+ const unknown=await loadExplanationEvidence(annual,source([{date:day(0),hasPoolBreakdown:false}]),AbortSignal.timeout(1000));
+ assert.equal(unknown.input.analysis.coverage.observedDays,1);
+ assert.equal(unknown.input.analysis.series[0].hasObservedValues,false);
+ assert.equal(unknown.input.analysis.selectedPools,null);
+});
+
+test('overall recent pace cancels pool redistribution and excludes unknown combined observations',()=>{
+ const evidence=sample('balances',15);
+ evidence.points.forEach((point,i)=>{point.values.ironwood=zat(i*50);point.values.orchard=zat(1000-i*50+i*2);});
+ const {analysis,facts}=analyze(evidence);
+ assert.equal(analysis.coverage.observedDays,15);
+ assert.equal(analysis.series[0].observedValues,15);
+ assert.equal(analysis.series[0].hasObservedValues,true);
+ assert.equal(analysis.series[1].direction,'decreased');
+ assert.equal(analysis.selectedPools.recentComparison.recent.direction,'increased');
+ assert.equal(facts.selected_pools_recent_movement,'14.00 ZEC');
+ assert.equal(facts.selected_pools_previous_movement,'14.00 ZEC');
+ assert.match(answerTaskFor(facts,[{id:'pools'}],true).instruction,/conditional outlook/);
+ evidence.points[8].values.orchard=null;
+ const partial=analyze(evidence);
+ assert.equal(partial.analysis.selectedPools.recentComparison,undefined);
+ assert.equal(partial.analysis.series[1].observedValues,14);
+});
+
+test('the page widget offers Zift for custom-query questions without compiling or running SQL', async () => {
+  const selection = intent => ({ intent, spec: null, flowQuery: null, blockQuery: null, transactionQuery: null, topics: [], locale: 'en', sql: null });
+  const analytics = { researchEnabled: true, jobsEnabled: true, catalogue: [{ dataset: 'daily' }], submit: () => assert.fail('the widget never submits SQL'), execute: () => assert.fail('the widget never executes SQL') };
+  const source = { dispatch: async () => assert.fail('no source read') };
+  const tasks = [];
+  const ask = (intent, page) => chat({ question: 'How has the Orchard pool balance changed this month?', page, context: spec, history: [], locale: 'en' }, async (body, task) => { tasks.push(task); return selection(intent); }, source, AbortSignal.timeout(1000), '', undefined, analytics);
+  const research = await ask('needs_query', 'pools');
+  assert.equal(research.handoff, 'zift'); assert.match(research.answer, /Zift can try it/);
+  const unsupported = await ask('unsupported', 'pools');
+  assert.equal(unsupported.handoff, 'try-zift'); assert.match(unsupported.answer, /cannot answer that/);
+  assert.equal((await ask('unsupported', 'ask')).handoff, undefined, 'Zift itself does not offer to open Zift');
+  assert.ok(tasks[0].validator.shape.intent.options.includes('needs_query') && /needs_query/.test(tasks[0].instruction), 'the widget can say a question needs a custom query');
+  assert.ok(!tasks.at(-1).validator.shape.intent.options.includes('needs_query'), 'Zift itself plans SQL instead');
+});

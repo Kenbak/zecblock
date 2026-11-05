@@ -6,6 +6,31 @@ import { detectAddressType } from '@/lib/zcash';
 import { findAddressByLabel, searchAddressesByLabel, fetchOfficialLabels } from '@/lib/address-labels';
 import { isValidName } from '@/lib/zns';
 import { isMainnet, isCrosslink } from '@/lib/config';
+import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
+import { getApiUrl } from '@/lib/api-config';
+
+// The first block of the Ironwood upgrade, from the deployment ZIP heights.
+const IRONWOOD_ACTIVATION = HISTORICAL_UPGRADES.find((upgrade) => upgrade.id === 'nu63')!.heights;
+const EXAMPLE_BLOCK = isCrosslink
+  ? { height: 6, title: undefined }
+  : { height: isMainnet ? IRONWOOD_ACTIVATION.mainnet : IRONWOOD_ACTIVATION.testnet, title: 'Ironwood activation block' };
+
+// Shortened ids as the explorer displays them: a bare prefix, or
+// "5b34c8b44d...ec9e77". The API applies the authoritative limits.
+const SHORT_ID_PATTERN = /^(?:[a-fA-F0-9]{8,63}|[a-fA-F0-9]{6,}\s*(?:\.{2,3}|…)\s*[a-fA-F0-9]{4,})$/;
+
+interface IdMatch {
+  kind: 'Transaction' | 'Block';
+  id: string;
+  href: string;
+  detail: string;
+}
+
+type IdSearchState =
+  | { status: 'idle' }
+  | { status: 'loading' }
+  | { status: 'results'; matches: IdMatch[]; truncated: boolean }
+  | { status: 'message'; message: string };
 
 interface SearchBarProps {
   compact?: boolean;
@@ -39,7 +64,10 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [labelsLoaded, setLabelsLoaded] = useState(false);
+  const [idSearch, setIdSearch] = useState<IdSearchState>({ status: 'idle' });
+  const idSearchRequest = useRef(0);
   const suggestionsRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef<HTMLFormElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const router = useRouter();
   const navigate = (href: string) => { onNavigate?.(); router.push(href); };
@@ -73,6 +101,59 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     });
   }, []);
 
+  // A new query invalidates any shortened-id lookup in flight.
+  useEffect(() => {
+    idSearchRequest.current += 1;
+    setIdSearch({ status: 'idle' });
+  }, [query]);
+
+  const resolveShortId = async (value: string) => {
+    const request = ++idSearchRequest.current;
+    setIdSearch({ status: 'loading' });
+    try {
+      const response = await fetch(`${getApiUrl()}/v1/search/prefix?q=${encodeURIComponent(value)}`);
+      if (request !== idSearchRequest.current) return;
+      if (response.status === 400) {
+        setIdSearch({ status: 'message', message: 'Enter at least 8 characters of a transaction id or block hash.' });
+        return;
+      }
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const { data } = await response.json() as {
+        data: {
+          transactions: Array<{ txid: string; blockHeight: number }>;
+          blocks: Array<{ hash: string; height: number }>;
+          truncated: boolean;
+        };
+      };
+      if (request !== idSearchRequest.current) return;
+      const matches: IdMatch[] = [
+        ...data.transactions.map((tx) => ({
+          kind: 'Transaction' as const,
+          id: tx.txid,
+          href: `/tx/${tx.txid}`,
+          detail: `Block #${tx.blockHeight.toLocaleString('en-US')}`,
+        })),
+        ...data.blocks.map((block) => ({
+          kind: 'Block' as const,
+          id: block.hash,
+          href: `/block/${block.height}`,
+          detail: `Height ${block.height.toLocaleString('en-US')}`,
+        })),
+      ];
+      if (matches.length === 1 && !data.truncated) {
+        setQuery('');
+        navigate(matches[0].href);
+      } else if (matches.length === 0) {
+        setIdSearch({ status: 'message', message: 'No indexed transaction or block starts with these characters. Pending mempool transactions need the full id.' });
+      } else {
+        setIdSearch({ status: 'results', matches, truncated: data.truncated });
+      }
+    } catch {
+      if (request !== idSearchRequest.current) return;
+      setIdSearch({ status: 'message', message: 'Search is temporarily unavailable. Try the full 64-character id.' });
+    }
+  };
+
   // Search for label suggestions as user types
   useEffect(() => {
     if (query.length >= 2) {
@@ -97,6 +178,10 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
 
   // Handle keyboard navigation in suggestions
   const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && idSearch.status !== 'idle') {
+      setIdSearch({ status: 'idle' });
+      return;
+    }
     if (!showSuggestions || suggestions.length === 0) return;
 
     if (e.key === 'ArrowDown') {
@@ -124,6 +209,9 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     const handleClickOutside = (e: MouseEvent) => {
       if (suggestionsRef.current && !suggestionsRef.current.contains(e.target as Node)) {
         setShowSuggestions(false);
+      }
+      if (formRef.current && !formRef.current.contains(e.target as Node)) {
+        setIdSearch({ status: 'idle' });
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
@@ -160,8 +248,10 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
       navigate(`/block/${encodeURIComponent(trimmedQuery)}`);
     } else if (/^[a-fA-F0-9]{64}$/.test(trimmedQuery)) {
       navigate(`/tx/${encodeURIComponent(trimmedQuery)}`);
+    } else if (SHORT_ID_PATTERN.test(trimmedQuery)) {
+      void resolveShortId(trimmedQuery);
     } else if (/^[a-fA-F0-9]+$/.test(trimmedQuery)) {
-      navigate(`/tx/${encodeURIComponent(trimmedQuery)}`);
+      setIdSearch({ status: 'message', message: 'Enter at least 8 characters of a transaction id or block hash.' });
     } else {
       const addressByLabel = findAddressByLabel(trimmedQuery);
       if (addressByLabel) {
@@ -169,7 +259,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
       } else if (isValidName(trimmedQuery.toLowerCase())) {
         navigate(`/name/${encodeURIComponent(trimmedQuery.toLowerCase())}`);
       } else {
-        console.warn('No matching address, transaction, or label found');
+        setIdSearch({ status: 'message', message: 'No matching address, transaction, block, label or name.' });
       }
     }
   };
@@ -280,10 +370,51 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     );
   };
 
+  const IdSearchDropdown = () => {
+    if (idSearch.status === 'idle' || showSuggestions) return null;
+    return (
+      <div
+        role="status"
+        aria-live="polite"
+        className="absolute top-full left-0 right-0 mt-2 suggestions-dropdown rounded-xl z-[200] overflow-hidden"
+      >
+        {idSearch.status === 'loading' && (
+          <p className="px-4 py-3 text-xs text-muted font-mono">Searching…</p>
+        )}
+        {idSearch.status === 'message' && (
+          <p className="px-4 py-3 text-xs text-secondary">{idSearch.message}</p>
+        )}
+        {idSearch.status === 'results' && (
+          <>
+            <p className="px-4 pt-3 pb-1 text-caption text-muted font-mono uppercase tracking-wider">
+              {idSearch.truncated ? 'First matches. Add characters to narrow' : 'Matches'}
+            </p>
+            {idSearch.matches.map((match) => (
+              <button
+                key={`${match.kind}-${match.id}`}
+                type="button"
+                onClick={() => { setQuery(''); navigate(match.href); }}
+                className="w-full px-4 py-3 text-left flex items-center gap-3 transition duration-150 suggestion-item"
+              >
+                <span className="text-caption px-1.5 py-0.5 rounded font-mono uppercase bg-glass-4 text-muted">
+                  {match.kind}
+                </span>
+                <span className="flex-1 min-w-0">
+                  <span className="block text-xs font-mono truncate suggestion-label">{match.id}</span>
+                  <span className="block text-xs text-muted mt-0.5">{match.detail}</span>
+                </span>
+              </button>
+            ))}
+          </>
+        )}
+      </div>
+    );
+  };
+
   // Compact version for navbar
   if (compact) {
     return (
-      <form onSubmit={handleSearch} className="w-full">
+      <form ref={formRef} onSubmit={handleSearch} className="w-full">
         <div className="relative">
           <div className="absolute left-3 top-1/2 -translate-y-1/2 text-cipher-gold font-mono text-xs">
             {'>'}
@@ -300,6 +431,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
             className="w-full pl-7 pr-3 py-2 text-xs font-mono search-input"
           />
           <SuggestionsDropdown />
+          <IdSearchDropdown />
         </div>
       </form>
     );
@@ -307,7 +439,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
 
   // Full version for homepage - Enhanced
   return (
-    <form onSubmit={handleSearch} className="max-w-3xl mr-auto relative z-50">
+    <form ref={formRef} onSubmit={handleSearch} className="max-w-3xl mr-auto relative z-50">
       {/* Search Container with Glow Effect */}
       <div className="relative group">
         {/* Search Input Container */}
@@ -366,6 +498,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
           </button>
 
           <SuggestionsDropdown />
+          <IdSearchDropdown />
         </div>
       </div>
 
@@ -374,10 +507,11 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
         <span className="text-caption text-muted font-mono uppercase tracking-wider">Try:</span>
         <button
           type="button"
-          onClick={() => setQuery(isCrosslink ? '6' : '354939')}
+          onClick={() => setQuery(String(EXAMPLE_BLOCK.height))}
+          title={EXAMPLE_BLOCK.title}
           className="example-tag example-tag-default"
         >
-          Block #{isCrosslink ? 6 : 354939}
+          Block #{EXAMPLE_BLOCK.height}
         </button>
         <button
           type="button"

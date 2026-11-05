@@ -79,7 +79,7 @@ router.get('/api/seo/tx/:txid', validate('txById'), async (req, res) => {
       orchardActions: parseInt(tx.orchard_actions) || 0,
       saplingSpendCount: parseInt(tx.sapling_spend_count) || 0,
       saplingOutputCount: parseInt(tx.sapling_output_count) || 0,
-      fee: tx.fee ? Number(tx.fee) / 100000000 : 0,
+      fee: tx.fee == null ? null : Number(tx.fee) / 100000000,
       feeZat: tx.fee == null ? null : String(tx.fee),
       size: tx.size == null ? null : Number(tx.size),
       vinCount: tx.vin_count == null ? null : Number(tx.vin_count),
@@ -116,7 +116,7 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
     // concurrently instead of five sequential round trips. The bridge lookup
     // keeps its own error boundary (non-critical, matches prior behavior of
     // never failing the whole request on a bridge-table error).
-    const [txResult, inputsResult, outputsResult, currentHeightResult, bridgeResult] = await Promise.all([
+    const [txResult, inputsResult, outputsResult, currentHeightResult, bridgeResult, venueResult] = await Promise.all([
       deps.pool.query(
         `SELECT
           t.txid,
@@ -132,6 +132,8 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
           t.value_balance_sapling,
           t.value_balance_orchard,
           t.value_balance_ironwood,
+          -- Migration 041; absent on databases without it (NULL = unknown).
+          (to_jsonb(t)->>'value_balance_sprout')::bigint AS value_balance_sprout,
           t.has_sapling,
           t.has_orchard,
           t.has_ironwood,
@@ -188,6 +190,23 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
         logSafeError('❌ [TX] Bridge lookup error:', bridgeErr);
         return { rows: [] };
       }),
+      // Maya/THORChain: only successful swaps, matched on the Zcash leg's txid.
+      // Refund and pending actions are not described as completed bridges.
+      isNonMainnet() || process.env.CROSSCHAIN_VENUES_READ_ENABLED !== '1' ? Promise.resolve({ rows: [] }) : deps.pool.query(
+        `SELECT venue, source_chain, source_token, source_amount, source_amount_usd,
+                source_tx_hashes, dest_chain, dest_token, dest_amount, dest_amount_usd,
+                dest_tx_hashes, swap_created_at, zec_amount_zat
+         FROM crosschain_venue_actions
+         WHERE action_type = 'swap' AND status = 'SUCCESS'
+           AND ((source_chain = 'zec' AND source_tx_hashes @> ARRAY[$1]::text[])
+             OR (dest_chain = 'zec' AND dest_tx_hashes @> ARRAY[$1]::text[]))
+         ORDER BY swap_created_at, venue, id
+         LIMIT 20`,
+        [txid]
+      ).catch((venueErr) => {
+        logSafeError('❌ [TX] Venue bridge lookup error:', venueErr);
+        return { rows: [] };
+      }),
     ]);
 
     if (txResult.rows.length === 0) {
@@ -208,6 +227,7 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
     const valueBalanceSapling = tx.value_balance_sapling == null ? null : Number(tx.value_balance_sapling) / 100000000;
     const valueBalanceOrchard = tx.value_balance_orchard == null ? null : Number(tx.value_balance_orchard) / 100000000;
     const valueBalanceIronwood = tx.value_balance_ironwood == null ? null : Number(tx.value_balance_ironwood) / 100000000;
+    const valueBalanceSprout = tx.value_balance_sprout == null ? null : Number(tx.value_balance_sprout) / 100000000;
     const totalValueBalance = tx.value_balance == null ? null : Number(tx.value_balance) / 100000000;
 
     // Fee from DB (in zatoshis, convert to ZEC)
@@ -267,6 +287,38 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
           swapTimestamp: b.swap_created_at,
           zecAmount,
           zecAddress: b.zec_address,
+          venue: 'near',
+        });
+      }
+      // Midgard reports EVM hashes without the 0x prefix.
+      const evmChains = new Set(['eth', 'arb', 'base', 'avax', 'bsc', 'op', 'pol']);
+      for (const b of venueResult.rows) {
+        const isInflow = b.dest_chain === 'zec';
+        const otherChain = isInflow ? b.source_chain : b.dest_chain;
+        const otherHashes = isInflow ? (b.source_tx_hashes || []) : (b.dest_tx_hashes || []);
+        const rawHash = otherHashes.length > 0 ? otherHashes[0] : null;
+        const otherHash = rawHash && evmChains.has(otherChain) && !rawHash.startsWith('0x') ? `0x${rawHash}` : rawHash;
+        const otherAmount = parseFloat(isInflow ? b.source_amount : b.dest_amount);
+        const otherAmountUsd = parseFloat(isInflow ? b.source_amount_usd : b.dest_amount_usd);
+        bridges.push({
+          direction: isInflow ? 'entry' : 'exit',
+          sourceChain: b.source_chain,
+          sourceToken: b.source_token,
+          sourceAmount: isInflow ? otherAmount : null,
+          destChain: b.dest_chain,
+          destToken: b.dest_token,
+          destAmount: isInflow ? null : otherAmount,
+          otherChain,
+          otherToken: isInflow ? b.source_token : b.dest_token,
+          otherAmount,
+          otherAmountUsd: Number.isFinite(otherAmountUsd) ? otherAmountUsd : 0,
+          otherTxHash: otherHash,
+          explorerUrl: otherHash && explorerUrls[otherChain] ? explorerUrls[otherChain] + otherHash : null,
+          swapTimestamp: b.swap_created_at,
+          // Exact zatoshis from the provider's native ZEC leg.
+          zecAmount: b.zec_amount_zat == null ? undefined : Number(b.zec_amount_zat) / 100000000,
+          zecAddress: null,
+          venue: b.venue,
         });
       }
       if (bridges.length > 0) bridge = bridges[0];
@@ -381,6 +433,9 @@ router.get('/api/tx/:txid', validate('txById'), async (req, res) => {
       valueBalanceOrchardZat: tx.value_balance_orchard == null ? null : String(tx.value_balance_orchard),
       valueBalanceIronwood,
       valueBalanceIronwoodZat: tx.value_balance_ironwood == null ? null : String(tx.value_balance_ironwood),
+      // Sprout JoinSplit sum(vpub_new) - sum(vpub_old); positive leaves Sprout.
+      valueBalanceSprout,
+      valueBalanceSproutZat: tx.value_balance_sprout == null ? null : String(tx.value_balance_sprout),
       fee,
       feeZat: tx.fee == null ? null : String(tx.fee),
       totalInput,

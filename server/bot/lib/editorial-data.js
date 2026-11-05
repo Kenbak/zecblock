@@ -5,6 +5,11 @@ const { completedWeekEnd, makeDraft } = require('../../lib/activity-milestones')
 const { loadHashrateHistory } = require('../../api/lib/hashrate');
 const policy = require('./editorial-policy');
 const { fetchSpotPrice } = require('./spot-price');
+const { readPoolActivity } = require('./pool-activity-source');
+const { poolMilestoneStories } = require('./pool-activity-milestones');
+const { insightCandidates } = require('./editorial-insights');
+const nu7Source = require('./nu7-source');
+const nu7Stories = require('./nu7-stories');
 
 // Flows already represent net movement across pools. Never subtract an
 // unrelated Orchard withdrawal from an Ironwood deposit as a "migration".
@@ -18,6 +23,61 @@ const VALID_FLOWS = `SELECT sf.* FROM shielded_flows sf
 const VALID_SWAPS = `SELECT * FROM cross_chain_swaps WHERE status='SUCCESS'
   AND source_chain IS NOT NULL AND dest_chain IS NOT NULL AND source_chain<>dest_chain
   AND (source_chain='zec' OR dest_chain='zec') AND source_amount_usd>0`;
+
+// Indexed Maya/THORChain actions are separate venue observations (additive
+// tables, never merged into NEAR history or summed with it). Rank each venue
+// only against its own successful 30-day sample.
+const INDEXED_VENUES = ['maya', 'thorchain'];
+const VALID_VENUE_SWAPS = `SELECT * FROM crosschain_venue_actions WHERE venue=$2
+  AND action_type='swap' AND status='SUCCESS'
+  AND source_chain IS NOT NULL AND dest_chain IS NOT NULL AND source_chain<>dest_chain
+  AND (source_chain='zec' OR dest_chain='zec') AND payload->>'direction' IN ('inflow','outflow')
+  AND source_amount_usd>0`;
+
+async function venueSwapCandidates(db, now) {
+  const candidates = [], decisions = [];
+  const { rows: [table] } = await db.query(`SELECT to_regclass('crosschain_venue_actions') IS NOT NULL
+    AND to_regclass('crosschain_venue_sync') IS NOT NULL AS present`);
+  if (!table?.present) return { candidates, decisions: [{ key: 'crosschain-venues', reason: 'venue-index-unavailable' }] };
+  for (const venue of INDEXED_VENUES) {
+    const { rows: [sync] } = await db.query(`SELECT max(last_checked_at) AS checked,
+      coalesce(bool_or(mode='backfill' AND completed_at IS NOT NULL),false) AS baseline
+      FROM crosschain_venue_sync WHERE venue=$1`, [venue]);
+    const age = now - new Date(sync?.checked || 0);
+    if (!(age >= 0 && age <= 20 * 60000)) { decisions.push({ key: `crosschain:${venue}`, reason: 'venue-sync-unavailable-or-stale' }); continue; }
+    // A 30-day rank needs the retained provider history; a partial backfill is not a baseline.
+    if (!sync.baseline) { decisions.push({ key: `crosschain:${venue}`, reason: 'venue-baseline-incomplete' }); continue; }
+    // Streaming swaps settle after creation: select by when SUCCESS was first
+    // observed, bounded by creation time so backfilled history never qualifies.
+    const { rows } = await db.query(`WITH valid AS MATERIALIZED (
+      ${VALID_VENUE_SWAPS} AND swap_created_at >= $1::timestamptz-interval '31 days' AND swap_created_at < $1
+    ), candidates AS (
+      SELECT * FROM valid WHERE status_observed_at >= $1::timestamptz-interval '1 hour'
+        AND swap_created_at >= $1::timestamptz-interval '24 hours'
+        AND source_amount_usd>=$3::numeric ORDER BY source_amount_usd DESC,id LIMIT 20
+    ) SELECT c.id,c.venue,c.source_chain,c.dest_chain,c.source_asset,c.dest_asset,
+      c.source_amount::text AS source_amount,c.dest_amount::text AS dest_amount,
+      c.zec_amount_zat::text AS zec_amount_zat,c.source_amount_usd::text AS source_amount_usd,
+      c.swap_created_at,c.status_observed_at,c.canonical_identity,c.payload->>'direction' AS direction,
+      c.payload->'zecLegs' AS zec_legs,
+      EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(c.payload->'outputs','[]'::jsonb)) o
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o->'coins','[]'::jsonb)) coin
+        WHERE COALESCE(o->>'affiliate','false')<>'true' AND coin->>'asset'=c.source_asset) AS partial_return,
+      s.* FROM candidates c CROSS JOIN LATERAL (
+        SELECT count(*) AS sample_count,
+          count(*) FILTER(WHERE h.source_amount_usd>c.source_amount_usd) AS greater_count,
+          count(*) FILTER(WHERE h.source_amount_usd=c.source_amount_usd) AS equal_count
+        FROM valid h WHERE h.swap_created_at<c.swap_created_at
+          AND h.swap_created_at>=c.swap_created_at-interval '30 days'
+      ) s`, [now.toISOString(), venue, policy.MIN_SWAP_USD[venue]]);
+    for (const row of rows) {
+      const story = policy.swapStory(row);
+      if (story) candidates.push(story);
+      else decisions.push({ key: `cross_chain:${venue}:${row.id}`, reason: 'venue-swap-baseline-identity-or-significance' });
+    }
+  }
+  return { candidates, decisions };
+}
 
 async function snapshot(pool, work) {
   const client = await pool.connect();
@@ -81,6 +141,17 @@ async function liveCandidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
       decisions.push(...swaps.filter(s => !candidates.some(c => c.key === `cross_chain:${s.id}`))
         .map(s => ({ key: `cross_chain:${s.id}`, reason: 'swap-baseline-or-significance' })));
     } else decisions.push({ key: 'crosschain', reason: 'sync-unavailable-or-stale' });
+
+    // A venue read failure must not discard this snapshot's other candidates.
+    await db.query('SAVEPOINT venue_swaps');
+    try {
+      const venues = await venueSwapCandidates(db, now);
+      candidates.push(...venues.candidates); decisions.push(...venues.decisions);
+      await db.query('RELEASE SAVEPOINT venue_swaps');
+    } catch (error) {
+      await db.query('ROLLBACK TO SAVEPOINT venue_swaps');
+      decisions.push({ key: 'crosschain-venues', reason: 'source-check-failed', detail: error.message });
+    }
 
     const { rows: migrations } = await db.query(`SELECT t.txid,t.block_time,abs(t.value_balance_ironwood)::text AS amount_zat
       FROM transactions t JOIN blocks b ON b.height=t.block_height AND b.timestamp=t.block_time
@@ -225,12 +296,38 @@ async function milestoneCandidates(pool, now) {
   return snapshot(pool, async db => {
     await assertMainnetFresh(db, now);
     const target = addDays(now.toISOString().slice(0, 10), -1);
+    // Per-pool columns are optional on older schemas; absent ones read as null.
+    const { rows: columns } = await db.query(`SELECT column_name FROM information_schema.columns
+      WHERE table_name='privacy_trends_daily' AND column_name IN ('sapling_pool_size','orchard_pool_size','sprout_pool_size')`);
+    const pools = ['sapling_pool_size', 'orchard_pool_size', 'sprout_pool_size']
+      .map(c => columns.some(r => r.column_name === c) ? `t.${c}::text` : `NULL::text AS ${c}`).join(', ');
     const { rows } = await db.query(`SELECT t.date::text AS date, t.pool_size::text, t.chain_supply::text,
-        t.ironwood_pool_size::text, p.price_usd::float8 AS price_usd
+        t.ironwood_pool_size::text, ${pools}, p.price_usd::float8 AS price_usd
       FROM privacy_trends_daily t LEFT JOIN zec_price_daily p ON p.date=t.date
       WHERE t.date <= $1::date ORDER BY t.date`, [target]);
-    return policy.milestoneStories(rows, target);
+    return [...policy.milestoneStories(rows, target), ...policy.poolDrainStories(rows, target)];
   });
 }
 
-module.exports = { VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, eventContext };
+// NU7 countdown, activation and post-activation milestones. Each builder gates
+// on its own freshness, so this runs on every tick like other live events.
+async function nu7Candidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
+  const result = await snapshot(pool, async db => {
+    await assertMainnetFresh(db, now);
+    return nu7Source.nu7Candidates(db, now);
+  });
+  const { nsm, ...rest } = result;
+  if (!nsm) return rest;
+  // ZEC milestones post without USD if the quote fails; USD milestones need it.
+  const { quote, unavailable } = await fetchPrice();
+  if (unavailable) rest.decisions.push({ key: 'nu7:nsm-price', reason: 'price-unavailable', detail: unavailable });
+  rest.candidates.push(...[nu7Stories.nsmMilestoneStory({ ...nsm, quote }), quote && nu7Stories.nsmUsdMilestoneStory({ ...nsm, quote })].filter(Boolean));
+  return rest;
+}
+
+async function poolActivityCandidates(pool, now, options) {
+  const target = addDays(now.toISOString().slice(0, 10), -1);
+  return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
+}
+
+module.exports = { venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

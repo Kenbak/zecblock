@@ -10,7 +10,7 @@ const routes = process.env.AUDIT_ROUTES?.split(',') || [
   '/tools/unit-converter', '/crosschain', '/usage-clock', '/pulse', '/zodl',
   '/turnstile', '/pools', '/network', '/network/attestations', '/mining',
   '/ironwood', '/txs', '/blocks', '/learn', '/charts', '/newsletter',
-  '/newsletter/weekly-2026-09-27', '/governance', '/decrypt', '/ask',
+  '/newsletter/weekly-2026-09-27', '/governance', '/decrypt', '/zift',
 ];
 const chrome = process.env.CHROME_EXECUTABLE || '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 console.log('Launching browser');

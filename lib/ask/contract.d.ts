@@ -9,6 +9,7 @@ export interface AnalysisSpec {
   end: string | null;
 }
 export const analysisSchema: ZodType<AnalysisSpec>;
+export const metricIds: AnalysisSpec['metric'][];
 export const requestSchema: ZodType<{ question: string; context: AnalysisSpec | null; challenge?: string }>;
 export const starters: { id: string; category: string; title: string; detail: string; spec: AnalysisSpec }[];
 export function resolveShortcut(question: string, context?: AnalysisSpec | null): AnalysisSpec | null;

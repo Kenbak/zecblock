@@ -45,6 +45,7 @@ export function DataTable<T>({
   className = '',
   bare = false,
   rowClassName,
+  caption,
 }: {
   columns: DataTableColumn<T>[];
   rows: T[];
@@ -64,6 +65,8 @@ export function DataTable<T>({
   /** Extra classes per row (stale dimming, entry animations) */
   rowClassName?: (row: T, index: number) => string;
   className?: string;
+  /** Screen-reader description of the table */
+  caption?: string;
 }) {
   const showEmpty = !loading && rows.length === 0 && empty;
   const rowHeight = size === 'comfortable' ? 'h-[52px]' : 'h-[44px]';
@@ -73,6 +76,7 @@ export function DataTable<T>({
       {loading && <span role="status" className="sr-only">Loading table data…</span>}
       <div className="overflow-x-auto">
         <table className="w-full">
+          {caption && <caption className="sr-only">{caption}</caption>}
           <thead className={stickyHeader ? 'sticky top-0 z-10 bg-cipher-surface-solid' : undefined}>
             <tr>
               {columns.map((col) => (

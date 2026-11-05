@@ -18,7 +18,9 @@ export interface ApiMeta {
 }
 export interface ApiEnvelope<T> { data: T; meta: ApiMeta }
 export class ApiError extends Error {
-  constructor(message: string, readonly status: number, readonly type?: string, readonly requestId?: string, readonly retryAfter?: string | null, readonly code?: string) {
+  // `extensions` holds the problem document's extension members unvalidated;
+  // consumers must schema-check any member before displaying it.
+  constructor(message: string, readonly status: number, readonly type?: string, readonly requestId?: string, readonly retryAfter?: string | null, readonly code?: string, readonly extensions?: Readonly<Record<string, unknown>>) {
     super(message);
     this.name = 'ApiError';
   }
@@ -28,6 +30,11 @@ export async function readApiResponse<T = unknown>(response: Response): Promise<
   try { body = await response.json(); } catch {
     throw new ApiError(response.ok ? 'The API returned an invalid response.' : `Request failed (HTTP ${response.status}).`, response.status);
   }
+  return parseApiResponse<T>(response, body);
+}
+
+/** Reuse envelope validation after a server caller has bounded JSON size and read time. */
+export function parseApiResponse<T = unknown>(response: Response, body: unknown): ApiEnvelope<T> {
   const record = body && typeof body === 'object' ? body as Record<string, unknown> : null;
   if (!response.ok) {
     throw new ApiError(
@@ -37,6 +44,7 @@ export async function readApiResponse<T = unknown>(response: Response): Promise<
       response.headers.get('x-request-id') ?? undefined,
       response.headers.get('retry-after'),
       typeof record?.code === 'string' ? record.code : undefined,
+      record ?? undefined,
     );
   }
   const meta = record?.meta as Partial<ApiMeta> | undefined;

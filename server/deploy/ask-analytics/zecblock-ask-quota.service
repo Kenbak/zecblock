@@ -1,0 +1,34 @@
+[Unit]
+Description=Persistent private quota storage for ZecBlock Ask analytics
+After=network.target
+
+[Service]
+Type=simple
+DynamicUser=yes
+StateDirectory=zecblock-ask-quota
+StateDirectoryMode=0700
+LoadCredential=redis.conf:/etc/zecblock/ask-quota.conf
+ExecStart=/usr/bin/redis-server %d/redis.conf
+Restart=on-failure
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictNamespaces=yes
+RestrictSUIDSGID=yes
+RestrictAddressFamilies=AF_INET AF_UNIX
+IPAddressDeny=any
+IPAddressAllow=localhost
+SocketBindDeny=any
+SocketBindAllow=tcp:6391
+MemoryMax=64M
+CPUQuota=5%
+TasksMax=16
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

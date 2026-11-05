@@ -16,6 +16,7 @@ function load({ apiUrl = API, key = SENTINEL, configError = false } = {}) {
     process: { env: { SERVICE_API_KEY: key } },
     require: name => {
       if (name === 'next/constants') return { PHASE_PRODUCTION_BUILD: 'phase-production-build' };
+      if (name === '@/lib/api-client') return { readApiData: async response => (await response.json()).data };
       if (name === './api-config') return { getApiUrl: () => { if (configError) throw new Error('Invalid configuration'); return apiUrl; } };
       throw new Error(`Unexpected dependency ${name}`);
     },

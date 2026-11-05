@@ -136,7 +136,7 @@ export function ZecBtcCard() {
         </>}
       </div>
       <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 mt-5 border-t border-cipher-border pt-4 text-caption text-muted">
-        <p>Data by <a href="https://www.coingecko.com/en/coins/zcash" target="_blank" rel="noopener noreferrer" className="text-cipher-gold hover:underline">CoinGecko</a></p>
+        <p>Price data by <a href="https://www.coingecko.com/en/api" target="_blank" rel="noopener noreferrer" className="text-cipher-gold hover:underline">CoinGecko</a></p>
         {historyStatus && <p role="status">{historyStatus}</p>}
       </div>
     </div></div>

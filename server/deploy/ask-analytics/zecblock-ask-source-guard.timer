@@ -1,0 +1,11 @@
+[Unit]
+Description=Check dedicated analytics slot pressure each minute
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=1min
+AccuracySec=5s
+Unit=zecblock-ask-source-guard.service
+
+[Install]
+WantedBy=timers.target

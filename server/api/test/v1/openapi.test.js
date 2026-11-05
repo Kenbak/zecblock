@@ -65,6 +65,16 @@ test('path parameters use OpenAPI braces and server URLs do not duplicate /v1', 
   assert.equal(doc.servers[0].url, 'https://api.zecblock.com');
 });
 
+test('public reads do not declare a global preview-key requirement', () => {
+  const doc = buildOpenApiDocument();
+  assert.equal(doc.security, undefined);
+  assert.doesNotMatch(doc.info.version, /preview/);
+  assert.equal(doc.components.securitySchemes?.previewKey, undefined);
+  const published = JSON.parse(fs.readFileSync(path.join(__dirname, '..', '..', '..', '..', 'public', 'openapi-v1.json'), 'utf8'));
+  assert.equal(published.security, undefined);
+  assert.equal(published.components.securitySchemes?.previewKey, undefined);
+});
+
 test('no OpenAPI path is emitted for an excluded manifest entry', () => {
   const doc = buildOpenApiDocument();
   for (const entry of MANIFEST) {

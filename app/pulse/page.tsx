@@ -4,6 +4,9 @@ import { pulseEventDescription } from '@/lib/pulse-copy';
 import { useMemo, useState } from 'react';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PageHeader, SectionHeader } from '@/components/ui';
+import { useUrlState } from '@/lib/use-url-state';
+
+const PULSE_DAYS = ['7', '14', '30', '90'] as const;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -163,7 +166,9 @@ function EventRow({
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function PulsePage() {
-  const [days, setDays] = useState(30);
+  const [daysParam, setDaysParam] = useUrlState('days', '30', PULSE_DAYS);
+  const days = Number(daysParam);
+  const setDays = (value: number) => setDaysParam(String(value) as typeof PULSE_DAYS[number]);
   const [severity, setSeverity] = useState<Severity>('all');
   const [metricFilter, setMetricFilter] = useState<string | null>(null);
   const [page, setPage] = useState(0);
@@ -259,7 +264,7 @@ export default function PulsePage() {
       {/* ─── Filters ────────────────────────────────────────── */}
       <div className="mt-6 flex flex-wrap items-center gap-2">
         <span className="mr-1 font-mono text-caption uppercase tracking-wider text-muted">Period</span>
-        {[7, 14, 30, 90].map(d => (
+        {PULSE_DAYS.map(Number).map(d => (
           <FilterPill key={d} active={days === d} onClick={() => { setDays(d); setPage(0); }}>
             {d}D
           </FilterPill>

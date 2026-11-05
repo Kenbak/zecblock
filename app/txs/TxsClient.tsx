@@ -22,6 +22,8 @@ import {
   ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend,
 } from 'recharts';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
+import { useUrlState } from '@/lib/use-url-state';
+import { PanelShareControl } from '@/components/charts/PanelShareControl';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -435,21 +437,25 @@ function TrendsChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [hidden, setHidden] = useState<Record<string, boolean>>({});
-  const [period, setPeriod] = useState<TrendPeriod>('30');
+  const [period, setPeriod] = useUrlState<TrendPeriod>('trend', '30', PERIOD_OPTIONS.map((option) => option.id));
   const [data, setData] = useState<TrendDay[]>([]);
   const [loading, setLoading] = useState(true);
+  const panelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
+    // Ignore a slower response for a period that is no longer selected.
+    let cancelled = false;
     setLoading(true);
     const base = getApiUrl();
     const days = period === 'all' ? 'all' : Number(period);
     fetch(`${base}/v1/privacy/stats?days=${days}`)
       .then(res => res.ok ? readApiData(res) : null)
       .then(json => {
-        if (json?.trends?.daily) setData(json.trends.daily);
+        if (!cancelled && json?.trends?.daily) setData(json.trends.daily);
       })
       .catch(() => {})
-      .finally(() => setLoading(false));
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [period]);
 
   const chartData = useMemo(
@@ -474,16 +480,28 @@ function TrendsChart() {
 
   return (
     <div>
-      <div className="card p-4 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
+      <div ref={panelRef} className="card p-4 sm:p-6">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
           <h3 className="text-sm font-mono text-muted uppercase tracking-wider">Daily Transaction Volume</h3>
-          <FilterGroup inline>
-            {PERIOD_OPTIONS.map(p => (
-              <FilterButton key={p.id} active={period === p.id} onClick={() => setPeriod(p.id)}>
-                {p.label}
-              </FilterButton>
-            ))}
-          </FilterGroup>
+          <div className="flex flex-wrap items-center gap-2">
+            <FilterGroup inline>
+              {PERIOD_OPTIONS.map(p => (
+                <FilterButton key={p.id} active={period === p.id} onClick={() => setPeriod(p.id)}>
+                  {p.label}
+                </FilterButton>
+              ))}
+            </FilterGroup>
+            <PanelShareControl
+              title={`Zcash daily shielded and transparent transactions (${periodLabel})`}
+              fileName={`zecblock-daily-transactions-${period}`}
+              panelRef={panelRef}
+              disabled={loading || data.length === 0}
+              csv={() => data.length ? {
+                headers: ['Date (UTC)', 'Shielded transactions', 'Transparent transactions', 'Shielded share (%)'],
+                rows: [...data].reverse().map(d => [d.date, d.shielded, d.transparent, d.shieldedPercentage]),
+              } : null}
+            />
+          </div>
         </div>
         {loading ? (
           <ChartSkeleton height={320} />

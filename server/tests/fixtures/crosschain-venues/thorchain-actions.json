@@ -1,0 +1,568 @@
+{
+  "actions": [
+    {
+      "date": "1793254935159955203",
+      "height": "28443835",
+      "in": [
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "443962000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "txID": "2A28A7DA76E120B117923F858AFC7CA741AA2CEFADCBE63678C7662CECB478E6"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "sto",
+          "affiliateFee": "0",
+          "inPriceUSD": "1.0074774091803254",
+          "isStreamingSwap": true,
+          "liquidityFee": "1460978952",
+          "memo": "=:z:t1ah4wknatZ86cAVMJBqqvfHjRMqkVccKi8:352839756/0/160:sto:0",
+          "networkFees": [
+            {
+              "amount": "43696",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "outPriceUSD": "1263.9346740380101",
+          "streamingSwapMeta": {
+            "count": "160",
+            "depositedCoin": {
+              "amount": "443962000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "inCoin": {
+              "amount": "443962000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "interval": "0",
+            "lastHeight": "28443942",
+            "outCoin": {
+              "amount": "354511005",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "354371200",
+            "quantity": "160"
+          },
+          "swapSlip": "20",
+          "swapTarget": "2205248",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "t1ah4wknatZ86cAVMJBqqvfHjRMqkVccKi8",
+          "coins": [
+            {
+              "amount": "354467309",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443948",
+          "txID": "B245B1F975B6013C59EDF60AC95C00D91BAA6E5C7CEE7F3F066D938FB0C81EDF"
+        }
+      ],
+      "pools": [
+        "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    },
+    {
+      "date": "1793253794849827975",
+      "height": "28443651",
+      "in": [
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "500000000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "txID": "98D60366A00C04789D4CABAE9F0E99DEFAE5CE17973655578B016FF4C6427809"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "sto",
+          "affiliateFee": "0",
+          "inPriceUSD": "1.0072330149766422",
+          "isStreamingSwap": true,
+          "liquidityFee": "1639136790",
+          "memo": "=:z:t1ah4wknatZ86cAVMJBqqvfHjRMqkVccKi8:396377542/0/180:sto:0",
+          "networkFees": [
+            {
+              "amount": "43700",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "outPriceUSD": "1266.3316577249082",
+          "streamingSwapMeta": {
+            "count": "180",
+            "depositedCoin": {
+              "amount": "500000000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "inCoin": {
+              "amount": "500000000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "interval": "0",
+            "lastHeight": "28443810",
+            "outCoin": {
+              "amount": "398286767",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "398256120",
+            "quantity": "180"
+          },
+          "swapSlip": "20",
+          "swapTarget": "2202097",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "t1ah4wknatZ86cAVMJBqqvfHjRMqkVccKi8",
+          "coins": [
+            {
+              "amount": "398243067",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443816",
+          "txID": "DF4E2FC928BAF73848C78FEAB4D67CA00C987D85AB108E92AD4C72D57B87218F"
+        }
+      ],
+      "pools": [
+        "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    },
+    {
+      "date": "1793251860262566260",
+      "height": "28443340",
+      "in": [
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "697165991903",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "txID": "5D251D41A812F73E99D730093B75E22B8455E28E7ACEB76497F8CC3A2E3DDE4E"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "sto",
+          "affiliateFee": "0",
+          "inPriceUSD": "1.006936659961923",
+          "isStreamingSwap": true,
+          "liquidityFee": "2298411524",
+          "memo": "=:z:t1NYSWyt8FenbVyAs13Nn6WLMQKETpPRJbN:546947468/0/250:sto:0",
+          "networkFees": [
+            {
+              "amount": "43718",
+              "asset": "ZEC.ZEC"
+            },
+            {
+              "amount": "24987500",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "outPriceUSD": "1268.3345476754803",
+          "streamingSwapMeta": {
+            "count": "247",
+            "depositedCoin": {
+              "amount": "700000000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "failedSwapReasons": [
+              "emit asset 2201002 less than price limit 2214362"
+            ],
+            "failedSwaps": [
+              "0"
+            ],
+            "inCoin": {
+              "amount": "697165991903",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "interval": "0",
+            "lastHeight": "28443508",
+            "outCoin": {
+              "amount": "553802972",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "553822906",
+            "quantity": "247"
+          },
+          "swapSlip": "20",
+          "swapTarget": "2214362",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "t1NYSWyt8FenbVyAs13Nn6WLMQKETpPRJbN",
+          "coins": [
+            {
+              "amount": "553759254",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443518",
+          "txID": "894C4809096E36952FAB8698E28F9FE169D73D54D9BE84F717B97FCFCAD3442A"
+        },
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "2809020500",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "height": "28443521",
+          "txID": "CD40F43722A3A31AEE9C6BA7AF065238D7B815364AEB704FC4534750D70286CD"
+        }
+      ],
+      "pools": [
+        "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    },
+    {
+      "date": "1793251108564612684",
+      "height": "28443219",
+      "in": [
+        {
+          "address": "0x509b9d094a6c26d716aac131e8adee5b16b86d3e",
+          "coins": [
+            {
+              "amount": "3000000000000",
+              "asset": "ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F"
+            }
+          ],
+          "txID": "998B3637885CEBEBAC98044E206DCED4C3EDE2F8D3181A7A8B1095AE067B119A"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "sto",
+          "affiliateFee": "0",
+          "inPriceUSD": "1.0031646042883127",
+          "isStreamingSwap": true,
+          "liquidityFee": "61558489391",
+          "memo": "=:z:t1crNGZG1cvFnyEaCwFagq9MDh1aesgLPqF:2304256077/3/100:sto:0",
+          "networkFees": [
+            {
+              "amount": "43705",
+              "asset": "ZEC.ZEC"
+            },
+            {
+              "amount": "43705",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "outPriceUSD": "1294.032057519546",
+          "streamingSwapMeta": {
+            "count": "100",
+            "depositedCoin": {
+              "amount": "3000000000000",
+              "asset": "ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F"
+            },
+            "inCoin": {
+              "amount": "3000000000000",
+              "asset": "ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F"
+            },
+            "interval": "3",
+            "lastHeight": "28443516",
+            "outCoin": {
+              "amount": "2326637655",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "2325771500",
+            "quantity": "100"
+          },
+          "swapSlip": "125",
+          "swapTarget": "23042561",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "t1crNGZG1cvFnyEaCwFagq9MDh1aesgLPqF",
+          "coins": [
+            {
+              "amount": "1474718676",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443526",
+          "txID": "C464BE2BA83DFC52AFE76839E44662D66C63A28AC8BE30D92978AC307DDCBF05"
+        },
+        {
+          "address": "t1crNGZG1cvFnyEaCwFagq9MDh1aesgLPqF",
+          "coins": [
+            {
+              "amount": "851831569",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443528",
+          "txID": "42277972992DE3B6C0506B80849CC08C8137FE17C8CF58314B99FDB5990E2177"
+        }
+      ],
+      "pools": [
+        "ETH.DAI-0X6B175474E89094C44DA98B954EEDEAC495271D0F",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    },
+    {
+      "date": "1793250449235075798",
+      "height": "28443113",
+      "in": [
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "155555555568",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "txID": "B3E0C77556B8F1D516F4FCFFDE8FCC79A383BFC9BC827F6E8AACF6785C8C963D"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "sto",
+          "affiliateFee": "0",
+          "inPriceUSD": "1.0079281341001343",
+          "isStreamingSwap": true,
+          "liquidityFee": "508520891",
+          "memo": "=:z:t1crpnTUs6LTLUYkzb1DCjNRj2hkYJU2EmR:397119568/0/180:sto:0",
+          "networkFees": [
+            {
+              "amount": "43709",
+              "asset": "ZEC.ZEC"
+            },
+            {
+              "amount": "24997600",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "outPriceUSD": "1267.874489971709",
+          "streamingSwapMeta": {
+            "count": "180",
+            "depositedCoin": {
+              "amount": "500000000000",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "failedSwapReasons": [
+              "emit asset 2203479 less than price limit 2205384",
+              "emit asset 2203449 less than price limit 2205384",
+              "emit asset 2203449 less than price limit 2205384",
+              "emit asset 2204628 less than price limit 2205384",
+              "emit asset 2204598 less than price limit 2205384",
+              "emit asset 2204598 less than price limit 2205384",
+              "emit asset 2201306 less than price limit 2205379",
+              "emit asset 2201306 less than price limit 2205379",
+              "emit asset 2202482 less than price limit 2205379",
+              "emit asset 2202453 less than price limit 2205379"
+            ],
+            "failedSwaps": [
+              "2",
+              "4",
+              "7",
+              "11",
+              "12",
+              "16",
+              "18",
+              "23",
+              "24",
+              "26",
+              "27",
+              "31",
+              "33",
+              "35",
+              "37",
+              "39",
+              "41",
+              "42",
+              "43",
+              "45",
+              "47",
+              "48",
+              "49",
+              "50",
+              "51",
+              "52",
+              "53",
+              "54",
+              "55",
+              "56",
+              "58",
+              "59",
+              "60",
+              "61",
+              "63",
+              "65",
+              "66",
+              "67",
+              "68",
+              "69",
+              "70",
+              "71",
+              "72",
+              "73",
+              "74",
+              "75",
+              "76",
+              "77",
+              "78",
+              "79",
+              "80",
+              "81",
+              "82",
+              "83",
+              "84",
+              "85",
+              "86",
+              "87",
+              "88",
+              "89",
+              "90",
+              "91",
+              "92",
+              "93",
+              "94",
+              "95",
+              "96",
+              "97",
+              "99",
+              "100",
+              "101",
+              "102",
+              "106",
+              "107",
+              "108",
+              "109",
+              "113",
+              "115",
+              "118",
+              "120",
+              "121",
+              "122",
+              "123",
+              "126",
+              "127",
+              "128",
+              "130",
+              "131",
+              "132",
+              "134",
+              "135",
+              "136",
+              "137",
+              "138",
+              "139",
+              "140",
+              "141",
+              "142",
+              "143",
+              "145",
+              "147",
+              "150",
+              "151",
+              "152",
+              "155",
+              "156",
+              "157",
+              "158",
+              "159",
+              "160",
+              "161",
+              "162",
+              "163",
+              "164",
+              "169",
+              "170",
+              "171",
+              "172",
+              "173",
+              "174",
+              "176",
+              "177",
+              "178",
+              "179"
+            ],
+            "inCoin": {
+              "amount": "155555555568",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            },
+            "interval": "0",
+            "lastHeight": "28443271",
+            "outCoin": {
+              "amount": "123652590",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "397989180",
+            "quantity": "180"
+          },
+          "swapSlip": "20",
+          "swapTarget": "2206220",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "0xa42ad1fad4095eebd65356696aae43e50f712fb5",
+          "coins": [
+            {
+              "amount": "344419446800",
+              "asset": "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48"
+            }
+          ],
+          "height": "28443278",
+          "txID": "EDE8D1BBAA32E3029206A5CAE1CB620CB2E003B376672A89892469A6F94EC8A0"
+        },
+        {
+          "address": "t1crpnTUs6LTLUYkzb1DCjNRj2hkYJU2EmR",
+          "coins": [
+            {
+              "amount": "123608881",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28443281",
+          "txID": "44082ABB1C8D871BD0C270D6A094C111DC87CC0B13C949C5565B1F4BDD149BDE"
+        }
+      ],
+      "pools": [
+        "ETH.USDC-0XA0B86991C6218B36C1D19D4A2E9EB0CE3606EB48",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    }
+  ],
+  "count": "324",
+  "meta": {
+    "nextPageToken": "284431139000000125",
+    "prevPageToken": "284438359000000032"
+  }
+}

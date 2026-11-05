@@ -4,6 +4,7 @@ import { notFound } from 'next/navigation';
 import { buildPageMetadata, getAddressResolution, formatNumber, getBaseUrl } from '@/lib/seo';
 import type { AddressMeta } from '@/lib/seo';
 import { detectAddressType } from '@/lib/zcash';
+import { isValidAddressSyntax } from '@/lib/address-syntax';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
 import { CURRENCY } from '@/lib/config';
 
@@ -25,26 +26,6 @@ function getAddressTypeLabel(addr: string, type: string): string {
   return 'Transparent';
 }
 
-function isValidAddressSyntax(address: string): boolean {
-  const type = detectAddressType(address);
-
-  if (type === 'transparent') {
-    return address.length === 35 && /^[1-9A-HJ-NP-Za-km-z]+$/.test(address);
-  }
-
-  if (type === 'shielded') {
-    return address.length === 78
-      && /^(?:zs|ztestsapling)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/.test(address);
-  }
-
-  if (type === 'unified') {
-    return address.length >= 16
-      && address.length <= 512
-      && /^(?:u|utest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]+$/.test(address);
-  }
-
-  return false;
-}
 
 function getAddressSummary(address: string, meta: AddressMeta | null): string {
   const detectedType = detectAddressType(address);

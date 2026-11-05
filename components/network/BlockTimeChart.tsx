@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { LineChart, Line, XAxis, YAxis, ResponsiveContainer, ReferenceLine, CartesianGrid } from 'recharts';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -10,6 +10,10 @@ import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
+import { useUrlState } from '@/lib/use-url-state';
+import { PanelShareControl, objectRowsCsv } from '@/components/charts/PanelShareControl';
+
+const BLOCK_TIME_PERIODS = ['6h', '24h', '7d'];
 
 type Point = { height: number; timestamp: number; averageSeconds: number | null; intervalSeconds: number | null; targetSeconds: number | null };
 type Response = { success: boolean; period: string; points: Point[]; rollingIntervals: number; truncated: boolean; observedAt: string;
@@ -18,15 +22,17 @@ type Response = { success: boolean; period: string; points: Point[]; rollingInte
 export function BlockTimeChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState('24h');
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [period, setPeriod] = useUrlState('interval', '24h', BLOCK_TIME_PERIODS);
   const [individual, setIndividual] = useState(false);
   const { data, loading, error } = useApiQuery<Response>('/v1/network/block-time', { period }, { refreshInterval: 15_000 });
   const points = data?.period === period ? data.points : [];
   const latest = points.at(-1);
   const activation = data?.schedule?.nu7Height;
   const showActivation = activation != null && points.length > 0 && activation >= points[0].height && activation <= points[points.length - 1].height;
-  return <Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader label="BLOCK_INTERVAL" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2" aria-label="Average block interval period">
-    {['6h', '24h', '7d'].map(value => <button key={value} type="button" aria-pressed={period === value}
+  return <div ref={panelRef}><Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader label="BLOCK_INTERVAL" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2" aria-label="Average block interval period">
+    <PanelShareControl title={`Zcash average block interval (${period})`} fileName={`zecblock-block-interval-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!points.length} />
+    {BLOCK_TIME_PERIODS.map(value => <button key={value} type="button" aria-pressed={period === value}
       className={`filter-btn ${period === value ? 'filter-btn-active' : ''}`}
       onClick={() => setPeriod(value)}>{value}</button>)}
   </div>} />
@@ -50,5 +56,5 @@ export function BlockTimeChart() {
     {data?.truncated && <p role="status" className="text-caption text-warning mt-2">Showing the latest bounded sample; earlier observations in this period are omitted.</p>}
     {(error || (data?.indexedHeight != null && data.nodeHeight > data.indexedHeight)) && <p role="status" className="text-caption text-warning mt-2">{error ? 'Refresh unavailable. Any displayed observations are from the previous response.' : `Sample is ${data!.nodeHeight - data!.indexedHeight!} blocks behind the node.`}</p>}
     <ChartWatermark />
-  </CardBody></Card>;
+  </CardBody></Card></div>;
 }

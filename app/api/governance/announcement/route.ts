@@ -1,4 +1,4 @@
-import { getGovernanceCatalog } from '@/lib/governance-data';
+import { getGovernanceAnnouncementCatalog } from '@/lib/governance-data';
 import { announcementCacheHeaders, buildAnnouncementSnapshot } from '@/lib/governance-announcement';
 import { getNetwork } from '@/lib/seo';
 
@@ -7,7 +7,7 @@ export async function GET() {
     { announcement: null, generatedAt: Date.now(), nextChangeAt: null },
     { headers: announcementCacheHeaders(60) },
   );
-  const catalog = await getGovernanceCatalog();
+  const catalog = await getGovernanceAnnouncementCatalog();
   const { snapshot, ttl } = buildAnnouncementSnapshot(catalog, Date.now());
   return Response.json(snapshot, { headers: announcementCacheHeaders(ttl) });
 }

@@ -9,7 +9,6 @@
 
 const https = require('https');
 const fs = require('fs');
-const path = require('path');
 const crypto = require('crypto');
 
 class XClient {
@@ -32,7 +31,7 @@ class XClient {
     try {
       return await fn();
     } catch (err) {
-      if (err.message && err.message.includes('401') && this.refreshTokenValue && this.clientId) {
+      if (err.statusCode === 401 && this.refreshTokenValue && this.clientId) {
         this.logger.info('[XClient] Got 401, attempting token refresh...');
         await this._doRefresh();
         return await fn();
@@ -134,7 +133,7 @@ class XClient {
           if (res.statusCode >= 200 && res.statusCode < 300) {
             resolve();
           } else {
-            reject(new Error(`Append failed (${res.statusCode}): ${data.slice(0, 200)}`));
+            reject(Object.assign(new Error(`Append failed (${res.statusCode}): ${data.slice(0, 200)}`), { statusCode: res.statusCode }));
           }
         });
       });
@@ -176,10 +175,10 @@ class XClient {
             if (res.statusCode >= 200 && res.statusCode < 300) {
               resolve(parsed);
             } else {
-              reject(new Error(`API ${path} (${res.statusCode}): ${data.slice(0, 300)}`));
+              reject(Object.assign(new Error(`API ${path} (${res.statusCode}): ${data.slice(0, 300)}`), { statusCode: res.statusCode }));
             }
-          } catch (e) {
-            reject(new Error(`API parse error ${path}: ${data.slice(0, 200)}`));
+          } catch {
+            reject(Object.assign(new Error(`API parse error ${path}: ${data.slice(0, 200)}`), { statusCode: res.statusCode }));
           }
         });
       });
@@ -245,10 +244,10 @@ class XClient {
                 } else {
                   const errMsg = parsed.detail || parsed.title || JSON.stringify(parsed);
                   this.logger.error(`[XClient] Post failed (${res.statusCode}): ${errMsg}`);
-                  reject(new Error(`X API ${res.statusCode}: ${errMsg}`));
+                  reject(Object.assign(new Error(`X API ${res.statusCode}: ${errMsg}`), { statusCode: res.statusCode }));
                 }
-              } catch (e) {
-                reject(new Error(`X API response parse error: ${data.slice(0, 200)}`));
+              } catch {
+                reject(Object.assign(new Error(`X API response parse error: ${data.slice(0, 200)}`), { statusCode: res.statusCode }));
               }
             });
           }
@@ -278,8 +277,18 @@ class XClient {
     return this._withAutoRefresh(() => this._postTweet(text));
   }
 
-  async _postTweet(text) {
-    const body = JSON.stringify({ text });
+  /** Reply only to a known parent. Source delivery persists its claim first. */
+  async reply(text, parentId) {
+    if (!/^\d+$/.test(String(parentId))) throw new Error('Invalid reply parent ID');
+    if (!text || text.length > 280) throw new Error('Invalid source reply copy');
+    if (this.dryRun) return { id: `dry_run_${Date.now()}`, text };
+    return this._withAutoRefresh(() => this._postTweet(text, String(parentId)));
+  }
+
+  async _postTweet(text, parentId) {
+    const payload = { text };
+    if (parentId) payload.reply = { in_reply_to_tweet_id: parentId };
+    const body = JSON.stringify(payload);
 
     return new Promise((resolve, reject) => {
       const req = https.request(
@@ -305,10 +314,10 @@ class XClient {
               } else {
                 const errMsg = parsed.detail || parsed.title || JSON.stringify(parsed);
                 this.logger.error(`[XClient] Post failed (${res.statusCode}): ${errMsg}`);
-                reject(new Error(`X API ${res.statusCode}: ${errMsg}`));
+                reject(Object.assign(new Error(`X API ${res.statusCode}: ${errMsg}`), { statusCode: res.statusCode }));
               }
-            } catch (e) {
-              reject(new Error(`X API response parse error: ${data.slice(0, 200)}`));
+            } catch {
+              reject(Object.assign(new Error(`X API response parse error: ${data.slice(0, 200)}`), { statusCode: res.statusCode }));
             }
           });
         }
@@ -359,7 +368,7 @@ class XClient {
               } else {
                 reject(new Error(`Token refresh failed (${res.statusCode}): ${data.slice(0, 200)}`));
               }
-            } catch (e) {
+            } catch {
               reject(new Error(`Token refresh parse error: ${data.slice(0, 200)}`));
             }
           });

@@ -11,7 +11,7 @@ function load(file, dependencies = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, atob, URL, require: name => dependencies[name] ?? (name === './bounded-json' ? { readBoundedJson } : require(name)) });
+  }).outputText, { exports, atob, URL, setTimeout, clearTimeout, console, require: name => dependencies[name] ?? (name === './bounded-json' ? { readBoundedJson } : name === './governance-upstream' ? load('lib/governance-upstream.ts', dependencies) : require(name)) });
   return exports;
 }
 const nu7 = load('lib/nu7-vote-results.ts');
@@ -136,6 +136,21 @@ test('announcements prioritize active voting, expire, and suppress stale actiona
   const afterExpiry = Date.parse('2026-09-20T00:00:00Z');
   assert.equal(selectAnnouncement({ ...catalog, checkedAt: afterExpiry }, afterExpiry), null);
   assert.equal(selectAnnouncement({ ...catalog, votes: [{ ...result, state: 'unavailable' }], checkedAt: afterOpening }, afterOpening), null);
+});
+
+test('directory freshness decides whether a missing round is authoritative independently of tally freshness', () => {
+  const now = Date.now();
+  const oldTally = { votes: [], checkedAt: now - 600_001, directoryCheckedAt: now, unavailable: false };
+  assert.equal(model.catalogIsStale(oldTally, now), true);
+  assert.equal(model.catalogDirectoryIsStale(oldTally, now), false);
+  assert.equal(model.catalogDirectoryIsStale({ ...oldTally, directoryCheckedAt: now - 600_001 }, now), true);
+  assert.equal(model.catalogDirectoryIsStale({ ...oldTally, unavailable: true }, now), true);
+});
+
+test('governance pages keep a one-minute ISR boundary when catalog work is shared across requests', () => {
+  for (const file of ['app/governance/page.tsx', 'app/governance/[slug]/page.tsx']) {
+    assert.match(fs.readFileSync(file, 'utf8'), /export const revalidate = 60;/);
+  }
 });
 
 test('new governance routes resolve missing resources and non-mainnet before HTML streaming', async () => {

@@ -94,6 +94,7 @@ test('navbar search controls stay present when server pathname is unavailable or
     'next/link': { default: ({ children, ...props }) => React.createElement('a', props, children) },
     'next/image': { default: () => null },
     '@/components/BrandLogo': { BrandLogo: () => null },
+    '@/components/ask/ZiftMark': { ZiftMark: () => null },
     '@/lib/dialog-focus': { containDialogFocus: () => {} },
     '@/hooks/useBodyScrollLock': { useBodyScrollLock: () => {} },
     '@/lib/navigation': load('lib/navigation.ts'),

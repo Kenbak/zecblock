@@ -3,6 +3,8 @@ import { buildPageMetadata } from "@/lib/seo";
 import { PageHeader } from "@/components/ui/SectionHeader";
 import { isMainnet } from "@/lib/config";
 import { CrosschainDashboard } from "@/components/crosschain/CrosschainDashboard";
+import { notFound } from "next/navigation";
+import type { CrosschainVenue } from "@/components/crosschain/VenueContext";
 
 type Search = Promise<Record<string, string | string[] | undefined>>;
 export async function generateMetadata({
@@ -14,7 +16,7 @@ export async function generateMetadata({
   return buildPageMetadata({
     title: "ZEC Cross-Chain Swap Analytics | ZecBlock",
     description:
-      "Explore indexed ZEC swaps through NEAR Intents: historical volume, routes, observed outcomes and both transaction legs, with explicit data coverage.",
+      "Explore native ZEC swaps through NEAR Intents, Maya and THORChain with venue-specific charts, transaction records and explicit historical coverage.",
     path: "/crosschain",
     networks: ["mainnet"],
     index: Object.keys(query).length === 0,
@@ -26,6 +28,8 @@ export default async function CrosschainPage({
   searchParams: Search;
 }) {
   const query = await searchParams;
+  if (query.venue !== undefined && (typeof query.venue !== "string" || !["near", "maya", "thorchain"].includes(query.venue))) notFound();
+  const venue = (query.venue || "near") as CrosschainVenue;
   const allowed = [
     "period",
     "direction",
@@ -55,7 +59,7 @@ export default async function CrosschainPage({
         <div className="max-w-7xl mx-auto">
           <div className="card text-center py-12">
             <h1 className="type-page font-sans text-primary mb-4">Cross-Chain Available on Mainnet Only</h1>
-            <p className="text-muted max-w-lg mx-auto mb-6">NEAR Intents cross-chain swaps are only available for ZEC mainnet.</p>
+            <p className="text-muted max-w-lg mx-auto mb-6">NEAR Intents, Maya and THORChain native-ZEC activity is available on Zcash mainnet.</p>
             <div className="flex flex-wrap justify-center gap-4">
               <a href="https://zecblock.com/crosschain" className="btn btn-md btn-primary">View on Mainnet</a>
               <Link href="/" className="btn btn-md btn-secondary">Back to Explorer</Link>
@@ -74,15 +78,7 @@ export default async function CrosschainPage({
           title="ZEC Cross-Chain Analytics"
           subtitle={
             <span className="text-muted">
-              Follow ZEC moving between chains through{" "}
-              <a
-                href="https://near.org/intents"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="text-cipher-gold hover:underline"
-              >
-                NEAR Intents
-              </a>
+              Explore native ZEC activity through NEAR Intents, Maya and THORChain.
             </span>
           }
           actions={
@@ -110,7 +106,13 @@ export default async function CrosschainPage({
           }
         />
 
-        <CrosschainDashboard key={params.period || "30d"} params={params} />
+
+        <CrosschainDashboard key={`${venue}-${params.period || "30d"}`} params={params} venue={venue} venueTabs={<nav className="filter-group inline-flex flex-wrap" aria-label="Cross-chain venue">
+          {([["near", "NEAR Intents"], ["maya", "Maya"], ["thorchain", "THORChain"]] as const).map(([key, label]) => {
+            const tabParams = new URLSearchParams({ period: params.period || "30d", ...(key === "near" ? {} : { venue: key }) });
+            return <Link key={key} href={`/crosschain?${tabParams.toString()}`} className={`filter-btn ${venue === key ? "filter-btn-active" : ""}`} aria-current={venue === key ? "page" : undefined} prefetch={false}>{label}</Link>;
+          })}
+        </nav>} />
       </div>
     </div>
   );

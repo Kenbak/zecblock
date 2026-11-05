@@ -22,8 +22,8 @@ export function ChartExport({ data, logo = '/brand/zecblock-logotype.png' }: { d
     </div>
     <div style={{ display: 'flex', marginTop: 10, fontSize: 17, color: '#9CA4B0' }}>{chartDateRange(chart, rows)} · {chart.unit}</div>
     <div style={{ display: 'flex', gap: 22, marginTop: 19, height: hasSummaries ? 48 : 32, fontSize: hasSummaries ? 14 : 16 }}>
-      {chart.series.map(s => <div key={s.key} data-series-summary={s.summary ? s.key : undefined} style={{ display: 'flex', flex: hasSummaries ? 1 : undefined, minWidth: 0, flexDirection: 'column', gap: 2, justifyContent: hasSummaries ? 'flex-start' : 'center' }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, height: hasSummaries ? 18 : undefined }}>{s.marker === 'diamond' ? <svg width={12} height={12} viewBox="0 0 12 12"><path d="M6 1 L11 6 L6 11 L1 6 Z" stroke={colors[s.color]} strokeWidth={1.5} fill="#0B0C0E"/></svg> : <span style={{ width: 9, height: 9, background: colors[s.color] }}/>} {s.label}</div>
+      {chart.series.map(s => <div key={s.key} data-series-summary={s.summary ? s.key : undefined} style={{ display: 'flex', ...(hasSummaries ? { flex: 1 } : {}), minWidth: 0, flexDirection: 'column', gap: 2, justifyContent: hasSummaries ? 'flex-start' : 'center' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, ...(hasSummaries ? { height: 18 } : {}) }}>{s.marker === 'diamond' ? <svg width={12} height={12} viewBox="0 0 12 12"><path d="M6 1 L11 6 L6 11 L1 6 Z" stroke={colors[s.color]} strokeWidth={1.5} fill="#0B0C0E"/></svg> : <span style={{ width: 9, height: 9, background: colors[s.color] }}/>} {s.label}</div>
         {s.summary ? <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
           <span style={{ fontSize: 22, lineHeight: 1.1 }}>{s.summary.primary}</span>
           <span style={{ fontSize: 13, lineHeight: 1.25, color: '#9CA4B0' }}>({s.summary.secondary})</span>
@@ -61,7 +61,7 @@ export function ChartExport({ data, logo = '/brand/zecblock-logotype.png' }: { d
           <div style={{ display: 'flex', position: 'absolute', top: plotHeight + 15, left: 90, width: 1020, justifyContent: 'space-between', color: '#9CA4B0', fontSize: 14 }}>{tickRows.map(i => <span key={i}>{chartObservationLabel(chart, rows[i].x)}</span>)}</div>
         </>}
     </div>
-    <div style={{ display: 'flex', fontSize: hasSummaries ? 14 : 15, lineHeight: hasSummaries ? 1.4 : undefined, color: '#C2C7CF', marginTop: 9, height: 38, minHeight: hasSummaries ? 32 : undefined }}>{chart.description}</div>
+    <div style={{ display: 'flex', fontSize: hasSummaries ? 14 : 15, ...(hasSummaries ? { lineHeight: 1.4, minHeight: 32 } : {}), color: '#C2C7CF', marginTop: 9, height: 38 }}>{chart.description}</div>
     <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #2C3037', paddingTop: 15, marginTop: 'auto', fontSize: 14, color: '#9CA4B0' }}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}><span>Source: {source} · {network}</span><span>{asOf}</span></div>
       <span style={{ color: '#F1F3F5', alignSelf: 'flex-end', fontSize: 18 }}>zecblock.com</span>

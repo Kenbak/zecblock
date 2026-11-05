@@ -1,0 +1,11 @@
+[Unit]
+Description=Check analytics subscriber availability every minute
+
+[Timer]
+OnBootSec=60s
+OnUnitActiveSec=60s
+RandomizedDelaySec=5s
+Unit=zecblock-ask-availability.service
+
+[Install]
+WantedBy=timers.target

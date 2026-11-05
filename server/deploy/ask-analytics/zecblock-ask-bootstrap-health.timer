@@ -1,0 +1,11 @@
+[Unit]
+Description=Check analytics bootstrap boundaries every five minutes
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+RandomizedDelaySec=30s
+Unit=zecblock-ask-bootstrap-health.service
+
+[Install]
+WantedBy=timers.target

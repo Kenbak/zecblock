@@ -14,6 +14,7 @@ function render(data, { network = 'mainnet', error = null, historyData = undefin
   }).outputText, { exports, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
     if (name === 'react') return { useState: value => [value === 'fees' ? metric : value === '30d' ? period : value, () => {}] };
+    if (name === '@/lib/use-url-state') return { useUrlState: (key, fallback) => [fallback === '30d' ? period : fallback, () => {}] };
     if (name === 'recharts') return Object.fromEntries(['ComposedChart','Bar','Line','XAxis','YAxis','ResponsiveContainer','CartesianGrid'].map(key => [key,key]));
     if (name === 'next/link') return { default: 'a' };
     if (name === '@/components/ui/SectionHeader') return { SectionHeader: 'SectionHeader' };

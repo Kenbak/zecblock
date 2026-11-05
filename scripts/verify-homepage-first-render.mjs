@@ -32,10 +32,8 @@ try {
   await staticPage.route(url + '/', route => route.fulfill({ contentType: 'text/html', body: html }));
   await staticPage.goto(url);
   const structured = await staticPage.locator('script[type="application/ld+json"]').allTextContents();
-  // Isolate the server-rendered homepage from Next's existing outer streaming
-  // boundary, whose reveal script cannot execute with JavaScript disabled.
-  // This checks the feed's noscript fallback, not app-wide no-JS support.
-  await staticPage.evaluate(() => document.body.replaceChildren(document.querySelector('.home-feed').closest('.home-page')));
+  // Check the actual page: server feeds must not need an inline reveal or
+  // successful React hydration to expose their existing data and links.
   assert.equal(await staticPage.locator('.home-feed-content').first().isVisible(), true);
   assert.equal(await staticPage.locator('.home-feed-placeholder').first().isVisible(), false);
   assert.ok(await staticPage.locator('.home-feed a[href^="/block/"]').count() > 0);
@@ -47,9 +45,43 @@ try {
   assert.ok(structured.length > 0);
   structured.forEach(value => JSON.parse(value));
   await noJS.close();
-  console.log('PASS: cached HTML has relative ages, SEO metadata, JSON-LD, one H1; isolated feeds have a no-JavaScript fallback');
+  console.log('PASS: actual page has visible server feeds without JavaScript, relative ages, metadata, JSON-LD and one H1');
 
-  const cases = ['transactions', 'invalid-preference', null, 'blocked-storage'];
+  // Keep JavaScript enabled while failing/hanging its bundles: <noscript>
+  // does not cover this failure mode. A saved alternative may show a
+  // placeholder only until a real load failure or the bounded deadline.
+  for (const failure of ['aborted-bundles', 'stalled-bundles', 'blocked-inline']) {
+    const context = await browser.newContext({ viewport: { width: 1440, height: 1100 } });
+    await context.addInitScript(() => localStorage.setItem('cipherscan-home-card-right', 'transactions'));
+    const page = await context.newPage();
+    await page.clock.install();
+    await page.route(url + '/', route => route.fulfill({ contentType: 'text/html', body: html,
+      ...(failure === 'blocked-inline' ? { headers: { 'Content-Security-Policy': "script-src 'none'" } } : {}),
+    }));
+    let releaseScripts;
+    const scriptsReady = new Promise(resolve => { releaseScripts = resolve; });
+    await page.route('**/_next/**/*.js', async route => {
+      await scriptsReady;
+      await route.abort();
+    });
+    const navigation = page.goto(url, { waitUntil: 'domcontentloaded' });
+    await page.locator('.home-feed').first().waitFor();
+    assert.equal(await page.locator('.home-feed-content').first().isVisible(), true, 'Default slot stays visible');
+    if (failure !== 'blocked-inline') {
+      await page.locator('.home-feed-placeholder').last().waitFor({ state: 'visible' });
+      if (failure === 'stalled-bundles') await page.clock.fastForward(5001);
+      else releaseScripts();
+    }
+    await page.locator('.home-feed-content').last().waitFor({ state: 'visible' });
+    assert.equal(await page.locator('.home-feed-placeholder').last().isVisible(), false);
+    assert.ok(await page.locator('.home-feed a[href^="/block/"]').count() > 0);
+    releaseScripts();
+    await navigation;
+    await context.close();
+    console.log(`PASS: useful server feeds remain visible after ${failure}, with JavaScript enabled`);
+  }
+
+  const cases = ['transactions', 'shielded', 'invalid-preference', null, 'blocked-storage'];
   const selectedCase = process.env.HOME_VERIFY_CASE;
   if (selectedCase) assert.ok(cases.includes(selectedCase), 'Unknown HOME_VERIFY_CASE');
   for (const preference of selectedCase ? [selectedCase] : cases) {
@@ -91,10 +123,13 @@ try {
       })) } });
     });
     const navigation = page.goto(url, { waitUntil: 'domcontentloaded' });
-    await page.locator('.home-feed-placeholder').first().waitFor({ state: 'visible' });
+    await page.locator('.home-feed').first().waitFor();
     const before = await page.locator('.home-feed').last().boundingBox();
-    assert.equal(await page.locator('.home-feed-content').last().isVisible(), false);
-    assert.equal(await page.getByRole('heading', { name: 'SHIELDED_ACTIVITY', exact: true }).isVisible(), false);
+    const customPreference = preference === 'transactions';
+    assert.equal(await page.locator('.home-feed-content').first().isVisible(), true);
+    assert.equal(await page.locator('.home-feed-placeholder').last().isVisible(), customPreference);
+    assert.equal(await page.locator('.home-feed-content').last().isVisible(), !customPreference);
+    assert.equal(await page.getByRole('heading', { name: 'SHIELDED_ACTIVITY', exact: true }).isVisible(), !customPreference);
     releaseScripts();
     await navigation;
     await page.locator('.home-feed[data-preferences-ready="true"]').last().waitFor();

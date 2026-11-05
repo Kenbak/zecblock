@@ -14,6 +14,7 @@ import { ZecBtcCard } from '@/components/valuation/ZecBtcCard';
 import { isMainnet } from '@/lib/config';
 import { CoinsSectionIcon, MarketSectionIcon, SearchSectionIcon, WalletSectionIcon } from '@/components/icons/home-section';
 import { dailyMarketContext, finite, positive, modeledPremium, quoteIsFresh, snapshotIsRecent, utcDay, type PriceQuote, type ValuationPoint, type ValuationSnapshot } from '@/lib/valuation';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Period = '30d'|'90d'|'1y'|'2y'|'all';
 const PERIODS: {key:Period;label:string}[] = [{key:'30d',label:'30D'},{key:'90d',label:'90D'},{key:'1y',label:'1Y'},{key:'2y',label:'2Y'},{key:'all',label:'ALL'}];
@@ -29,7 +30,7 @@ const show = (v:unknown, f:(v:number)=>string) => finite(v)?f(v):'—';
 
 export default function ValuationClient() {
   const {theme}=useTheme();const c=getChartColors(theme);
-  const [period,setPeriod]=useState<Period>('30d'); const [profitMetric,setProfitMetric]=useState<'nupl'|'sopr'>('nupl');const [ageMetric,setAgeMetric]=useState<'avgDormancy'|'cdd'>('avgDormancy');
+  const [period,setPeriod]=useUrlState<Period>('period','30d',PERIODS.map(p=>p.key)); const [profitMetric,setProfitMetric]=useState<'nupl'|'sopr'>('nupl');const [ageMetric,setAgeMetric]=useState<'avgDormancy'|'cdd'>('avgDormancy');
   const [now,setNow]=useState(0);
   useEffect(()=>{setNow(Date.now());const id=setInterval(()=>setNow(Date.now()),30_000);return()=>clearInterval(id)},[]);
   const quoteQuery=useApiQuery<PriceQuote>('/v1/network/price',undefined,{refreshInterval:30_000});

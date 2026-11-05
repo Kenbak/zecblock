@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { BrandLogo } from '@/components/BrandLogo';
+import { ZiftMark } from '@/components/ask/ZiftMark';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { containDialogFocus } from '@/lib/dialog-focus';
@@ -201,7 +202,7 @@ export function NavBar() {
 
             {/* Right: utilities */}
             <div className="flex items-center gap-1.5 sm:gap-2">
-              {isMainnet ? <Link href="/ask" aria-current={pathname === '/ask' ? 'page' : undefined} title="Ask ZecBlock" className="hidden xl:flex h-9 items-center gap-1.5 px-1 sm:px-2.5 text-xs font-mono text-secondary hover:text-primary hover:bg-cipher-hover rounded-md transition-colors"><span className="hidden sm:inline" aria-hidden="true">&gt;_</span> Ask</Link> : null}
+              {isMainnet ? <Link href="/zift" aria-current={pathname === '/zift' ? 'page' : undefined} title="Zift: ask questions and run SQL on Zcash data" className="hidden xl:flex h-9 items-center gap-1.5 px-1 sm:px-2.5 text-xs font-mono text-secondary hover:text-primary hover:bg-cipher-hover rounded-md transition-colors"><ZiftMark size={14} /> Ask Zift</Link> : null}
               {/* Buy ZEC — mainnet only, desktop */}
               {isMainnet && (
                 <a

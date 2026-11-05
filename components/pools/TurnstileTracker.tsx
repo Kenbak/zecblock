@@ -20,6 +20,7 @@ import { ChartCard } from '@/components/network/ChartCard';
 import { MetricWithTooltip } from '@/components/pools/MetricWithTooltip';
 import { InteractiveCompositionBar } from '@/components/pools/InteractiveCompositionBar';
 import { parseTurnstilePeriod, type TurnstilePeriod } from '@/lib/turnstile-period';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 const PERIOD_SINCE: Record<TurnstilePeriod, string> = {
   'nu6.2': '2026-06-01',
@@ -470,7 +471,7 @@ export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProp
         }));
 
         return (
-          <ChartCard title="DAILY_DESHIELDED_ZEC_BREAKDOWN" height={280}>
+          <ChartCard title="DAILY_DESHIELDED_ZEC_BREAKDOWN" height={280} share={{ title: 'Daily deshielded ZEC breakdown', fileName: 'zecblock-daily-deshielded-zec', csv: () => objectRowsCsv(chartData) }}>
             <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>
               <AreaChart data={chartData}>
                 <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />

@@ -1,0 +1,9 @@
+[Unit]
+Description=Check private analytics transport recovery every thirty seconds
+[Timer]
+OnBootSec=45s
+OnUnitActiveSec=30s
+AccuracySec=3s
+Unit=zecblock-ask-feed-recovery.service
+[Install]
+WantedBy=timers.target

@@ -1,7 +1,6 @@
 'use client';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
 
-import { useState } from 'react';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts';
@@ -12,6 +11,8 @@ import { formatHashrate } from '@/lib/format-numbers';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { hashrateChartPoints, type HashrateEstimate, type HashrateStats, type HashrateWindow } from '@/lib/hashrate';
 import { ChartCard } from './ChartCard';
+import { useUrlState } from '@/lib/use-url-state';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 const PERIODS = ['30d', '90d', '1y', 'all'] as const;
 type Period = typeof PERIODS[number];
@@ -51,8 +52,8 @@ function HashratePeriodSelector({ value, onChange }: { value: Period; onChange: 
 export function NetworkHashrateChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
-  const [window, setWindow] = useState<HashrateWindow>('24h');
+  const [period, setPeriod] = useUrlState<Period>('hashrate', '30d', PERIODS);
+  const [window, setWindow] = useUrlState<HashrateWindow>('hashrateWindow', '24h', ['24h', '7d']);
   const stats = useApiQuery<HashrateStats>('/v1/network/stats', undefined, { refreshInterval: 30_000 });
 
   const { data, loading, error } = useApiQuery<HashrateHistoryResponse>(
@@ -67,6 +68,7 @@ export function NetworkHashrateChart() {
   return (
     <ChartCard
       title="NETWORK_HASHRATE_TREND"
+      share={{ title: `Zcash network hashrate (${window} estimate, ${period})`, fileName: `zecblock-hashrate-${period}-${window}`, csv: () => objectRowsCsv(points) }}
       height={280}
       watermarkSize="lg"
       controls={<div className="flex flex-wrap items-center gap-2">

@@ -1,5 +1,6 @@
 "use strict";
 const { STATUSES, INGEST_STATUSES, INGEST_SCOPE } = require("./ingest");
+const { venueSource, readVenueCoverage } = require("./venue-analytics");
 const PERIODS = {
   "24h": 1,
   "7d": 7,
@@ -63,7 +64,8 @@ function parseFilters(q) {
 
 // Legacy reads remain available before any schema migration; v2 is an explicit
 // reader switch, never an automatic switch just because backfill inserted a row.
-function source(v2) {
+function source(v2, venue = 'near') {
+  if (venue !== 'near') return venueSource(venue);
   const raw = v2
     ? `SELECT deposit_address,deposit_memo,status,swap_created_at,source_chain,source_token,dest_chain,dest_token,
     source_amount,dest_amount,source_amount_usd,dest_amount_usd,
@@ -85,6 +87,14 @@ function source(v2) {
 }
 const count = (value) => Number(value || 0);
 const iso = (value) => (value ? new Date(value).toISOString() : null);
+function medianExpression(column, venue) {
+  if (venue === 'near') return `percentile_cont(0.5) WITHIN GROUP (ORDER BY ${column})::text`;
+  // PostgreSQL percentile_cont converts numeric to float8. Provider monetary
+  // medians instead average the exact numeric middle value(s), including ties.
+  const values = `(array_agg(${column} ORDER BY ${column}) FILTER (WHERE ${column} IS NOT NULL))`;
+  const count = `count(${column})`;
+  return `CASE WHEN ${count}=0 THEN NULL ELSE trim_scale((${values}[((${count}+1)/2)::int]+${values}[((${count}+2)/2)::int])/2)::text END`;
+}
 async function coverage(db, v2, now) {
   const r = (
     await db.query(`${source(v2)} SELECT count(*)::int AS records,min(swap_created_at) AS earliest,max(swap_created_at) AS latest,
@@ -174,10 +184,10 @@ async function snapshot(pool, fn) {
   }
 }
 
-async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
+async function readAnalytics(pool, q, { v2 = false, now = new Date(), venue = 'near' } = {}) {
   const filters = parseFilters(q);
   return snapshot(pool, async (db) => {
-    const cov = await coverage(db, v2, now);
+    const cov = venue === 'near' ? await coverage(db, v2, now) : await readVenueCoverage(db, venue, now);
     const end = now.toISOString();
     const start =
       PERIODS[filters.period] == null
@@ -186,11 +196,11 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
             now.getTime() - PERIODS[filters.period] * 86400000,
           ).toISOString();
     const params = [start, end];
-    const window = `swap_created_at >= $1::timestamptz AND swap_created_at < $2::timestamptz AND direction <> 'internal'`;
+    const window = `swap_created_at >= $1::timestamptz AND swap_created_at < $2::timestamptz AND ${venue === 'near' ? "direction <> 'internal'" : "(direction <> 'internal' OR status <> 'SUCCESS')"}`;
     // Keep projection pruning through the shared query template: status/count
     // queries must not materialize every payload and hash array just because
     // the template also declares the successful subset.
-    const base = `${source(v2)}, selected AS NOT MATERIALIZED (SELECT * FROM swaps WHERE ${window}), successful AS NOT MATERIALIZED (SELECT * FROM selected WHERE status='SUCCESS')`;
+    const base = `${source(v2, venue)}, selected AS NOT MATERIALIZED (SELECT * FROM swaps WHERE ${window}), successful AS NOT MATERIALIZED (SELECT * FROM selected WHERE status='SUCCESS')`;
     const summary = (
       await db.query(
         `${base} SELECT count(*)::int AS swaps,
@@ -200,8 +210,8 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
       CASE WHEN count(*) FILTER (WHERE direction='inflow')>0 AND count(source_amount_usd) FILTER (WHERE direction='inflow')=0 THEN NULL ELSE COALESCE(sum(source_amount_usd) FILTER (WHERE direction='inflow'),0)::text END AS inflow_usd,
       CASE WHEN count(*) FILTER (WHERE direction='outflow')>0 AND count(source_amount_usd) FILTER (WHERE direction='outflow')=0 THEN NULL ELSE COALESCE(sum(source_amount_usd) FILTER (WHERE direction='outflow'),0)::text END AS outflow_usd,
       avg(source_amount_usd)::text AS average_usd,avg(zec_amount)::text AS average_zec,
-      percentile_cont(0.5) WITHIN GROUP (ORDER BY source_amount_usd)::text AS median_usd,
-      percentile_cont(0.5) WITHIN GROUP (ORDER BY zec_amount)::text AS median_zec,
+      ${medianExpression('source_amount_usd', venue)} AS median_usd,
+      ${medianExpression('zec_amount', venue)} AS median_zec,
       count(*) FILTER (WHERE source_amount_usd IS NULL)::int AS missing_usd,
       count(*) FILTER (WHERE zec_amount IS NULL)::int AS missing_zec
       FROM successful`,
@@ -246,6 +256,7 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
       const bucket = new Date(time).toISOString();
       const complete =
         verified &&
+        (venue === 'near' || (cov.earliest && time >= Date.parse(cov.earliest))) &&
         time >= Date.parse(start) &&
         time + step <=
           Math.min(
@@ -337,8 +348,8 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
         `${base}, route_totals AS (SELECT source_chain,source_token,dest_chain,dest_token,direction,
       payload->>'originAsset' AS source_asset,payload->>'destinationAsset' AS dest_asset,
       count(*)::int AS swaps,sum(source_amount_usd) AS volume_usd,sum(zec_amount) AS volume_zec,
-      percentile_cont(0.5) WITHIN GROUP (ORDER BY source_amount_usd)::text AS median_usd,
-      percentile_cont(0.5) WITHIN GROUP (ORDER BY zec_amount)::text AS median_zec
+      ${medianExpression('source_amount_usd', venue)} AS median_usd,
+      ${medianExpression('zec_amount', venue)} AS median_zec
       FROM successful GROUP BY source_chain,source_token,dest_chain,dest_token,direction,payload->>'originAsset',payload->>'destinationAsset'
       ), ranked AS (SELECT *,
       row_number() OVER (ORDER BY swaps DESC,source_chain,source_token,dest_chain,dest_token,source_asset,dest_asset) AS rank_swaps,
@@ -364,7 +375,7 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
         }),
     ]));
     const routes = routeRankings.swaps;
-    const latency = (
+    const latency = venue === 'near' ? (
       await db.query(
         `${base}, observations AS (
       SELECT s.direction,CASE WHEN s.direction='inflow' THEN s.source_chain ELSE s.dest_chain END AS chain,
@@ -377,8 +388,8 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
       FROM observations GROUP BY direction,chain ORDER BY samples DESC LIMIT 50`,
         params,
       )
-    ).rows;
-    const referrals = v2
+    ).rows : [];
+    const referrals = v2 && venue === 'near'
       ? (
           await db.query(
             `${base} SELECT payload->>'referral' AS referral,
@@ -410,9 +421,13 @@ async function readAnalytics(pool, q, { v2 = false, now = new Date() } = {}) {
       latency,
       referrals,
       latencyDefinition:
-        "Swap creation to Zcash block timestamp; outbound measures the deposit leg, not destination delivery. Matched samples only, restricted to 0–24h. No end-to-end settlement claim.",
+        venue === 'near'
+          ? "Swap creation to Zcash block timestamp; outbound measures the deposit leg, not destination delivery. Matched samples only, restricted to 0–24h. No end-to-end settlement claim."
+          : "Native-block confirmation and end-to-end delivery latency are unavailable for this venue index. Midgard protocol heights and action times do not establish delivery timestamps.",
       volumeDefinition:
-        "USD uses source-side reported USD; ZEC uses destination amount for inflows and source amount for outflows. Successful external routes only. Missing valuations are excluded and counted.",
+        venue === 'near'
+          ? "USD uses source-side reported USD; ZEC uses destination amount for inflows and source amount for outflows. Successful external routes only. Missing valuations are excluded and counted."
+          : "USD is exact source amount times the provider’s first-stream-interval asset price; it is not settlement-time value. ZEC uses the sum of native payouts for inflows and reported consumed input for outflows. Successful external actions only; partial refunds are excluded from successful volume. Missing valuations are excluded and counted.",
     };
   });
 }
@@ -429,9 +444,10 @@ function encodeCursor(row, fingerprint, start, end) {
     }),
   ).toString("base64url");
 }
-async function readSwaps(pool, q, { v2 = false, now = new Date() } = {}) {
+async function readSwaps(pool, q, { v2 = false, now = new Date(), venue = 'near' } = {}) {
   const f = parseFilters(q);
   const fingerprint = JSON.stringify([
+    ...(venue === 'near' ? [] : [venue]),
     v2,
     f.period,
     f.direction || "",
@@ -468,6 +484,7 @@ async function readSwaps(pool, q, { v2 = false, now = new Date() } = {}) {
       throw invalid("Cursor does not match filters");
   }
   return snapshot(pool, async (db) => {
+    const venueCoverage = venue === 'near' ? null : await readVenueCoverage(db, venue, now);
     const params = [];
     const bind = (value) => {
       params.push(value);
@@ -517,7 +534,7 @@ async function readSwaps(pool, q, { v2 = false, now = new Date() } = {}) {
     const limit = bind(f.limit + 1);
     const rows = (
       await db.query(
-        `${source(v2)} SELECT * FROM swaps WHERE ${conditions.join(" AND ")}
+        `${source(v2, venue)} SELECT * FROM swaps WHERE ${conditions.join(" AND ")}
       ORDER BY swap_created_at DESC,deposit_address DESC,deposit_memo DESC LIMIT ${limit}`,
         params,
       )
@@ -525,12 +542,13 @@ async function readSwaps(pool, q, { v2 = false, now = new Date() } = {}) {
     const page = rows.slice(0, f.limit);
     return {
       success: true,
-      source: v2 ? "near-explorer-v2" : "legacy-success-index",
+      source: venue === 'near' ? v2 ? "near-explorer-v2" : "legacy-success-index" : `${venue}-midgard-index`,
+      ...(venueCoverage ? { coverage: venueCoverage } : {}),
       swaps: page.map((r) => ({
         id: Buffer.from(
           JSON.stringify([r.deposit_address, r.deposit_memo]),
         ).toString("base64url"),
-        depositAddress: r.deposit_address,
+        depositAddress: venue === 'near' ? r.deposit_address : r.payload.sourceAddress || '',
         depositMemo: v2 ? r.deposit_memo : null,
         status: r.status,
         direction: r.direction,
@@ -568,6 +586,11 @@ async function readSwaps(pool, q, { v2 = false, now = new Date() } = {}) {
         firstSeenAt: iso(r.first_seen_at),
         lastSeenAt: iso(r.last_seen_at),
         statusObservedAt: iso(r.status_observed_at),
+        ...(venue === 'near' ? {} : {
+          venue, actionType: r.payload.actionType, refundKind: r.payload.refundKind,
+          nativeLegs: r.payload.zecLegs,
+          providerRecord: Object.fromEntries(Object.entries(r.payload).filter(([key]) => key !== 'raw')),
+        }),
       })),
       nextCursor:
         rows.length > f.limit

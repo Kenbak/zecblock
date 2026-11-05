@@ -15,6 +15,8 @@ export interface BridgeData {
   swapTimestamp: string;
   zecAmount?: number;
   zecAddress?: string | null;
+  /** Cross-chain venue that reported the swap; absent on older responses (NEAR). */
+  venue?: 'near' | 'maya' | 'thorchain';
 }
 
 export interface TransactionData {
@@ -31,7 +33,8 @@ export interface TransactionData {
   totalInputZat?: string | null;
   totalOutput: number;
   totalOutputZat?: string | null;
-  fee: number;
+  /** Null when the indexer couldn't determine it; never treat as zero. */
+  fee: number | null;
   feeZat?: string | null;
   size: number;
   version: number;
@@ -40,6 +43,8 @@ export interface TransactionData {
   saplingSpendCount: number;
   saplingOutputCount: number;
   hasShieldedData: boolean;
+  /** At least one Sprout JoinSplit. */
+  hasSprout?: boolean;
   isCoinbase?: boolean;
   orchardActions?: number;
   ironwoodActions?: number;
@@ -51,6 +56,9 @@ export interface TransactionData {
   valueBalanceOrchardZat?: string | null;
   valueBalanceIronwood?: number;
   valueBalanceIronwoodZat?: string | null;
+  /** Sprout JoinSplits' sum(vpub_new) - sum(vpub_old); positive leaves Sprout. */
+  valueBalanceSprout?: number;
+  valueBalanceSproutZat?: string | null;
   bindingSig?: string;
   bindingSigSapling?: string;
   finality?: string | null;
@@ -81,6 +89,7 @@ export interface TransactionData {
 export type TxType =
   | 'COINBASE'
   | 'MIGRATION'
+  | 'SPROUT'
   | 'IRONWOOD'
   | 'ORCHARD'
   | 'SHIELDED'
@@ -98,6 +107,7 @@ export interface TxClassification {
   hasIronwood: boolean;
   hasOrchard: boolean;
   hasSapling: boolean;
+  hasSprout: boolean;
   hasTransparentInputs: boolean;
   hasTransparentOutputs: boolean;
   hasTransparent: boolean;
@@ -107,7 +117,8 @@ export interface TxClassification {
   valueBalance: number;
   isShielding: boolean;
   isUnshielding: boolean;
-  migrationSourcePool: 'Orchard' | 'Sapling' | null;
+  migrationSourcePool: 'Orchard' | 'Sapling' | 'Sprout' | null;
+  migrationDestPool: 'Ironwood' | 'Sapling' | null;
   isMigration: boolean;
   txType: TxType;
   allBridges: BridgeData[];

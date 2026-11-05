@@ -84,3 +84,16 @@ test('live peers require established protocol identities, deduplicate ports, and
   assert.equal(peers[0].handshake_time_ms, null);
   assert.throws(() => livePeerNodes(null), /Invalid live peer/);
 });
+
+test('Zebend peers with zero service flags remain observable without bypassing crawler chain proof', () => {
+  const peers = livePeerNodes([
+    { addr: '192.0.2.20:42000', version: 170160, subver: '/Zebend-mempool:0.1/', services: 0, inbound: true },
+  ], now);
+  assert.equal(peers.length, 1);
+  assert.equal(peers[0].services, 0);
+  assert.equal(peers[0].user_agent, '/Zebend-mempool:0.1/');
+  const qualified = { ...peer('192.0.2.20:8233'), user_agent: peers[0].user_agent, services: 0 };
+  const handshakeOnly = { ...qualified, chain_proof: null };
+  assert.equal(mergeVerifiedNodes([snapshot([handshakeOnly])], now).length, 0);
+  assert.deepEqual(mergeVerifiedNodes([snapshot([qualified])], now), [qualified]);
+});

@@ -20,6 +20,7 @@ import {
   selectedActivityPools, toggleActivityPool,
   type ActivityMode, type ActivityPeriod, type ActivityPool, type PoolActivityData,
 } from './pool-activity';
+import { useUrlState } from '@/lib/use-url-state';
 
 const PERIODS = [
   { key: '7d', label: '7D' }, { key: '30d', label: '30D' },
@@ -45,7 +46,7 @@ function RecoveryDot({ cx, cy, index, markerIndices, color, background }: {
 export function PoolActivityChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<ActivityPeriod>('30d');
+  const [period, setPeriod] = useUrlState<ActivityPeriod>('activity', '30d', PERIODS.map((option) => option.key));
   const [mode, setMode] = useState<ActivityMode>('count');
   const [selected, setSelected] = useState<ActivityPool[]>(ACTIVITY_POOLS.map(pool => pool.key));
   const visiblePools = useMemo(() => selectedActivityPools(selected), [selected]);

@@ -130,6 +130,12 @@
       "core": true
     },
     {
+      "id": "cards",
+      "routeGroup": "/cards",
+      "path": "/cards",
+      "core": true
+    },
+    {
       "id": "reorgs",
       "routeGroup": "/reorgs",
       "path": "/reorgs",
@@ -221,8 +227,8 @@
     },
     {
       "id": "ask",
-      "routeGroup": "/ask",
-      "path": "/ask",
+      "routeGroup": "/zift",
+      "path": "/zift",
       "core": true
     },
     {

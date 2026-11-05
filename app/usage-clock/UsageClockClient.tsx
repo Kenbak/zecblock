@@ -32,6 +32,7 @@ import {
   decomposeRegions,
   pearson,
 } from './solar';
+import { useUrlState } from '@/lib/use-url-state';
 
 const WORLD_TOPO_URL = 'https://cdn.jsdelivr.net/npm/world-atlas@2/land-110m.json';
 const DOT_SPACING = 3;
@@ -326,7 +327,7 @@ export function UsageClockClient({
   initialPeriod: string;
   initialNodes: NodeLoc[];
 }) {
-  const [period, setPeriod] = useState(initialPeriod);
+  const [period, setPeriod] = useUrlState<string>('period', initialPeriod, PERIODS.map((option) => option.key));
   const [data, setData] = useState<ClockData | null>(initialData);
   const [loading, setLoading] = useState(false);
   const [nodes, setNodes] = useState<NodeLoc[]>(initialNodes || []);

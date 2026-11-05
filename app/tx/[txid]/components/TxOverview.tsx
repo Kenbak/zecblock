@@ -30,7 +30,7 @@ function PoolActivityBox({
   valueBalance,
 }: {
   category: TxCategory;
-  counts: { spends: number; outputs: number } | { actions: number };
+  counts: { spends: number; outputs: number } | { actions: number } | { note: string };
   valueBalance?: number;
 }) {
   return (
@@ -38,7 +38,9 @@ function PoolActivityBox({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <TxTypeBadge category={category} />
         <span className="text-xs text-muted font-mono whitespace-nowrap">
-          {'actions' in counts
+          {'note' in counts
+            ? counts.note
+            : 'actions' in counts
             ? `${counts.actions} action${counts.actions !== 1 ? 's' : ''}`
             : `${counts.spends} spend${counts.spends !== 1 ? 's' : ''} · ${counts.outputs} output${counts.outputs !== 1 ? 's' : ''}`}
         </span>
@@ -66,7 +68,8 @@ export function TxOverview({ data }: TxOverviewProps) {
   const hasSaplingActivity = data.saplingSpendCount > 0 || data.saplingOutputCount > 0;
   const hasOrchardActivity = (data.orchardActions || 0) > 0;
   const hasIronwoodActivity = (data.ironwoodActions || 0) > 0;
-  const hasAnyPoolActivity = hasSaplingActivity || hasOrchardActivity || hasIronwoodActivity;
+  const hasSproutActivity = data.hasSprout === true;
+  const hasAnyPoolActivity = hasSaplingActivity || hasOrchardActivity || hasIronwoodActivity || hasSproutActivity;
 
   return (
     <div>
@@ -98,11 +101,18 @@ export function TxOverview({ data }: TxOverviewProps) {
               <span className="text-sm text-primary whitespace-nowrap">{formatTimestamp(data.timestamp)}</span>
             </FactBox>
 
-            <FactBox hug label="Fee" tooltip="Fee paid to the miner">
-              <span className="text-sm font-mono font-semibold text-primary whitespace-nowrap">
-                {data.fee.toFixed(8)} {CURRENCY}
-              </span>
-            </FactBox>
+            {data.fee == null ? (
+              <FactBox hug label="Fee" tooltip="The indexer couldn't determine this transaction's fee.">
+
+                <span className="text-sm font-mono text-muted whitespace-nowrap">Unavailable</span>
+              </FactBox>
+            ) : (
+              <FactBox hug label="Fee" tooltip="Fee paid to the miner">
+                <span className="text-sm font-mono font-semibold text-primary whitespace-nowrap">
+                  {data.fee.toFixed(8)} {CURRENCY}
+                </span>
+              </FactBox>
+            )}
 
             <FactBox hug label="Size" tooltip="Transaction size in bytes">
               <span className="text-sm font-mono text-primary whitespace-nowrap tabular-nums">
@@ -183,6 +193,10 @@ export function TxOverview({ data }: TxOverviewProps) {
             <div className="mt-5 pt-4 border-t border-cipher-border/50">
               <span className="text-caption font-mono text-muted uppercase tracking-widest">Shielded Pool Activity</span>
               <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                {hasSproutActivity && (
+                  // JoinSplit counts aren't in the API, only their net value.
+                  <PoolActivityBox category="sprout" counts={{ note: 'JoinSplit' }} valueBalance={data.valueBalanceSprout} />
+                )}
                 {hasSaplingActivity && (
                   <PoolActivityBox
                     category="sapling"

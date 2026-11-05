@@ -1,0 +1,22 @@
+[Unit]
+Description=Protect source disk from dedicated analytics WAL retention
+After=postgresql@16-main.service
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+ExecStart=/usr/bin/python3 /opt/zecblock-ask-feed/source-guard.py
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+RestrictAddressFamilies=AF_UNIX
+CapabilityBoundingSet=
+MemoryMax=128M
+TasksMax=16
+TimeoutStartSec=45

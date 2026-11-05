@@ -26,7 +26,7 @@ const TOOLS=[
   {title:'Turnstile tracker',href:'/turnstile',description:'Follow the publicly observable path of value after deshielding.'},
 ];
 
-export function CatalogCard({chart, initialData, initialFetchedAt, initialRange='30d', initialSeries, standalone=false}:{chart:CatalogChart; initialData?: unknown; initialFetchedAt?: number; initialRange?: ChartRange; initialSeries?: string[]; standalone?: boolean}) {
+export function CatalogCard({chart, initialData, initialFetchedAt, initialSnapshotNotice, initialRange='30d', initialSeries, standalone=false}:{chart:CatalogChart; initialData?: unknown; initialFetchedAt?: number; initialSnapshotNotice?: string; initialRange?: ChartRange; initialSeries?: string[]; standalone?: boolean}) {
   const ref=useRef<HTMLElement>(null);
   const [visible,setVisible]=useState(standalone);
   const [width,setWidth]=useState(500);
@@ -70,6 +70,7 @@ export function CatalogCard({chart, initialData, initialFetchedAt, initialRange=
         </div>}
       <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 min-h-6" aria-label={`${chart.title} legend`}>{chart.series.map(s=><button type="button" key={s.key} aria-pressed={!hidden.includes(s.key)} onClick={()=>setHidden(prev=>prev.includes(s.key)?prev.filter(k=>k!==s.key):prev.length<chart.series.length-1?[...prev,s.key]:prev)} className={`flex items-center gap-2 py-1 text-caption text-muted focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold ${hidden.includes(s.key)?'opacity-40':''}`}><span className="w-2 h-2 rounded-sm" style={{backgroundColor:colors[s.color]}}/>{s.label}</button>)}</div>
       {error&&hasData&&<p role="status" className="text-caption text-warning mt-3">Refresh failed. Showing the last received observations.</p>}
+      {initialSnapshotNotice&&data===initialData?<p role="status" className="text-caption text-muted mt-3">{initialSnapshotNotice}. Showing the last available observations.</p>:null}
       <div className="flex flex-wrap justify-between gap-3 mt-3 text-caption font-mono" data-html2canvas-ignore="true"><Link href={chart.href} className="text-muted hover:text-primary underline-offset-4 hover:underline">Explore analysis →</Link><Link href={sharePath} className="text-muted hover:text-primary underline-offset-4 hover:underline">Chart page ↗</Link>{!standalone&&<button type="button" onClick={()=>setExpanded(!expanded)} aria-expanded={expanded} className="text-muted hover:text-primary">{expanded?'Compact view':'Expand chart'}</button>}</div>
     </ShareableCard>
   </article>;

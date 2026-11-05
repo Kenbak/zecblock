@@ -1,0 +1,5 @@
+{
+  "source_system_identifier": "REPLACE_FROM_AUTHENTICATED_PRIMARY",
+  "sync_prefix": "pg_12345_sync_",
+  "slot_required": true
+}

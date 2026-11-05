@@ -147,3 +147,18 @@ test('pickAllowedHeaders: works directly against a fetch Headers-like object', (
   const picked = pickAllowedHeaders(headers);
   assert.deepEqual(Object.keys(picked).sort(), ['cache-control', 'etag']);
 });
+
+
+test('internal-client preserves exact pool units and the requested period on the upstream wire',async()=>{
+ await withServer((req,res)=>{
+  const url=new URL(req.url,'http://localhost');
+  assert.equal(url.pathname,'/api/network/pool-history');
+  assert.equal(url.searchParams.get('period'),'1y');
+  assert.equal(url.searchParams.get('format'),'zatoshi');
+  res.writeHead(200,{'Content-Type':'application/json'});res.end(JSON.stringify({points:[{date:'2026-10-07',ironwoodZat:'407241573265078',hasPoolBreakdown:true}]}));
+ },async(port)=>{
+  const client=createInternalClient(loadV1Config({V1_INTERNAL_API_BASE_URL:`http://127.0.0.1:${port}`}));
+  const result=await client.dispatch('GET','/api/network/pool-history',{query:{period:'1y',format:'zatoshi'}});
+  assert.equal(result.body.points[0].ironwoodZat,'407241573265078');
+ });
+});

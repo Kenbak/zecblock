@@ -1,6 +1,7 @@
 "use client";
 import { useSyncExternalStore, type ComponentProps } from "react";
 import { useSearchParams } from "next/navigation";
+import { scopeVenueHref, useCrosschainVenue } from "./VenueContext";
 
 const FILTER_EVENT = "crosschain:filters";
 function subscribe(listener: () => void) {
@@ -33,6 +34,8 @@ export function useSwapSearchParams() {
 
 /** Update only the feed's URL state; Next synchronizes useSearchParams and Back/Forward. */
 export function updateSwapUrl(href: string, scrollToSwaps = false) {
+  const selected = new URLSearchParams(window.location.search).get("venue");
+  href = scopeVenueHref(href, selected === "maya" || selected === "thorchain" ? selected : "near");
   if (
     href !==
     window.location.pathname + window.location.search + window.location.hash
@@ -45,7 +48,7 @@ export function updateSwapUrl(href: string, scrollToSwaps = false) {
 }
 
 export function SwapFilterLink({
-  href,
+  href: requestedHref,
   scrollToSwaps = false,
   onClick,
   ...props
@@ -53,6 +56,7 @@ export function SwapFilterLink({
   href: string;
   scrollToSwaps?: boolean;
 }) {
+  const href = scopeVenueHref(requestedHref, useCrosschainVenue());
   return (
     <a
       {...props}

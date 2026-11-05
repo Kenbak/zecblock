@@ -51,6 +51,11 @@ const DEFAULT_API_URLS: Record<Network, string> = {
 };
 
 export function getApiUrlForNetwork(network: Network): string {
+  // Protected previews route only browser mainnet reads through their GET
+  // bridge. SSR keeps the explicit server API origin and service credentials.
+  if (typeof window !== 'undefined' && network === 'mainnet' && process.env.NEXT_PUBLIC_ASK_STAGING === 'true') {
+    return '/api/staging-data';
+  }
   const configuredUrl = typeof window === 'undefined'
     ? process.env.CIPHERSCAN_API_URL || process.env.NEXT_PUBLIC_API_URL
     : process.env.NEXT_PUBLIC_API_URL;

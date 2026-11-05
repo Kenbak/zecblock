@@ -2,6 +2,9 @@ import { MetadataRoute } from 'next';
 import { getBaseUrl, getNetwork } from '@/lib/seo';
 
 export default function robots(): MetadataRoute.Robots {
+  if (process.env.VERCEL_ENV === 'preview' && process.env.ASK_STAGING_ENABLED === 'true') {
+    return { rules: { userAgent: '*', allow: '/', disallow: ['/api/'] } };
+  }
   const network = getNetwork();
   const baseUrl = getBaseUrl();
 
@@ -45,23 +48,24 @@ export default function robots(): MetadataRoute.Robots {
   }
 
   // These are crawl permissions, not server-side rate limits. Googlebot
-  // manages its own crawl rate and does not support Crawl-delay.
+  // manages its own crawl rate and does not support Crawl-delay. The public
+  // announcement JSON is a render dependency; its X-Robots-Tag keeps it noindex.
   return {
     rules: [
       {
         userAgent: 'Googlebot',
-        allow: '/',
+        allow: ['/', '/api/governance/announcement$'],
         disallow: ['/api/'],
       },
       {
         userAgent: 'Bingbot',
-        allow: '/',
+        allow: ['/', '/api/governance/announcement$'],
         disallow: ['/api/'],
         crawlDelay: 5,
       },
       {
         userAgent: '*',
-        allow: '/',
+        allow: ['/', '/api/governance/announcement$'],
         disallow: ['/api/'],
         crawlDelay: 5,
       },

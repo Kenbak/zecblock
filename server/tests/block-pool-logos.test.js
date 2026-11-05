@@ -24,7 +24,7 @@ function load(file) {
     if (name === '@/lib/config') return { CURRENCY: 'ZEC' };
     if (name === '@/components/CoinbaseMessage') return { CoinbaseMessage: () => null };
     if (name === '@/components/CopyButton') return { CopyButton: () => null };
-    if (name === '@/components/BlockFirstSeen') return { BlockFirstSeen: () => null, BLOCK_FIRST_SEEN_EXPLANATION: 'Local observation' };
+    if (name === '@/components/BlockFirstSeen') return { BlockFirstSeen: () => null, BlockSeenLine: () => null, BLOCK_FIRST_SEEN_EXPLANATION: 'Local observation' };
     if (name === '@/components/ui/Badge') return { Badge: box };
     if (name === '@/components/ui/HashLink') return { HashLink: ({ value }) => React.createElement('span', {}, value) };
     if (name === 'next/link') return { default: box };

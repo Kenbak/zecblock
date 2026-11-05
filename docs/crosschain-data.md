@@ -507,3 +507,37 @@ Unavailable with an adjacent explanation. A covered status with no observed rows
 is zero. V2 activation makes the five statuses available but does not guarantee
 instantaneous late-settlement updates. Publish the compatible API before this UI.
 Existing route identity, robots/canonical policy and sitemap entries are unchanged.
+
+## Maya and THORChain venue maintenance — October 29, 2026
+
+Indexed Maya/THORChain history lives in the additive `crosschain_venue_actions`
+and `crosschain_venue_sync` tables (`server/scripts/create-crosschain-venues.sql`,
+an application migration in the main database). The API serves
+`/api/crosschain/venues/{analytics,swaps}` only when
+`CROSSCHAIN_VENUES_READ_ENABLED=1`; otherwise it returns 503, never zero volume.
+Analytics marks a venue stale when its newest checkpoint is older than 20 minutes.
+
+`server/jobs/maintain-crosschain-venues.js` is the production writer. It refuses
+to write unless `NETWORK=mainnet`, `CROSSCHAIN_VENUES_WRITER_ENABLED=1` and the
+connection is the primary `zcash_explorer_mainnet` database. Each run, per venue:
+an incremental sync from the provider head (stops at the first known settled
+action), a bounded backfill until the provider history is exhausted, then a
+refresh of up to two pending actions. Pages are capped by a 150-second budget at
+10 seconds per page; one venue's provider failure does not stop the other.
+
+`cipherscan-crosschain-venues.timer` runs it every five minutes at :04/:09/…
+UTC with its own flock (`/run/cipherscan-crosschain-venues.lock`). Midgard is
+independent of NEAR, so it never takes the NEAR swap lock or provider quota.
+`server/jobs/sync-crosschain-venues.js` remains the isolated local-review writer.
+
+Initial rollout on the primary, after the API release contains this code:
+
+1. Apply `create-crosschain-venues.sql` to `zcash_explorer_mainnet`.
+2. Run the job once with a larger backfill, e.g.
+   `--backfill-pages=400 --budget-ms=3600000`, under the same flock.
+3. Add `CROSSCHAIN_VENUES_READ_ENABLED=1` to the API environment and restart
+   `zcash-api-mainnet`.
+4. Install and enable the service and timer.
+
+Rollback: disable the timer and remove the read flag; the routes return 503 and
+the tables can stay. Dropping them is a separate, deliberate operation.

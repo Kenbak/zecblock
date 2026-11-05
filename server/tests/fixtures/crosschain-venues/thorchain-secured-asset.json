@@ -1,0 +1,60 @@
+{
+  "date": "1793038514821881183",
+  "height": "28408831",
+  "in": [
+    {
+      "address": "t1QpLaEVxy9AhyhihveV52t7EHsmdpuMpid",
+      "coins": [
+        {
+          "amount": "500000",
+          "asset": "ZEC.ZEC"
+        }
+      ],
+      "txID": "2A18BF4B0BC3307CDD75C3D894442350AC7D9A955F43D45EB7875AA4429490E2"
+    }
+  ],
+  "metadata": {
+    "swap": {
+      "affiliateAddress": "rj",
+      "affiliateFee": "50",
+      "inPriceUSD": "1248.8338287842366",
+      "isStreamingSwap": false,
+      "liquidityFee": "1868364",
+      "memo": "=:BTC-BTC:thor1cyglcvuqt5nzvlst6ehhgquhz0c7nzcsy00ms6:7587/1/0:rj:50",
+      "networkFees": [],
+      "outPriceUSD": "80628.98543237553",
+      "swapSlip": "20",
+      "swapTarget": "7587",
+      "txType": "swap"
+    }
+  },
+  "out": [
+    {
+      "address": "thor1cyglcvuqt5nzvlst6ehhgquhz0c7nzcsy00ms6",
+      "coins": [
+        {
+          "amount": "7701",
+          "asset": "BTC-BTC"
+        }
+      ],
+      "height": "28408831",
+      "txID": ""
+    },
+    {
+      "address": "thor1cyglcvuqt5nzvlst6ehhgquhz0c7nzcsy00ms6",
+      "coins": [
+        {
+          "amount": "7701",
+          "asset": "BTC-BTC"
+        }
+      ],
+      "txID": "2A18BF4B0BC3307CDD75C3D894442350AC7D9A955F43D45EB7875AA4429490E2"
+    }
+  ],
+  "pools": [
+    "ZEC.ZEC",
+    "BTC.BTC"
+  ],
+  "status": "success",
+  "type": "swap"
+}

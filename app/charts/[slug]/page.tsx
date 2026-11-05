@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 import { findShareChart, chartPublicTitle, chartSource, normalizeChartRange, selectedChartSeries, chartSharePath, chartImagePath, chartRangeRows, chartDateRange, EXPORT_SIZE } from '@/lib/chart-sharing';
-import { loadShareChart } from '@/lib/chart-share-server';
+import { delayedChartSnapshotLabel, loadShareChart } from '@/lib/chart-share-server';
 import { CatalogCard } from '../ChartsClient';
 
 type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
@@ -26,6 +26,7 @@ export default async function ChartPage({ params, searchParams }: Props) {
   const selected = selectedChartSeries(chart, query.series);
   const snapshot = await loadShareChart(chart);
   const rows = snapshot ? chartRangeRows(chart, snapshot.rows, range) : [];
+  const delayedSnapshot = snapshot ? delayedChartSnapshotLabel(snapshot.fetchedAt, snapshot.meta.freshness) : undefined;
   const url = `${getBaseUrl()}/charts/${chart.id}`;
   const schema = { '@context': 'https://schema.org', '@type': 'WebPage', '@id': `${url}#webpage`, url, name: chartPublicTitle(chart), description: chart.description, isPartOf: { '@id': `${getBaseUrl()}/#website` }, publisher: { '@id': 'https://zecblock.com/#organization' } };
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
@@ -33,6 +34,6 @@ export default async function ChartPage({ params, searchParams }: Props) {
     <Link href="/charts" className="text-caption text-muted hover:text-primary">← All charts</Link>
     <PageHeader eyebrow="CHART_LIBRARY" title={chartPublicTitle(chart)} subtitle={chart.description}/>
     <p className="mb-5 text-caption text-muted">Source: {chartSource(chart)} · {chart.unit} · {rows.length ? chartDateRange(chart, rows) : chart.window}. {rows.length ? `${rows.length.toLocaleString('en-US')} observations.` : 'Observations are currently unavailable; this page will retry.'}</p>
-    <CatalogCard chart={chart} initialData={snapshot?.payload} initialFetchedAt={snapshot?.fetchedAt} initialRange={range} initialSeries={selected.series.map(s => s.key)} standalone/>
+    <CatalogCard chart={chart} initialData={snapshot?.payload} initialFetchedAt={snapshot?.fetchedAt} initialSnapshotNotice={delayedSnapshot} initialRange={range} initialSeries={selected.series.map(s => s.key)} standalone/>
   </div>;
 }

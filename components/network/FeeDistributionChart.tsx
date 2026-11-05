@@ -1,11 +1,12 @@
 'use client';
+
+import { useRef } from 'react';
 import { CURRENCY } from '@/lib/config';
 import { formatDateLabelUTC } from '@/lib/utils';
 import { CHART_DATE_AXIS } from '@/lib/chart-theme';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
 
-import { useState } from 'react';
 import {  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid,  ResponsiveContainer  } from 'recharts';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -14,6 +15,8 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { feeBand } from '@/lib/network-overview';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { useUrlState } from '@/lib/use-url-state';
+import { PanelShareControl, objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 const PERIODS = ['7d', '30d', '90d', '1y', 'all'] as const;
 type Period = typeof PERIODS[number];
@@ -23,7 +26,8 @@ export interface FeeDistributionResponse { daily: DayFees[]; period?: string; hi
 export function FeeDistributionChart({ initialData, initialFetchedAt }: { initialFetchedAt?: number; initialData?: FeeDistributionResponse | null }) {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
+  const panelRef = useRef<HTMLDivElement>(null);
+  const [period, setPeriod] = useUrlState<Period>('fees', '30d', PERIODS);
   const { data, loading, error, isRefreshing } = useApiQuery<FeeDistributionResponse>('/v1/network/fee-distribution', { period }, {
     initialFetchedAt,
     initialData: period === '30d' ? initialData ?? undefined : undefined, refreshInterval: 300_000,
@@ -32,8 +36,8 @@ export function FeeDistributionChart({ initialData, initialFetchedAt }: { initia
   const usable = points.some(p => p.median != null);
   const last = [...points].reverse().find(p => p.median != null);
   const dateLabel = formatDateLabelUTC;
-  return <Card className="h-full"><CardBody>
-    <SectionHeader label="OBSERVED_FEES" actions={<div className="flex gap-1" aria-label="Fee history range">{PERIODS.map(value => <button key={value} onClick={() => setPeriod(value)} aria-pressed={period === value} className={`filter-btn ${period === value ? 'filter-btn-active' : ''}`}>{value.toUpperCase()}</button>)}</div>} />
+  return <div ref={panelRef} className="h-full"><Card className="h-full"><CardBody>
+    <SectionHeader label="OBSERVED_FEES" actions={<div className="flex flex-wrap items-center gap-1"><div className="flex gap-1" aria-label="Fee history range">{PERIODS.map(value => <button key={value} onClick={() => setPeriod(value)} aria-pressed={period === value} className={`filter-btn ${period === value ? 'filter-btn-active' : ''}`}>{value.toUpperCase()}</button>)}</div><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
     <p className="text-caption text-muted mb-4">Daily median and 10th–90th percentile range. Observed fees, not a fee quote.</p>
     {loading && !usable ? <ChartSkeleton height={228} /> : !usable ? <p role="status" className="min-h-[240px] flex items-center justify-center text-sm text-muted">{loading || isRefreshing ? 'Loading observed fees…' : 'Fee history unavailable.'}</p> : <>
       <><ResponsiveContainer width="100%" height={228} initialDimension={{ width: 400, height: 228 }}>
@@ -54,5 +58,5 @@ export function FeeDistributionChart({ initialData, initialFetchedAt }: { initia
     {data?.historyStatus === 'unavailable' && <p className="text-caption text-muted mt-3">All-time history is unavailable. Showing the last 30 days.</p>}
     {isRefreshing && <p role="status" className="text-caption text-muted mt-3">Updating range; previous observations remain visible.</p>}
     {error && <p role="status" className="text-caption text-warning mt-3">Fee history could not refresh. Last received observations are shown when available.</p>}
-  </CardBody></Card>;
+  </CardBody></Card></div>;
 }

@@ -1,7 +1,6 @@
 'use client';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
 
-import { useState } from 'react';
 import {
   BarChart,
   Bar,
@@ -17,13 +16,14 @@ import { getChartColors } from '@/lib/chart-theme';
 import { CURRENCY } from '@/lib/config';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PrivacyFlowCard } from './PrivacyFlowCard';
-import { PeriodSelector, Period } from './PeriodSelector';
+import { PeriodSelector, PRIVACY_PERIODS, Period } from './PeriodSelector';
 import {
   PRIVACY_BAR_CHART_MARGIN,
   privacyXAxisTitle,
   privacyYAxisLabel,
 } from './privacy-chart-axis';
 import { PrivacyBarLegend } from './PrivacyBarLegend';
+import { useUrlState } from '@/lib/use-url-state';
 
 interface Threshold {
   thresholdZat: number;
@@ -37,7 +37,7 @@ const CHART_HEIGHT = 340;
 export function AnonymitySetChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('anonymity', '30d', PRIVACY_PERIODS);
 
   const { data: res, loading, error } = useApiQuery<{ thresholds: Threshold[] }>(
     '/v1/privacy/anonymity-set',

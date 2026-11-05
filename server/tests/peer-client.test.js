@@ -13,6 +13,16 @@ const cases = [
   ['/Zakura:1.0.0/', 'Zakura', '1.0.0'],
   ['/Zakura:1.0.0-rc3/Zakura:1.0.0-rc4/', 'Zakura', '1.0.0-rc3'],
   ['/Zakura:8.0.0/Zebra:5.0.0-rc.3/', 'Zakura', '8.0.0'],
+  ['/Zebend:0.1.0/', 'Zebend', '0.1.0'],
+  ['/Zebend-fullnode:0.1/', 'Zebend', '0.1'],
+  ['/Zebend-follow:0.1/', 'Zebend', '0.1'],
+  ['/Zebend-mempool:0.1/', 'Zebend', '0.1'],
+  ['/Zebend-nu7-testnet-fetch:0.1/', 'Zebend', '0.1'],
+  ['/ZEBEND-FULLNODE:v0.2.0-rc.1/', 'Zebend', '0.2.0-rc.1'],
+  ['/Zebra:7.0.0/Zebend:0.1.0/', 'Zebend', '0.1.0'],
+  ['/NotZebend:0.1/', 'Other', '0.1'],
+  ['/Zebendish:0.1/', 'Other', '0.1'],
+  ['/Zebend-unrecognized:0.1/', 'Other', '0.1'],
   ['zeeder/1.4.0', 'Seeder', '1.4.0'],
   ['/CustomNode:2.1.0-beta.1/', 'Other', '2.1.0-beta.1'],
   ['', 'Unknown', null],
@@ -27,6 +37,13 @@ for (const [input, clientImpl, clientVersion] of cases) {
     assert.equal(result.clientVersion, clientVersion);
   });
 }
+
+test('retains Zebend component identity in the raw user agent', () => {
+  const userAgent = '/Zebend-nu7-testnet-fetch:0.1/';
+  assert.deepEqual(parsePeerClient(userAgent), {
+    clientImpl: 'Zebend', clientVersion: '0.1', userAgent,
+  });
+});
 
 test('truncates raw user agents before persistence', () => {
   const result = parsePeerClient(`/Custom:${'x'.repeat(300)}/`);

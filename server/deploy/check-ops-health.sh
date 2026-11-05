@@ -1,6 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# shellcheck source=server/deploy/lib/indexer-progress-health.sh
+source "$(dirname "${BASH_SOURCE[0]}")/lib/indexer-progress-health.sh"
+
 # General ops health check: disk, backups, pgBackRest, WAL, Redis,
 # PostgreSQL pool, indexer lag, replication lag, replica connectivity,
 # and node sync. Complements cipherscan-rust/deploy/check-indexer-health.sh.
@@ -76,6 +79,7 @@ EOF
 # Track all check names and their pass/fail for the formatted summary
 declare -A check_results
 failures=()
+indexer_failure_codes=()
 
 mark_check() {
   local name="$1"
@@ -190,23 +194,21 @@ if command -v psql >/dev/null 2>&1; then
     "SELECT
        (SELECT value::bigint FROM indexer_state WHERE key = 'last_indexed_height'),
        (SELECT value::bigint FROM indexer_state WHERE key = 'last_seen_rpc_tip'),
-       (SELECT value::bigint FROM indexer_state WHERE key = 'last_success_at')" \
+       (SELECT value::bigint FROM indexer_state WHERE key = 'last_success_at'),
+       (SELECT value::bigint FROM indexer_state WHERE key = 'last_tip_check_at'),
+       COALESCE((SELECT value FROM indexer_state WHERE key = 'pending_work_since'), 'none')" \
     2>&1 || true)"
-  if [[ "${lag_stats}" =~ ^([0-9]+)\|([0-9]+)\|([0-9]+)$ ]]; then
-    indexed="${BASH_REMATCH[1]}"
-    tip="${BASH_REMATCH[2]}"
-    last_success_at="${BASH_REMATCH[3]}"
-    lag=$(( tip - indexed ))
-    now_epoch="$(date -u +%s)"
-    heartbeat_age=$(( now_epoch - last_success_at ))
-    if (( lag > INDEXER_MAX_LAG )); then
-      failures+=("Indexer lag ${lag} blocks (tip ${tip})")
+  if [[ "${lag_stats}" =~ ^([0-9]+)\|([0-9]+)\|([0-9]+)\|([0-9]+)\|([0-9]+|none)$ ]]; then
+    progress_assessment="$(assess_indexer_progress \
+      "${BASH_REMATCH[1]}" "${BASH_REMATCH[2]}" "${BASH_REMATCH[3]}" \
+      "${BASH_REMATCH[4]}" "${BASH_REMATCH[5]}" "$(date -u +%s)" \
+      "${INDEXER_MAX_LAG}" "${INDEXER_MAX_HEARTBEAT_AGE_SECONDS}")"
+    while IFS='|' read -r code detail; do
+      [[ -z "${code}" ]] && continue
+      failures+=("${detail}")
+      indexer_failure_codes+=("${code}")
       indexer_ok=0
-    fi
-    if (( heartbeat_age > INDEXER_MAX_HEARTBEAT_AGE_SECONDS )); then
-      failures+=("Indexer heartbeat stale ${heartbeat_age}s")
-      indexer_ok=0
-    fi
+    done <<< "${progress_assessment}"
   else
     failures+=("Cannot read indexer_state")
     indexer_ok=0
@@ -353,7 +355,12 @@ EOF
   exit 0
 fi
 
-summary="$(printf '%s\n' "${failures[@]}")"
+# Clock ages change on every poll; fingerprint their failure categories instead.
+# Preserve the existing signatures for all other operational checks.
+summary="$(for failure in "${failures[@]}"; do
+  [[ "${failure}" == Indexer\ * ]] || printf '%s\n' "${failure}"
+done
+printf '%s\n' "${indexer_failure_codes[@]}")"
 fingerprint="$(printf '%s' "${summary}" | shasum -a 256 | awk '{print $1}')"
 
 should_alert=0

@@ -120,7 +120,8 @@ export function buildPageMetadata({
   // index. Its homepage is the only default opt-in; any future testnet landing
   // page must make a deliberate, reviewed indexOnTestnet decision.
   const allowedOnTestnet = network !== 'testnet' || indexOnTestnet;
-  const shouldIndex = !isCrosslink
+  const stagingPreview = process.env.VERCEL_ENV === 'preview' && process.env.ASK_STAGING_ENABLED === 'true';
+  const shouldIndex = !stagingPreview && !isCrosslink
     && allowedOnNetwork
     && allowedOnTestnet
     && (index ?? true);
@@ -307,7 +308,7 @@ export interface TxMeta {
   orchardActions: number;
   saplingSpendCount: number;
   saplingOutputCount: number;
-  fee: number;
+  fee: number | null;
 }
 
 export type TxResolution =
@@ -342,7 +343,7 @@ export const getTxResolution = cache(async (txid: string): Promise<TxResolution>
         orchardActions: data.orchardActions || 0,
         saplingSpendCount: data.saplingSpendCount || 0,
         saplingOutputCount: data.saplingOutputCount || 0,
-        fee: data.fee || 0,
+        fee: data.fee ?? null,
       };
 
       if (indexedStatus === 'confirmed') return { state: 'found', meta: indexedMeta };

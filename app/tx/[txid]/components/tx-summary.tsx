@@ -2,13 +2,16 @@ import Link from 'next/link';
 import { CURRENCY } from '@/lib/config';
 import { AddressWithLabel, AddressDisplay } from '@/components/AddressWithLabel';
 import { firstOutputAddress, rankedRecipients } from './tx-classification';
-import type { TransactionData, TxClassification } from './types';
+import type { BridgeData, TransactionData, TxClassification } from './types';
+
+const VENUE_NAMES = { near: 'NEAR Intents', maya: 'Maya Protocol', thorchain: 'THORChain' } as const;
+const venueName = (b: BridgeData) => VENUE_NAMES[b.venue || 'near'];
 
 export function generateTxSummary(
   data: TransactionData,
   classification: TxClassification,
 ): React.ReactNode {
-  const { txType, allBridges, migrationSourcePool, valueBalance } = classification;
+  const { txType, allBridges, migrationSourcePool, migrationDestPool, valueBalance } = classification;
 
   if (allBridges.length > 0) {
     if (allBridges.length === 1) {
@@ -36,7 +39,7 @@ export function generateTxSummary(
                 {zecAmt} on{' '}
               </>
             ) : null}
-            {addrNode} via NEAR Intents.
+            {addrNode} via {venueName(b)}.
             {b.otherAmountUsd > 0 && (
               <span className="text-muted">
                 {' '}
@@ -51,7 +54,7 @@ export function generateTxSummary(
         <>
           {zecAmt || CURRENCY} was bridged out by {addrNode} to{' '}
           {b.otherAmount?.toLocaleString(undefined, { maximumFractionDigits: 4 })} {b.otherToken} on{' '}
-          {b.otherChain.toUpperCase()} via NEAR Intents.
+          {b.otherChain.toUpperCase()} via {venueName(b)}.
           {b.otherAmountUsd > 0 && (
             <span className="text-muted">
               {' '}
@@ -61,7 +64,8 @@ export function generateTxSummary(
         </>
       );
     }
-    return <>Batched bridge transaction with {allBridges.length} swaps via NEAR Intents.</>;
+    const venues = [...new Set(allBridges.map(venueName))];
+    return <>Batched bridge transaction with {allBridges.length} swaps via {venues.join(' and ')}.</>;
   }
 
   if (classification.isCoinbase) {
@@ -93,6 +97,15 @@ export function generateTxSummary(
       );
     }
     return `This coinbase transaction creates a block reward.`;
+  }
+
+  if (txType === 'MIGRATION' && migrationSourcePool === 'Sprout') {
+    const saplingAmt = Math.abs(data.valueBalanceSapling || 0);
+    return `Sprout → ${migrationDestPool} pool migration. ${saplingAmt.toFixed(4)} ${CURRENCY} left the legacy Sprout pool, Zcash's original shielded pool, and entered Sapling. Sprout has been closed to deposits since Canopy, and NU7 retires it: after activation, Sprout funds can no longer be spent. Senders and recipients remain shielded.`;
+  }
+
+  if (txType === 'SPROUT') {
+    return 'Private transaction inside the legacy Sprout pool. Amounts, senders, and recipients are encrypted.';
   }
 
   if (txType === 'MIGRATION') {

@@ -57,7 +57,7 @@ function buildNamesHandler(entry, config) {
       if (!/^[a-z0-9]{1,62}$/.test(name)) return sendProblem(res, 'validation-error', { detail: 'Names contain 1–62 letters or digits.' });
       if (entry.v1.nativeKey === 'nameEvents') return sendSuccess(res, await rpc('events', { name, limit: 50 }));
       const registration = await rpc('resolve', { query: name });
-      const data = registration || { pricing: (await rpc('status')).pricing };
+      const data = registration || { pricing: (await rpc('status')).pricing ?? null };
       return sendSuccess(res, data);
     } catch {
       return sendProblem(res, 'upstream-error', { detail: 'The name registry is temporarily unavailable.' });

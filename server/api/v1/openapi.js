@@ -138,7 +138,7 @@ function operationId(method, v1Path) {
 
 const ERROR_RESPONSES = {
   '402': { description: 'Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
-  '401': { description: 'Preview or endpoint authentication required.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
+  '401': { description: 'Endpoint credential required or invalid.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
   '403': { description: 'Origin or ownership authorization denied.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
   '413': { description: 'JSON body exceeds 1 MB.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
   '503': { description: 'Source temporarily unavailable or still building.', content: { 'application/problem+json': { schema: { $ref: '#/components/schemas/Problem' } } } },
@@ -155,7 +155,7 @@ const HEIGHT = { type: 'integer', minimum: 0, maximum: 100_000_000 };
 function requestSchema(entry) {
   if (entry.v1.nativeKey === 'ask') {
     const { z } = require('zod');
-    const schema = z.toJSONSchema(entry.v1.path.endsWith('/chat') ? require('../../../lib/ask/chat').chatRequestSchema : entry.v1.path.endsWith('/explain') ? require('./lib/ask-explanation').explainRequestSchema : require('../../../lib/ask/contract').requestSchema);
+    const schema = z.toJSONSchema(entry.v1.path.endsWith('/research/query') ? require('../../../lib/ask/research-contract').sqlQuerySchema.extend({challenge:z.string().min(1).max(2048)}).strict() : entry.v1.path.endsWith('/research/plan') ? z.object({question:z.string().trim().min(1).max(1000),challenge:z.string().max(2048),execute:z.boolean().optional().default(false)}).strict() : entry.v1.path.endsWith('/chat') ? require('../../../lib/ask/chat').chatRequestSchema : entry.v1.path.endsWith('/explain') ? require('./lib/ask-explanation').explainRequestSchema : require('../../../lib/ask/contract').requestSchema);
     delete schema.$schema;
     return schema;
   }
@@ -265,13 +265,13 @@ function buildOpenApiDocument() {
     openapi: '3.1.0',
     info: {
       title: 'ZecBlock API v1',
-      version: '1.0.0-preview',
+      version: '1.0.0',
       summary: 'Versioned, contract-stable read/write API for the Zcash blockchain data and privacy-intelligence features exposed by ZecBlock.',
       description: [
-        'This is the v1 contract layer. It is gated behind API_V1_ENABLED and,',
-        'pre-launch, an X-API-Preview-Key header (see the previewKey security',
-        'scheme) — see server/api/v1/README.md in the repository for exact',
-        'mount instructions and current caveats. Every success response uses',
+        'This is the v1 contract layer. Public production reads need no API key',
+        'or preview header; protected deployments may still require',
+        'X-API-Preview-Key. Individual operations document their own credentials',
+        '(for example X-Node-Token). Every success response uses',
         'the {data, meta} envelope; every error response is an RFC 9457',
         'problem+json document. Every public inventory entry is adapted;',
         'The manifest explicitly identifies retained operational routes and payment-protected services.',
@@ -284,16 +284,7 @@ function buildOpenApiDocument() {
       { url: 'http://127.0.0.1:3002', description: 'Private read-only development preview.' },
     ],
     tags: [...tagSet].sort().map((name) => ({ name })),
-    security: [{ previewKey: [] }],
     components: {
-      securitySchemes: {
-        previewKey: {
-          type: 'apiKey',
-          in: 'header',
-          name: 'X-API-Preview-Key',
-          description: 'Required while API_V1_LAUNCHED=false. Dropped once v1 is generally available.',
-        },
-      },
       schemas: {
         Problem: PROBLEM_SCHEMA,
         Meta: META_SCHEMA,

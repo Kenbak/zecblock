@@ -10,6 +10,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ChartCard } from './ChartCard';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 function ChartEmptyState({ message }: { message: string }) {
   return (
@@ -41,7 +42,7 @@ export function NetworkHistoryCharts({ initialData, initialFetchedAt }: { initia
   );
 
   return (
-    <ChartCard title="NODE_STORAGE_HISTORY" height={260} watermarkSize="sm">
+    <ChartCard title="NODE_STORAGE_HISTORY" height={260} watermarkSize="sm" share={{ title: 'Zcash node storage history', fileName: 'zecblock-node-storage-history', csv: () => objectRowsCsv(sizePoints) }}>
       <p className="text-caption text-muted mb-3">Last 30 days · Explorer node disk snapshots · GiB (1,024³ bytes). Storage depends on the node implementation.</p>
       {loading ? (
         <ChartSkeleton height={260} />

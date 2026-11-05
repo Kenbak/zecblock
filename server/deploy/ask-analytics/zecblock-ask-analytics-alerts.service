@@ -1,0 +1,27 @@
+[Unit]
+Description=Private analytics admission, dataset and worker alerts
+After=network-online.target postgresql@16-main.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=postgres
+Group=postgres
+EnvironmentFile=/etc/zecblock/ask-telegram-alerts.env
+ExecStart=/usr/bin/python3 /opt/zecblock-ask-operations/analytics-availability.py
+StateDirectory=zecblock-ask-analytics-alerts
+StateDirectoryMode=0700
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+MemoryMax=128M
+TasksMax=16
+TimeoutStartSec=40
+UMask=0077

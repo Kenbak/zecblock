@@ -1,0 +1,10 @@
+import type {ResearchDocument,ResearchLibrary,ResearchChart} from './research-contract';
+export type ResearchShare={format:'zecblock-research-link';version:1;kind:'query'|'dashboard';title:string;queries:{title:string;query:ResearchDocument['query'];chart:ResearchChart}[]};
+export const MAX_LINK_BYTES:number;
+export function queryShare(document:ResearchDocument):ResearchShare;
+export function dashboardShare(library:ResearchLibrary,id:string):ResearchShare;
+export function researchLink(share:ResearchShare,origin:string):string;
+export function readResearchLink(fragment:string):ResearchShare|null;
+export function sharedLibrary(share:ResearchShare,uuid:()=>string,now:string):ResearchLibrary;
+export function compactResearchLink(share:ResearchShare,origin:string):Promise<string>;
+export function readAnyResearchLink(fragment:string):Promise<ResearchShare|null>;

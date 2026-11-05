@@ -1,6 +1,7 @@
 'use client';
 import { MiningSoftwareSection } from '@/components/mining/MiningSoftwareSection';
 import { OrphanRateSection } from '@/components/mining/OrphanRateSection';
+import { ObservationLagSection } from '@/components/mining/ObservationLagSection';
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
@@ -18,7 +19,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { categoryColor } from '@/lib/category-colors';
 import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
-import { PageHeader, SectionHeader, DataTable, SkeletonTable } from '@/components/ui';
+import { PageHeader, SectionHeader, SkeletonTable } from '@/components/ui';
 import { ChartCard } from '@/components/network/ChartCard';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { MiningMetricsChart } from '@/components/network/MiningMetricsChart';
@@ -26,10 +27,16 @@ import { NetworkHashrateChart } from '@/components/network/NetworkHashrateChart'
 import { zatToZec } from '@/lib/format-numbers';
 import { PoolLogo } from '@/components/PoolLogo';
 import { MiningSectionIcon, RankingSectionIcon } from '@/components/icons/home-section';
+import { useUrlState } from '@/lib/use-url-state';
+import { ExportButton } from '@/components/ExportButton';
+import { zatToZecString } from '@/lib/csv';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
+import { SortableDataTable } from '@/components/ui/SortableDataTable';
 
 const SECTIONS = [
   { id: 'metrics', label: 'Network' },
   { id: 'orphans', label: 'Orphan rates' },
+  { id: 'timing', label: 'Header vs seen' },
   { id: 'distribution', label: 'Distribution' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'software', label: 'Mining software' },
@@ -121,23 +128,27 @@ function PeriodSelector({ value, onChange }: { value: Period; onChange: (p: Peri
 
 function DistributionSection() {
   const { theme } = useTheme();
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('distribution', '30d', PERIODS);
   const [data, setData] = useState<PoolDist[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Ignore a slower response for a period that is no longer selected.
+    let cancelled = false;
     setLoading(true);
     fetch(`${getApiUrl()}/v1/mining/pool-distribution?period=${period}`)
       .then(r => r.ok ? readApiData(r) : null)
       .then(res => {
+        if (cancelled) return;
         if (res?.pools) {
           setData(res.pools);
           setTotal(res.totalBlocks);
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [period]);
 
   // Group small shares into Other; the full ranking remains available below.
@@ -171,45 +182,67 @@ function DistributionSection() {
 
 function RankingSection() {
   const { theme } = useTheme();
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('ranking', '30d', PERIODS);
   const [ranking, setRanking] = useState<PoolRank[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     fetch(`${getApiUrl()}/v1/mining/pool-ranking?period=${period}`)
       .then(r => r.ok ? readApiData(r) : null)
       .then(res => {
+        if (cancelled) return;
         if (res?.ranking) {
           setRanking(res.ranking);
           setTotal(res.totalBlocks);
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [period]);
 
   return (
     <section id="ranking" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-3">
       <Card>
         <CardBody>
-          <SectionHeader label="POOL_RANKING" icon={<RankingSectionIcon />} actions={<PeriodSelector value={period} onChange={setPeriod} />} />
+          <SectionHeader label="POOL_RANKING" icon={<RankingSectionIcon />} actions={
+            <div className="flex flex-wrap items-center gap-2">
+              <PeriodSelector value={period} onChange={setPeriod} />
+              {ranking.length > 0 && (
+                <ExportButton
+                  type="csv"
+                  data={ranking}
+                  filename={`zecblock-pool-ranking-${period}`}
+                  csvHeaders={['Rank', 'Pool', 'Payout address', 'Region', 'Blocks', 'Share (fraction of blocks)', 'Average block interval (s)', 'Total fees (ZEC)']}
+                  csvMapper={(pool: PoolRank) => [
+                    String(pool.rank), pool.name, pool.address ?? '', pool.region ?? '', String(pool.blocks), String(pool.share),
+                    String(pool.avgBlockInterval ?? ''), zatToZecString(pool.totalFeesZat),
+                  ]}
+                />
+              )}
+            </div>
+          } />
 
           {loading ? (
             <SkeletonTable rows={5} headers={["#", "Pool", "Blocks", "Share", "Avg interval", "Total fees"]} />
           ) : (
             <>
-              <DataTable
+              <SortableDataTable
                 bare
+                caption={`Mining pool ranking by blocks found, ${period}`}
                 columns={[
                   {
                     id: 'rank',
+                    sortValue: (pool: PoolRank) => pool.rank,
                     header: '#',
                     cell: (pool: PoolRank) => <span className="font-mono text-xs text-muted">{pool.rank}</span>,
                   },
                   {
                     id: 'pool',
+                    sortValue: (pool: PoolRank) => pool.name,
                     header: 'Pool',
                     cell: (pool) => (
                       <div className="flex items-center gap-2">
@@ -227,6 +260,7 @@ function RankingSection() {
                   },
                   {
                     id: 'blocks',
+                    sortValue: (pool: PoolRank) => pool.blocks,
                     header: 'Blocks',
                     align: 'right',
                     cell: (pool) => (
@@ -235,6 +269,7 @@ function RankingSection() {
                   },
                   {
                     id: 'share',
+                    sortValue: (pool: PoolRank) => pool.share,
                     header: 'Share',
                     align: 'right',
                     cell: (pool) => (
@@ -254,6 +289,7 @@ function RankingSection() {
                   },
                   {
                     id: 'interval',
+                    sortValue: (pool: PoolRank) => pool.avgBlockInterval,
                     header: 'Avg Interval',
                     align: 'right',
                     className: 'hidden sm:table-cell',
@@ -265,6 +301,7 @@ function RankingSection() {
                   },
                   {
                     id: 'fees',
+                    sortValue: (pool: PoolRank) => Number(pool.totalFeesZat),
                     header: 'Total Fees',
                     align: 'right',
                     className: 'hidden md:table-cell',
@@ -319,7 +356,7 @@ function ChartModeToggle({ mode, onChange }: { mode: ChartMode; onChange: (m: Ch
 function HashrateShareSection() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('share', '30d', PERIODS);
   const [chartMode, setChartMode] = useState<ChartMode>('line');
   const [series, setSeries] = useState<HashratePoint[]>([]);
   const [allPools, setAllPools] = useState<string[]>([]);
@@ -327,17 +364,20 @@ function HashrateShareSection() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    let cancelled = false;
     setLoading(true);
     fetch(`${getApiUrl()}/v1/mining/hashrate-share?period=${period}`)
       .then(r => r.ok ? readApiData(r) : null)
       .then(res => {
+        if (cancelled) return;
         if (res?.series) {
           setSeries(res.series);
           setAllPools(res.allPools || []);
         }
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
   }, [period]);
 
   const poolOrder = [...allPools].sort((a, b) => {
@@ -378,6 +418,7 @@ function HashrateShareSection() {
     <section id="hashrate" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-4">
       <ChartCard
         title="POOL_NETWORK_BLOCK_SHARE"
+        share={{ title: `Zcash mining pool block share (${period})`, fileName: `zecblock-pool-block-share-${period}`, csv: () => objectRowsCsv(chartData) }}
         height={380}
         controls={chartControls}
       >
@@ -517,7 +558,7 @@ function HashrateShareSection() {
 function MinerBehaviorSection() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('behavior', '30d', PERIODS);
   const [series, setSeries] = useState<BehaviorPoint[]>([]);
   const [summary, setSummary] = useState<BehaviorSummary | null>(null);
   const [message, setMessage] = useState<string | null>(null);
@@ -624,6 +665,7 @@ function MinerBehaviorSection() {
 
       <ChartCard
         title="MINER_EARNED_VS_MOVED"
+        share={{ title: `Zcash miner rewards earned vs moved (${period})`, fileName: `zecblock-miner-earned-vs-moved-${period}`, csv: () => objectRowsCsv(chartData) }}
         height={320}
         controls={<PeriodSelector value={period} onChange={setPeriod} />}
       >
@@ -709,6 +751,7 @@ export default function MiningPage() {
       </section>
 
       <OrphanRateSection />
+      <ObservationLagSection />
       <DistributionSection />
       <RankingSection />
       <MiningSoftwareSection />

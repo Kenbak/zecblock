@@ -41,7 +41,7 @@ const testActivation = 4465026;
 const timestamp = Date.parse('2026-11-04T23:59:30Z') / 1000;
 const stats = (network, height, nu7Height) => ({
   blockchain: { height, latestBlockTime: timestamp },
-  mining: { avgBlockTime: 75, schedule: { network: network === 'mainnet' ? 'main' : 'test', source: 'node-upgrade-schedule', nu7Height,
+  mining: { avgBlockTime: 75, targetBlockTime: 75, blocks24h: 1152, schedule: { network: network === 'mainnet' ? 'main' : 'test', source: 'node-upgrade-schedule', nu7Height,
     eras: [{ height: 0, seconds: 150 }, { height: network === 'mainnet' ? 653600 : 584000, seconds: 75 }, ...(nu7Height == null ? [] : [{ height: nu7Height, seconds: 25 }])],
   } },
 });
@@ -190,7 +190,10 @@ test('NU7 dashboard separates pending context from verified exact signed account
       '/v1/network/accounting': { data: { schedule: { network: chain, nu7Height: activation }, nodeHeight: activation, nsmBalanceZat: '-1' }, error: null },
     };
     const pending = renderImpact('nu7', network, responses);
-    assert.match(pending.html, /75\.0s/);
+    // One unambiguous daily count instead of an average whose window differs by page.
+    assert.match(pending.html, /Blocks · last 24h/);
+    assert.match(pending.html, />1,152</);
+    assert.match(pending.html, /Target 1,152 today · 3,456 with NU7/);
     assert.match(pending.html, /At NU7/);
     assert.match(pending.html, /Accounting begins at activation/);
     assert.ok(pending.html.includes('href="/network#nu7-accounting"'));

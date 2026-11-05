@@ -13,6 +13,10 @@ import Image from 'next/image';
  *
  * `tone` forces a variant regardless of theme, for the press-kit previews
  * that show both on one page.
+ *
+ * The wrapper's role="img" makes the images presentational for assistive
+ * tech, so their alt text is not announced twice; it is there for crawlers
+ * (Bing flags empty alt on the logo).
  */
 export function BrandLogo({
   className = '',
@@ -35,7 +39,7 @@ export function BrandLogo({
       <Image
         className="brand-logo-on-dark"
         src="/brand/zecblock-logotype.png"
-        alt=""
+        alt="ZecBlock"
         width={422}
         height={98}
         priority={priority}
@@ -43,7 +47,7 @@ export function BrandLogo({
       <Image
         className="brand-logo-on-light"
         src="/brand/zecblock-logotype-light.png"
-        alt=""
+        alt="ZecBlock"
         width={422}
         height={98}
         priority={priority}

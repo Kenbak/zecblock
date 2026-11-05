@@ -33,6 +33,9 @@
     "summary"
   ],
   "GET /v1/search/anchors/:root": [],
+  "GET /v1/search/prefix": [
+    "q"
+  ],
   "GET /v1/blocks/:hashOrHeight/archive": [],
   "GET /v1/network/block-time": [
     "period"
@@ -76,6 +79,7 @@
     "window"
   ],
   "GET /v1/mining/orphan-rates": [],
+  "GET /v1/mining/observation-lag": [],
   "GET /v1/mining/hashrate-history": [
     "period",
     "window"
@@ -92,6 +96,34 @@
   ],
   "GET /v1/network/blocks/recent-summary": [
     "limit"
+  ],
+  "GET /v1/crosschain/venues/analytics": [
+    "granularity",
+    "period",
+    "venue"
+  ],
+  "GET /v1/crosschain/venues/swaps": [
+    "chain",
+    "cursor",
+    "destAsset",
+    "direction",
+    "from",
+    "limit",
+    "maxUsd",
+    "minUsd",
+    "period",
+    "referral",
+    "search",
+    "sourceAsset",
+    "status",
+    "to",
+    "token",
+    "venue"
+  ],
+  "GET /v1/crosschain/venues": [
+    "cursor",
+    "limit",
+    "venue"
   ],
   "GET /v1/crosschain/analytics": [
     "granularity",

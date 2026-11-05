@@ -106,6 +106,23 @@ test('ordinary exports keep their compact legend and unavailable summaries remai
  assert.match(unavailable,/data-series-summary="shieldedSupplyPct"/);
  assert.ok(unavailable.includes('—'));assert.ok(unavailable.includes('Observations unavailable'));
 });
+test('native social-image rendering produces real PNGs for ordinary, delayed and summary charts',async()=>{
+ const {ImageResponse}=require('next/og');
+ const {createElement}=require('react');
+ const {ChartExport}=loadRoute('components/charts/ChartExport.tsx');
+ const ordinary=CHART_CATALOG.find(chart=>chart.id==='network-hashrate');
+ const summary={...chart,series:[{...chart.series[0],summary:{primary:'56%',secondary:'123 ZEC'}}]};
+ const font=fs.readFileSync('public/fonts/chart-export/Geist-Regular.ttf');
+ const logo=`data:image/png;base64,${fs.readFileSync('public/brand/zecblock-logotype.png').toString('base64')}`;
+ for(const [source,asOf] of [[ordinary,undefined],[ordinary,'API snapshot · 2026-10-27 12:00:00 UTC · refresh delayed'],[summary,undefined]]){
+  const data={chart:source,rows:[{x:Date.parse('2026-10-26'),[source.series[0].key]:12},{x:Date.parse('2026-10-27'),[source.series[0].key]:13}],network:'mainnet',asOf};
+  const response=new ImageResponse(createElement(ChartExport,{data,logo}),{width:1200,height:675,fonts:[{name:'ZecBlock Export',data:font,weight:400,style:'normal'}]});
+  const png=Buffer.from(await response.arrayBuffer());
+  assert.equal(response.headers.get('content-type'),'image/png');
+  assert.equal(png.subarray(0,8).toString('hex'),'89504e470d0a1a0a');
+  assert.equal(png.readUInt32BE(16),1200);assert.equal(png.readUInt32BE(20),675);
+ }
+});
 test('CSV retains numeric precision, quotes values, distinguishes missing, neutralizes formulas',()=>{
  const c={...chart,axis:'category',series:[{key:'value',label:'Value',color:'gold'}]};
  const csv=sharing.chartCsv({chart:c,rows:[{x:'=HYPERLINK("evil")',value:0},{x:'missing',value:null},{x:'exact',value:.00000001}]});
@@ -148,9 +165,11 @@ test('range and series social URLs retain the variant while canonical and robots
  } finally {if(previous===undefined)delete process.env.NEXT_PUBLIC_NETWORK;else process.env.NEXT_PUBLIC_NETWORK=previous;}
 });
 test('image route returns real 404 and uncached 503 for invalid or unavailable charts',async()=>{
- const route=loadRoute('app/charts/[slug]/image/route.tsx',{'next/og':{ImageResponse:class{}},'@/lib/chart-share-server':{loadShareChart:async()=>null}});
+ let waitMs;
+ const route=loadRoute('app/charts/[slug]/image/route.tsx',{'next/og':{ImageResponse:class{}},'@/lib/chart-share-server':{loadShareChart:async(_chart,wait)=>{waitMs=wait;return null;}}});
  const unknown=await route.GET(new Request('http://localhost/charts/unknown/image'),{params:Promise.resolve({slug:'unknown'})});assert.equal(unknown.status,404);
  const unavailable=await route.GET(new Request('http://localhost/charts/supply/image'),{params:Promise.resolve({slug:'supply'})});assert.equal(unavailable.status,503);assert.equal(unavailable.headers.get('Cache-Control'),'no-store');
+ assert.equal(waitMs,10_000,'social crawlers use the full bounded refresh without delaying the page');
 });
 test('unknown chart pages return 404 before a loading boundary can stream',async()=>{
  const vm=require('node:vm');const exports={};const {NextRequest,NextResponse}=require('next/server');

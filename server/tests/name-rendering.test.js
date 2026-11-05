@@ -137,6 +137,21 @@ test('server resolution distinguishes unavailable service from available name an
   assert.ok(signals.every(signal => signal instanceof AbortSignal));
 });
 
+test('available-name SSR preserves explicit unavailable pricing with the current status schema', async () => {
+  const server = load('lib/name-server.ts', {
+    react: { cache: fn => fn },
+    './zns': {
+      resolveZnsName: async () => null,
+      getZnsNameEvents: async () => { throw new Error('not registered'); },
+      getZnsStatus: async () => ({ syncedHeight: 3500000, synced: true, treasuryAddress: 'u1registry' }),
+    },
+  });
+  const resolution = await server.resolveName('available');
+  const snapshot = await server.resolveNameExtras('available', resolution);
+  assert.equal(snapshot.state, 'available');
+  assert.equal(snapshot.pricing, null, 'missing pricing must not become undefined or a fabricated amount');
+});
+
 test('ZNS transport normalizes current wire fields and rejects malformed registrations, never treating them as available', async () => {
   let raw = { ...registration, last_action: 'CLAIM' }; delete raw.lastAction;
   const zns = load('lib/zns.ts', {

@@ -49,52 +49,36 @@ jobs:
         run: python3 scripts/verify-deployment.py
 
       - name: Set up SSH
+        env:
+          PRIMARY_HOST: ${{ secrets.PRIMARY_HOST }}
+          STANDBY_HOST: ${{ secrets.STANDBY_HOST }}
+          TESTNET_HOST: ${{ secrets.TESTNET_HOST }}
         run: |
           mkdir -p ~/.ssh
           printf '%s\n' "${{ secrets.DEPLOY_SSH_KEY }}" > ~/.ssh/deploy_key
           printf '%s\n' "${{ secrets.DEPLOY_KNOWN_HOSTS }}" > ~/.ssh/known_hosts
-          chmod 600 ~/.ssh/deploy_key
-          chmod 600 ~/.ssh/known_hosts
+          # Pinned testnet keys live in their own secret so adding a host never
+          # rewrites the established mainnet entries.
+          printf '%s\n' "${{ secrets.TESTNET_KNOWN_HOSTS }}" >> ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/deploy_key ~/.ssh/known_hosts
           test -s ~/.ssh/known_hosts || { echo "::error::DEPLOY_KNOWN_HOSTS is empty"; exit 1; }
-          ssh-keygen -F "${{ secrets.PRIMARY_HOST }}" -f ~/.ssh/known_hosts >/dev/null || exit 1
-          ssh-keygen -F "${{ secrets.STANDBY_HOST }}" -f ~/.ssh/known_hosts >/dev/null || exit 1
-          cat > ~/.ssh/config << 'SSHEOF'
-          Host primary
-            HostName ${{ secrets.PRIMARY_HOST }}
-            User root
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking yes
-            UserKnownHostsFile ~/.ssh/known_hosts
-            LogLevel ERROR
-          Host standby
-            HostName ${{ secrets.STANDBY_HOST }}
-            User root
-            IdentityFile ~/.ssh/deploy_key
-            StrictHostKeyChecking yes
-            UserKnownHostsFile ~/.ssh/known_hosts
-            LogLevel ERROR
-          SSHEOF
-          sed -i 's/^          //' ~/.ssh/config
-          echo "SSH config written:"
-          cat ~/.ssh/config
+          bash server/deploy/release/write-ssh-config.sh
 
       - name: Detect roles and current deployed commit
         id: roles
         run: |
-          echo "Testing SSH connectivity..."
-          ssh primary "echo 'primary OK'" || { echo "::error::SSH to primary failed"; exit 1; }
-          ssh standby "echo 'standby OK'" || { echo "::error::SSH to standby failed"; exit 1; }
-          primary_is_recovery=$(ssh primary "sudo -u postgres psql -qtAX -c 'SELECT pg_is_in_recovery();'")
-          echo "primary pg_is_in_recovery=$primary_is_recovery"
-          if [[ "$primary_is_recovery" == "f" ]]; then
-            echo "pg_primary=primary" >> "$GITHUB_OUTPUT"
-          else
-            echo "pg_primary=standby" >> "$GITHUB_OUTPUT"
+          # targets.json names the writable mainnet database host. If the
+          # roles have flipped (failover), the manifest is stale: stop rather
+          # than restart the API on what is now a replica.
+          primary_is_recovery=$(ssh zcash-mainnet "sudo -u postgres psql -qtAX -c 'SELECT pg_is_in_recovery();'")
+          if [[ "$primary_is_recovery" != "f" ]]; then
+            echo "::error::mainnet-primary PostgreSQL is in recovery; update targets.json before deploying"
+            exit 1
           fi
 
           # This is also the backup/rollback reference: whatever commit is
           # currently live on the primary box before we touch anything.
-          prev_sha="$(ssh primary 'cd /root/cipherscan && git rev-parse HEAD')"
+          prev_sha="$(ssh zcash-mainnet 'cd /root/cipherscan && git rev-parse HEAD')"
           if [[ ! "$prev_sha" =~ ^[0-9a-f]{40}$ ]]; then
             echo "::error::Could not read a valid current commit from primary (got: $prev_sha)"
             exit 1
@@ -128,111 +112,32 @@ jobs:
             echo "deploy=true" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Deploy to primary box
+      # Every enabled host in targets.json receives the same commit through
+      # the same script, streamed from this verified checkout. Order matters:
+      # the mainnet primary goes first, and any failure stops the rollout so
+      # no host moves past a release that failed elsewhere.
+      - name: Deploy to every enabled target
         if: steps.changes.outputs.deploy == 'true'
         env:
           NEW_SHA: ${{ github.event.workflow_run.head_sha }}
-          PREV_SHA: ${{ steps.roles.outputs.prev_sha }}
-        run: |
-          # Defense in depth: these are re-validated on the runner even
-          # though they were already produced by trusted prior steps, before
-          # they're interpolated into a remote SSH command string.
-          [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Bad NEW_SHA"; exit 1; }
-          [[ "$PREV_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Bad PREV_SHA"; exit 1; }
-
-          ssh primary "NEW_SHA=$NEW_SHA PREV_SHA=$PREV_SHA bash -s" << 'REMOTE'
-          set -euo pipefail
-          cd /root/cipherscan
-
-          # Previous-release backup: the git history itself is the backup —
-          # every prior deployed commit stays fully checkoutable — but we
-          # also drop a marker file so a human (or a future workflow step)
-          # can see what the last known-good release was without querying git.
-          echo "$PREV_SHA" > /root/cipherscan/.previous-deploy-sha
-
-          deploy_sha() {
-            local sha="$1"
-            git fetch origin main
-            git merge-base --is-ancestor "$sha" origin/main
-            git checkout --detach "$sha"
-            npm ci --omit=dev --no-audit --no-fund
-            (cd server/api && npm ci --omit=dev --no-audit --no-fund)
-            systemctl restart zcash-api-mainnet.service
-          }
-
-          wait_healthy() {
-            local _attempt
-            for _attempt in $(seq 1 10); do
-              if curl -sf http://localhost:3001/health >/dev/null \
-                 && curl -sf http://localhost:3001/health/deep >/dev/null; then
-                return 0
-              fi
-              sleep 3
-            done
-            return 1
-          }
-
-          echo "Deploying $NEW_SHA to primary"
-          deploy_sha "$NEW_SHA"
-
-          if wait_healthy; then
-            echo "Primary healthy at $NEW_SHA (liveness + deep health OK)"
-            systemctl restart cipherscan-bot.service || true
-            echo "Primary API + bot deploy complete"
-          else
-            echo "::error::Primary failed readiness/deep-health at $NEW_SHA — automatic rollback to $PREV_SHA"
-            deploy_sha "$PREV_SHA"
-            if wait_healthy; then
-              echo "Rollback to $PREV_SHA succeeded; primary is healthy again."
-            else
-              echo "::error::Rollback to $PREV_SHA ALSO failed health checks on primary — manual intervention required."
-            fi
-            exit 1
-          fi
-          REMOTE
-
-      - name: Deploy to standby box
-        if: steps.changes.outputs.deploy == 'true'
-        env:
-          NEW_SHA: ${{ github.event.workflow_run.head_sha }}
+          ENFORCE_MIGRATIONS: ${{ vars.ENFORCE_MIGRATIONS == 'true' && '1' || '0' }}
         run: |
           [[ "$NEW_SHA" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::Bad NEW_SHA"; exit 1; }
+          jq -c '.targets[] | select(.deploy)' server/deploy/release/targets.json | while read -r target; do
+            name=$(jq -r .name <<< "$target")
+            alias=$(jq -r .ssh <<< "$target")
+            grep -q "^Host $alias$" ~/.ssh/config \
+              || { echo "::error::$name is enabled but its host secret is missing"; exit 1; }
+            env_line="NETWORK=$(jq -r .network <<< "$target") ROLE=$(jq -r .role <<< "$target")"
+            env_line+=" SERVICE=$(jq -r .service <<< "$target") PORT=$(jq -r .port <<< "$target")"
+            env_line+=" ALSO_RESTART='$(jq -r '.alsoRestart | join(" ")' <<< "$target")'"
+            env_line+=" ENFORCE_MIGRATIONS=$ENFORCE_MIGRATIONS"
+            echo "::group::$name"
+            ssh "$alias" "$env_line bash -s -- deploy $NEW_SHA" < server/deploy/release/host.sh
+            echo "::endgroup::"
+          done
 
-          ssh standby "NEW_SHA=$NEW_SHA bash -s" << 'REMOTE'
-          set -euo pipefail
-          cd /root/cipherscan
-
-          prev_sha="$(git rev-parse HEAD)"
-          echo "$prev_sha" > /root/cipherscan/.previous-deploy-sha
-
-          deploy_sha() {
-            local sha="$1"
-            git fetch origin main
-            git merge-base --is-ancestor "$sha" origin/main
-            git checkout --detach "$sha"
-            # Shared lib modules resolve dependencies from the repository root.
-            npm ci --omit=dev --no-audit --no-fund
-            (cd server/api && npm ci --omit=dev --no-audit --no-fund)
-            # Keep the failover checkout current without turning the database
-            # standby into a second public API host. The primary API already
-            # offloads eligible reads to this PostgreSQL replica directly.
-            systemctl disable --now zcash-api-mainnet.service
-          }
-
-          echo "Preparing $NEW_SHA on passive standby"
-          deploy_sha "$NEW_SHA"
-          echo "Standby checkout ready at $NEW_SHA; API remains disabled and stopped"
-          REMOTE
-
-      - name: Verify
-        # Runs even if the primary/standby deploy step above failed (e.g. it
-        # rolled back and exited non-zero) so the final health state is
-        # always visible — but only once SSH is actually configured.
+      - name: Verify no drift across deployed targets
         if: always() && steps.roles.outcome == 'success' && steps.changes.outputs.deploy == 'true'
         run: |
-          echo "=== Primary API ==="
-          ssh primary "curl -sf http://localhost:3001/health && echo && curl -sf http://localhost:3001/health/deep" \
-            || echo "Primary health check failed"
-          echo ""
-          echo "=== Passive standby ==="
-          ssh standby "printf 'api_active='; systemctl is-active zcash-api-mainnet.service || true; printf 'api_enabled='; systemctl is-enabled zcash-api-mainnet.service || true; printf 'pg_in_recovery='; sudo -u postgres psql -qtAX -c 'SELECT pg_is_in_recovery();'"
+          node server/deploy/release/drift-report.js --deployed-only | tee -a "$GITHUB_STEP_SUMMARY"

@@ -6,7 +6,7 @@ const ts = require('typescript');
 
 // Exercise the actual hook's effects/registry with deterministic time and
 // network responses; each mounted component has its own React hook slots.
-function harness({ hidden = false, fetchImpl } = {}) {
+function harness({ hidden = false, fetchImpl, apiUrl = 'https://api.example.test', browserOrigin } = {}) {
   let now = 1_000_000;
   let id = 0;
   let active;
@@ -49,11 +49,11 @@ function harness({ hidden = false, fetchImpl } = {}) {
   vm.runInNewContext(ts.transpileModule(fs.readFileSync('hooks/useApiQuery.ts', 'utf8'), {
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 },
   }).outputText, {
-    exports, document, URL, AbortController, console,
+    exports, document, URL, AbortController, console, window: browserOrigin ? { location: { origin: browserOrigin } } : undefined,
     Date: { now: () => now },
     require(name) {
       if (name === 'react') return react;
-      if (name === '@/lib/api-config') return { getApiUrl: () => 'https://api.example.test' };
+      if (name === '@/lib/api-config') return { getApiUrl: () => apiUrl };
       // Assay uses the versioned API envelope; freshness behavior is shared.
       if (name === '@/lib/api-client') return { readApiData: response => response.json() };
       throw new Error(`Unexpected import ${name}`);
@@ -295,4 +295,13 @@ test('failed refetch retains the last good response and follows the normal retry
   assert.equal(live.calls, 2);
   assert.equal(view.render().data.height, 104);
   assert.equal(view.render().error, null);
+});
+
+test('browser polling resolves the relative protected staging API base against the deployment origin', async () => {
+  const urls = [];
+  const live = harness({ apiUrl: '/api/staging-data', browserOrigin: 'https://review.vercel.app', fetchImpl: async url => { urls.push(url); return { ok: true, json: async () => ({ height: 103 }) }; } });
+  const view = live.mount({ refreshInterval: 60_000 }, '/v1/network/stats');
+  await flush();
+  assert.deepEqual(urls, ['https://review.vercel.app/api/staging-data/v1/network/stats']);
+  assert.equal(view.render().data.height, 103);
 });

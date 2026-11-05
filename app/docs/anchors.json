@@ -1,4 +1,7 @@
 {
+  "GET /v1/crosschain/venues/analytics": "crosschain-venue-analytics",
+  "GET /v1/crosschain/venues/swaps": "crosschain-venue-swaps",
+  "GET /v1/crosschain/venues": "crosschain-venues",
   "GET /v1/ask": "ask-capability",
   "POST /v1/ask": "ask-analysis",
   "POST /v1/ask/chat": "ask-chat",
@@ -11,6 +14,7 @@
   "GET /v1/blocks": "blocks-list",
   "GET /v1/blocks/:heightOrHash": "block-by-height",
   "GET /v1/search/anchors/:root": "get-search-anchors-root",
+  "GET /v1/search/prefix": "get-search-prefix",
   "GET /v1/blocks/:hashOrHeight/archive": "get-blocks-hashOrHeight-archive",
   "GET /v1/network/stats": "network-stats",
   "GET /v1/network/fees": "network-fees",
@@ -34,6 +38,7 @@
   "GET /v1/network/nodes/concentration": "get-network-nodes-concentration",
   "GET /v1/network/halving": "halving",
   "GET /v1/mining/orphan-rates": "get-v1-mining-orphan-rates",
+  "GET /v1/mining/observation-lag": "get-v1-mining-observation-lag",
   "GET /v1/mining/metrics": "mining-metrics",
   "GET /v1/mining/hashrate-history": "network-hashrate-history",
   "GET /v1/shielded-pools/history": "pool-history",
@@ -145,5 +150,7 @@
   "GET /v1/network/block-speed": "network-block-speed",
   "GET /v1/network/accounting/history": "network-accounting-history",
   "GET /v1/crosschain/analytics": "crosschain-analytics",
-  "GET /v1/crosschain/swaps": "crosschain-swaps"
+  "GET /v1/crosschain/swaps": "crosschain-swaps",
+  "POST /v1/ask/research/plan": "ask-research-plan",
+  "POST /v1/ask/research/query": "ask-research-query"
 }

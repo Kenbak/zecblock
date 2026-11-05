@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Accounting = { schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
   block: { height: number; feesPaidZat: number | string | null; feesToNsmZat: number | string | null; minerFeeAllocationZat: number | string | null;
@@ -56,7 +57,7 @@ export function NetworkAccounting() {
     Number.isSafeInteger(data.nodeHeight) && data.nodeHeight >= 0 && data.nodeHeight <= 499_999_999;
   const nu7Active = validSchedule && data.nodeHeight >= activationHeight;
   const [metric, setMetric] = useState<keyof typeof historySeries>('fees');
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('accounting', '30d', Object.keys(periods) as Period[]);
   const history = useApiQuery<History>('/v1/network/accounting/history', { period }, { enabled: nu7Active, refreshInterval: 30_000 });
   // The hook retains previous query data. Never label an old range or network
   // as the newly selected period while its request is still in flight.

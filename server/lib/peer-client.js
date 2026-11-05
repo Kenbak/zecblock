@@ -1,6 +1,13 @@
 'use strict';
 
 const MAX_USER_AGENT_LENGTH = 255;
+// Component names advertised by betterclever/zebend at ec5f7ec (including
+// its outbound NU7 testnet fetcher). These are self-reported identities;
+// recognizing one does not establish chain identity or full-node services.
+const ZEBEND_CLIENT_NAMES = new Set([
+  'zebend', 'zebend-fullnode', 'zebend-follow', 'zebend-mempool',
+  'zebend-nu7-testnet-fetch',
+]);
 
 function firstVersion(segments, name) {
   return segments.find((segment) => segment.name.toLowerCase() === name)?.version || null;
@@ -19,6 +26,11 @@ function parsePeerClient(value) {
     userAgent.matchAll(/\/?([^/:\s]+):v?([^/\s]+)\/?/g),
     (match) => ({ name: match[1], version: match[2] })
   );
+
+  const zebendVersion = segments.find((segment) => ZEBEND_CLIENT_NAMES.has(segment.name.toLowerCase()))?.version;
+  if (zebendVersion) {
+    return { clientImpl: 'Zebend', clientVersion: zebendVersion, userAgent };
+  }
 
   const zakuraVersion = firstVersion(segments, 'zakura');
   if (zakuraVersion) {

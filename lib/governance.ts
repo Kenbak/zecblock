@@ -32,7 +32,7 @@ export type Round = z.infer<typeof roundSchema>;
 export type Proposal = z.infer<typeof proposal>;
 export type VoteState = 'upcoming' | 'active' | 'tallying' | 'results' | 'failed' | 'unavailable';
 export type Vote = { id: string; title: string; description: string; href: string; state: VoteState; round: Round; proposals: Proposal[]; zecPerUnit: number | null };
-export type Catalog = { votes: Vote[]; checkedAt: number; unavailable: boolean };
+export type Catalog = { votes: Vote[]; checkedAt: number; directoryCheckedAt?: number; unavailable: boolean };
 export const STATE_LABELS: Record<VoteState, string> = {
   upcoming: 'Preparing vote', active: 'Voting open', tallying: 'Tallying', results: 'Results published', failed: 'Vote unsuccessful', unavailable: 'Results unavailable',
 };
@@ -111,10 +111,14 @@ export function parseRoundVote(round: Round, summary: unknown, tally: unknown, n
 export function catalogIsStale(catalog: Catalog, now: number): boolean {
   return catalog.unavailable || now - catalog.checkedAt > 10 * 60_000;
 }
+export function catalogDirectoryIsStale(catalog: Catalog, now: number): boolean {
+  return catalog.unavailable || now - (catalog.directoryCheckedAt ?? catalog.checkedAt) > 10 * 60_000;
+}
 export type Announcement = { key: string; href: string; text: string };
 export function selectAnnouncement(catalog: Catalog, now: number): Announcement | null {
-  const fresh = !catalogIsStale(catalog, now);
-  const active = fresh && catalog.votes.filter(v => v.state === 'active' && v.round.vote_end_time * 1000 > now).sort((a, b) => a.round.vote_end_time - b.round.vote_end_time)[0];
+  // Current voting status comes from the directory. An unrelated historical
+  // tally failing to refresh must not hide a freshly confirmed open vote.
+  const active = !catalogDirectoryIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'active' && v.round.vote_end_time * 1000 > now).sort((a, b) => a.round.vote_end_time - b.round.vote_end_time)[0];
   if (active) return { key: `${active.id}:active`, href: active.href, text: `${active.title}: voting is open` };
   // Date-only announcement: never invent an exact opening time or transition to active by the clock.
   const opening = Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
@@ -122,7 +126,7 @@ export function selectAnnouncement(catalog: Catalog, now: number): Announcement 
     return { key: `${GRANTS.slug}:upcoming`, href: `/governance/${GRANTS.slug}`, text: 'Retroactive grants voting opens September 17 · Review the proposals' };
   }
   // Bound announcements by the on-chain closing time; refreshes cannot restart the window.
-  const result = fresh && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * 86400_000).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
+  const result = !catalogIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * 86400_000).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
   if (result) return { key: `${result.id}:results`, href: result.href, text: `${result.title}: results are live · Explore and verify the tally` };
   return null;
 }

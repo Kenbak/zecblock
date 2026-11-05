@@ -9,6 +9,8 @@ import { Card, CardBody, Badge, DataTable, HashLink, EmptyState, type DataTableC
 
 import { BlockFirstSeen, BLOCK_FIRST_SEEN_EXPLANATION } from '@/components/BlockFirstSeen';
 import { PoolLogo } from '@/components/PoolLogo';
+import { ExportButton } from '@/components/ExportButton';
+import { SortableDataTable, type SortableColumn } from '@/components/ui/SortableDataTable';
 
 const API_URL = getApiUrl();
 
@@ -96,10 +98,11 @@ interface NodesSummary {
   forking: number;
 }
 
-const forkColumns: DataTableColumn<ForkEvent>[] = [
+const forkColumns: SortableColumn<ForkEvent>[] = [
   {
     id: 'height',
     header: 'Height',
+    sortValue: (fork) => fork.forkHeight,
     cell: (fork) => (
       <Link href={`/block/${fork.forkHeight}`} prefetch={false} className="text-cipher-gold hover:underline font-mono text-xs">
         #{fork.forkHeight.toLocaleString()}
@@ -109,6 +112,7 @@ const forkColumns: DataTableColumn<ForkEvent>[] = [
   {
     id: 'depth',
     header: 'Depth',
+    sortValue: (fork) => fork.depth,
     align: 'center',
     cell: (fork) => (
       <Badge color={fork.depth > 3 ? 'orange' : fork.depth > 1 ? 'gold' : 'muted'}>
@@ -119,6 +123,7 @@ const forkColumns: DataTableColumn<ForkEvent>[] = [
   {
     id: 'blocks',
     header: 'Blocks',
+    sortValue: (fork) => fork.orphanedCount || fork.comparisons?.length || null,
     align: 'center',
     cell: (fork) => (
       <span className="font-mono text-xs text-secondary">
@@ -129,6 +134,7 @@ const forkColumns: DataTableColumn<ForkEvent>[] = [
   {
     id: 'source',
     header: 'Source',
+    sortValue: (fork) => fork.source,
     cell: (fork) => (
       <Badge color={fork.source === 'external' ? 'purple' : 'gold'}>
         {fork.source}
@@ -148,6 +154,7 @@ const forkColumns: DataTableColumn<ForkEvent>[] = [
   {
     id: 'detected',
     header: 'Detected',
+    sortValue: (fork) => Date.parse(fork.detectedAt),
     align: 'right',
     cell: (fork) => (
       <span className="text-xs text-muted font-mono whitespace-nowrap">
@@ -479,6 +486,33 @@ export default function UnclesPage() {
         >
           Monitored Nodes ({nodes.length})
         </button>
+        <div className="ml-auto self-center pb-1">
+          {tab === 'forks' && forks.length > 0 && (
+            <ExportButton
+              type="csv"
+              data={forks}
+              filename="zecblock-reorg-history"
+              csvHeaders={['Fork event', 'Fork height', 'Depth (blocks)', 'Orphaned blocks', 'Canonical tip', 'Source', 'Detected (UTC)', 'Resolved (UTC)', 'Description']}
+              csvMapper={(fork: ForkEvent) => [
+                String(fork.id), String(fork.forkHeight), String(fork.depth), String(fork.orphanedCount), String(fork.canonicalTip ?? ''),
+                fork.source, fork.detectedAt, fork.resolvedAt ?? '', fork.description ?? '',
+              ]}
+            />
+          )}
+          {tab === 'orphans' && orphans.length > 0 && (
+            <ExportButton
+              type="csv"
+              data={orphans}
+              filename="zecblock-orphaned-blocks"
+              csvHeaders={['Height', 'Orphaned hash', 'Canonical hash', 'Block time (UTC)', 'Transactions', 'Size (bytes)', 'Miner pool', 'Miner address', 'Source', 'Reported by', 'Consensus valid', 'Detected (UTC)', 'Fork event']}
+              csvMapper={(block: OrphanedBlock) => [
+                String(block.height), block.hash, block.canonicalHash ?? '', block.timestamp ? new Date(block.timestamp * 1000).toISOString() : '',
+                String(block.transactionCount), String(block.size), block.minerPool ?? '', block.minerAddress ?? '', block.source, block.reportedBy ?? '',
+                block.consensusValid == null ? '' : String(block.consensusValid), block.detectedAt, String(block.forkEventId ?? ''),
+              ]}
+            />
+          )}
+        </div>
       </div>
 
       {loading && (
@@ -518,7 +552,8 @@ export default function UnclesPage() {
 
       {/* Fork Events — Summary list */}
       {!loading && !error && tab === 'forks' && forks.length > 0 && (
-        <DataTable
+        <SortableDataTable
+          caption="Chain reorganization history"
           columns={forkColumns}
           rows={forks}
           rowKey={(fork) => fork.id}

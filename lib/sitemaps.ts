@@ -39,6 +39,7 @@ export const CORE_PATHS = [
   '/pools',
   '/mining',
   '/charts',
+  '/cards',
   // Stable chart pages only. Range and series variants canonicalize here.
   '/charts/pool-balances',
   '/charts/supply',
@@ -74,7 +75,7 @@ export const CORE_PATHS = [
   '/charts/swap-count',
   '/charts/protocol-commitments',
   '/charts/protocol-nullifiers',
-  '/ask',
+  '/zift',
   '/rich-list',
   '/reorgs',
   '/crosschain',
@@ -90,6 +91,7 @@ export const CORE_PATHS = [
 ] as const;
 
 export const CONTENT_PATHS = [
+  '/docs/mcp',
   '/learn',
   '/newsletter',
   '/about',
@@ -250,7 +252,7 @@ export function getStaticSitemapEntries(
   newsletters: NewsletterIssue[],
 ): SitemapUrlEntry[] | null {
   if (slug === 'core') {
-    return CORE_PATHS.map((path) => ({ url: absoluteUrl(baseUrl, path), ...(path.startsWith('/governance') ? { lastModified: path === '/governance/nu7' ? '2026-09-15' : '2026-09-18', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/ironwood' ? { lastModified: '2026-09-17' } : {}), ...(path === '/ask' ? { lastModified: '2026-09-10', changeFrequency: 'weekly' as const, priority: 0.7 } : {}), ...(path === '/network/attestations' ? { lastModified: '2026-09-09', changeFrequency: 'hourly' as const, priority: 0.6 } : {}) }));
+    return CORE_PATHS.map((path) => ({ url: absoluteUrl(baseUrl, path), ...(path.startsWith('/governance') ? { lastModified: path === '/governance/nu7' ? '2026-09-15' : '2026-09-18', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/ironwood' ? { lastModified: '2026-09-17' } : {}), ...(path === '/zift' ? { lastModified: '2026-10-29', changeFrequency: 'weekly' as const, priority: 0.7 } : {}), ...(path === '/network/attestations' ? { lastModified: '2026-09-09', changeFrequency: 'hourly' as const, priority: 0.6 } : {}) }));
   }
 
   if (slug === 'tools') {

@@ -63,6 +63,7 @@ function renderAccounting(active, nsmBalanceZat) {
     '@/contexts/ThemeContext': { useTheme: () => ({ theme: 'dark' }) },
     '@/lib/chart-theme': { getChartColors: () => ({}) },
     '@/lib/config': { NETWORK: 'mainnet', CURRENCY: 'ZEC' },
+    '@/lib/use-url-state': { useUrlState: (key, fallback) => React.useState(fallback) },
     '@/hooks/useApiQuery': { useApiQuery: path => path.endsWith('/history') ? { data: null } : { data: {
       success: true, schedule: { network: 'main', nu7Height: active ? 3497350 : null },
       nodeHeight: 3497353, nsmBalanceZat,

@@ -64,6 +64,7 @@ test('implementation branding does not brand pattern-match rankings or erase con
     if (name === 'react/jsx-runtime' || name === 'react') return require(name);
     if (name === 'next/link') return { default: box };
     if (name === '@/lib/utils') return { formatDateLabelUTC: String };
+    if (name === '@/lib/use-url-state') return { useUrlState: (_, initial) => [initial, () => {}] };
     if (name === '@/lib/chart-theme') return { CHART_DATE_AXIS: {}, getChartColors: () => ({}) };
     if (name === '@/components/ChartWatermark') return { ChartWatermark: () => null };
     if (name === '@/components/ui/PageLoading') return { PageLoadingBody: () => null };

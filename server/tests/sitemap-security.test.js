@@ -684,12 +684,14 @@ test('child sitemap isolates static cohorts and returns explicit 404/503 failure
   assert.equal(testnetChild.status, 404);
 });
 
-test('ZNS child sitemap coalesces one bounded registration refresh', async () => {
+function nameRegistration(name) {
+  return { name, address: 'u1publicregistration', txid: 'a'.repeat(64), height: 3500000, lastAction: 'claim', expiresAt: 'none' };
+}
+
+function loadNamesSitemapRoute(listZnsRegistrations, { network = 'mainnet', getZnsStatus = async () => ({ syncedHeight: 3500000, synced: true }) } = {}) {
   const sitemap = loadTypeScriptModule('lib/sitemaps.ts');
   const refreshCache = loadTypeScriptModule('lib/refresh-cache.ts');
-  let statusCalls = 0;
-  let registrationCalls = 0;
-  const route = loadTypeScriptModule('app/sitemaps/[slug]/route.ts', {
+  return loadTypeScriptModule('app/sitemaps/[slug]/route.ts', {
     'next/cache': { unstable_cache: (callback) => callback },
     '@/lib/governance-data': { getGovernanceCatalog: async () => ({ votes: [], checkedAt: 0, unavailable: true }) },
     '@/lib/governance': { isGrantsRound: () => false },
@@ -698,31 +700,100 @@ test('ZNS child sitemap coalesces one bounded registration refresh', async () =>
     '@/lib/seo': {
       getApiUrl: () => 'https://api.mainnet.cipherscan.app',
       getBaseUrl: () => 'https://zecblock.com',
-      getNetwork: () => 'mainnet',
+      getNetwork: () => network,
     },
     '@/lib/sitemaps': sitemap,
     '@/lib/zns': {
-      getZnsStatus: async () => {
-        statusCalls += 1;
-        return { registered: 5000 };
-      },
-      isValidName: (name) => /^name\d+$/.test(name),
-      listZnsRegistrations: async (limit, cursor) => {
-        registrationCalls += 1;
-        const offset = Number(cursor || 0);
-        return { items: Array.from({ length: limit }, (_, index) => ({ name: `name${offset + index}` })), page: { nextCursor: String(offset + limit), hasNext: true } };
-      },
+      getZnsStatus,
+      isValidName: (name) => /^[a-z0-9]{1,62}$/.test(name),
+      listZnsRegistrations,
     },
   });
+}
 
-  const responses = await Promise.all(Array.from({ length: 3 }, () => route.GET(
-    new Request('https://zecblock.com/sitemaps/names'),
-    { params: Promise.resolve({ slug: 'names' }) },
-  )));
+function requestNamesSitemap(route) {
+  return route.GET(new Request('https://zecblock.com/sitemaps/names'), {
+    params: Promise.resolve({ slug: 'names' }),
+  });
+}
+
+test('ZNS child sitemap coalesces one bounded registration refresh without a status count', async () => {
+  let statusCalls = 0;
+  const calls = [];
+  const route = loadNamesSitemapRoute(async (limit, cursor, signal) => {
+    calls.push({ limit, cursor, signal });
+    const offset = Number(cursor || 0);
+    return { items: Array.from({ length: limit }, (_, index) => nameRegistration(`name${offset + index}`)), page: { nextCursor: String(offset + limit), hasNext: true } };
+  }, { getZnsStatus: async () => { statusCalls += 1; return { syncedHeight: 3500000, synced: true }; } });
+
+  const responses = await Promise.all(Array.from({ length: 3 }, () => requestNamesSitemap(route)));
   const bodies = await Promise.all(responses.map((response) => response.text()));
-  assert.equal(statusCalls, 1);
-  assert.equal(registrationCalls, 10);
+  assert.equal(statusCalls, 0, 'sync status no longer gates registration discovery');
+  assert.equal(calls.length, 10, 'a refresh cannot request more than ten pages');
+  assert.ok(calls.every((call) => call.limit === 500));
+  assert.equal(new Set(calls.map((call) => call.signal)).size, 1, 'all pages share one deadline');
+  assert.ok(calls[0].signal instanceof AbortSignal);
+  assert.ok(bodies.every((body) => [...body.matchAll(/<loc>/g)].length === 5000));
   assert.ok(bodies.every((body) => [...body.matchAll(/<loc>(.*?)<\/loc>/g)].some((match) => match[1] === 'https://zecblock.com/name/name4999')));
+});
+
+test('ZNS sitemap follows opaque collection cursors and emits each valid registration once', async () => {
+  const cursors = [];
+  const route = loadNamesSitemapRoute(async (_limit, cursor) => {
+    cursors.push(cursor);
+    return cursor === null
+      ? { items: [nameRegistration('alpha'), nameRegistration('alpha'), { name: 'bad-name' }], page: { hasNext: true, nextCursor: 'opaque-next-page' } }
+      : { items: [nameRegistration('beta')], page: { hasNext: false, nextCursor: null } };
+  });
+  const response = await requestNamesSitemap(route);
+  assert.equal(response.status, 200);
+  const urls = [...(await response.text()).matchAll(/<loc>(.*?)<\/loc>/g)].map((match) => match[1]);
+  assert.deepEqual(urls, ['https://zecblock.com/name/alpha', 'https://zecblock.com/name/beta']);
+  assert.deepEqual(cursors, [null, 'opaque-next-page']);
+});
+
+test('an authoritative empty name collection produces an empty successful sitemap', async () => {
+  let calls = 0;
+  const route = loadNamesSitemapRoute(async () => { calls += 1; return { items: [], page: { hasNext: false, nextCursor: null } }; });
+  const response = await requestNamesSitemap(route);
+  assert.equal(response.status, 200);
+  assert.equal((await response.text()).includes('<loc>'), false);
+  assert.equal(calls, 1, 'an empty registry is established by its collection response');
+});
+
+test('failed or malformed name discovery never publishes a partial successful sitemap', async (t) => {
+  t.mock.method(console, 'error', () => {});
+  const validPage = { items: [nameRegistration('alpha')], page: { hasNext: true, nextCursor: 'next' } };
+  const cases = [
+    ['first page failure', async () => { throw new Error('unavailable'); }],
+    ['later page failure', async (_limit, cursor) => { if (cursor) throw new Error('unavailable'); return validPage; }],
+    ['repeated cursor', async () => validPage],
+    ['missing cursor', async () => ({ ...validPage, page: { hasNext: true, nextCursor: null } })],
+    ['empty advancing page', async () => ({ ...validPage, items: [] })],
+    ['oversized collection', async () => ({ items: Array.from({ length: 501 }, (_, i) => nameRegistration(`name${i}`)), page: { hasNext: false, nextCursor: null } })],
+    ['incomplete registration', async () => ({ items: [{ name: 'alpha', address: '' }], page: { hasNext: false, nextCursor: null } })],
+    ['no usable registrations', async () => ({ items: [{ name: 'bad-name' }], page: { hasNext: false, nextCursor: null } })],
+  ];
+  for (const [label, read] of cases) {
+    await t.test(label, async () => {
+      const response = await requestNamesSitemap(loadNamesSitemapRoute(read));
+      assert.equal(response.status, 503);
+      assert.equal(response.headers.get('cache-control'), 'no-store');
+      assert.equal(response.headers.get('retry-after'), '60');
+      assert.equal((await response.text()).includes('<loc>'), false);
+    });
+  }
+});
+
+test('testnet and Crosslink name sitemaps stay excluded without reading the registry', async () => {
+  let calls = 0;
+  for (const network of ['testnet', 'crosslink-testnet']) {
+    const route = loadNamesSitemapRoute(async () => { calls += 1; throw new Error('must not fetch'); }, { network });
+    const response = await requestNamesSitemap(route);
+    assert.equal(response.status, 404);
+    assert.equal(response.headers.get('x-robots-tag'), 'noindex');
+  }
+  assert.equal(calls, 0);
 });
 
 test('transaction archive metadata indexes only unfiltered first pages', async () => {
@@ -876,4 +947,19 @@ test('robots omit unsupported Googlebot crawl delays on every network', () => {
    for(const rule of rules) if([rule.userAgent].flat().includes('Googlebot')) assert.equal(rule.crawlDelay,undefined);
   }
  } finally { if(previous===undefined)delete process.env.NEXT_PUBLIC_NETWORK;else process.env.NEXT_PUBLIC_NETWORK=previous; }
+});
+
+
+test('only mainnet permits its exact public announcement render dependency', () => {
+  for (const network of ['mainnet', 'testnet', 'crosslink-testnet']) {
+    const { default: robots } = loadTypeScriptModule('app/robots.ts', {
+      '@/lib/seo': { getNetwork: () => network, getBaseUrl: () => 'https://zecblock.com' },
+    });
+    for (const rule of [robots().rules].flat()) {
+      const allow = [rule.allow].flat();
+      assert.equal(allow.includes('/api/governance/announcement$'), network === 'mainnet');
+      assert.deepEqual(Array.from(rule.disallow), ['/api/']);
+      assert.ok(allow.every(path => path === '/' || path === '/api/governance/announcement$'));
+    }
+  }
 });

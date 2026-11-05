@@ -24,6 +24,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
 import { TransactionSectionIcon } from '@/components/icons/home-section';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
+import { useUrlState } from '@/lib/use-url-state';
 
 type Period = '30d' | '90d' | '1y' | 'all';
 type PoolFilter = 'all' | 'ironwood' | 'sapling' | 'orchard';
@@ -94,7 +95,7 @@ export function FlowVolumeChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const flowColors = getFlowColors(theme);
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('flows', '30d', PERIOD_OPTIONS.map((option) => option.key));
   const [poolFilter, setPoolFilter] = useState<PoolFilter>('all');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 

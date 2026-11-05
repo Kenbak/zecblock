@@ -6,7 +6,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { once } = require('node:events');
-const { loadBlockSpeed, DAYS_SQL, SUMMARY_SQL } = require('../api/lib/block-speed');
+const { loadBlockSpeed, DAYS_SQL, SUMMARY_SQL, SPEED_BUCKETS } = require('../api/lib/block-speed');
 const { networkSchedule } = require('../api/lib/network-schedule');
 
 function load(file, overrides = {}) {
@@ -74,12 +74,34 @@ test('seven-day windows respect activation and target spacing', async () => {
   const { pool, queries } = chainPool({ tip, nu7, before: 10, after: 25, summaryRow });
   const payload = await loadBlockSpeed({ pool, info: testnetInfo, schedule: networkSchedule(testnetInfo), now });
   const [latest, before] = queries.filter(q => q.sql === SUMMARY_SQL);
-  assert.deepEqual(latest.params.slice(2), [nowTs - 7 * DAY, Number.MAX_SAFE_INTEGER, nu7, tip + 1], 'latest window starts no earlier than activation');
-  assert.deepEqual(before.params.slice(1), [nu7 - 1, payload.activation.timestamp - 7 * DAY, Number.MAX_SAFE_INTEGER, 0, nu7]);
+  assert.deepEqual(latest.params.slice(2), [nowTs - 7 * DAY, Number.MAX_SAFE_INTEGER, nu7, tip + 1, 25], 'latest window starts no earlier than activation');
+  assert.deepEqual(before.params.slice(1), [nu7 - 1, payload.activation.timestamp - 7 * DAY, Number.MAX_SAFE_INTEGER, 0, nu7, 75], 'each window buckets against its own target');
   assert.equal(payload.windows.latest.averageSeconds, 25);
   assert.equal(payload.windows.latest.p90Seconds, 54);
   assert.equal(payload.windows.latest.targetSeconds, 25);
   assert.equal(payload.windows.beforeUpgrade.targetSeconds, 75);
+});
+
+test('seven-day summaries count intervals in target-relative buckets', async () => {
+  assert.deepEqual(SPEED_BUCKETS.map(b => b.upToTarget), [0.25, 1, 2, 4, null]);
+  assert.match(SUMMARY_SQL, /COUNT\(\*\) FILTER \(WHERE dt < \$7::double precision \* 0\.25\)::integer AS bucket_0/, 'non-positive header intervals fall in the first bucket');
+  assert.match(SUMMARY_SQL, /FILTER \(WHERE dt >= \$7::double precision \* 0\.25 AND dt < \$7::double precision \* 1\)::integer AS bucket_1/);
+  assert.match(SUMMARY_SQL, /FILTER \(WHERE dt >= \$7::double precision \* 4\)::integer AS bucket_4/);
+  const summaryRow = { first_height: 1, last_height: 8064, first_timestamp: 1, last_timestamp: 2, intervals: 8064, elapsed: 607219, median: 52, p90: 172,
+    bucket_0: 1800, bucket_1: 3300, bucket_2: 1900, bucket_3: 920, bucket_4: 144 };
+  const { pool, queries } = chainPool({ tip: 3526500, before: 75, summaryRow });
+  const payload = await loadBlockSpeed({ pool, info: mainnetInfo, schedule: networkSchedule(mainnetInfo), now });
+  assert.equal(queries.find(q => q.sql === SUMMARY_SQL).params[6], 75);
+  assert.deepEqual(payload.windows.latest.distribution, [
+    { key: 'super-fast', upToTarget: 0.25, upToSeconds: 18.75, blocks: 1800 },
+    { key: 'fast', upToTarget: 1, upToSeconds: 75, blocks: 3300 },
+    { key: 'slow', upToTarget: 2, upToSeconds: 150, blocks: 1900 },
+    { key: 'very-slow', upToTarget: 4, upToSeconds: 300, blocks: 920 },
+    { key: 'long-wait', upToTarget: null, upToSeconds: null, blocks: 144 },
+  ]);
+  const { pool: untargeted } = chainPool({ tip: 3526500, before: 75, summaryRow });
+  const unscheduled = await loadBlockSpeed({ pool: untargeted, info: mainnetInfo, schedule: null, now });
+  assert.equal(unscheduled.windows.latest.distribution, null, 'no target spacing means no buckets rather than zero counts');
 });
 
 test('days split by activation, and the current day, are not complete', async () => {
@@ -388,7 +410,7 @@ test('server-rendered block-speed content has one heading, linked sections and t
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.match(html, /<h1[^>]*>Zcash block speed<\/h1>/);
   assert.match(html, /href="\/network"/);
-  for (const section of ['daily', 'confirmations', 'live', 'method']) {
+  for (const section of ['daily', 'distribution', 'confirmations', 'live', 'method']) {
     assert.match(html, new RegExp(`href="#${section}"`));
     assert.match(html, new RegExp(`id="${section}"`));
   }
@@ -448,4 +470,64 @@ test('block-speed image keeps Crosslink absent and outages uncached, then recove
   assert.doesNotMatch(imageHtml, /seconds per block/, 'the exported image uses the same stacked confirmation metric');
   snapshot = { host, story: { ...snapshot.story, points: [] } };
   assert.equal((await route.GET()).status, 503, 'an empty chart does not become a cached image');
+});
+
+test('blocks-per-day view keeps the NU7 marker and clips irregular testnet days to the comparable scale', () => {
+  const point = (date, nu7, kind, blocks, target) => ({ key: date, date, nu7, kind, averageSeconds: 86400 / blocks, targetSeconds: target, lastHeight: 1, blocks });
+  const points = [point('2026-10-01', false, 'irregular', 17000, 75), point('2026-10-05', true, 'measured', 3400, 25), point('2026-10-06', true, 'measured', 3460, 25)];
+  const html = renderToStaticMarkup(React.createElement(load('components/network/BlockSpeedChart.tsx').BlockSpeedChart, { points, activation: null, metric: 'blocks' }));
+  assert.match(html, /aria-label="Blocks mined per UTC day/);
+  assert.match(html, /<text[^>]*>4k<\/text>/, 'scaled to the comparable NU7 days, not the 17k irregular day');
+  assert.equal((html.match(/data-clipped="true"/g) || []).length, 1);
+  assert.match(html, /Oct 1 · minimum-difficulty era · 17,000 blocks/);
+  assert.match(html, /fill-cipher-gold[^"]*"/);
+  assert.match(html, /NU7 activation|Estimated NU7 activation/);
+});
+
+test('NU7 cards draw only authoritative facts', () => {
+  const cards = load('lib/nu7-cards.ts');
+  assert.equal(cards.zatHeadline('811560160', 'TAZ'), '8.11 TAZ');
+  assert.equal(cards.zatHeadline('-1', 'ZEC'), '-0.00 ZEC');
+  assert.equal(cards.nsmCard('mainnet', { reserve: { growthSinceNu7Zat: null } }), null, 'no NSM card before activation');
+  assert.equal(cards.readinessCard('mainnet', { referenceUpgrade: 'NU6.3', readinessPct: 100, totalActive: 5 }), null, 'old NU6.3 readiness is never shown as NU7');
+  const ready = cards.readinessCard('mainnet', { referenceUpgrade: 'NU7', latestProtocol: 170190, readinessPct: 61.3, latestCount: 285, totalActive: 465 });
+  assert.equal(ready.headline, '61.3%');
+  assert.match(ready.detail, /285 of 465 nodes report protocol 170190/);
+});
+
+test('fast-versus-slow buckets validate, scale with the target and compare with a random-arrival model', () => {
+  const buckets = (target, counts) => [0.25, 1, 2, 4, null].map((upToTarget, index) => ({
+    key: ['super-fast', 'fast', 'slow', 'very-slow', 'long-wait'][index], upToTarget, upToSeconds: upToTarget == null ? null : target * upToTarget, blocks: counts[index] }));
+  assert.deepEqual([0, 1, 2, 3, 4].map(i => speed.bucketRange(buckets(75, [1, 1, 1, 1, 1]), i)), ['< 19s', '19–75s', '75–150s', '150s–5 min', '≥ 5 min']);
+  assert.deepEqual([0, 1, 2, 3, 4].map(i => speed.bucketRange(buckets(25, [1, 1, 1, 1, 1]), i)), ['< 7s', '7–25s', '25–50s', '50–100s', '≥ 100s']);
+  const expected = [0, 1, 2, 3, 4].map(speed.expectedBucketShare);
+  assert.ok(Math.abs(expected.reduce((a, b) => a + b, 0) - 1) < 1e-12);
+  assert.deepEqual(expected.map(v => Math.round(v * 1000) / 10), [22.1, 41.1, 23.3, 11.7, 1.8]);
+
+  const withDistribution = distribution => payload('main', { windows: { latest: { ...summary(75.3, 52, 172, 75), distribution }, beforeUpgrade: null } });
+  assert.ok(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, 5])), 'main'));
+  assert.ok(speed.readBlockSpeed(payload('main', { windows: { latest: summary(75.3, 52, 172, 75), beforeUpgrade: null } }), 'main'), 'older responses without buckets remain valid');
+  assert.equal(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, -1])), 'main'), null);
+  assert.equal(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, 5]).slice(1)), 'main'), null);
+
+  const Distribution = load('components/network/BlockSpeedDistribution.tsx').BlockSpeedDistribution;
+  const render = story => renderToStaticMarkup(React.createElement(Distribution, { story }));
+  const upcoming = speed.buildSpeedStory(speed.readBlockSpeed(withDistribution(buckets(75, [7752, 13820, 8312, 3995, 649])), 'main'));
+  const html = render(upcoming);
+  assert.match(html, />22%<\/span> of blocks/);
+  assert.match(html, /of blocks in the last 7 days arrived in under 19s/);
+  assert.match(html, /took 5 min or more/);
+  assert.match(html, />62%<\/span> were faster than the 75s target: a thin tail/);
+  assert.equal((html.match(/class="speed-spectrum"/g) || []).length, 1);
+  assert.equal((html.match(/class="speed-spectrum-expected"/g) || []).length, 4);
+  assert.match(html, /Random model 22%/);
+  assert.match(html, /34,528 blocks · 75s target/);
+
+  const active = { ...upcoming, phase: 'active', before: upcoming.before, after: { ...summary(25.1, 17, 58, 25), distribution: buckets(25, [5300, 9900, 5600, 2800, 440]) } };
+  const activeHtml = render(active);
+  assert.equal((activeHtml.match(/class="speed-spectrum"/g) || []).length, 2, 'before and since NU7 share one scale');
+  assert.match(activeHtml, /of blocks since NU7 arrived in under 7s/);
+  assert.match(activeHtml, /≥ 100s/);
+  assert.match(render(null), /distribution is unavailable/);
+  assert.match(render({ ...upcoming, before: summary(75.3, 52, 172, 75) }), /distribution is unavailable/, 'an older API response degrades to a status message');
 });

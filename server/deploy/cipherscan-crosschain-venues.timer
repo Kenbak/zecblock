@@ -1,0 +1,12 @@
+[Unit]
+Description=Keep Maya and THORChain venue history fresh every five minutes
+
+[Timer]
+# Offset from the NEAR legacy (:00) and maintenance (:02) slots.
+OnCalendar=*-*-* *:04/5:00 UTC
+AccuracySec=1s
+Persistent=false
+Unit=cipherscan-crosschain-venues.service
+
+[Install]
+WantedBy=timers.target

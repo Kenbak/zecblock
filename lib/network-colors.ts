@@ -8,6 +8,7 @@
 export const CLIENT_COLORS: Record<string, string> = {
   Zebra: '#FBBF24',
   Zakura: '#F472B6',
+  Zebend: '#E4573D',
   zcashd: '#A1A9AD',
   Seeder: '#9B8AFB',
   Other: '#7D8A9A',
@@ -30,6 +31,7 @@ export function clientColor(client: string | null | undefined): string {
 export const CLIENT_BADGE_CLASSES: Record<string, string> = {
   Zebra: 'bg-[#FBBF24]/15 text-[#FBBF24] border-[#FBBF24]/30',
   Zakura: 'bg-[#F472B6]/15 text-[#F472B6] border-[#F472B6]/30',
+  Zebend: 'bg-[#E4573D]/15 text-[#E4573D] border-[#E4573D]/30',
   zcashd: 'bg-[#A1A9AD]/15 text-[#A1A9AD] border-[#A1A9AD]/30',
   Seeder: 'bg-[#9B8AFB]/15 text-[#9B8AFB] border-[#9B8AFB]/30',
   Other: 'bg-[#7D8A9A]/15 text-[#7D8A9A] border-[#7D8A9A]/30',

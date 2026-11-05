@@ -43,10 +43,17 @@ function loadNetworkProxy(network) {
   vm.runInNewContext(ts.transpileModule(source('lib/network.ts'), { compilerOptions }).outputText, {
     exports: networkExports, process: { env: { NEXT_PUBLIC_NETWORK: network } },
   });
+  const zcashExports = {};
+  vm.runInNewContext(ts.transpileModule(source('lib/zcash.ts'), { compilerOptions }).outputText, { exports: zcashExports, require: () => ({}) });
+  const addressSyntaxExports = {};
+  vm.runInNewContext(ts.transpileModule(source('lib/address-syntax.ts'), { compilerOptions }).outputText, {
+    exports: addressSyntaxExports, require: name => (name === './zcash' ? zcashExports : {}),
+  });
   const exports = {};
   const dependencies = {
     'next/server': { NextResponse },
     './lib/network': networkExports,
+    './lib/address-syntax': addressSyntaxExports,
     './lib/governance-request': {},
     './lib/chart-catalog': { CHART_CATALOG: [] },
     './lib/name-validation': {},
@@ -81,5 +88,32 @@ test('Crosslink standard-network detail pages return a real 404 before loading c
       assert.equal((html.match(/<h1>/g) || []).length, 1);
     }
     assert.equal((await proxy(new NextRequest('https://explorer.example/network'))).status, 200, `${network} Network hub remains available`);
+  }
+});
+
+test('malformed transaction and address URLs return a styled 404 from Proxy, never the SSR error shell', async () => {
+  const { proxy, config } = loadNetworkProxy('mainnet');
+  const matchers = config.matcher.map(pattern => pattern);
+  assert.ok(matchers.some(pattern => pattern.startsWith('/tx/:txid((?![a-fA-F0-9]{64}')), 'malformed tx ids must reach Proxy');
+  assert.ok(matchers.some(pattern => pattern.startsWith('/address/:address((?!')), 'malformed addresses must reach Proxy');
+  const cases = [
+    ['/tx/5b34c8b44d', 'Transaction not found'],
+    ['/tx/not-a-hash', 'Transaction not found'],
+    ['/address/zzz', 'Address not found'],
+    ['/address/t1Kfws', 'Address not found'],
+    ['/address/%E0%A4%A', 'Address not found'],
+  ];
+  for (const [route, title] of cases) {
+    const response = await proxy(new NextRequest(`https://explorer.example${route}`));
+    assert.equal(response.status, 404, route);
+    assert.equal(response.headers.get('X-Robots-Tag'), 'noindex, follow', route);
+    const html = await response.text();
+    assert.match(html, new RegExp(`<h1>${title}</h1>`), route);
+  }
+  for (const route of [
+    `/address/t1${'a'.repeat(33)}`,
+    '/address/tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd',
+  ]) {
+    assert.equal((await proxy(new NextRequest(`https://explorer.example${route}`))).status, 200, route);
   }
 });

@@ -101,7 +101,9 @@ abort signal and a four-MiB response limit. Successful API responses have
 
 The retained frontend-origin compatibility routes `/api/name/:name` and
 `/api/name/:name/events` use the SDK singleton and return unwrapped SDK data.
-The first returns `{ pricing }` with HTTP 200 for an unregistered name.
+The first returns `{ pricing }` with HTTP 200 for an unregistered name. The v1
+API and server page snapshot represent unavailable current-resolver pricing as
+explicit `null`, rather than omitting it or inventing a price.
 Successful registration responses use 60-second CDN caching with a 120-second
 stale-while-revalidate window; successful event responses use 30/60 seconds.
 Both routes return HTTP 502 on upstream failure. Current page browser refreshes
@@ -115,9 +117,11 @@ available-name pages and uncertain/error states return useful HTTP 200 pages
 with `noindex, follow`. Testnet and Crosslink name pages remain `noindex, follow`
 and are excluded from their sitemaps.
 
-The mainnet names sitemap reads status and paginated registrations through the
-v1 API, bounds discovery to 5,000 registered names and uses a shared ten-second
-fetch deadline. Its data cache revalidates hourly, its process refresh wrapper
+The mainnet names sitemap enumerates paginated registrations through the v1 API,
+without depending on a registration count in status (the current resolver only
+reports synchronization state). Discovery is bounded to 5,000 records and ten
+pages with a shared ten-second fetch deadline. It deduplicates normalized names
+and rejects invalid records, non-advancing cursors and partial source failures. Its data cache revalidates hourly, its process refresh wrapper
 uses a five-minute age/30-second retry interval, and successful XML uses a
 one-hour CDN age. A failed source without usable cached data returns HTTP 503,
 `Cache-Control: no-store` and `Retry-After: 60`, rather than a fabricated empty

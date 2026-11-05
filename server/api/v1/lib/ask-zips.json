@@ -1,0 +1,800 @@
+{
+ "source": "https://raw.githubusercontent.com/zcash/zips/main/README.rst",
+ "zips": [
+  {
+   "number": 0,
+   "title": "ZIP Process",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0000"
+  },
+  {
+   "number": 1,
+   "title": "Network Upgrade Policy and Scheduling",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0001"
+  },
+  {
+   "number": 2,
+   "title": "Design Considerations for Network Upgrades",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0002"
+  },
+  {
+   "number": 32,
+   "title": "Shielded Hierarchical Deterministic Wallets",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0032"
+  },
+  {
+   "number": 48,
+   "title": "Transparent Multisig Wallets",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0048"
+  },
+  {
+   "number": 68,
+   "title": "Relative lock-time using consensus-enforced sequence numbers",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0068"
+  },
+  {
+   "number": 76,
+   "title": "Transaction Signature Validation before Overwinter",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0076"
+  },
+  {
+   "number": 112,
+   "title": "CHECKSEQUENCEVERIFY",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0112"
+  },
+  {
+   "number": 113,
+   "title": "Median Time Past as endpoint for lock-time calculations",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0113"
+  },
+  {
+   "number": 129,
+   "title": "Zcash Transparent Multisig Setup",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0129"
+  },
+  {
+   "number": 143,
+   "title": "Transaction Signature Validation for Overwinter",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0143"
+  },
+  {
+   "number": 155,
+   "title": "addrv2 message",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0155"
+  },
+  {
+   "number": 173,
+   "title": "Bech32 Format",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0173"
+  },
+  {
+   "number": 200,
+   "title": "Network Upgrade Mechanism",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0200"
+  },
+  {
+   "number": 201,
+   "title": "Network Peer Management for Overwinter",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0201"
+  },
+  {
+   "number": 202,
+   "title": "Version 3 Transaction Format for Overwinter",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0202"
+  },
+  {
+   "number": 203,
+   "title": "Transaction Expiry",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0203"
+  },
+  {
+   "number": 204,
+   "title": "Zcash P2P Network Protocol",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0204"
+  },
+  {
+   "number": 205,
+   "title": "Deployment of the Sapling Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0205"
+  },
+  {
+   "number": 206,
+   "title": "Deployment of the Blossom Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0206"
+  },
+  {
+   "number": 207,
+   "title": "Funding Streams",
+   "status": "[Revision 0: Canopy, Revision 1: NU6] Final, [Revision 2: NU7] Proposed",
+   "url": "https://zips.z.cash/zip-0207"
+  },
+  {
+   "number": 208,
+   "title": "Shorter Block Target Spacing",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0208"
+  },
+  {
+   "number": 209,
+   "title": "Prohibit Out-of-Range Chain Value Pool Balances",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0209"
+  },
+  {
+   "number": 210,
+   "title": "Sapling Anchor Deduplication within Transactions",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0210"
+  },
+  {
+   "number": 211,
+   "title": "Disabling Addition of New Value to the Sprout Chain Value Pool",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0211"
+  },
+  {
+   "number": 212,
+   "title": "Allow Recipient to Derive Ephemeral Secret from Note Plaintext",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0212"
+  },
+  {
+   "number": 213,
+   "title": "Shielded Coinbase",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0213"
+  },
+  {
+   "number": 214,
+   "title": "Consensus rules for a Zcash Development Fund",
+   "status": "[Revision 0: Canopy, Revision 1: NU6] Final, [Revision 2: NU6.1] Proposed, [Revision 3: NU7] Proposed",
+   "url": "https://zips.z.cash/zip-0214"
+  },
+  {
+   "number": 215,
+   "title": "Explicitly Defining and Modifying Ed25519 Validation Rules",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0215"
+  },
+  {
+   "number": 216,
+   "title": "Require Canonical Jubjub Point Encodings",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0216"
+  },
+  {
+   "number": 217,
+   "title": "Aggregate Signatures",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0217"
+  },
+  {
+   "number": 218,
+   "title": "25-second Block Target Spacing",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0218"
+  },
+  {
+   "number": 219,
+   "title": "Disabling Addition of New Value to the Sapling Chain Value Pool",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0219"
+  },
+  {
+   "number": 220,
+   "title": "Zcash Shielded Assets",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0220"
+  },
+  {
+   "number": 221,
+   "title": "FlyClient - Consensus-Layer Changes",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0221"
+  },
+  {
+   "number": 222,
+   "title": "Transparent Zcash Extensions",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0222"
+  },
+  {
+   "number": 224,
+   "title": "Orchard Shielded Protocol",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0224"
+  },
+  {
+   "number": 225,
+   "title": "Version 5 Transaction Format",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0225"
+  },
+  {
+   "number": 226,
+   "title": "Transfer and Burn of Zcash Shielded Assets",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0226"
+  },
+  {
+   "number": 227,
+   "title": "Issuance of Zcash Shielded Assets",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0227"
+  },
+  {
+   "number": 228,
+   "title": "Asset Swaps for Zcash Shielded Assets",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0228"
+  },
+  {
+   "number": 229,
+   "title": "Version 6 Transaction Format",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0229"
+  },
+  {
+   "number": 230,
+   "title": "Withdrawn Version 6 Transaction Format",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0230"
+  },
+  {
+   "number": 231,
+   "title": "Memo Bundles",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0231"
+  },
+  {
+   "number": 233,
+   "title": "Network Sustainability Mechanism: Removing Funds From Circulation",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0233"
+  },
+  {
+   "number": 234,
+   "title": "Network Sustainability Mechanism: Issuance Smoothing",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0234"
+  },
+  {
+   "number": 235,
+   "title": "Remove 60% of Transaction Fees From Circulation",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0235"
+  },
+  {
+   "number": 236,
+   "title": "Blocks should balance exactly",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0236"
+  },
+  {
+   "number": 237,
+   "title": "Network Sustainability Mechanism: Halving-Preserving Issuance",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0237"
+  },
+  {
+   "number": 239,
+   "title": "Relay of Version 5 Transactions",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0239"
+  },
+  {
+   "number": 240,
+   "title": "Standard Transaction Rules",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0240"
+  },
+  {
+   "number": 243,
+   "title": "Transaction Signature Validation for Sapling",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0243"
+  },
+  {
+   "number": 244,
+   "title": "Transaction Identifier Non-Malleability",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0244"
+  },
+  {
+   "number": 245,
+   "title": "Transaction Identifier Digests & Signature Validation for Transparent Zcash Extensions",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0245"
+  },
+  {
+   "number": 246,
+   "title": "Digests for the Withdrawn Version 6 Transaction Format",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0246"
+  },
+  {
+   "number": 248,
+   "title": "Extensible Transaction Format",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0248"
+  },
+  {
+   "number": 250,
+   "title": "Deployment of the Heartwood Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0250"
+  },
+  {
+   "number": 251,
+   "title": "Deployment of the Canopy Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0251"
+  },
+  {
+   "number": 252,
+   "title": "Deployment of the NU5 Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0252"
+  },
+  {
+   "number": 253,
+   "title": "Deployment of the NU6 Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0253"
+  },
+  {
+   "number": 254,
+   "title": "Deployment of the NU7 Network Upgrade (Withdrawn)",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0254"
+  },
+  {
+   "number": 255,
+   "title": "Deployment of the NU6.1 Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0255"
+  },
+  {
+   "number": 256,
+   "title": "Deployment of Consensus Bug Fixes Between NU6.1 and NU6.2",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0256"
+  },
+  {
+   "number": 257,
+   "title": "Deployment of the Orchard Temporary Vulnerability Mitigation and NU6.2 Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0257"
+  },
+  {
+   "number": 258,
+   "title": "Deployment of the NU6.3 Network Upgrade",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-0258"
+  },
+  {
+   "number": 259,
+   "title": "Deployment of the NU7 Network Upgrade",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0259"
+  },
+  {
+   "number": 260,
+   "title": "Extending Block Messages with Additional Authentication Data",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0260"
+  },
+  {
+   "number": 270,
+   "title": "Key Rotation for Tracked Signing Keys",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0270"
+  },
+  {
+   "number": 271,
+   "title": "Dev Fund Extension and One-Time Disbursement",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0271"
+  },
+  {
+   "number": 300,
+   "title": "Cross-chain Atomic Transactions",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-0300"
+  },
+  {
+   "number": 301,
+   "title": "Zcash Stratum Protocol",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0301"
+  },
+  {
+   "number": 302,
+   "title": "Standardized Memo Field Format",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0302"
+  },
+  {
+   "number": 303,
+   "title": "Sprout Payment Disclosure",
+   "status": "Withdrawn",
+   "url": "https://zips.z.cash/zip-0303"
+  },
+  {
+   "number": 304,
+   "title": "Sapling Address Signatures",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0304"
+  },
+  {
+   "number": 305,
+   "title": "Best Practices for Hardware Wallets supporting Sapling",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0305"
+  },
+  {
+   "number": 306,
+   "title": "Security Considerations for Anchor Selection",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0306"
+  },
+  {
+   "number": 307,
+   "title": "Light Client Protocol for Payment Detection",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0307"
+  },
+  {
+   "number": 308,
+   "title": "Sprout to Sapling Migration",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0308"
+  },
+  {
+   "number": 309,
+   "title": "Blind Off-chain Lightweight Transactions (BOLT)",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0309"
+  },
+  {
+   "number": 310,
+   "title": "Security Properties of Sapling Viewing Keys",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0310"
+  },
+  {
+   "number": 311,
+   "title": "Zcash Payment Disclosures",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0311"
+  },
+  {
+   "number": 312,
+   "title": "FROST for Spend Authorization Multisignatures",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0312"
+  },
+  {
+   "number": 313,
+   "title": "Reduce Conventional Transaction Fee to 1000 zatoshis",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-0313"
+  },
+  {
+   "number": 314,
+   "title": "Privacy upgrades to the Zcash light client protocol",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0314"
+  },
+  {
+   "number": 315,
+   "title": "Best Practices for Wallet Implementations",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0315"
+  },
+  {
+   "number": 316,
+   "title": "Unified Addresses and Unified Viewing Keys",
+   "status": "[Revision 0] Active, [Revision 1] Withdrawn, [Revision 2] Draft",
+   "url": "https://zips.z.cash/zip-0316"
+  },
+  {
+   "number": 317,
+   "title": "Proportional Transfer Fee Mechanism",
+   "status": "[Revision 0] Active, [Revision 1: NU6.3] Draft, [Revision 2] Draft",
+   "url": "https://zips.z.cash/zip-0317"
+  },
+  {
+   "number": 318,
+   "title": "Orchard to Ironwood Migration",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0318"
+  },
+  {
+   "number": 319,
+   "title": "Options for Shielded Pool Retirement",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0319"
+  },
+  {
+   "number": 320,
+   "title": "Defining an Address Type to which funds can only be sent from Transparent Addresses",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0320"
+  },
+  {
+   "number": 321,
+   "title": "Payment Request URIs",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0321"
+  },
+  {
+   "number": 322,
+   "title": "Generic Signed Message Format",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0322"
+  },
+  {
+   "number": 323,
+   "title": "Specification of getblocktemplate for Zcash",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0323"
+  },
+  {
+   "number": 324,
+   "title": "URI-Encapsulated Payments",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0324"
+  },
+  {
+   "number": 325,
+   "title": "Account Metadata Keys",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0325"
+  },
+  {
+   "number": 326,
+   "title": "NU6.3 Consequences for Wallets",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0326"
+  },
+  {
+   "number": 332,
+   "title": "Wallet Recovery from zcashd HD Seeds",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0332"
+  },
+  {
+   "number": 339,
+   "title": "Wallet Recovery Words",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0339"
+  },
+  {
+   "number": 350,
+   "title": "Bech32m",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0350"
+  },
+  {
+   "number": 374,
+   "title": "Partially Created Zcash Transaction Format",
+   "status": "[Revision 0] Draft",
+   "url": "https://zips.z.cash/zip-0374"
+  },
+  {
+   "number": 400,
+   "title": "Wallet.dat format",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-0400"
+  },
+  {
+   "number": 401,
+   "title": "Addressing Mempool Denial-of-Service",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-0401"
+  },
+  {
+   "number": 402,
+   "title": "New Wallet Database Format",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0402"
+  },
+  {
+   "number": 403,
+   "title": "Verification Behaviour of zcashd",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0403"
+  },
+  {
+   "number": 416,
+   "title": "Spending Key Derivation in the `zcashd` wallet",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-0416"
+  },
+  {
+   "number": 1001,
+   "title": "Keep the Block Distribution as Initially Defined — 90% to Miners",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1001"
+  },
+  {
+   "number": 1002,
+   "title": "Opt-in Donation Feature",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1002"
+  },
+  {
+   "number": 1003,
+   "title": "20% Split Evenly Between the ECC and the Zcash Foundation, and a Voting System Mandate",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1003"
+  },
+  {
+   "number": 1004,
+   "title": "Miner-Directed Dev Fund",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1004"
+  },
+  {
+   "number": 1005,
+   "title": "Zcash Community Funding System",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1005"
+  },
+  {
+   "number": 1006,
+   "title": "Development Fund of 10% to a 2-of-3 Multisig with Community-Involved Third Entity",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1006"
+  },
+  {
+   "number": 1007,
+   "title": "Enforce Development Fund Commitments with a Legal Charter",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1007"
+  },
+  {
+   "number": 1008,
+   "title": "Fund ECC for Two More Years",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1008"
+  },
+  {
+   "number": 1009,
+   "title": "Five-Entity Strategic Council",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1009"
+  },
+  {
+   "number": 1010,
+   "title": "Compromise Dev Fund Proposal With Diverse Funding Streams",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1010"
+  },
+  {
+   "number": 1011,
+   "title": "Decentralize the Dev Fee",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1011"
+  },
+  {
+   "number": 1012,
+   "title": "Dev Fund to ECC + ZF + Major Grants",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1012"
+  },
+  {
+   "number": 1013,
+   "title": "Keep It Simple, Zcashers: 10% to ECC, 10% to ZF",
+   "status": "Obsolete",
+   "url": "https://zips.z.cash/zip-1013"
+  },
+  {
+   "number": 1014,
+   "title": "Establishing a Dev Fund for ECC, ZF, and Major Grants",
+   "status": "Active",
+   "url": "https://zips.z.cash/zip-1014"
+  },
+  {
+   "number": 1015,
+   "title": "Block Subsidy Allocation for Non-Direct Development Funding",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-1015"
+  },
+  {
+   "number": 1016,
+   "title": "Community and Coinholder Funding Model",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-1016"
+  },
+  {
+   "number": 2001,
+   "title": "Lockbox Funding Streams",
+   "status": "Final",
+   "url": "https://zips.z.cash/zip-2001"
+  },
+  {
+   "number": 2002,
+   "title": "Explicit Fees",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-2002"
+  },
+  {
+   "number": 2003,
+   "title": "Disallow version 4 transactions",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-2003"
+  },
+  {
+   "number": 2004,
+   "title": "Remove the dependency of consensus on note encryption",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-2004"
+  },
+  {
+   "number": 2005,
+   "title": "Ironwood Quantum Recoverability",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-2005"
+  },
+  {
+   "number": 2006,
+   "title": "Restricting Transfers into the Orchard Pool",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-2006"
+  },
+  {
+   "number": 2007,
+   "title": "Quantum Recoverability for a Subset of Transparent Addresses",
+   "status": "Reserved",
+   "url": "https://zips.z.cash/zip-2007"
+  },
+  {
+   "number": 2008,
+   "title": "Update to `FS_FPF_ZCG_H3` address list",
+   "status": "Proposed",
+   "url": "https://zips.z.cash/zip-2008"
+  },
+  {
+   "number": 2009,
+   "title": "Reduce Marginal Fee to 1000 Zatoshis and Raise the Weight Ratio Cap to 10",
+   "status": "Draft",
+   "url": "https://zips.z.cash/zip-2009"
+  }
+ ],
+ "nu7Planned": [
+  207,
+  214,
+  218,
+  235,
+  237,
+  259,
+  2003,
+  2008
+ ],
+ "settledUpgrade": {
+  "name": "NU6.3",
+  "activationHeight": 3428143
+ },
+ "retrieved": "2026-10-29"
+}

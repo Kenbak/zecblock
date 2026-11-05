@@ -9,6 +9,7 @@ const express = require('express');
 const { loadHashrateSnapshot, formatHashrate } = require('../lib/hashrate');
 const router = express.Router();
 const { isTestnet, isNonMainnet, networkName } = require('../lib/network-features');
+const { referenceProtocol } = require('../lib/upgrade-protocol');
 const { registerNetworkAnalyticsRoutes } = require('./network-analytics');
 const { parsePeerClient } = require('../../lib/peer-client');
 const { parseSafeListPagination, offsetExceededError } = require('../lib/pagination');
@@ -1410,8 +1411,8 @@ router.get('/api/network/nodes/health-score', async (req, res) => {
     const avgDegree = parseFloat(conn.avg_degree) || 0;
     const connectivityScore = Math.min(100, Math.round((avgDegree / 8) * 100));
 
-    // Upgrade adoption: share of nodes on the latest protocol version
-    const LATEST_PROTOCOL = 170160; // NU6.3
+    // Upgrade adoption: share of nodes advertising the reference upgrade's protocol
+    const { protocol: LATEST_PROTOCOL, upgrade: REFERENCE_UPGRADE } = referenceProtocol();
     const totalVersioned = versions.reduce((s, v) => s + v.cnt, 0) || 1;
     const latestCount = versions.filter(v => parseInt(v.protocol_version) >= LATEST_PROTOCOL).reduce((s, v) => s + v.cnt, 0);
     const upgradePct = (latestCount / totalVersioned) * 100;
@@ -1449,7 +1450,7 @@ router.get('/api/network/nodes/health-score', async (req, res) => {
         connectivity: NODE_SOURCE === 'crawl'
           ? { score: null, avgDegree: null, poorlyConnected: null, maxDegree: null }
           : { score: connectivityScore, avgDegree: parseFloat(avgDegree.toFixed(1)), poorlyConnected: parseInt(conn.poorly_connected) || 0, maxDegree: parseInt(conn.max_degree) || 0 },
-        upgrade: { score: upgradeScore, latestProtocol: LATEST_PROTOCOL, adoptionPct: parseFloat(upgradePct.toFixed(1)), latestCount },
+        upgrade: { score: upgradeScore, latestProtocol: LATEST_PROTOCOL, referenceUpgrade: REFERENCE_UPGRADE, adoptionPct: parseFloat(upgradePct.toFixed(1)), latestCount },
         clientDiversity: { score: clientDiversityScore, topClient: topClient.client_impl, topClientPct: parseFloat(topClientPct.toFixed(1)), implementations: identifiedClients.length },
         geographic: { score: geoScore, countries, uniqueSubnets: parseInt(geo.unique_subnets) || 0 },
         reliability: { score: reliabilityScore, avgReliabilityPct: avgReliability != null ? parseFloat((avgReliability * 100).toFixed(1)) : null, scoredNodes: parseInt(rel.scored_nodes) || 0 },
@@ -1591,7 +1592,7 @@ router.get('/api/network/nodes/upgrade-readiness', async (req, res) => {
     ]);
 
     const totalActive = currentDist.rows.reduce((s, r) => s + r.node_count, 0);
-    const LATEST_PROTOCOL = 170160; // NU6.3
+    const { protocol: LATEST_PROTOCOL, upgrade: REFERENCE_UPGRADE } = referenceProtocol();
 
     const versions = currentDist.rows.map(r => ({
       protocolVersion: parseInt(r.protocol_version),
@@ -1608,6 +1609,7 @@ router.get('/api/network/nodes/upgrade-readiness', async (req, res) => {
     res.json({
       success: true,
       latestProtocol: LATEST_PROTOCOL,
+      referenceUpgrade: REFERENCE_UPGRADE,
       readinessPct,
       latestCount,
       totalActive,

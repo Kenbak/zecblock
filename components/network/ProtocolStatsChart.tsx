@@ -10,6 +10,8 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ChartCard } from './ChartCard';
+import { useUrlState } from '@/lib/use-url-state';
+import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 export interface RawPoint {
   month: string;
@@ -43,7 +45,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [view, setView] = useState<'commitments' | 'nullifiers'>('commitments');
-  const [period, setPeriod] = useState<Period>('30d');
+  const [period, setPeriod] = useUrlState<Period>('protocol', '30d', ['30d', '2y', '4y', 'all']);
 
   const { data: apiData, loading } = useApiQuery<ProtocolStatsResponse>(
     '/v1/network/protocol-stats',
@@ -134,7 +136,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   }
 
   return (
-    <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls}>
+    <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls} share={{ title: `Zcash protocol growth (${period})`, fileName: `zecblock-protocol-growth-${period}`, csv: () => objectRowsCsv(data) }}>
       {current && (
         <div className="mb-3">
           <div className="flex gap-4 flex-wrap">

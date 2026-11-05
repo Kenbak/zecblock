@@ -245,7 +245,7 @@ if (typeof document !== 'undefined') {
 }
 
 function buildUrl(path: string, params?: Record<string, string | number | boolean | undefined>): string {
-  const url = new URL(`${getApiUrl()}${path}`);
+  const url = new URL(`${getApiUrl()}${path}`, typeof window === 'undefined' ? undefined : window.location.origin);
   if (params) {
     for (const [k, v] of Object.entries(params)) {
       if (v !== undefined) url.searchParams.set(k, String(v));

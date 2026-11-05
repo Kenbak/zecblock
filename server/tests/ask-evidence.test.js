@@ -121,10 +121,10 @@ test('evidence transport enforces mainnet, exact encoding and unavailable pool b
 
 test('Ask is discoverable on mainnet, with dated sitemap metadata and no testnet navigation', () => {
   const { getNavigation } = load('lib/navigation.ts');
-  for (const network of ['mainnet', 'testnet', 'crosslink']) assert.equal(getNavigation(network).flatMap(group => group.items).some(item => item.href === '/ask'), network === 'mainnet');
+  for (const network of ['mainnet', 'testnet', 'crosslink']) assert.equal(getNavigation(network).flatMap(group => group.items).some(item => item.href === '/zift'), network === 'mainnet');
   const { getStaticSitemapEntries } = load('lib/sitemaps.ts');
-  const entry = getStaticSitemapEntries('core', 'https://zecblock.com', []).find(item => item.url.endsWith('/ask'));
-  assert.equal(entry.lastModified, '2026-09-10'); assert.equal(entry.changeFrequency, 'weekly');
+  const entry = getStaticSitemapEntries('core', 'https://zecblock.com', []).find(item => item.url.endsWith('/zift'));
+  assert.equal(entry.lastModified, '2026-10-29'); assert.equal(entry.changeFrequency, 'weekly');
 });
 
 test('Ask server rendering and metadata enforce the mainnet-only page policy', () => {
@@ -135,19 +135,20 @@ test('Ask server rendering and metadata enforce the mainnet-only page policy', (
       '@/lib/network': { getConfiguredNetwork: () => network },
       '@/lib/api-config': {}, '@/lib/api-client': {}, '@/lib/server-fetch': {},
     });
-    const page = load('app/ask/page.tsx', {
-      '@/lib/seo': seo, './ask.module.css': { page: 'ask-page' },
-      './AskWorkspace': { AskWorkspace: () => React.createElement('div', null, 'Interactive workspace') },
+    const page = load('app/zift/page.tsx', {
+      '@/lib/seo': seo, '../ask/ask.module.css': { page: 'ask-page' },
+      '../ask/AskExperience': { AskExperience: () => React.createElement('div', null, 'Interactive workspace') },
+      '@/components/ask/ZiftMark': { ZiftMark: () => null },
       'next/link': ({ children, ...props }) => React.createElement('a', props, children),
     });
     assert.equal(page.metadata.robots.index, network === 'mainnet');
     assert.equal(page.metadata.robots.follow, true);
-    assert.equal(page.metadata.alternates.canonical, `${seo.getBaseUrl()}/ask`);
+    assert.equal(page.metadata.alternates.canonical, `${seo.getBaseUrl()}/zift`);
     const html = renderToStaticMarkup(React.createElement(page.default));
     assert.equal((html.match(/<h1[\s>]/g) || []).length, 1);
     assert.ok(html.includes('Explore Zcash mainnet data'));
     assert.equal(html.includes('Interactive workspace'), network === 'mainnet');
-    assert.equal(html.includes('Ask is available on mainnet'), network !== 'mainnet');
+    assert.equal(html.includes('Zift is available on mainnet'), network !== 'mainnet');
     assert.ok(html.includes('application/ld+json'));
   }
 });
@@ -265,7 +266,7 @@ test('Ask sources separate observed dates, retrieval time and guide review dates
 
 test('Ask client presents actionable safe failures and never echoes upstream text', () => {
   const api = load('lib/api-client.ts');
-  const { askErrorMessage } = load('lib/ask/client.ts', { '@/lib/api-client': api, '@/lib/api-config': {} });
+  const { askErrorMessage } = load('lib/ask/client.ts', { '@/lib/api-client': api, './api-base': {} });
   const error = (status, code) => new api.ApiError('private backend secret', status, undefined, undefined, null, code);
   assert.match(askErrorMessage(error(403, 'ask-verification')), /Verification/);
   assert.match(askErrorMessage(error(429, 'ask-quota')), /allowance/);
@@ -297,7 +298,7 @@ test('every mainnet navigation destination has a reviewed, page-specific Ask gui
   for (const { href } of destinations) {
     const page = describePage(href);
     assert.ok(pageIds.includes(page.id), href);
-    if (href !== '/ask') assert.notEqual(page.topic, 'explorer', href);
+    if (href !== '/zift') assert.notEqual(page.topic, 'explorer', href);
     assert.equal(pageById(page.id).topic, page.topic, href);
     const [guide] = getKnowledge([page.topic]);
     assert.ok(guide?.text.length > 100, href);

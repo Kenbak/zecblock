@@ -1,12 +1,11 @@
 'use client';
 
-import { readApiData } from '@/lib/api-client';
 import { useState, useEffect, useCallback, memo, type ReactNode } from 'react';
 import { formatRelativeTime } from '@/lib/utils';
 import { formatZecPrecise, formatBytesCompact } from '@/lib/format-numbers';
-import { getApiUrl } from '@/lib/api-config';
 import { useWebSocket } from '@/hooks/useWebSocket';
 import { HashLink, RedactedAmount, SkeletonTable, TxTypeBadge, resolveTxCategory } from '@/components/ui';
+import { useApiQuery } from '@/hooks/useApiQuery';
 
 interface MempoolTx {
   txid: string;
@@ -72,6 +71,11 @@ function getKnownAmount(tx: MempoolTx): number | null {
   return null;
 }
 
+interface MempoolResponse {
+  transactions?: Array<MempoolTx & { orchardActions?: number; ironwoodActions?: number; vShieldedSpend?: number; vShieldedOutput?: number }>;
+  stats?: { total?: number; shieldedPercentage?: number };
+}
+
 export const RecentMempool = memo(function RecentMempool({ footer }: { footer?: ReactNode } = {}) {
   const [txs, setTxs] = useState<MempoolTx[]>([]);
   const [stats, setStats] = useState<MempoolStats | null>(null);
@@ -101,18 +105,18 @@ export const RecentMempool = memo(function RecentMempool({ footer }: { footer?: 
 
   useWebSocket({ onMessage: handleWsMessage });
 
-  const fetchMempool = async () => {
+  // Shares the stats bar's /v1/mempool poll; WebSocket messages update the
+  // list between polls.
+  const mempoolQuery = useApiQuery<MempoolResponse>('/v1/mempool', undefined, { refreshInterval: 30_000 });
+  const result = mempoolQuery.data;
+  const settled = mempoolQuery.data !== null || mempoolQuery.error !== null;
+
+  useEffect(() => {
     try {
-      const apiUrl = `${getApiUrl()}/v1/mempool`;
-
-      const response = await fetch(apiUrl);
-      if (!response.ok) return;
-
-      const result = await readApiData(response);
       if (result) {
         // REST rows carry per-pool activity as counts — normalize to the same
         // boolean flags the WebSocket path uses.
-        const allTxs = (result.transactions || []).map((tx: any) => ({
+        const allTxs = (result.transactions || []).map((tx) => ({
           ...tx,
           hasIronwood: !!tx.hasIronwood || (tx.ironwoodActions || 0) > 0,
           hasOrchard: (tx.orchardActions || 0) > 0,
@@ -122,7 +126,7 @@ export const RecentMempool = memo(function RecentMempool({ footer }: { footer?: 
         if (result.stats) {
           // Sum size across every fetched tx (not just the 5 shown) so the
           // backlog total is accurate even though the table only lists 5 rows.
-          const totalSizeBytes = allTxs.reduce((sum: number, tx: any) => sum + (tx.size || 0), 0);
+          const totalSizeBytes = allTxs.reduce((sum: number, tx) => sum + (tx.size || 0), 0);
           setStats({
             total: result.stats.total ?? 0,
             shieldedPercentage: result.stats.shieldedPercentage ?? 0,
@@ -131,18 +135,11 @@ export const RecentMempool = memo(function RecentMempool({ footer }: { footer?: 
         }
       }
     } catch (error) {
-      console.error('Error fetching mempool:', error);
+      console.error('Error reading mempool:', error);
     } finally {
-      setLoading(false);
+      if (settled) setLoading(false);
     }
-  };
-
-  useEffect(() => {
-    fetchMempool();
-    // Slower fallback polling — WebSocket handles real-time updates
-    const interval = setInterval(fetchMempool, 30000);
-    return () => clearInterval(interval);
-  }, []);
+  }, [result, settled]);
 
   if (loading) {
     return (

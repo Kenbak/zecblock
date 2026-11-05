@@ -14,7 +14,8 @@ import { AnonymitySetChart } from '@/components/privacy/AnonymitySetChart';
 import { ShieldingDistributionChart } from '@/components/privacy/ShieldingDistributionChart';
 import { PrivacyTrendsSection, type TrendChartView } from '@/components/privacy/PrivacyTrendsSection';
 import { formatRelativeUpdated } from '@/lib/privacy-trend-dates';
-import { type Period } from '@/components/privacy/PeriodSelector';
+import { PRIVACY_PERIODS, type Period } from '@/components/privacy/PeriodSelector';
+import { useUrlState } from '@/lib/use-url-state';
 import { ActivitySectionIcon, DistributionSectionIcon } from '@/components/icons/home-section';
 import { ShieldedIcon } from '@/components/icons/shield-flow';
 
@@ -82,7 +83,7 @@ export default function PrivacyClient() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [trendView, setTrendView] = useState<TrendChartView>('score');
-  const [trendPeriod, setTrendPeriod] = useState<Period>('30d');
+  const [trendPeriod, setTrendPeriod] = useUrlState<Period>('trends', '30d', PRIVACY_PERIODS);
   const { theme } = useTheme();
 
   const refresh = useCallback(async () => {

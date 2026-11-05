@@ -30,6 +30,8 @@ function parseBlock(value: Record<string, unknown>): HomeBlock {
   return block;
 }
 
+const CONNECT_REFRESH_GRACE_MS = 5_000;
+
 const HomeBlocksContext = createContext<{ blocks: HomeBlock[]; loading: boolean } | null>(null);
 
 /** One accepted API snapshot for the hero and every customizable block card. */
@@ -38,6 +40,7 @@ export function HomeBlocksProvider({ initialBlocks, children }: { initialBlocks:
   const [loading, setLoading] = useState(initialBlocks.length === 0);
   const inFlight = useRef(false);
   const mounted = useRef(false);
+  const lastSuccessAt = useRef(0);
 
   useEffect(() => {
     mounted.current = true;
@@ -54,6 +57,7 @@ export function HomeBlocksProvider({ initialBlocks, children }: { initialBlocks:
         if (!value || typeof value !== 'object') throw new Error('Invalid block snapshot');
         return parseBlock(value);
       });
+      lastSuccessAt.current = Date.now();
       if (mounted.current) setBlocks(snapshot);
     } catch (error) {
       // Keep the same last-good snapshot in both surfaces during upstream failures.
@@ -68,7 +72,11 @@ export function HomeBlocksProvider({ initialBlocks, children }: { initialBlocks:
     onMessage: message => {
       if (message.type === 'new_block' || message.type === 'chain_tip') void fetchLatest();
     },
-    onConnect: fetchLatest,
+    // The mount refresh usually lands just before the socket connects; new
+    // blocks always refetch, so a snapshot from the last few seconds is current.
+    onConnect: () => {
+      if (Date.now() - lastSuccessAt.current > CONNECT_REFRESH_GRACE_MS) void fetchLatest();
+    },
   });
   useEffect(() => startLiveRefresh(fetchLatest), [fetchLatest]);
 

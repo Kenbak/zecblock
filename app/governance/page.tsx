@@ -7,6 +7,10 @@ import { NU7_ROUND_ID } from '@/lib/nu7-vote-results';
 import { GovernanceShell, Status, Freshness, SourceNote } from './GovernanceUI';
 import { HowToVote } from './HowToVote';
 
+// Keep the route's ISR clock explicit even when a concurrent banner/page shares
+// the catalog promise created in a different request's cache context.
+export const revalidate = 60;
+
 const title = 'Zcash Governance: Votes & Results';
 const description = 'Follow Zcash coinholder votes, learn how to vote with a supported wallet, and explore past results with independent tally verification instructions.';
 export const generateMetadata = () => buildPageMetadata({ title: `${title} | ZecBlock`, description, path: '/governance', index: true, networks: ['mainnet'] });

@@ -1,0 +1,10 @@
+# Separate reviewed candidate for postgresql@16-main.service.d/ask-restart.conf.
+# This recovers PostgreSQL itself. It never enables a logical subscription.
+[Unit]
+StartLimitIntervalSec=300
+StartLimitBurst=3
+
+[Service]
+Restart=on-failure
+RestartSec=5
+# Keep the distro OOMPolicy=stop and KillMode=control-group.

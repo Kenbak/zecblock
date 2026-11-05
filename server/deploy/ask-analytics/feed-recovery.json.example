@@ -1,0 +1,31 @@
+{
+  "enabled": false,
+  "psql_bin": "/usr/bin/psql",
+  "target_socket": "/var/run/postgresql",
+  "target_port": 5432,
+  "target_database": "ask_analytics",
+  "target_user": "postgres",
+  "source_socket": "/run/ask-source-transport",
+  "source_port": 15432,
+  "source_database": "zcash_explorer_mainnet",
+  "source_user": "ask_core_replicator",
+  "source_passfile": "/var/lib/postgresql/ask-core-source.pgpass",
+  "target_system_identifier": "REPLACE_WITH_VERIFIED_TARGET_SYSTEM_IDENTIFIER",
+  "source_system_identifier": "REPLACE_WITH_VERIFIED_SOURCE_SYSTEM_IDENTIFIER",
+  "source_generation": "REPLACE_WITH_VERIFIED_SOURCE_GENERATION_UUID",
+  "source_timeline": 0,
+  "subscription_oid": 0,
+  "connection_hash": "REPLACE_WITH_MD5_OF_EXISTING_SUBSCRIPTION_CONNINFO",
+  "expected_relations": [
+    "public.blocks",
+    "public.transactions",
+    "public.shielded_flows",
+    "analytics_feed_meta.signal",
+    "public.privacy_trends_daily",
+    "public.cross_chain_swaps",
+    "public.addresses",
+    "public.address_transactions"
+  ],
+  "log_path": "/var/log/postgresql/postgresql-16-main.log",
+  "state_dir": "/var/lib/zecblock-ask-recovery"
+}

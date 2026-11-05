@@ -32,6 +32,10 @@ yarn-error.log*
 # Performance artifacts contain private production measurements.
 /benchmarks/
 
+# Local bot review renders and read-only publication evidence.
+/output/bot-editorial-review/
+/output/bot-editorial-release/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

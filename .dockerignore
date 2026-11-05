@@ -14,6 +14,8 @@ wasm/target
 wasm/pkg
 # The backend has its own build context (server/api/Dockerfile)
 server
+# /docs/mcp renders the public MCP tool catalog at build time.
+!server/api/v1/mcp/catalog.js
 # Local env / secrets
 .env
 .env.*

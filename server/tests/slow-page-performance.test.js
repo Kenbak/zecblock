@@ -469,7 +469,7 @@ test('homepage, rich list, and detail HTML opt into the Next full route cache', 
 
   assert.match(richList, /export const revalidate = 60/);
   assert.doesNotMatch(richList, /force-dynamic/);
-  assert.match(richList, /fetchWithDeadline\(/);
+  assert.match(richList, /fetchApiDataWithDeadline</);
   assert.match(richList, /retainLastGoodOrBuildFallback\(/);
 
   // Block and tx layouts use dynamic fetch-level revalidation (3600s for

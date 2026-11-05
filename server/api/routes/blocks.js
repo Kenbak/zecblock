@@ -6,12 +6,14 @@ const { parseBlockFilters, filteredBlocks, SoftwareQueryError } = require('../li
 
 const express = require('express');
 const { networkName } = require('../lib/network-features');
+const { firstSeenSql } = require('../lib/first-seen');
 const router = express.Router();
 const { getPoolName, getPoolInfo } = require('../mining-pools');
 const { decodeCoinbaseText } = require('../coinbase-data');
 const { applyListCacheHeaders, createListCache } = require('../list-cache');
 const { parseSafeListPagination, offsetExceededError } = require('../lib/pagination');
 const { logSafeError } = require('../lib/safe-log');
+const { parseIdQuery, searchIdPrefix } = require('../lib/id-prefix-search');
 const { readAllocationHealth } = require('../lib/subsidy-allocation-health');
 
 const disabledListCache = createListCache({ enabled: false });
@@ -461,7 +463,7 @@ function parseBlockIdentifier(param) {
 async function fetchCanonicalBlockSummary(blockHeight) {
   const result = await pool.query(
     `SELECT height, hash, timestamp, transaction_count, size, miner_address, coinbase_hex,
-            (SELECT first_seen_at FROM block_observations WHERE hash = blocks.hash) as first_seen_at
+            ${firstSeenSql('blocks.hash')} as first_seen_at
      FROM blocks WHERE height = $1`,
     [blockHeight]
   );
@@ -546,7 +548,7 @@ async function buildOrphanedBlockResponse(orphanRow) {
       tx_index: tx.tx_index,
       version: tx.version,
       size: tx.size,
-      fee: tx.fee ? parseInt(tx.fee) : 0,
+      fee: tx.fee == null ? null : parseInt(tx.fee),
       is_coinbase: tx.is_coinbase,
       timestamp: tx.timestamp ? parseInt(tx.timestamp) : null,
       expiry_height: tx.expiry_height,
@@ -662,7 +664,8 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
         solution,
         total_fees,
         miner_address,
-        coinbase_hex
+        coinbase_hex,
+        ${firstSeenSql('blocks.hash')} as first_seen_at
       FROM blocks
       WHERE ${isHash ? 'hash = $1' : 'height = $1'}`,
       [isHash ? identifier.value : height]
@@ -675,7 +678,7 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
                 miner_address, previous_block_hash, source, detected_at,
                 coinbase_hex, final_sapling_root, final_orchard_root, final_ironwood_root,
                 first_indexed_at, block_metadata, (raw_hex IS NOT NULL) as raw_block_available,
-                (SELECT first_seen_at FROM block_observations WHERE hash = orphaned_blocks.hash) as first_seen_at
+                ${firstSeenSql('orphaned_blocks.hash')} as first_seen_at
          FROM orphaned_blocks WHERE hash = $1`,
         [identifier.value]
       );
@@ -809,8 +812,10 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
       nextBlockHash = nextResult.rows[0]?.hash || null;
     }
 
+    const { first_seen_at: firstSeenAt, ...blockFields } = block;
     const response = {
-      ...block,
+      ...blockFields,
+      firstSeenAt: firstSeenAt || null,
       next_block_hash: nextBlockHash,
       confirmations,
       transactions,
@@ -929,6 +934,34 @@ router.get('/api/search/anchor/:root', async (req, res) => {
   } catch (error) {
     logSafeError('Error searching anchor root:', error);
     res.status(500).json({ error: 'Failed to search anchor root' });
+  }
+});
+
+// ============================================================================
+// SHORTENED ID SEARCH (txid / block hash prefixes)
+// ============================================================================
+
+// Resolves the shortened ids the explorer displays ("5b34c8b44d...ec9e77" or a
+// bare prefix of at least 8 hex characters) against indexed transactions and
+// canonical blocks. Mempool transactions are not searched.
+router.get('/api/search/prefix', async (req, res) => {
+  try {
+    const parsed = parseIdQuery(req.query.q);
+    if (!parsed) {
+      return res.status(400).json({
+        error: 'Invalid query (expected at least 8 hex characters, or a shortened id such as 5b34c8b44d...ec9e77)',
+      });
+    }
+    const result = await searchIdPrefix((sql, params) => pool.query(sql, params), parsed);
+    const found = result.transactions.length + result.blocks.length > 0;
+    // Missing results stay briefly cached so newly mined transactions appear.
+    res.set('Cache-Control', found
+      ? 'public, s-maxage=30, stale-while-revalidate=120'
+      : 'public, s-maxage=5');
+    res.json({ prefix: parsed.prefix, suffix: parsed.suffix, ...result });
+  } catch (error) {
+    logSafeError('Error searching id prefix:', error);
+    res.status(500).json({ error: 'Failed to search identifiers' });
   }
 });
 

@@ -1,0 +1,9 @@
+[Unit]
+Description=Keep completed-day public research summaries current
+[Timer]
+OnBootSec=30s
+OnUnitInactiveSec=15s
+AccuracySec=1s
+Unit=zecblock-ask-summaries.service
+[Install]
+WantedBy=timers.target

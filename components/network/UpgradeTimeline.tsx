@@ -6,6 +6,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
 import { UpgradeImpact } from './UpgradeImpact';
+import { Nu7ShareCards } from './Nu7ShareCards';
 import { buildUpgradeChanges } from '@/lib/upgrade-changes';
 import type { AppNetwork } from '@/lib/network';
 import { readUpgradeSnapshot, type UpgradeSnapshot } from '@/lib/network-upgrades';
@@ -103,6 +104,7 @@ function UpgradeDetails({ milestone, tracker, remaining, stale, network }: {
     </div>
     <p className="text-sm text-secondary leading-relaxed mt-3 max-w-3xl">{HEADLINES[milestone.id] ?? milestone.summary}</p>
     <UpgradeImpact upgradeId={milestone.id} network={network} active={milestone.status === 'active'} />
+    {milestone.id === 'nu7' && <Nu7ShareCards cards={milestone.status === 'active' ? ['blocks', 'nsm', 'readiness', 'countdown'] : ['countdown', 'blocks', 'readiness']} />}
     <div role="group" aria-label={`${milestone.label} major changes`} className="mt-7">
       <div className="flex items-center justify-between gap-3 mb-2">
         <h3 className="text-sm font-medium text-primary">Improvements</h3>

@@ -36,9 +36,11 @@ const { createInternalClient } = require('./lib/internal-client');
 const { createFeatureGate } = require('./middleware/feature-gate');
 const { createRequestContext } = require('./middleware/request-context');
 const { sendProblem } = require('./lib/problem');
+const { ASK_BODY_BYTES } = require('./lib/ask-budget');
 const { buildV1Routes } = require('./routes/index');
 const { buildOpenApiDocument } = require('./openapi');
 const { logSafeError } = require('../lib/safe-log');
+const { createMcpRouter } = require('./mcp');
 
 function createV1Router(envOverrides = {}) {
   const env = { ...process.env, ...envOverrides };
@@ -63,11 +65,15 @@ function createV1Router(envOverrides = {}) {
   // — safe to apply unconditionally since GET/DELETE requests have no body.
   router.use(createFeatureGate(config));
   router.use(createRequestContext(config, internalClient));
+  // MCP shares the public gate/context and existing adapter authority. Mount
+  // before the general JSON parser so its smaller request bound is enforced.
+  const mcpRouter = createMcpRouter(config, { env });
+  router.use('/mcp', mcpRouter);
   // Ask accepts only a short question and a small recipe, never file uploads.
   // Apply before the general parser on standalone hosts; also check decoded
   // bodies when the parent application already parsed the request.
-  router.use('/ask', express.json({ limit: '16kb' }), (req, res, next) => {
-    if (req.body && Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 16384) {
+  router.use('/ask', express.json({ limit: ASK_BODY_BYTES }), (req, res, next) => {
+    if (req.body && Buffer.byteLength(JSON.stringify(req.body), 'utf8') > ASK_BODY_BYTES) {
       return sendProblem(res, 'validation-error', { status: 413, detail: 'Ask request body exceeds 16 KiB.' });
     }
     next();
@@ -95,7 +101,7 @@ function createV1Router(envOverrides = {}) {
 
   // Final safety net — an adapter/middleware bug must still produce a
   // problem+json body, never an Express HTML error page or a stack trace.
-  // eslint-disable-next-line no-unused-vars
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   router.use((err, req, res, next) => {
     if (err.type === 'entity.parse.failed' || err.type === 'entity.too.large') {
       return sendProblem(res, 'validation-error', { status: err.type === 'entity.too.large' ? 413 : 400, detail: err.type === 'entity.too.large' ? err.limit === 16384 ? 'Ask request body exceeds 16 KiB.' : 'Request body exceeds 1 MB.' : 'Request body must be valid JSON.' });
@@ -106,7 +112,7 @@ function createV1Router(envOverrides = {}) {
 
   router.__v1Config = config;
   router.__v1RouteCount = dataRoutes.mountedCount;
-  router.__stopRateLimiters = dataRoutes.__stopRateLimiters;
+  router.__stopRateLimiters = () => { mcpRouter.stop(); dataRoutes.__stopRateLimiters(); };
   return router;
 }
 

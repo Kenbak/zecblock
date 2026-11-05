@@ -1,0 +1,54 @@
+name: IndexNow newsletter
+
+# Announce newsletter publication/update only after the mainnet Vercel
+# production deployment of that exact commit succeeded, so the hint never
+# points at a page that is not live yet. Testnet/Crosslink deployments and
+# previews never match the environment filter below.
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      slugs:
+        description: Space-separated newsletter slugs to re-announce (for example weekly-2026-10-25)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: indexnow-newsletter
+  cancel-in-progress: false
+
+jobs:
+  submit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.deployment_status.state == 'success' &&
+       github.event.deployment.environment == 'Production – zecblock')
+    env:
+      INDEXNOW_KEY: ${{ secrets.INDEXNOW_KEY }}
+      INDEXNOW_HOST: zecblock.com
+      NETWORK: mainnet
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.deployment.sha || github.sha }}
+          fetch-depth: 2
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+      - name: Submit changed newsletter issues
+        if: github.event_name == 'deployment_status'
+        env:
+          DEPLOYMENT_SHA: ${{ github.event.deployment.sha }}
+        run: node scripts/indexnow-newsletter.mjs --commit "$DEPLOYMENT_SHA"
+      - name: Re-announce newsletter issues
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          SLUGS: ${{ inputs.slugs }}
+        run: |
+          read -r -a slugs <<< "$SLUGS"
+          node scripts/indexnow-newsletter.mjs "${slugs[@]}"

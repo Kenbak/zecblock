@@ -1,0 +1,39 @@
+# Runs on the public API host. Exposes the analytics worker on this host's
+# loopback (127.0.0.1:3015), which is the only address ask-worker-transport.js
+# dials. The worker still requires its service key on every request.
+[Unit]
+Description=Private SSH link from the public API to the Ask analytics worker
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=0
+
+[Service]
+Type=simple
+User=ask_worker_link
+Group=ask_worker_link
+LoadCredential=identity:/etc/zecblock-ask-worker-link/identity
+ExecStart=/usr/bin/ssh -F /dev/null -4 -NT -o BatchMode=yes -o IdentitiesOnly=yes -o IdentityAgent=none -o StrictHostKeyChecking=yes -o UserKnownHostsFile=/etc/zecblock-ask-worker-link/known_hosts -o GlobalKnownHostsFile=/dev/null -o ExitOnForwardFailure=yes -o ConnectTimeout=10 -o ServerAliveInterval=15 -o ServerAliveCountMax=3 -i %d/identity -L 127.0.0.1:3015:127.0.0.1:3015 ask_api_link@ANALYTICS_HOST
+Restart=always
+RestartSec=15
+NoNewPrivileges=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectSystem=strict
+ProtectHome=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+RestrictSUIDSGID=yes
+RestrictRealtime=yes
+LockPersonality=yes
+CapabilityBoundingSet=
+AmbientCapabilities=
+RestrictAddressFamilies=AF_INET
+IPAddressDeny=any
+IPAddressAllow=127.0.0.0/8 ANALYTICS_HOST/32
+MemoryMax=128M
+TasksMax=16
+
+[Install]
+WantedBy=multi-user.target

@@ -101,10 +101,10 @@ function observerLocations(rows) {
     const prev = places.get(key);
     places.set(key, { city: place.city, operator, collecting: (prev?.collecting ?? false) || row.healthy === true });
   }
+  // Display order is OBSERVER_LOCATIONS order: ZecBlock's own first, then partners.
+  const order = [...OBSERVER_LOCATIONS.values()].map(v => `${v.operator ?? ''}|${v.city}`);
   return {
-    // ZecBlock's own first, then partners; cities alphabetical within each.
-    locations: [...places.values()].sort((a, b) =>
-      (a.operator ?? '').localeCompare(b.operator ?? '') || a.city.localeCompare(b.city)),
+    locations: [...places.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([, v]) => v),
     unlistedObservers: unlisted,
   };
 }

@@ -8,6 +8,7 @@ import { SectionHeader } from '@/components/ui';
 import { useUrlState } from '@/lib/use-url-state';
 import { SortableDataTable } from '@/components/ui/SortableDataTable';
 import { PoolLogo } from '@/components/PoolLogo';
+import { OrphanRateDailyChart } from './OrphanRateDailyChart';
 
 type Period = '24h' | '7d' | '30d' | 'pre-nu7' | 'nu7';
 const PERIOD_LABELS: Record<Period, string> = { '24h': '24h', '7d': '7d', '30d': '30d', 'pre-nu7': 'Before NU7', nu7: 'Since NU7' };
@@ -108,6 +109,7 @@ export function OrphanRateSection() {
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>
           {error && <p role="status" className="text-caption text-muted mb-3">Refresh failed. Showing the previous snapshot from {utc(data.asOf)} UTC.</p>}
+          <OrphanRateDailyChart />
           <div className={`grid grid-cols-2 sm:grid-cols-3 ${nu7 ? 'lg:grid-cols-5' : ''} gap-3 mb-6`}>
             {windows.map(window => (
               <button key={window.period} type="button" aria-pressed={selected?.period === window.period} onClick={() => setPeriod(window.period)}
@@ -151,6 +153,9 @@ export function OrphanRateSection() {
               <p>
                 {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.</>
                   : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.</>}
+              </p>
+              <p>
+                Coverage changed on 5 Nov 2026: one observer in Helsinki until 19:55 UTC, four regional observers from then, and ten from 22:16 UTC when the zecminingpool.com nodes joined. This was shortly before NU7, so Before NU7 mostly reflects one observer and Since NU7 reflects ten; part of any increase is better observation, not more orphaning.
               </p>
             </div>
           </details>

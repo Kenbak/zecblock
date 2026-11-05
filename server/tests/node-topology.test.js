@@ -158,3 +158,20 @@ test('bounded producer snapshots preserve their explicit partial-graph marker', 
   assert.equal(result.snapshots[0].truncated, true);
   assert.equal(result.edges.length, 1);
 });
+
+test('regional vantages are admitted independently and cannot donate proof to another vantage', () => {
+  for (const source of ['direct-nyc3', 'direct-sgp1', 'direct-syd1']) {
+    assert.equal(validateTopologySnapshots([{ source, metrics: snapshot() }], now).available, true, source);
+  }
+  for (const source of ['direct-', 'direct-NYC3', 'tor-nyc3', 'direct-1abc', 'direct-a', `direct-${'a'.repeat(17)}`]) {
+    assert.equal(validateTopologySnapshots([{ source, metrics: snapshot() }], now).available, false, source);
+  }
+  const nyc = snapshot();
+  const sgp = snapshot({ node_info: [], gossip_edges: [receipt()] });
+  const result = validateTopologySnapshots([{ source: 'direct-nyc3', metrics: nyc }, { source: 'direct-sgp1', metrics: sgp }], now);
+  assert.deepEqual(result.snapshots.map(row => [row.source, row.edgeCount]), [['direct-nyc3', 1], ['direct-sgp1', 0]],
+    'a receipt needs same-snapshot proof from its own vantage');
+  const both = validateTopologySnapshots([{ source: 'direct', metrics: nyc }, { source: 'direct-nyc3', metrics: nyc }], now);
+  assert.deepEqual(both.edges.map(edge => edge.collectorSource), ['direct', 'direct-nyc3'],
+    'per-vantage private receipts are kept; the public reader deduplicates IP pairs');
+});

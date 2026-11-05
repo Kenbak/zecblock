@@ -200,7 +200,17 @@ test('delete-and-replay persistence preserves collector receipt times instead of
     assert.equal(first[0].source_generated_at.getTime(), now - 1000);
     assert.equal(first[0].advertiser_handshake_at.getTime(), now - 5000);
     assert.equal(first[0].advertiser_chain_verified_at.getTime(), now - 4000);
+    // A source absent from this run keeps its own evidence until the database
+    // clock expires it, exactly as if ingestion had stopped.
     await persistTopologySnapshot(db, { available: false, snapshots: [], edges: [] });
+    assert.deepEqual((await stored()).rows, first);
+    assert.equal((await readTopologySnapshot(db, activeRows(), now)).topologyAvailable, true);
+    await db.query('DELETE FROM topology_gossip_snapshots');
+    await persistTopologySnapshot(db, validated(now - 11 * 60 * 1000));
+    assert.equal((await readTopologySnapshot(db, activeRows(), now)).topologyAvailable, false, 'expired evidence is never served');
+    await persistTopologySnapshot(db, { available: false, snapshots: [], edges: [] });
+    assert.equal(Number((await db.query('SELECT count(*) AS count FROM topology_gossip_snapshots')).rows[0].count), 0,
+      'the next run prunes expired sources');
     assert.equal(Number((await db.query('SELECT count(*) AS count FROM topology_gossip_edges')).rows[0].count), 0);
     assert.equal((await readTopologySnapshot(db, activeRows(), now)).topologyAvailable, false);
   });

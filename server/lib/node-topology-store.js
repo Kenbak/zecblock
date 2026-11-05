@@ -3,6 +3,7 @@
 const { isIP } = require('node:net');
 const { CHAIN_BLOCK_HASH, CHAIN_PROOF, CENSUS_VERSION } = require('./node-census');
 const { GOSSIP_PROVENANCE, MAX_GOSSIP_EDGES, MAX_GOSSIP_AGE_MS } = require('./node-topology');
+const { PRIMARY_SOURCES, isCollectorSource, isPrimarySource } = require('./census-vantages');
 
 const UNAVAILABLE_REASON = 'Awaiting fresh chain-qualified gossip provenance';
 
@@ -14,16 +15,47 @@ async function hasTopologySchema(queryable) {
   return Boolean(result.rows[0]?.snapshots && result.rows[0]?.edges);
 }
 
-/** Called by the ingester inside its existing transaction, after validation. */
-async function persistTopologySnapshot(client, validated) {
+/**
+ * Called by the ingester inside its existing transaction, after validation.
+ * Each collector source is replaced independently: a source that was not
+ * admitted this run keeps its previous snapshot until the database clock
+ * expires it (readers already gate on the same ten-minute bound), while an
+ * unconfigured source is removed immediately. An older generation can never
+ * replace a newer one, so a delayed or replayed poll cannot rebind receipts.
+ */
+async function persistTopologySnapshot(client, validated, { configuredSources = PRIMARY_SOURCES } = {}) {
   if (!await hasTopologySchema(client)) return false;
 
   // A replay or duplicate input cannot bind old receipts to a newer generation.
+  // Before migration 043 the 039 CHECK admits only direct/tor; writing a
+  // regional row would abort the whole census transaction, so skip them.
+  const regionalAllowed = (await client.query(`
+    SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'topology_gossip_snapshots'::regclass
+      AND conname = 'topology_gossip_snapshots_collector_source_vantage') AS allowed
+  `)).rows[0]?.allowed === true;
   const snapshots = new Map();
   for (const snapshot of validated.snapshots) {
+    if (!isCollectorSource(snapshot.source) || (!regionalAllowed && !isPrimarySource(snapshot.source))) continue;
     const previous = snapshots.get(snapshot.source);
     if (!previous || snapshot.generatedAtMs > previous.generatedAtMs) snapshots.set(snapshot.source, snapshot);
   }
+  const configured = [...new Set([...configuredSources, ...snapshots.keys()])].filter(isCollectorSource);
+  await client.query(`
+    DELETE FROM topology_gossip_snapshots
+    WHERE NOT (collector_source = ANY($1::text[]))
+      OR generated_at <= NOW() - INTERVAL '10 minutes'
+  `, [configured]);
+
+  for (const snapshot of [...snapshots.values()]) {
+    const existing = await client.query(`
+      SELECT generated_at FROM topology_gossip_snapshots WHERE collector_source = $1 FOR UPDATE
+    `, [snapshot.source]);
+    const storedAt = existing.rows[0] ? new Date(existing.rows[0].generated_at).getTime() : null;
+    if (storedAt !== null && storedAt > snapshot.generatedAtMs) { snapshots.delete(snapshot.source); continue; }
+    // The foreign key deletes this source's prior receipts atomically.
+    await client.query('DELETE FROM topology_gossip_snapshots WHERE collector_source = $1', [snapshot.source]);
+  }
+
   const edges = new Map();
   for (const edge of validated.edges) {
     if (snapshots.get(edge.collectorSource)?.generatedAtMs !== edge.generatedAtMs) continue;
@@ -31,11 +63,10 @@ async function persistTopologySnapshot(client, validated) {
     const previous = edges.get(key);
     if (!previous || edge.observedAtMs > previous.observedAtMs) edges.set(key, edge);
   }
-
-  // The foreign key deletes prior receipts atomically with their snapshot.
-  await client.query('DELETE FROM topology_gossip_snapshots');
+  const edgeCounts = new Map();
+  for (const edge of edges.values()) edgeCounts.set(edge.collectorSource, (edgeCounts.get(edge.collectorSource) || 0) + 1);
   for (const snapshot of snapshots.values()) {
-    const edgeCount = [...edges.values()].filter(edge => edge.collectorSource === snapshot.source).length;
+    const edgeCount = edgeCounts.get(snapshot.source) || 0;
     await client.query(`
       INSERT INTO topology_gossip_snapshots (collector_source, generated_at, provenance, edge_count, truncated)
       VALUES ($1, $2, $3, $4, $5)

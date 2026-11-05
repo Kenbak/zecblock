@@ -30,6 +30,24 @@ function queryMock(responses) {
   } };
 }
 
+// Answers persistence queries by statement so tests assert meaning, not order.
+function writerMock({ regionalAllowed = true, stored = {} } = {}) {
+  const calls = [];
+  return { calls, async query(sql, values) {
+    calls.push({ sql, values });
+    if (/to_regclass\('topology_gossip_snapshots'\)/.test(sql)) return { rows: [schema] };
+    if (/FROM pg_constraint/.test(sql)) return { rows: [{ allowed: regionalAllowed }] };
+    if (/SELECT generated_at FROM topology_gossip_snapshots/.test(sql)) {
+      return { rows: stored[values[0]] ? [{ generated_at: new Date(stored[values[0]]) }] : [] };
+    }
+    return { rows: [] };
+  } };
+}
+const snapshotInserts = client => client.calls.filter(call => /INSERT INTO topology_gossip_snapshots/.test(call.sql));
+const edgeInsert = client => client.calls.find(call => /INSERT INTO topology_gossip_edges/.test(call.sql));
+const sourceDeletes = client => client.calls.filter(call => call.sql === 'DELETE FROM topology_gossip_snapshots WHERE collector_source = $1')
+  .map(call => call.values[0]);
+
 test('missing either new table safely defers persistence and returns unavailable active isolates', async () => {
   for (const row of [{ snapshots: null, edges: null }, { snapshots: schema.snapshots, edges: null }]) {
     const writer = queryMock([[row]]);
@@ -49,13 +67,15 @@ test('missing either new table safely defers persistence and returns unavailable
   }
 });
 
-test('persistence replaces snapshots atomically and retains exact source evidence clocks', async () => {
-  const client = queryMock([[schema], [], [], []]);
+test('persistence replaces each source atomically and retains exact source evidence clocks', async () => {
+  const client = writerMock();
   assert.equal(await persistTopologySnapshot(client, { snapshots: [snapshot()], edges: [edge()] }), true);
-  assert.equal(client.calls[1].sql, 'DELETE FROM topology_gossip_snapshots');
-  assert.deepEqual(client.calls[2].values, ['direct', new Date(now - 1000), GOSSIP_PROVENANCE, 1, false]);
-  const insert = client.calls[3];
-  assert.match(insert.sql, /INSERT INTO topology_gossip_edges/);
+  const prune = client.calls.find(call => /WHERE NOT \(collector_source = ANY/.test(call.sql));
+  assert.match(prune.sql, /generated_at <= NOW\(\) - INTERVAL '10 minutes'/, 'database clock expires absent sources');
+  assert.deepEqual(prune.values, [['direct', 'tor']]);
+  assert.deepEqual(sourceDeletes(client), ['direct']);
+  assert.deepEqual(snapshotInserts(client).map(call => call.values), [['direct', new Date(now - 1000), GOSSIP_PROVENANCE, 1, false]]);
+  const insert = edgeInsert(client);
   assert.match(insert.sql, /UNNEST/);
   assert.doesNotMatch(insert.sql, /NOW\(|CURRENT_TIMESTAMP/);
   assert.deepEqual(insert.values, [
@@ -66,28 +86,59 @@ test('persistence replaces snapshots atomically and retains exact source evidenc
   assert.ok(client.calls.every(call => !/\bBEGIN\b|\bCOMMIT\b/.test(call.sql)), 'caller owns transaction boundaries');
 });
 
-test('unsupported snapshots clear prior capability while supported zero edges retain explicit metadata', async () => {
-  const unsupported = queryMock([[schema], []]);
+test('an absent source keeps its prior snapshot until expiry while supported zero edges retain explicit metadata', async () => {
+  const unsupported = writerMock();
   assert.equal(await persistTopologySnapshot(unsupported, { available: false, snapshots: [], edges: [] }), true);
-  assert.equal(unsupported.calls.length, 2);
-  const empty = queryMock([[schema], [], []]);
+  assert.deepEqual(sourceDeletes(unsupported), [], 'no source is replaced without a newer admitted snapshot');
+  assert.equal(snapshotInserts(unsupported).length, 0);
+  const empty = writerMock();
   await persistTopologySnapshot(empty, { available: true, snapshots: [{ ...snapshot(), edgeCount: 0 }], edges: [] });
-  assert.equal(empty.calls.length, 3);
-  assert.equal(empty.calls[2].values[3], 0);
+  assert.equal(snapshotInserts(empty)[0].values[3], 0);
+  assert.equal(edgeInsert(empty), undefined);
 });
 
 test('duplicate collector inputs cannot relabel older generation receipts or inflate edge counts', async () => {
-  const client = queryMock([[schema], [], [], [], []]);
+  const client = writerMock();
   const newer = edge({ generatedAtMs: now - 500, observedAtMs: now - 1000 });
   await persistTopologySnapshot(client, {
     snapshots: [snapshot(), snapshot('direct', now - 500), snapshot('tor')],
     edges: [edge(), newer, { ...newer, observedAtMs: now - 1500 }, edge({ collectorSource: 'tor' })],
   });
-  assert.deepEqual(client.calls[2].values, ['direct', new Date(now - 500), GOSSIP_PROVENANCE, 1, false]);
-  assert.deepEqual(client.calls[3].values, ['tor', new Date(now - 1000), GOSSIP_PROVENANCE, 1, false]);
-  assert.deepEqual(client.calls[4].values[0], ['direct', 'tor']);
-  assert.deepEqual(client.calls[4].values[1], [new Date(now - 500), new Date(now - 1000)]);
-  assert.deepEqual(client.calls[4].values[6], [new Date(now - 1000), new Date(now - 2000)]);
+  const inserts = snapshotInserts(client);
+  assert.deepEqual(inserts[0].values, ['direct', new Date(now - 500), GOSSIP_PROVENANCE, 1, false]);
+  assert.deepEqual(inserts[1].values, ['tor', new Date(now - 1000), GOSSIP_PROVENANCE, 1, false]);
+  const insert = edgeInsert(client);
+  assert.deepEqual(insert.values[0], ['direct', 'tor']);
+  assert.deepEqual(insert.values[1], [new Date(now - 500), new Date(now - 1000)]);
+  assert.deepEqual(insert.values[6], [new Date(now - 1000), new Date(now - 2000)]);
+});
+
+test('a stored newer generation is never replaced by a delayed poll from the same source', async () => {
+  const client = writerMock({ stored: { direct: now - 200 } });
+  await persistTopologySnapshot(client, { snapshots: [snapshot(), snapshot('tor')],
+    edges: [edge(), edge({ collectorSource: 'tor' })] });
+  assert.deepEqual(sourceDeletes(client), ['tor']);
+  assert.deepEqual(snapshotInserts(client).map(call => call.values[0]), ['tor']);
+  assert.deepEqual(edgeInsert(client).values[0], ['tor']);
+});
+
+test('regional vantages persist beside primary sources and unconfigured sources are pruned', async () => {
+  const client = writerMock();
+  await persistTopologySnapshot(client, { snapshots: [snapshot(), snapshot('direct-nyc3'), snapshot('bogus')],
+    edges: [edge(), edge({ collectorSource: 'direct-nyc3' }), edge({ collectorSource: 'bogus' })] },
+  { configuredSources: ['direct', 'tor', 'direct-nyc3', 'direct-sgp1'] });
+  const prune = client.calls.find(call => /WHERE NOT \(collector_source = ANY/.test(call.sql));
+  assert.deepEqual(prune.values, [['direct', 'tor', 'direct-nyc3', 'direct-sgp1']]);
+  assert.deepEqual(snapshotInserts(client).map(call => call.values[0]), ['direct', 'direct-nyc3']);
+  assert.deepEqual(edgeInsert(client).values[0], ['direct', 'direct-nyc3'], 'per-vantage receipts stay private rows');
+});
+
+test('before migration 043 regional rows are skipped instead of aborting the census transaction', async () => {
+  const client = writerMock({ regionalAllowed: false });
+  await persistTopologySnapshot(client, { snapshots: [snapshot(), snapshot('direct-nyc3')],
+    edges: [edge(), edge({ collectorSource: 'direct-nyc3' })] }, { configuredSources: ['direct', 'tor', 'direct-nyc3'] });
+  assert.deepEqual(snapshotInserts(client).map(call => call.values[0]), ['direct']);
+  assert.deepEqual(edgeInsert(client).values[0], ['direct']);
 });
 
 test('missing or stale supported metadata stays unavailable using database clock eligibility', async () => {
@@ -187,9 +238,9 @@ test('zone-scoped IPv6 identifiers cannot throw or become public graph identitie
 });
 
 test('collector truncation persists and propagates even when no public edges remain', async () => {
-  const client = queryMock([[schema], [], []]);
+  const client = writerMock();
   await persistTopologySnapshot(client, { snapshots: [{ ...snapshot(), edgeCount: 0, truncated: true }], edges: [] });
-  assert.deepEqual(client.calls[2].values, ['direct', new Date(now - 1000), GOSSIP_PROVENANCE, 0, true]);
+  assert.deepEqual(snapshotInserts(client)[0].values, ['direct', new Date(now - 1000), GOSSIP_PROVENANCE, 0, true]);
   for (const activeRows of [[active('9.9.9.9', false)], [active('8.8.8.8')]]) {
     const pool = queryMock([[schema], [metadata({ truncated: true })], []]);
     const result = await readTopologySnapshot(pool, activeRows, now);

@@ -75,14 +75,19 @@ export function OrphanRateDailyChart() {
             <XAxis dataKey="date" minTickGap={55} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: colors.axis }} tickFormatter={shortDate} />
             <YAxis width={46} tickLine={false} axisLine={false} allowDecimals tick={{ fontSize: 12, fill: colors.axis }} tickFormatter={v => `${Number(v).toFixed(1)}%`} />
             <ChartTooltip
+              itemStyle={{ color: colors.tooltipText }}
+              separator=": "
               labelFormatter={label => {
                 const day = points.find(p => p.date === label);
                 const events = eventsByDay.get(String(label)) ?? [];
-                return [`${shortDate(String(label))} UTC${day?.partial ? ' · so far today' : ''}`, ...events.map(e => e.label)].join(' · ');
+                return <>
+                  <span>{shortDate(String(label))} UTC{day?.partial ? ' · so far today' : ''}</span>
+                  {events.map(e => <span key={e.kind} className="block text-caption text-muted">{e.label}</span>)}
+                </>;
               }}
               formatter={(_value, _name, item) => {
                 const day = item.payload as DailyRate;
-                return [`${pct(day.rate)} · ${day.orphanedBlocks.toLocaleString()} orphans / ${day.canonicalBlocks.toLocaleString()} canonical`, 'Observed'];
+                return [`${pct(day.rate)} (${day.orphanedBlocks.toLocaleString()} orphans, ${day.canonicalBlocks.toLocaleString()} blocks)`, 'Orphan rate'];
               }}
             />
             {[...eventsByDay].map(([day, events]) => {

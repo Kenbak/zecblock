@@ -10,6 +10,8 @@ in `../attestation-endpoints.json`, with links pinned to the evidence commit.
 | Shielded Labs shim | [34327233925](https://github.com/Kenbak/cipherscan/actions/runs/34327233925) |
 | Zec.rocks mainnet | [34327234175](https://github.com/Kenbak/cipherscan/actions/runs/34327234175) |
 | Zec.rocks testnet | [34327233990](https://github.com/Kenbak/cipherscan/actions/runs/34327233990) |
+| Zec.rocks mainnet (2026-10-08 release) | [42061912754](https://github.com/Kenbak/zecblock/actions/runs/42061912754) |
+| Zec.rocks testnet (2026-10-08 release) | [42061984480](https://github.com/Kenbak/zecblock/actions/runs/42061984480) |
 
 Caution's hub remains unconfirmed because its published manifest lacks an app
 source mapping. Zec.rocks testnet's older checked-in `.caution/trusted_hashes.json`

@@ -1,0 +1,26 @@
+{
+  "app_source": {
+    "branch": "main",
+    "commit": "656c99fcfb4168e6f1685e8239c918bcc20c07b2",
+    "urls": [
+      "https://github.com/zecrocks/zeronym-shim-deploy.git"
+    ]
+  },
+  "bootproof_commit": "b03721957e3850931f5b53627e7c3d1c302a06fe",
+  "enclave_source": {
+    "commit": "9582e25239430070667fdd0a6b64d887f1c308df",
+    "type": "git_archive",
+    "urls": [
+      "https://codeberg.org/caution/enclaveos/archive/9582e25239430070667fdd0a6b64d887f1c308df.tar.gz"
+    ]
+  },
+  "enclaveos_commit": "9582e25239430070667fdd0a6b64d887f1c308df",
+  "framework_source": {
+    "commit": "d0f3ca9ba594705324caccc69a57f31c115041fa",
+    "type": "git_archive",
+    "url": "https://codeberg.org/caution/platform/archive/d0f3ca9ba594705324caccc69a57f31c115041fa.tar.gz"
+  },
+  "powered_by": "https://caution.co",
+  "run_command": "export ZIS_BACKEND=199.170.132.107:443\nexport ZIS_BACKEND_TLS=na-jfk.testnet.metal.zec.rocks\nexport ZIS_LISTEN=0.0.0.0:8083\n/zero-indexer-shim",
+  "version": "1.0"
+}

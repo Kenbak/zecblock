@@ -82,7 +82,7 @@ function getQueryConstraint(route, name) {
     if (name === 'before') return { required: false, schema: { type: 'integer', minimum: 0, maximum: 499999999, description: 'Exclusive canonical block-height cursor.' } };
   }
   if (route === '/v1/network/block-time' && name === 'period') {
-    const schema = { type: 'string', enum: ['6h', '24h', '7d'], default: '24h', description: 'Trailing block-header observation window.' };
+    const schema = { type: 'string', enum: ['blocks', '6h', '24h', '7d'], default: '24h', description: 'Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling.' };
     return { required: false, schema, description: schema.description };
   }
   if (route === '/v1/mining/hashrate-history') {

@@ -531,3 +531,53 @@ test('fast-versus-slow buckets validate, scale with the target and compare with 
   assert.match(render(null), /distribution is unavailable/);
   assert.match(render({ ...upcoming, before: summary(75.3, 52, 172, 75) }), /distribution is unavailable/, 'an older API response degrades to a status message');
 });
+
+test('per-block zoom leads around NU7 activation and the daily chart leads otherwise', () => {
+  const story = (tipHeight, activation = { height: 3543405, date: null, status: 'scheduled' }) => ({ tipHeight, activation });
+  assert.equal(speed.defaultSpeedZoom(null), 'days');
+  assert.equal(speed.defaultSpeedZoom(story(3543405, null)), 'days', 'no activation, nothing to watch');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 - 289)), 'days', 'more than ~6 hours of 75s blocks away');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 - 288)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 + 10367)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 + 10368)), 'days', 'after ~3 days of 25s blocks the daily comparison leads again');
+  assert.equal(speed.defaultSpeedZoom({ activation: { height: 1 } }), 'days', 'an older story without a tip height stays daily');
+});
+
+test('live blocks keep the newest consecutive run and average the last ten gaps', () => {
+  const point = (height, timestamp, targetSeconds = 75) => ({ height, timestamp, intervalSeconds: 999, targetSeconds, averageSeconds: null, intervals: 0 });
+  assert.deepEqual(speed.readLiveBlocks({ period: '6h', points: [point(1, 1)] }), [], 'only the per-block period is accepted');
+  assert.deepEqual(speed.readLiveBlocks(null), []);
+  const points = [point(50, 100), ...Array.from({ length: 12 }, (_, i) => point(100 + i, 1000 + i * 30 + (i === 5 ? 200 : 0)))];
+  points.push({ height: 'bad', timestamp: 1 });
+  const blocks = speed.readLiveBlocks({ period: 'blocks', points: points.reverse() });
+  assert.deepEqual(blocks.map(block => block.height), Array.from({ length: 12 }, (_, i) => 100 + i), 'a height gap starts a new run; invalid points are dropped');
+  assert.equal(blocks[0].intervalSeconds, 999, 'the oldest block keeps the API predecessor gap');
+  assert.equal(blocks[5].intervalSeconds, 230);
+  assert.equal(blocks[6].intervalSeconds, -170, 'backward header times stay visible as negative gaps');
+  assert.equal(blocks[9].rollingSeconds, null);
+  assert.equal(blocks[10].rollingSeconds, 30, 'ten gaps span the full timestamp difference');
+});
+
+test('per-block chart draws one linked bar per block, the NU7 step and the rolling average', () => {
+  const block = (height, intervalSeconds, targetSeconds) => ({ height, timestamp: height * 10, intervalSeconds, targetSeconds, rollingSeconds: height >= 105 ? targetSeconds : null });
+  const blocks = [...Array.from({ length: 6 }, (_, i) => block(100 + i, i === 2 ? 900 : 70, 75)), ...Array.from({ length: 6 }, (_, i) => block(106 + i, 20, 25))];
+  const Chart = load('components/network/BlockSpeedLiveChart.tsx').BlockSpeedLiveChart;
+  const html = renderToStaticMarkup(React.createElement(Chart, { blocks, nu7Height: 106 }));
+  assert.match(html, /aria-label="Seconds between consecutive blocks, #100 to #111, with the 10-block average"/);
+  assert.equal(linkedBars(html), 12);
+  assert.match(html, /href="\/block\/106"/);
+  assert.equal((html.match(/speed-bar fill-cipher-gold/g) || []).length, 6, 'blocks from the NU7 height on are gold');
+  assert.equal((html.match(/speed-bar fill-muted/g) || []).length, 6);
+  assert.equal((html.match(/data-clipped="true"/g) || []).length, 1, 'a 900s gap is clipped at four times the 75s target');
+  assert.match(html, /<text[^>]*>5m<\/text>/, 'the axis tops out near 4× the highest target, not at the outlier');
+  assert.match(html, />NU7<\/text>/);
+  assert.match(html, />75s blocks<\/text>/);
+  assert.match(html, />25s blocks<\/text>/);
+  assert.match(html, /data-rolling-average="true"/);
+  assert.match(html, /Block #106 · NU7 · 20s after the previous block · 25s target/);
+  const upcoming = renderToStaticMarkup(React.createElement(Chart, { blocks: blocks.slice(0, 6), nu7Height: 106 + 99 }));
+  assert.match(upcoming, /NU7 in 100 blocks/);
+  assert.doesNotMatch(upcoming, /speed-bar fill-cipher-gold/, 'no block before activation is drawn as NU7');
+  assert.match(renderToStaticMarkup(React.createElement(Chart, { blocks: [], nu7Height: null })), /Recent blocks are unavailable/);
+});

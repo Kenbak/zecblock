@@ -1,5 +1,6 @@
 'use client';
 
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
@@ -54,19 +55,32 @@ function utc(value: string) {
   return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-// en-GB lists have no serial comma: "Singapore and Sydney".
-const CITY_LIST = new Intl.ListFormat('en-GB', { style: 'long', type: 'conjunction' });
+// Partner operators credited with a link; anything else from the API renders as plain text.
+const PARTNER_LINKS: Record<string, string> = { 'zecminingpool.com': 'https://zecminingpool.com' };
 
-/** "Observed from Helsinki, New York and Sydney (Singapore paused)." or null when no location is known. */
-function observedFrom(capture: NonNullable<OrphanRates['capture']>): string | null {
+const chip = 'inline-flex items-center rounded border border-cipher-border px-1.5 py-0.5 font-mono text-secondary';
+
+/** "Observers: [Helsinki] [New York] … · via zecminingpool.com: [Austin] …"; partners link only from the allowlist. */
+function ObserverChips({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
   const locations = capture.locations ?? [];
-  if (!locations.length) return null;
-  const own = locations.filter(l => !l.operator).map(l => l.city);
-  const partners = new Map<string, string[]>();
-  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l.city]);
-  const parts = own.length ? [CITY_LIST.format(own)] : [];
-  for (const [operator, cities] of partners) parts.push(`${parts.length ? 'plus ' : ''}${CITY_LIST.format(cities)} via ${operator}`);
-  return `Observed from ${parts.join(', ')}.`;
+  const own = locations.filter(l => !l.operator);
+  const partners = new Map<string, typeof locations>();
+  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l]);
+  const cities = (list: typeof locations) => list.map(l => (
+    <span key={`${l.operator ?? ''}|${l.city}`} className={`${chip} ${l.collecting ? '' : 'opacity-50'}`} title={l.collecting ? undefined : 'Not collecting right now'}>{l.city}</span>
+  ));
+  return <>
+    <span className="text-muted">Observers</span>
+    {cities(own)}
+    {[...partners].map(([operator, list]) => {
+      const href = PARTNER_LINKS[operator];
+      return <Fragment key={operator}>
+        <span className="text-muted">· via {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : operator}</span>
+        {cities(list)}
+      </Fragment>;
+    })}
+    {capture.unlistedObservers ? <span className="text-muted">+{capture.unlistedObservers} more</span> : null}
+  </>;
 }
 
 export function OrphanRateSection() {
@@ -82,20 +96,14 @@ export function OrphanRateSection() {
     <section id="orphans" className="scroll-mt-36 mb-12">
       <Card><CardBody>
         <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
-        <p className="text-sm text-muted mb-4">
-          {data?.method === 'observed-block-capture-v2'
-            ? 'Observed blocks outside the current canonical chain, including captured competing blocks and blocks removed by reorgs, as a share of canonical blocks plus observed orphans.'
-            : 'Blocks observed by this explorer that left the canonical chain during a reorganization, as a share of canonical blocks plus observed orphans.'}
-        </p>
-        <p className="text-caption text-muted mb-5">
-          Competing blocks may be missed, and collection uptime is not verified. These observations do not establish the full network or any pool&apos;s true orphan rate.
-        </p>
-        {supported && data.capture && <p className="text-caption text-muted mb-5">
-          Competing-block collector: {data.capture.status === 'collecting' ? 'collecting' : 'currently unavailable'}.
-          {data.capture.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
-          {' '}Saved observations remain included during interruptions.
-          {observedFrom(data.capture) && <> {observedFrom(data.capture)}</>}
-        </p>}
+        <p className="text-sm text-muted mb-4">How often a block loses the race to a competing block, as seen by our observers.</p>
+        {supported && data.capture && <div className="flex flex-wrap items-center gap-x-2 gap-y-2 mb-5 text-caption">
+          <span className={`inline-flex items-center gap-1.5 font-mono ${data.capture.status === 'collecting' ? 'text-cipher-green' : 'text-muted'}`}>
+            <span aria-hidden className={`h-1.5 w-1.5 rounded-full ${data.capture.status === 'collecting' ? 'bg-cipher-green' : 'bg-muted'}`} />
+            {data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}
+          </span>
+          {data.capture.locations?.length ? <><span className="text-muted">·</span><ObserverChips capture={data.capture} /></> : null}
+        </div>}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>
@@ -122,12 +130,30 @@ export function OrphanRateSection() {
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
-            {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.{' '}</>
-              : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.{' '}</>}
-            Observed orphans ÷ (canonical blocks + observed orphans). Pool labels use public coinbase data; Unknown remains included. Small samples can produce large percentages.{' '}
             Snapshot {utc(data.asOf)} UTC{data.indexedHeight != null && ` · indexed height ${data.indexedHeight.toLocaleString()}`}
-            {data.indexedTimestamp && ` · tip header ${utc(data.indexedTimestamp)} UTC`}.
+            {data.indexedTimestamp && ` · tip header ${utc(data.indexedTimestamp)} UTC`}
           </p>
+          <details className="mt-3 text-caption text-muted">
+            <summary className="cursor-pointer select-none text-secondary hover:text-primary">How this is measured</summary>
+            <div className="mt-2 space-y-2 max-w-3xl">
+              <p>
+                Rate = observed orphans ÷ (canonical blocks + observed orphans), by block-header time.
+                {data.method === 'observed-block-capture-v2'
+                  ? ' Orphans are competing blocks our observers received plus blocks removed by reorgs.'
+                  : ' Orphans are blocks this explorer saw leave the canonical chain in a reorganization.'}
+                {' '}A competing block counts if any observer received it. Pool labels use public coinbase data; Unknown remains included. Small samples can produce large percentages.
+              </p>
+              <p>
+                Competing blocks can still be missed and collection uptime is not verified, so this is not the whole network&apos;s or any pool&apos;s true orphan rate.
+                {data.capture?.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
+                {' '}Saved observations stay included during interruptions.
+              </p>
+              <p>
+                {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.</>
+                  : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.</>}
+              </p>
+            </div>
+          </details>
         </>}
       </CardBody></Card>
     </section>

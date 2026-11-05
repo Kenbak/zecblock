@@ -59,44 +59,29 @@ function utc(value: string) {
 // Partner operators credited with a link; anything else from the API renders as plain text.
 const PARTNER_LINKS: Record<string, string> = { 'zecminingpool.com': 'https://zecminingpool.com' };
 
-type ObserverLocation = NonNullable<NonNullable<OrphanRates['capture']>['locations']>[number];
-
-/** "10 observer nodes · via ZecBlock (4) and zecminingpool.com (6)", cities listed underneath per operator. */
+/** One line: "● 10 observer nodes via ZecBlock and zecminingpool.com"; partners link only from the allowlist. */
 function ObserverSummary({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
   const locations = capture.locations ?? [];
-  const groups = new Map<string, ObserverLocation[]>();
-  for (const l of locations) {
-    const key = l.operator ?? 'ZecBlock';
-    groups.set(key, [...(groups.get(key) ?? []), l]);
-  }
+  const operators = [...new Set(locations.map(l => l.operator ?? 'ZecBlock'))];
   const total = locations.length + (capture.unlistedObservers ?? 0);
-  const collecting = locations.filter(l => l.collecting).length;
-  const collectingAll = capture.status === 'collecting';
-  const name = (operator: string) => {
-    const href = PARTNER_LINKS[operator];
-    return href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : <span className="text-primary">{operator}</span>;
-  };
+  const offline = locations.filter(l => !l.collecting).length;
+  const collecting = capture.status === 'collecting';
   return (
-    <div className="mb-5 rounded-lg border border-cipher-border bg-glass-2 px-4 py-3">
-      <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-        <span aria-hidden className={`h-2 w-2 rounded-full ${collectingAll ? 'bg-cipher-green' : 'bg-muted'}`} />
-        <span className="font-mono font-semibold text-primary">{total} observer nodes</span>
-        <span className="text-muted">
-          {collectingAll ? (collecting < locations.length ? `· ${collecting} collecting now` : '· collecting') : '· collector unavailable'}
-        </span>
-        <span className="text-muted">· via</span>
-        {[...groups].map(([operator, list], i) => <Fragment key={operator}>
-          {i > 0 && <span className="text-muted">{i === groups.size - 1 ? 'and' : ','}</span>}
-          <span>{name(operator)} <span className="font-mono text-muted">({list.length})</span></span>
-        </Fragment>)}
-      </p>
-      <dl className="mt-2 grid gap-x-6 gap-y-1 text-caption sm:grid-cols-[auto_1fr]">
-        {[...groups].map(([operator, list]) => <Fragment key={operator}>
-          <dt className="text-muted">{operator}</dt>
-          <dd className="text-secondary">{list.map((l, i) => <Fragment key={l.city + i}>{i > 0 && ', '}<span className={l.collecting ? '' : 'opacity-50'} title={l.collecting ? undefined : 'Not collecting right now'}>{l.city}</span></Fragment>)}</dd>
-        </Fragment>)}
-      </dl>
-    </div>
+    <p className="mb-5 flex items-center gap-2 text-sm text-muted">
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${collecting ? 'bg-cipher-green' : 'bg-muted'}`} />
+      <span>
+        <span className="font-semibold text-primary">{total} observer nodes</span>
+        {' '}via{' '}
+        {operators.map((operator, i) => {
+          const href = PARTNER_LINKS[operator];
+          return <Fragment key={operator}>
+            {i > 0 && (i === operators.length - 1 ? ' and ' : ', ')}
+            {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : <span className="text-secondary">{operator}</span>}
+          </Fragment>;
+        })}
+        {!collecting ? ' · collector unavailable' : offline > 0 ? ` · ${offline} offline` : ''}
+      </span>
+    </p>
   );
 }
 

@@ -20,6 +20,7 @@ import { poolDateAxis } from '@/lib/pool-display';
 import { PoolCurrencyToggle, PoolCurrencyNote, usePoolCurrency } from '@/components/pools/PoolCurrency';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
+import { ShieldedIcon } from '@/components/icons/shield-flow';
 import { tooltipDate } from '@/lib/chart-dates';
 
 type Period = '30d' | '90d' | '1y' | 'all';
@@ -408,6 +409,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
   return (
     <ShareableCard
       title="Supply History"
+      icon={<ShieldedIcon />}
       sourceHeight={0}
       isLive={false}
       shareText={shareText}

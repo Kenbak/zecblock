@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { ShareableCard } from '@/components/ShareableCard';
+import { ActivitySectionIcon } from '@/components/icons/home-section';
 import { Tooltip } from '@/components/Tooltip';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
@@ -81,6 +82,7 @@ export function PoolActivityChart() {
   return (
     <ShareableCard
       title="Transaction activity by pool"
+      icon={<ActivitySectionIcon />}
       shareText={`Zcash transaction activity by shielded pool (${period.toUpperCase()}). ${ACTIVITY_NOTE}`}
       sharePath="/pools#activity"
       fileName={`zecblock-pool-transactions-${mode}-${period}${selected.length < ACTIVITY_POOLS.length ? `-${selected.join('-')}` : ''}.png`}

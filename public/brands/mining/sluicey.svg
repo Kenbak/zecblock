@@ -1,0 +1,36 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="Sluicey Pool">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#1d1438"/>
+      <stop offset="100%" stop-color="#09070f"/>
+    </linearGradient>
+    <linearGradient id="flow" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#32e6ff"/>
+      <stop offset="100%" stop-color="#9b6cff"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="14" fill="url(#bg)"/>
+  <g transform="translate(32 32) rotate(45) translate(-32 -32)">
+    <rect x="18" y="14" width="5.2" height="36" rx="2.6" fill="#c9b0ff"/>
+    <rect x="40.8" y="14" width="5.2" height="36" rx="2.6" fill="#c9b0ff"/>
+    <path
+      fill="url(#flow)"
+      d="M24.8 16
+         H39.2
+         L37.4 19.2 H39.2 L37.4 22.4 H39.2 L37.4 25.6 H39.2 L37.4 28.8
+         H39.2 L37.4 32 H39.2 L37.4 35.2 H39.2 L37.4 38.4 H39.2 L37.4 41.6
+         H39.2 L37.4 44.8 H39.2
+         V48 H24.8
+         L26.6 44.8 H24.8 L26.6 41.6 H24.8 L26.6 38.4 H24.8 L26.6 35.2
+         H24.8 L26.6 32 H24.8 L26.6 28.8 H24.8 L26.6 25.6 H24.8 L26.6 22.4
+         H24.8 L26.6 19.2 H24.8
+         Z"
+    />
+    <g fill="#c9b0ff">
+      <polygon points="32,22.2 33.3,23 33.3,24.5 32,25.3 30.7,24.5 30.7,23"/>
+      <polygon points="32,29.8 33.3,30.6 33.3,32.1 32,32.9 30.7,32.1 30.7,30.6"/>
+      <polygon points="32,37.4 33.3,38.2 33.3,39.7 32,40.5 30.7,39.7 30.7,38.2"/>
+      <polygon points="32,44.2 33.1,44.8 33.1,46 32,46.6 30.9,46 30.9,44.8" opacity=".9"/>
+    </g>
+  </g>
+</svg>

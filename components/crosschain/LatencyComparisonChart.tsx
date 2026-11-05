@@ -1,5 +1,6 @@
 "use client";
 
+import { getChainLogoSrc } from "@/lib/chain-logos";
 import { useMemo, useState } from "react";
 import {
   BarChart,
@@ -36,34 +37,6 @@ interface LatencyRow {
 
 const TOP_N = 10;
 
-const CHAIN_ICON_MAP: Record<string, string> = {
-  eth: "/chains/eth.png",
-  sol: "/chains/sol.png",
-  btc: "/chains/btc.png",
-  near: "/chains/near.png",
-  base: "/chains/base.svg",
-  arb: "/chains/arb.png",
-  op: "/chains/op.png",
-  pol: "/chains/pol.png",
-  avax: "/chains/avax.png",
-  bsc: "/chains/bsc.png",
-  bnb: "/chains/bsc.png",
-  trx: "/chains/tron.png",
-  tron: "/chains/tron.png",
-  zec: "/tokens/zec.png",
-  apt: "/chains/aptos.png",
-  aptos: "/chains/aptos.png",
-  sui: "/chains/sui.png",
-  ton: "/chains/ton.png",
-  doge: "/chains/doge.png",
-  xrp: "/chains/xrp.png",
-  ltc: "/chains/ltc.png",
-  bch: "/chains/bch.png",
-  gnosis: "/chains/gnosis.png",
-  stellar: "/chains/stellar.png",
-  cardano: "/chains/cardano.png",
-};
-
 const CHAIN_DISPLAY_NAMES: Record<string, string> = {
   btc: "Bitcoin",
   eth: "Ethereum",
@@ -98,7 +71,7 @@ function ChainYAxisTick({
 }) {
   if (!x || !y || !payload?.value) return null;
   const chain = payload.value;
-  const iconUrl = CHAIN_ICON_MAP[chain];
+  const iconUrl = getChainLogoSrc(chain);
   const displayName = CHAIN_DISPLAY_NAMES[chain] || chain;
 
   return (

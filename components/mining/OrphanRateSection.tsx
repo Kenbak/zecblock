@@ -5,6 +5,8 @@ import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { DataTable, SectionHeader } from '@/components/ui';
+import { PoolLogo } from '@/components/PoolLogo';
+import { ReorgSectionIcon } from '@/components/icons/home-section';
 
 type Period = '24h' | '7d' | '30d';
 interface PoolRate {
@@ -51,7 +53,7 @@ export function OrphanRateSection() {
   return (
     <section id="orphans" className="scroll-mt-36 mb-12">
       <Card><CardBody>
-        <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
+        <SectionHeader label="OBSERVED_ORPHAN_RATE" icon={<ReorgSectionIcon />} actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
         <p className="text-sm text-muted mb-4">
           {data?.method === 'observed-block-capture-v2'
             ? 'Observed blocks outside the current canonical chain, including captured competing blocks and blocks removed by reorgs, as a share of canonical blocks plus observed orphans.'
@@ -83,7 +85,7 @@ export function OrphanRateSection() {
             <p className="text-caption text-muted mb-3">{utc(selected.windowStart)} – {utc(selected.windowEnd)} UTC · block-header timestamps</p>
             {selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
               <DataTable bare columns={[
-                { id: 'pool', header: 'Pool', cell: (pool: PoolRate) => <span className="font-mono text-xs text-primary">{pool.name}</span> },
+                { id: 'pool', header: 'Pool', cell: (pool: PoolRate) => <span className="inline-flex items-center gap-2 font-mono text-xs text-primary"><PoolLogo name={pool.name} />{pool.name}</span> },
                 { id: 'canonical', header: 'Canonical blocks', align: 'right', cell: pool => <span className="font-mono text-xs tabular-nums">{pool.canonicalBlocks.toLocaleString()}</span> },
                 { id: 'orphans', header: 'Observed orphans', align: 'right', cell: pool => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
                 { id: 'rate', header: 'Observed rate', align: 'right', cell: pool => <span className="font-mono text-xs tabular-nums">{percent(pool.rate)}</span> },

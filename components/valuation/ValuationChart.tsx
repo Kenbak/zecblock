@@ -23,7 +23,7 @@ export function ValuationChart({ title, description, data, series, format, loadi
   const hasData = data.some(p => series.some(s => typeof p[s.key] === 'number' && Number.isFinite(p[s.key])));
   return <div className="card card-static min-w-0 h-full"><div className="card-body flex flex-col h-full">
     <div className="flex flex-wrap items-center justify-between gap-3 mb-3"><h3 className="text-sm font-semibold text-primary">{title}</h3>{controls}</div>
-    <p className="text-xs text-muted leading-relaxed min-h-12 mb-5">{description}</p>
+    <p className="text-xs text-muted leading-relaxed min-h-8 mb-5">{description}</p>
     <div className="mt-auto" role="img" aria-label={`${title}. ${description}`}>
       {loading ? <ChartSkeleton height={300} /> : !hasData ? <div className="h-[300px] flex items-center justify-center text-xs text-muted" role="status">No observations available for this period.</div> :
         <><ResponsiveContainer width="100%" height={300} initialDimension={{width:500,height:300}}><ComposedChart data={plotted} margin={{top:24,right:12,left:0,bottom:4}}>
@@ -36,7 +36,9 @@ export function ValuationChart({ title, description, data, series, format, loadi
           {series.map(s => s.area ? <Area key={s.key} dataKey={s.key} name={s.label} stackId={s.stack?'age':undefined} stroke={s.color} fill={s.color} fillOpacity={s.stack?0.65:0.12} type="linear" isAnimationActive={false} connectNulls={false} /> : <Line key={s.key} dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} strokeDasharray={s.dashed?'5 4':undefined} dot={false} type="linear" isAnimationActive={false} connectNulls={false} />)}
         </ComposedChart></ResponsiveContainer><ChartWatermark /></>}
     </div>
-    {!loading && latest && <p className="mt-3 text-caption text-muted">Latest observation · {new Date(latest.date).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'})} UTC</p>}
-    {footer && <p className="mt-5 border-t border-cipher-border pt-4 text-caption text-muted leading-relaxed">{footer}</p>}
+    {(footer || (!loading && latest)) && <div className="flex flex-wrap justify-between gap-x-6 gap-y-2 mt-5 border-t border-cipher-border pt-4 text-caption text-muted">
+      {footer && <div>{footer}</div>}
+      {!loading && latest && <p>Through {new Date(latest.date).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'})}</p>}
+    </div>}
   </div></div>;
 }

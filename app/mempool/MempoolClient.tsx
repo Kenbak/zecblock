@@ -12,6 +12,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { TxTypeBadge, resolveTxCategory, type TxCategory } from '@/components/ui/TxTypeBadge';
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
+import { MempoolSectionIcon, TransactionSectionIcon } from '@/components/icons/home-section';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { HashLink } from '@/components/ui/HashLink';
 import { MempoolBubbles, type MempoolBubblesHandle } from '@/components/MempoolBubbles';
@@ -197,6 +198,7 @@ export default function MempoolClient() {
         {/* Section header — same pattern as chart sections on /mining and /pools */}
         <SectionHeader
           label="MEMPOOL_LIVE"
+          icon={<MempoolSectionIcon />}
           live={autoRefresh && wsConnected}
           className="px-1"
           actions={
@@ -294,6 +296,7 @@ export default function MempoolClient() {
           {/* Section header */}
           <SectionHeader
             label="PENDING_TRANSACTIONS"
+            icon={<TransactionSectionIcon />}
             className="px-1"
             actions={
               <>

@@ -3,11 +3,12 @@ import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 export const metadata = buildPageMetadata({
   title: 'Zcash Valuation & Market Context | ZecBlock',
   description:
-    'Explore ZEC price, modeled MVRV and realized price, transparent spending, and shielded supply, with sources and data limitations.',
+    'Track ZEC price in USD and as a percentage of Bitcoin, with ZEC/BTC history, modeled cost basis, transparent spending and shielded supply.',
   keywords: [
     'zcash MVRV',
     'zcash realized price',
     'zcash valuation',
+    'ZEC BTC ratio',
     'zcash SOPR',
     'zcash NUPL',
     'on-chain analytics zcash',

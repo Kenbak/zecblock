@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { DistributionSectionIcon } from '@/components/icons/home-section';
 
 interface BalanceGroup { addressCount: number; totalBalance: number; percentage: number }
 interface Breakdown {
@@ -34,7 +35,7 @@ export function TransparentSupplyBreakdown() {
     <details open={open} onToggle={event => setOpen(event.currentTarget.open)} className="border-y border-cipher-border py-4">
       <summary className="text-sm font-mono text-primary cursor-pointer">Transparent balance groups <span className="font-sans text-muted text-caption">· categories &amp; script types</span></summary>
     {open && <Card className="mt-4"><CardBody>
-      <SectionHeader label="TRANSPARENT_BALANCES" />
+      <SectionHeader label="TRANSPARENT_BALANCES" icon={<DistributionSectionIcon />} />
       <p className="text-sm text-secondary mb-5">Positive indexed address balances grouped by known labels and script type. Labels describe addresses, not verified beneficial ownership. Shares use the node’s transparent pool balance; observations can differ in time.</p>
       {loading && !rows.length ? <div className="grid xl:grid-cols-2 gap-8"><SkeletonTable rows={5} columns={3} /><SkeletonTable rows={4} columns={3} label={null} /></div> : rows.length ? <div className="grid xl:grid-cols-2 gap-8">
         {table(rows.map(row => ({ ...row, label: row.category })), 'Address categories')}

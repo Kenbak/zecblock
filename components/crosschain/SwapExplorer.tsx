@@ -7,6 +7,7 @@ import {
   useSwapSearchParams,
 } from "./SwapFilterLink";
 import { TokenChainIcon } from "@/components/TokenChainIcon";
+import { TransactionSectionIcon } from "@/components/icons/home-section";
 import { useApiQuery } from "@/hooks/useApiQuery";
 import {
   CHAINS,
@@ -187,7 +188,7 @@ export function SwapExplorer({
   return (
     <section className="card space-y-4" aria-label="Recent swaps">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-sm font-mono text-secondary">Recent swaps</h2>
+        <h2 className="inline-flex items-center gap-2 text-sm font-mono text-secondary"><span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true"><TransactionSectionIcon /></span>Recent swaps</h2>
         {IS_DEMO && (
           <span
             className="text-xs text-cipher-orange"

@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ComponentType } from 'react';
 import Link from 'next/link';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { RecentBlocks } from '@/components/RecentBlocks';
@@ -12,6 +12,8 @@ import { MiningSoftwareMiniChart } from '@/components/MiningSoftwareMiniChart';
 import { IronwoodProgressCard } from '@/components/IronwoodProgressCard';
 import { ShieldedPoolMiniChart } from '@/components/ShieldedPoolMiniChart';
 import { SlidersIcon } from '@/components/icons/common';
+import { BlockSectionIcon, TransactionSectionIcon, ReorgSectionIcon, MiningSectionIcon, SoftwareSectionIcon } from '@/components/icons/home-section';
+import { ShieldedIcon, MigrationIcon } from '@/components/icons/shield-flow';
 import { HomeFeedTableSkeleton } from '@/components/HomeFeedTableSkeleton';
 
 // Mempool deliberately excluded: it renders an extra pending-count summary
@@ -23,15 +25,15 @@ export type HomeFeedType = 'blocks' | 'shielded' | 'transactions' | 'reorgs' | '
 
 const FEED_ORDER: HomeFeedType[] = ['blocks', 'shielded', 'transactions', 'reorgs', 'miners', 'software', 'ironwood', 'poolsChart'];
 
-const FEED_META: Record<HomeFeedType, { sectionLabel: string; menuLabel: string; viewAllHref: string }> = {
-  blocks: { sectionLabel: 'RECENT_BLOCKS', menuLabel: 'Recent Blocks', viewAllHref: '/blocks' },
-  shielded: { sectionLabel: 'SHIELDED_ACTIVITY', menuLabel: 'Shielded Activity', viewAllHref: '/txs?type=shielded' },
-  transactions: { sectionLabel: 'RECENT_TRANSACTIONS', menuLabel: 'Recent Transactions', viewAllHref: '/txs' },
-  reorgs: { sectionLabel: 'RECENT_REORGS', menuLabel: 'Forks & Reorgs', viewAllHref: '/reorgs' },
-  miners: { sectionLabel: 'TOP_MINERS', menuLabel: 'Top Miners (24h)', viewAllHref: '/mining' },
-  software: { sectionLabel: 'MINING_SOFTWARE', menuLabel: 'Mining Software (30d)', viewAllHref: '/mining#software' },
-  ironwood: { sectionLabel: 'IRONWOOD_PROGRESS', menuLabel: 'Ironwood Migration', viewAllHref: '/ironwood' },
-  poolsChart: { sectionLabel: 'SHIELDED_POOLS', menuLabel: 'Shielded Pool Trend', viewAllHref: '/pools' },
+const FEED_META: Record<HomeFeedType, { sectionLabel: string; menuLabel: string; viewAllHref: string; icon: ComponentType<{ className?: string }> }> = {
+  blocks: { sectionLabel: 'RECENT_BLOCKS', menuLabel: 'Recent Blocks', viewAllHref: '/blocks', icon: BlockSectionIcon },
+  shielded: { sectionLabel: 'SHIELDED_ACTIVITY', menuLabel: 'Shielded Activity', viewAllHref: '/txs?type=shielded', icon: ShieldedIcon },
+  transactions: { sectionLabel: 'RECENT_TRANSACTIONS', menuLabel: 'Recent Transactions', viewAllHref: '/txs', icon: TransactionSectionIcon },
+  reorgs: { sectionLabel: 'RECENT_REORGS', menuLabel: 'Forks & Reorgs', viewAllHref: '/reorgs', icon: ReorgSectionIcon },
+  miners: { sectionLabel: 'TOP_MINERS', menuLabel: 'Top Miners (24h)', viewAllHref: '/mining', icon: MiningSectionIcon },
+  software: { sectionLabel: 'MINING_SOFTWARE', menuLabel: 'Mining Software (30d)', viewAllHref: '/mining#software', icon: SoftwareSectionIcon },
+  ironwood: { sectionLabel: 'IRONWOOD_PROGRESS', menuLabel: 'Ironwood Migration', viewAllHref: '/ironwood', icon: MigrationIcon },
+  poolsChart: { sectionLabel: 'SHIELDED_POOLS', menuLabel: 'Shielded Pool Trend', viewAllHref: '/pools', icon: ShieldedIcon },
 };
 
 const CheckIcon = () => (
@@ -98,6 +100,8 @@ export function HomeFeedCard({
   };
 
   const meta = FEED_META[type];
+  const FeedIcon = meta.icon;
+  const PlaceholderIcon = FEED_META[defaultType].icon;
   const viewAllLink = (
     <Link href={meta.viewAllHref} className="text-xs sm:text-sm font-mono text-muted hover:text-primary transition-colors">
       View all
@@ -115,7 +119,7 @@ export function HomeFeedCard({
       <div className="home-feed-placeholder">
         <div className="relative" aria-hidden="true">
           <div className="invisible">
-            <SectionHeader label="LOADING_ACTIVITY" size="lg" actions={
+            <SectionHeader label="LOADING_ACTIVITY" icon={<PlaceholderIcon />} size="lg" actions={
               <div>
                 <button disabled tabIndex={-1} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono">
                   <SlidersIcon className="w-3.5 h-3.5" />
@@ -131,6 +135,7 @@ export function HomeFeedCard({
       <div className="home-feed-content">
         <SectionHeader
           label={meta.sectionLabel}
+          icon={<FeedIcon />}
           size="lg"
           actions={
             <div className="relative" ref={menuRef}>
@@ -148,16 +153,22 @@ export function HomeFeedCard({
 
               {open && (
                 <div className="absolute right-0 mt-1 w-60 dropdown-menu rounded-lg shadow-xl border p-1 z-30 animate-scale-in origin-top-right max-h-80 overflow-y-auto">
-                  {FEED_ORDER.map((feed) => (
-                    <button
-                      key={feed}
-                      onClick={() => select(feed)}
-                      className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-data dropdown-item"
-                    >
-                      {FEED_META[feed].menuLabel}
-                      {feed === type && <CheckIcon />}
-                    </button>
-                  ))}
+                  {FEED_ORDER.map((feed) => {
+                    const MenuIcon = FEED_META[feed].icon;
+                    return (
+                      <button
+                        key={feed}
+                        onClick={() => select(feed)}
+                        className="w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-data dropdown-item"
+                      >
+                        <span className="inline-flex items-center gap-2.5">
+                          <span className="flex shrink-0 text-muted" aria-hidden="true"><MenuIcon className="w-4 h-4" /></span>
+                          {FEED_META[feed].menuLabel}
+                        </span>
+                        {feed === type && <CheckIcon />}
+                      </button>
+                    );
+                  })}
                 </div>
               )}
             </div>

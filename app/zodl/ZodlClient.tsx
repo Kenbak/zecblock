@@ -3,6 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { PoolLogo } from '@/components/PoolLogo';
 
 // The server snapshot revalidates every 15 minutes; poll at the same cadence.
 const REFRESH_INTERVAL_MS = 15 * 60 * 1000;
@@ -217,7 +218,7 @@ export function ZodlClient({
                 <div className="flex items-center gap-3 sm:w-[200px] sm:flex-shrink-0">
                   <div className={`w-6 text-sm font-mono font-semibold ${i < 3 ? 'text-cipher-yellow-bright' : 'text-muted'}`}>{i + 1}</div>
                   <div className="min-w-0">
-                    <div className="text-sm font-semibold text-primary truncate">{p.pool}</div>
+                    <div className="flex items-center gap-2 text-sm font-semibold text-primary"><PoolLogo name={p.pool} /><span className="truncate">{p.pool}</span></div>
                     <div className="text-caption text-muted font-mono">{fmtZec(p.earnedZat)} ZEC · {p.blocks.toLocaleString()} blocks</div>
                   </div>
                 </div>

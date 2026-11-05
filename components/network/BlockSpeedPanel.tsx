@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { TimerSectionIcon } from '@/components/icons/home-section';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { BlockSpeedChart } from '@/components/network/BlockSpeedChart';
 import { BlockSpeedShareControl } from '@/components/network/BlockSpeedShareControl';
@@ -67,7 +68,7 @@ function Footnote({ story }: { story: SpeedStory }) {
 export function BlockSpeedPanel({ story, variant = 'compact' }: { story: SpeedStory | null; variant?: 'compact' | 'full' }) {
   const compact = variant === 'compact';
   return <Card className="card-static p-4 sm:p-6"><CardBody>
-    <SectionHeader label="BLOCK_SPEED" actions={compact ? <Link href="/network/block-speed" className="text-caption font-mono text-muted hover:text-primary">Details →</Link> : story ? <BlockSpeedShareControl /> : undefined} />
+    <SectionHeader label="BLOCK_SPEED" icon={<TimerSectionIcon />} actions={compact ? <Link href="/network/block-speed" className="text-caption font-mono text-muted hover:text-primary">Details →</Link> : story ? <BlockSpeedShareControl /> : undefined} />
     {!story ? <p role="status" className="py-12 text-center text-sm text-muted">Block speed observations are unavailable.</p> : <>
       <p className="text-sm text-secondary mb-4 max-w-3xl"><Intro story={story} /></p>
       <dl className="grid grid-cols-1 sm:grid-cols-3 border-y border-cipher-border py-4 mb-4"><Stats story={story} /></dl>

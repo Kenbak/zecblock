@@ -26,7 +26,7 @@ async function mapWithConcurrency(items, limit, fn) {
 }
 
 const MEMPOOL_RPC_CONCURRENCY = 8;
-// Mempool contents can change block-to-block (roughly every ~75s) but also
+// Mempool contents can change block-to-block (75s target before NU7, 25s after) but also
 // shift continuously as wallets broadcast/relay. A short fresh window plus a
 // slightly longer stale window lets concurrent requests single-flight onto
 // one in-flight Zebra RPC call/response instead of each triggering its own

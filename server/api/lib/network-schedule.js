@@ -29,6 +29,23 @@ function targetSpacing(schedule, height) {
   return schedule.eras.filter(era => era.height <= height).at(-1).seconds;
 }
 
+// Height whose target-time distance to `end` is about `seconds`, walking back
+// across spacing eras. Estimates only; prefer header timestamps when indexed.
+function heightBefore(schedule, end, seconds) {
+  if (!schedule || !Number.isSafeInteger(end) || end < 0 || end > MAX_HEIGHT || !(seconds >= 0)) return null;
+  let height = end;
+  let remaining = seconds;
+  for (let i = schedule.eras.length - 1; i >= 0 && remaining > 0; i--) {
+    const era = schedule.eras[i];
+    if (era.height >= height) continue;
+    const available = height - era.height;
+    const needed = remaining / era.seconds;
+    if (needed <= available) { height -= Math.round(needed); remaining = 0; }
+    else { height = era.height; remaining -= available * era.seconds; }
+  }
+  return height;
+}
+
 function halvingIndex(schedule, height) {
   const seconds = targetSeconds(schedule, 0, height);
   return seconds === null ? null : Math.max(0, Math.floor((seconds - SLOW_START_SECONDS) / HALVING_SECONDS));
@@ -44,4 +61,4 @@ function halvingHeight(schedule, index) {
   return lo;
 }
 
-module.exports = { networkSchedule, targetSeconds, targetSpacing, halvingIndex, halvingHeight };
+module.exports = { networkSchedule, targetSeconds, targetSpacing, heightBefore, halvingIndex, halvingHeight };

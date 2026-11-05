@@ -32,8 +32,8 @@ const STALE_CHECK_INTERVAL_MS = 30000;
 // How long a stream can go without a data event, while still claiming to
 // be "connected", before we treat it as silently hung and force a
 // reconnect. Mempool activity can legitimately go quiet for a while, so it
-// gets a more generous bound than chain-tip (Zcash mainnet targets a block
-// roughly every 75s; 5 minutes is a wide margin for natural variance while
+// gets a more generous bound than chain-tip (Zcash targets a block every 75s
+// before NU7 and 25s after; 5 minutes is a wide margin for natural variance while
 // still catching a truly stuck stream). A false-positive reconnect here is
 // cheap (resubscribe), so these bounds are intentionally conservative
 // rather than tight.

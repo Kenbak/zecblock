@@ -71,7 +71,7 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
   stub('pgbackrest', `echo '[{"status":{"code":0},"backup":[{"timestamp":{"stop":${now}}}]}]'`);
   stub('redis-cli', 'echo PONG');
   stub('curl', `case "$*" in
-    *sendMessage*) echo sent >> "$TEST_MESSAGES";;
+    *sendMessage*) echo sent >> "$TEST_MESSAGES"; for a in "$@"; do case "$a" in text=*) printf '%s\\n---\\n' "$a" >> "$TEST_MESSAGES.text";; esac; done;;
     *getblockcount*) echo '{"result":100}';;
     *) echo '{"connected":true}';; esac`);
   const state = path.join(dir, 'snapshot');
@@ -91,6 +91,11 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
     result = run();
     assert.equal(result.status, 1, result.stderr);
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 1);
+    const alert = readFileSync(`${messages}.text`, 'utf8');
+    assert.match(alert, /🔴 <b>1 health check failing<\/b>/);
+    assert.match(alert, /❌ <b>Indexer<\/b>: The indexer is behind or stuck, so new blocks may not appear on the site\./, 'plain explanation');
+    assert.doesNotMatch(alert, /❌ <b>Redis/, 'only failing checks are explained');
+    assert.match(alert, /Technical details:\n• Indexer /);
     assert.match(metrics(), /^zecblock_ops_check_ok\{check="indexer",name="Indexer"\} 0$/m);
     assert.match(metrics(), /^zecblock_ops_check_ok\{check="redis",name="Redis"\} 1$/m);
     assert.match(metrics(), new RegExp(`^zecblock_ops_health_last_run_timestamp_seconds ${now}$`, 'm'));
@@ -107,6 +112,7 @@ test('whole ops monitor queries work clocks and deduplicates changing stall ages
     result = run();
     assert.equal(result.status, 0, result.stderr);
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 3, 'one recovery message');
+    assert.match(readFileSync(`${messages}.text`, 'utf8'), /✅ <b>Fixed: server health checks<\/b>[\s\S]*Nothing to do\./);
     assert.equal(run().status, 0);
     assert.equal(readFileSync(messages, 'utf8').trim().split('\n').length, 3);
     assert.match(metrics(), /^zecblock_ops_check_ok\{check="indexer",name="Indexer"\} 1$/m);

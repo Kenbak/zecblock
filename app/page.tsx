@@ -3,6 +3,7 @@ import Link from 'next/link';
 import { SearchBar } from '@/components/SearchBar';
 import { HomeBlocksProvider } from '@/components/HomeBlocksProvider';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { MempoolSectionIcon } from '@/components/icons/home-section';
 import { HomeFeedCard } from '@/components/HomeFeedCard';
 import { RelativeTimeProvider } from '@/components/RelativeTime';
 import { RecentMempool } from '@/components/RecentMempool';
@@ -218,7 +219,7 @@ export default async function Home() {
           "what's about to confirm" view regardless of what the two cards
           above are set to. */}
       <div className="home-mempool home-table-section mt-10 sm:mt-12 lg:mt-16">
-        <SectionHeader label="MEMPOOL" live size="lg" />
+        <SectionHeader label="MEMPOOL" icon={<MempoolSectionIcon />} live size="lg" />
         <RecentMempool
           footer={
             <Link href="/mempool" className="text-xs sm:text-sm font-mono text-muted hover:text-primary transition-colors">

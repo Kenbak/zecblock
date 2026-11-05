@@ -6,6 +6,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
+import { ActivitySectionIcon, ServerSectionIcon } from '@/components/icons/home-section';
 import { isCrosslink, CURRENCY } from '@/lib/config';
 import type { HashrateSnapshot } from '@/lib/hashrate';
 import { blockAgeLabel, observationStatus } from '@/lib/network-overview';
@@ -177,7 +178,7 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
       </section>
 
       <section id="network-activity" className="network-section mb-10" aria-label="Block cadence and observed fees">
-        <SectionHeader label="ACTIVITY" />
+        <SectionHeader label="ACTIVITY" icon={<ActivitySectionIcon />} />
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-5 items-stretch">
           <BlockCadenceChart initialData={initialData.recentBlocks} initialFetchedAt={initialData.fetchedAt} chainHeight={height} now={now} targetSeconds={stats?.mining.targetBlockTime ?? null} />
           <div id="network-fees" className="network-section h-full"><FeeDistributionChart initialFetchedAt={initialData.fetchedAt} initialData={initialData.feeDistribution} /></div>
@@ -202,7 +203,7 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
           </summary>
           {technicalOpen && <div className="p-4 sm:p-6 space-y-5">
             <Card><CardBody>
-              <SectionHeader label="EXPLORER_NODE" />
+              <SectionHeader label="EXPLORER_NODE" icon={<ServerSectionIcon />} />
               <p className="text-caption text-muted mb-4">This is one observation point, not a network-wide health verdict.</p>
               <dl className="grid grid-cols-2 lg:grid-cols-4 gap-4 text-sm font-mono">
                 <div><dt className="text-caption text-muted">Node readiness</dt><dd className={nodeStatus === 'Ready' ? 'text-cipher-green' : nodeStatus === 'Unavailable' ? 'text-muted' : 'text-warning'}>{nodeStatus}</dd></div>

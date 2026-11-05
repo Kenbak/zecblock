@@ -9,6 +9,7 @@ import Link from 'next/link';
 import { getApiUrl } from '@/lib/api-config';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
+import { NetworkSectionIcon, ServerSectionIcon, SoftwareSectionIcon } from '@/components/icons/home-section';
 import { NodeMapExplorer } from '@/components/network/NodeMapExplorer';
 import { clientLabel, clientColor } from '@/lib/network-colors';
 import { scoreColor } from '@/components/ui/RadialGauge';
@@ -223,7 +224,7 @@ export default function NodesClient() {
       </section>
 
       <section id="node-software" className="network-section mb-10">
-        <SectionHeader label="SOFTWARE_PROTOCOL" />
+        <SectionHeader label="SOFTWARE_PROTOCOL" icon={<SoftwareSectionIcon />} />
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <Card className="h-full">
             <CardBody className="h-full flex flex-col">
@@ -306,7 +307,7 @@ export default function NodesClient() {
       </section>
 
       <section id="node-observations" className="network-section mb-10">
-        <SectionHeader label="RELIABILITY_HOSTING" />
+        <SectionHeader label="RELIABILITY_HOSTING" icon={<ServerSectionIcon />} />
         {loading && !reliability && !concentration && <div className="grid lg:grid-cols-2 gap-5"><ChartCardSkeleton height={260} title="Reachability & latency" /><ChartCardSkeleton height={260} title="Hosting concentration" /></div>}
         {!loading && !reliability && !concentration && <p className="text-sm text-muted mb-5">{loading ? 'Loading crawler observations…' : 'Reliability and hosting observations are unavailable.'}</p>}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
@@ -404,7 +405,7 @@ export default function NodesClient() {
       </section>
       {/* Node Table */}
       <section id="node-directory" className="network-section">
-      <SectionHeader label="NODE_DIRECTORY" />
+      <SectionHeader label="NODE_DIRECTORY" icon={<NetworkSectionIcon />} />
       <Card>
         <CardBody>
           <div className="flex flex-wrap items-end justify-between gap-4 mb-6">

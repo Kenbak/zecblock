@@ -8,6 +8,7 @@ import { getApiUrl } from '@/lib/api-config';
 import { Card, CardBody } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { Pagination } from '@/components/Pagination';
+import { EntityLogo } from '@/components/EntityLogo';
 import { ExportButton } from '@/components/ExportButton';
 
 const PAGE_SIZE = 100;
@@ -152,11 +153,8 @@ export default function RichListClient({
           <HashLink value={entry.address} href={`/address/${entry.address}`} lead={8} tail={8} />
           {/* Show label inline on mobile where label column is hidden */}
           {entry.label && (
-            <span className="text-caption text-muted md:hidden mt-0.5 flex items-center gap-1">
-              {entry.logoUrl && (
-                // eslint-disable-next-line @next/next/no-img-element
-                <img src={entry.logoUrl} alt="" width={12} height={12} className="rounded-sm" />
-              )}
+            <span className="text-caption text-muted md:hidden mt-0.5 flex items-center gap-1.5" title={entry.description ?? undefined}>
+              <EntityLogo label={entry.label} category={entry.category} logoUrl={entry.logoUrl} />
               {entry.label}
             </span>
           )}
@@ -169,11 +167,8 @@ export default function RichListClient({
       className: 'hidden md:table-cell',
       cell: (entry) => entry.label ? (
         <div className="flex items-center gap-2">
-          {entry.logoUrl && (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={entry.logoUrl} alt="" width={16} height={16} className="rounded-sm flex-shrink-0" />
-          )}
-          <span className="text-xs text-primary truncate max-w-[120px]">{entry.label}</span>
+          <EntityLogo label={entry.label} category={entry.category} logoUrl={entry.logoUrl} />
+          <span className="text-xs text-primary truncate max-w-[120px]" title={entry.description ?? entry.label}>{entry.label}</span>
           {entry.category && (
             <Badge color={categoryColor(entry.category)}>{entry.category}</Badge>
           )}

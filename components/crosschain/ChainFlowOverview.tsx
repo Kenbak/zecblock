@@ -12,6 +12,7 @@ import {
 } from "recharts";
 import { TokenChainIcon } from "@/components/TokenChainIcon";
 import { ChartCard } from "@/components/network/ChartCard";
+import { TransactionSectionIcon } from "@/components/icons/home-section";
 import { ChartTooltip } from "@/components/charts/ChartTooltip";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
@@ -88,6 +89,7 @@ export function ChainFlowOverview({
     <section>
       <ChartCard
         title={group === "chains" ? "Flow by chain" : "Flow by token"}
+        icon={<TransactionSectionIcon />}
         share={{ title: group === "chains" ? "ZEC cross-chain flow by chain" : "ZEC cross-chain flow by token", fileName: `zecblock-crosschain-flow-by-${group === "chains" ? "chain" : "token"}`, csv: () => objectRowsCsv(visible) }}
         height={180}
         controls={

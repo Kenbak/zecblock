@@ -105,7 +105,7 @@ test('running tag and hub confirmation require a fresh reproduced match, while h
     return renderToStaticMarkup(React.createElement(Client, {initialData:data, initialNow:now, network:'mainnet',apiUrl:'https://api.mainnet.cipherscan.app'}));
   };
   const fresh = render();
-  assert.match(fresh,/deploy-fdb613db-a606726/);
+  assert.match(fresh,/deploy-fdb613db-e0c834c/);
   assert.match(fresh,/Running build · reproduced match/);
   assert.match(fresh,/Confirmed by matching reproduced build/);
   assert.match(fresh.replace(/<[^>]+>/g, ''),/Hub’s own check:Not checked yet/);

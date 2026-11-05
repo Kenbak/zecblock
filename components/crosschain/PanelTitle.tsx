@@ -3,17 +3,23 @@ import type { ReactNode } from "react";
 /** Card title matching ChartCard, for list and table panels without a chart watermark. */
 export function PanelTitle({
   title,
+  icon,
   controls,
   className = "",
 }: {
   title: string;
+  icon?: ReactNode;
   controls?: ReactNode;
   className?: string;
 }) {
   return (
     <div className={`flex items-start sm:items-center justify-between gap-2 sm:gap-3 flex-wrap ${className}`}>
       <div className="flex items-center gap-2 min-w-0">
-        <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{">"}</span>
+        {icon ? (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>
+        ) : (
+          <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{">"}</span>
+        )}
         <h2 className="text-sm font-medium font-mono text-secondary lowercase tracking-tight truncate">{title}</h2>
       </div>
       {controls}

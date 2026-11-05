@@ -8,6 +8,7 @@ import { getApiUrl } from '@/lib/api-config';
 import { Card, CardBody, Badge, DataTable, HashLink, EmptyState, type DataTableColumn } from '@/components/ui';
 
 import { BlockFirstSeen, BLOCK_FIRST_SEEN_EXPLANATION } from '@/components/BlockFirstSeen';
+import { PoolLogo } from '@/components/PoolLogo';
 import { ExportButton } from '@/components/ExportButton';
 import { SortableDataTable, type SortableColumn } from '@/components/ui/SortableDataTable';
 
@@ -338,8 +339,8 @@ export default function UnclesPage() {
       ? 'bg-cipher-orange/10 text-cipher-orange border-cipher-orange/30'
       : 'bg-cipher-green/10 text-cipher-green border-cipher-green/30';
     const content = (
-      <span className={`inline-flex items-center px-2.5 py-1 rounded-md text-xs font-mono font-semibold border ${colorClass}`}>
-        {pool}
+      <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-mono font-semibold border ${colorClass}`}>
+        <PoolLogo name={pool!} />{pool}
       </span>
     );
     if (url) {
@@ -620,11 +621,11 @@ export default function UnclesPage() {
                             <span className="text-xs text-muted">—</span>
                           )
                         ) : block.minerAddress ? (
-                          <Link href={`/address/${block.minerAddress}`} prefetch={false} className="text-xs font-mono text-cipher-gold hover:underline truncate block max-w-[120px]" title={block.minerAddress} onClick={e => e.stopPropagation()}>
-                            {block.minerPool}
+                          <Link href={`/address/${block.minerAddress}`} prefetch={false} className="inline-flex items-center gap-2 max-w-[150px] text-xs font-mono text-cipher-gold hover:underline" title={block.minerAddress} onClick={e => e.stopPropagation()}>
+                            <PoolLogo name={block.minerPool!} /><span className="truncate">{block.minerPool}</span>
                           </Link>
                         ) : (
-                          <span className="text-xs font-mono text-cipher-gold">{block.minerPool}</span>
+                          <span className="inline-flex items-center gap-2 text-xs font-mono text-cipher-gold"><PoolLogo name={block.minerPool!} />{block.minerPool}</span>
                         )}
                       </td>
                       <td className="px-4 h-[44px] border-b border-cipher-border">

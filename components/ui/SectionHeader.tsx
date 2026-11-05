@@ -75,12 +75,13 @@ const LABEL_SIZE = {
 /**
  * SectionHeader — the standard in-page section header.
  *
- * Renders `> LABEL` in mono with an optional live-pulse dot and a right-side
+ * Renders a label with an optional category icon, live-pulse dot and right-side
  * actions slot (filters, period pills, icon buttons). Matches the pattern
  * used on /mining, /pools, /mempool.
  */
 export function SectionHeader({
   label,
+  icon,
   live = false,
   actions,
   size = 'sm',
@@ -88,6 +89,8 @@ export function SectionHeader({
 }: {
   /** Mono uppercase section label, e.g. "POOL_RANKING" */
   label: string;
+  /** Optional decorative category marker; other sections retain the standard chevron. */
+  icon?: ReactNode;
   /** Show a green pulsing dot after the label (live data sections) */
   live?: boolean;
   actions?: ReactNode;
@@ -98,7 +101,11 @@ export function SectionHeader({
   return (
     <div className={`flex items-start sm:items-center justify-between gap-2 mb-4 flex-wrap ${className}`}>
       <div className="flex items-center gap-2">
-        <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50">{'>'}</span>
+        {icon ? (
+          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>
+        ) : (
+          <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{'>'}</span>
+        )}
         <h2 className={`${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
           {label}
         </h2>

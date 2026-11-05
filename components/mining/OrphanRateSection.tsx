@@ -6,6 +6,8 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui';
 import { useUrlState } from '@/lib/use-url-state';
 import { SortableDataTable } from '@/components/ui/SortableDataTable';
+import { PoolLogo } from '@/components/PoolLogo';
+import { ReorgSectionIcon } from '@/components/icons/home-section';
 
 type Period = '24h' | '7d' | '30d' | 'pre-nu7' | 'nu7';
 const PERIOD_LABELS: Record<Period, string> = { '24h': '24h', '7d': '7d', '30d': '30d', 'pre-nu7': 'Before NU7', nu7: 'Since NU7' };
@@ -59,7 +61,7 @@ export function OrphanRateSection() {
   return (
     <section id="orphans" className="scroll-mt-36 mb-12">
       <Card><CardBody>
-        <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
+        <SectionHeader label="OBSERVED_ORPHAN_RATE" icon={<ReorgSectionIcon />} actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
         <p className="text-sm text-muted mb-4">
           {data?.method === 'observed-block-capture-v2'
             ? 'Observed blocks outside the current canonical chain, including captured competing blocks and blocks removed by reorgs, as a share of canonical blocks plus observed orphans.'
@@ -92,7 +94,7 @@ export function OrphanRateSection() {
             {selected.unavailableReason === 'capture-began-after-activation' ? <p className="text-sm text-muted py-4">Competing-block capture began after NU7 activated on this network, so there is no comparable before-NU7 window.</p>
               : selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
               <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${PERIOD_LABELS[selected.period]}`} columns={[
-                { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="font-mono text-xs text-primary">{pool.name}</span> },
+                { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="inline-flex items-center gap-2 font-mono text-xs text-primary"><PoolLogo name={pool.name} />{pool.name}</span> },
                 { id: 'canonical', header: 'Canonical blocks', align: 'right', sortValue: pool => pool.canonicalBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.canonicalBlocks.toLocaleString()}</span> },
                 { id: 'orphans', header: 'Observed orphans', align: 'right', sortValue: pool => pool.orphanedBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
                 { id: 'rate', header: 'Observed rate', align: 'right', sortValue: pool => pool.rate, cell: pool => <span className="font-mono text-xs tabular-nums">{percent(pool.rate)}</span> },

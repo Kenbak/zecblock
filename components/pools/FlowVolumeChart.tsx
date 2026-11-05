@@ -22,6 +22,7 @@ import { getFlowColors } from '@/lib/flow-colors';
 import { formatZecCompact } from '@/lib/format-numbers';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
+import { TransactionSectionIcon } from '@/components/icons/home-section';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useUrlState } from '@/lib/use-url-state';
 
@@ -221,6 +222,7 @@ export function FlowVolumeChart() {
   return (
     <ShareableCard
       title="Public flows into and out of pools"
+      icon={<TransactionSectionIcon />}
       sourceHeight={0}
       isLive={false}
       shareText={shareText}

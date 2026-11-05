@@ -25,6 +25,8 @@ import { PageSectionNav } from '@/components/PageSectionNav';
 import { MiningMetricsChart } from '@/components/network/MiningMetricsChart';
 import { NetworkHashrateChart } from '@/components/network/NetworkHashrateChart';
 import { zatToZec } from '@/lib/format-numbers';
+import { PoolLogo } from '@/components/PoolLogo';
+import { MiningSectionIcon, RankingSectionIcon } from '@/components/icons/home-section';
 import { useUrlState } from '@/lib/use-url-state';
 import { ExportButton } from '@/components/ExportButton';
 import { zatToZecString } from '@/lib/csv';
@@ -59,7 +61,7 @@ interface PoolDist {
 
 interface PoolRank {
   rank: number;
-  address: string;
+  address: string | null;
   name: string;
   url: string | null;
   region: string | null;
@@ -161,7 +163,7 @@ function DistributionSection() {
   return (
     <section id="distribution" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-2">
       <Card><CardBody>
-        <SectionHeader label="MINING_POOL_DISTRIBUTION" actions={<PeriodSelector value={period} onChange={setPeriod} />} />
+        <SectionHeader label="MINING_POOL_DISTRIBUTION" icon={<MiningSectionIcon />} actions={<PeriodSelector value={period} onChange={setPeriod} />} />
         {loading ? (
           <ChartSkeleton height={360} />
         ) : (
@@ -206,7 +208,7 @@ function RankingSection() {
     <section id="ranking" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-3">
       <Card>
         <CardBody>
-          <SectionHeader label="POOL_RANKING" actions={
+          <SectionHeader label="POOL_RANKING" icon={<RankingSectionIcon />} actions={
             <div className="flex flex-wrap items-center gap-2">
               <PeriodSelector value={period} onChange={setPeriod} />
               {ranking.length > 0 && (
@@ -216,7 +218,7 @@ function RankingSection() {
                   filename={`zecblock-pool-ranking-${period}`}
                   csvHeaders={['Rank', 'Pool', 'Payout address', 'Region', 'Blocks', 'Share (fraction of blocks)', 'Average block interval (s)', 'Total fees (ZEC)']}
                   csvMapper={(pool: PoolRank) => [
-                    String(pool.rank), pool.name, pool.address, pool.region ?? '', String(pool.blocks), String(pool.share),
+                    String(pool.rank), pool.name, pool.address ?? '', pool.region ?? '', String(pool.blocks), String(pool.share),
                     String(pool.avgBlockInterval ?? ''), zatToZecString(pool.totalFeesZat),
                   ]}
                 />
@@ -244,6 +246,7 @@ function RankingSection() {
                     header: 'Pool',
                     cell: (pool) => (
                       <div className="flex items-center gap-2">
+                        <PoolLogo name={pool.name} />
                         <div
                           className="w-2 h-2 rounded-full flex-shrink-0"
                           style={{ backgroundColor: categoryColor(pool.name, theme) }}
@@ -308,7 +311,7 @@ function RankingSection() {
                   },
                 ]}
                 rows={ranking}
-                rowKey={(pool) => `${pool.rank}:${pool.name}:${pool.address}`}
+                rowKey={(pool) => pool.name}
               />
               <p className="text-caption text-muted font-mono mt-3">
                 {total.toLocaleString()} total blocks in {period}

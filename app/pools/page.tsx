@@ -17,6 +17,7 @@ import {
 import { Card, CardBody } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui';
 import { ShieldFlowBadge } from '@/components/ShieldFlowBadge';
+import { TransactionSectionIcon } from '@/components/icons/home-section';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
@@ -69,6 +70,7 @@ function RecentLargeFlows() {
       <CardBody>
         <SectionHeader
           label="RECENT_PUBLIC_FLOWS"
+          icon={<TransactionSectionIcon />}
           actions={
             <Link
               href="/txs?type=shielded"

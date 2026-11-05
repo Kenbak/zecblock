@@ -74,11 +74,26 @@ test('observer locations expose only known cities, never names or other networks
     { network: 'mainnet', observer: 'mystery', healthy: true },
   ]);
   assert.deepEqual(out.locations, [
-    { city: 'Helsinki', collecting: true }, { city: 'New York', collecting: true }, { city: 'Sydney', collecting: false },
+    { city: 'Helsinki', operator: null, collecting: true }, { city: 'New York', operator: null, collecting: true },
+    { city: 'Sydney', operator: null, collecting: false },
   ]);
   assert.equal(out.unlistedObservers, 2);
   assert.ok(!/mystery|do-|local-node/.test(JSON.stringify(out)));
   assert.deepEqual(observerLocations(null), { locations: [], unlistedObservers: 0 });
+});
+
+test('partner observers carry the operator name and stay apart from our same-city observer', () => {
+  const out = observerLocations([
+    { network: 'mainnet', observer: 'ext-zcashpools-sin', healthy: true },
+    { network: 'mainnet', observer: 'do-sgp1', healthy: true },
+    { network: 'mainnet', observer: 'ext-zcashpools-use1', healthy: false },
+  ]);
+  assert.deepEqual(out.locations, [
+    { city: 'Singapore', operator: null, collecting: true },
+    { city: 'Northern Virginia', operator: 'zecminingpool.com', collecting: false },
+    { city: 'Singapore', operator: 'zecminingpool.com', collecting: true },
+  ]);
+  assert.ok(!/\d+\.\d+\.\d+\.\d+|ext-zcashpools/.test(JSON.stringify(out)), 'no IPs or internal names');
 });
 
 test('public rate route returns snapshots and fails closed without leaking database errors', async t => {
@@ -140,7 +155,7 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
   const captured = await orphanRates(db);
   assert.equal(captured.periods[0].orphanedBlocks, 3, 'new competitor counted, duplicate/canonical/ahead excluded');
   assert.equal(captured.capture.status, 'collecting');
-  assert.deepEqual(captured.capture.locations, [{ city: 'Helsinki', collecting: true }]);
+  assert.deepEqual(captured.capture.locations, [{ city: 'Helsinki', operator: null, collecting: true }]);
   assert.equal(captured.capture.unlistedObservers, 1);
   assert.ok(!JSON.stringify(captured).includes('do-unknown9'), 'observer names stay private');
   await db.query(`UPDATE blocks SET hash='new-competitor' WHERE height=1`);
@@ -150,7 +165,7 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
     UPDATE block_capture_observers SET heartbeat_at=now()-interval '1 minute'`);
   const stale = await orphanRates(db);
   assert.equal(stale.capture.status, 'unavailable');
-  assert.deepEqual(stale.capture.locations, [{ city: 'Helsinki', collecting: false }]);
+  assert.deepEqual(stale.capture.locations, [{ city: 'Helsinki', operator: null, collecting: false }]);
   // A hash becoming canonical again must disappear from both network and pool losses.
   await db.query(`INSERT INTO blocks VALUES(8,'observed',floor(extract(epoch FROM now()))::bigint-10,null,null)`);
   const restored = await orphanRates(db);

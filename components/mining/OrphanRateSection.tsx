@@ -33,7 +33,8 @@ interface OrphanRates {
   capture?: {
     startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string;
     /** Public city per known observer; names, endpoints and IPs are never served. */
-    locations?: { city: string; collecting: boolean }[];
+    /** operator is null for ZecBlock's own observers, else the partner that runs the node. */
+    locations?: { city: string; operator?: string | null; collecting: boolean }[];
     unlistedObservers?: number;
   };
   asOf: string;
@@ -53,17 +54,19 @@ function utc(value: string) {
   return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
-const CITY_LIST = new Intl.ListFormat('en', { style: 'long', type: 'conjunction' });
+// en-GB lists have no serial comma: "Singapore and Sydney".
+const CITY_LIST = new Intl.ListFormat('en-GB', { style: 'long', type: 'conjunction' });
 
 /** "Observed from Helsinki, New York and Sydney (Singapore paused)." or null when no location is known. */
 function observedFrom(capture: NonNullable<OrphanRates['capture']>): string | null {
   const locations = capture.locations ?? [];
   if (!locations.length) return null;
-  const paused = locations.filter(l => !l.collecting).map(l => l.city);
-  const others = capture.unlistedObservers ?? 0;
-  const cities = locations.map(l => l.city);
-  if (others > 0) cities.push(`${others} other observer${others === 1 ? '' : 's'}`);
-  return `Observed from ${CITY_LIST.format(cities)}; a competing block counts if any of them received it${paused.length ? ` (currently not collecting: ${CITY_LIST.format(paused)})` : ''}.`;
+  const own = locations.filter(l => !l.operator).map(l => l.city);
+  const partners = new Map<string, string[]>();
+  for (const l of locations) if (l.operator) partners.set(l.operator, [...(partners.get(l.operator) ?? []), l.city]);
+  const parts = own.length ? [CITY_LIST.format(own)] : [];
+  for (const [operator, cities] of partners) parts.push(`${parts.length ? 'plus ' : ''}${CITY_LIST.format(cities)} via ${operator}`);
+  return `Observed from ${parts.join(', ')}.`;
 }
 
 export function OrphanRateSection() {

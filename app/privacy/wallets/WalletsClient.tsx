@@ -18,6 +18,7 @@ import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/SectionHeader';
 import { PageSectionNav } from '@/components/PageSectionNav';
+import { WalletImplementationLogo } from '@/components/WalletImplementationLogo';
 import { useUrlState } from '@/lib/use-url-state';
 
 const SECTIONS = [
@@ -357,7 +358,10 @@ function WalletCard({ wallet }: { wallet: WalletFingerprint }) {
           <svg aria-hidden="true" className="w-4 h-4 mt-0.5 shrink-0 text-muted transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" strokeWidth="1.5" /></svg>
           <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(12rem,1.1fr)_2fr] lg:gap-6">
             <div>
-              <span className="text-sm font-medium text-primary">{wallet.name}</span>
+              <div className="flex items-center gap-2.5">
+                <WalletImplementationLogo name={wallet.name} />
+                <span className="min-w-0 text-sm font-medium text-primary">{wallet.name}</span>
+              </div>
               {wallet.nym && wallet.nym !== 'none' && <span className="block mt-1 text-caption text-muted">{wallet.nym === 'supported' ? 'Nym supported' : 'Nym · partial support'}</span>}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">

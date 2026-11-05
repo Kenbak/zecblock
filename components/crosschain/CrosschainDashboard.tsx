@@ -598,6 +598,9 @@ export function CrosschainDashboard({
           available in the swap explorer but excluded from the external-route
           analytics.
         </p>
+        <p>
+          Dash logo by <a href="https://www.dash.org/brand-guidelines/" className="underline">Dash</a>, used unchanged under <a href="https://creativecommons.org/licenses/by/4.0/" className="underline">CC BY 4.0</a>.
+        </p>
         <a
           href={venue === "near" ? "https://docs.near-intents.org/api-reference/get-transactions" : venue === "maya" ? "https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/connecting-to-mayachain" : "https://dev.thorchain.org/concepts/connecting-to-thorchain.html"}
           className="text-cipher-gold hover:underline"

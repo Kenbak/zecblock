@@ -70,6 +70,7 @@ function detailHarness({ version = 3, torNodes = 4, torClassificationAvailable }
     '@/components/ui/Card': { Card: 'Card', CardBody: 'CardBody' },
     '@/components/ExportButton': { ExportButton: () => null },
     '@/components/ui/SectionHeader': { PageHeader: 'PageHeader', SectionHeader: 'SectionHeader' },
+    '@/components/icons/home-section': load('components/icons/home-section.tsx', { 'react/jsx-runtime': { jsx, jsxs: jsx } }),
     '@/components/network/NodeMapExplorer': { NodeMapExplorer: 'NodeMapExplorer' },
     '@/lib/network-colors': { clientLabel: value => value, clientColor: () => 'gold' },
     '@/components/ui/RadialGauge': { scoreColor: () => 'gold' },

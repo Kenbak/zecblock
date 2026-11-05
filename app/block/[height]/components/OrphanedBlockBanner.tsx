@@ -3,6 +3,7 @@ import { BlockFirstSeen, BLOCK_FIRST_SEEN_EXPLANATION } from '@/components/Block
 import { formatRelativeTime } from '@/lib/utils';
 import { Badge } from '@/components/ui/Badge';
 import { HashLink } from '@/components/ui/HashLink';
+import { PoolLogo } from '@/components/PoolLogo';
 import type { BlockData } from './types';
 
 export function OrphanedBlockBanner({ data }: { data: BlockData }) {
@@ -34,7 +35,8 @@ export function OrphanedBlockBanner({ data }: { data: BlockData }) {
             <div className="mt-2 space-y-1.5">
               <BlockFirstSeen value={data.firstSeenAt} />
               <HashLink value={data.hash} lead={10} tail={6} copy={false} linkClassName="text-xs font-mono text-cipher-orange block" />
-              <div className="text-xs font-mono text-secondary">
+              <div className="flex items-center gap-1.5 text-xs font-mono text-secondary">
+                {data.minerPool && !data.minerPoolIsFundingStream && <PoolLogo name={data.minerPool} />}
                 {data.minerPool ? (
                   data.minerPoolUrl ? (
                     <a href={data.minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-cipher-orange hover:underline">{data.minerPool}</a>
@@ -69,7 +71,8 @@ export function OrphanedBlockBanner({ data }: { data: BlockData }) {
                   copy={false}
                   linkClassName="text-xs font-mono text-cipher-green hover:underline block"
                 />
-                <div className="text-xs font-mono text-secondary">
+                <div className="flex items-center gap-1.5 text-xs font-mono text-secondary">
+                  {data.canonicalBlock.minerPool && !data.canonicalBlock.minerPoolIsFundingStream && <PoolLogo name={data.canonicalBlock.minerPool} />}
                   {data.canonicalBlock.minerPool ? (
                     data.canonicalBlock.minerPoolUrl ? (
                       <a href={data.canonicalBlock.minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-cipher-green hover:underline">{data.canonicalBlock.minerPool}</a>

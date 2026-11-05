@@ -18,6 +18,7 @@ import { CURRENCY, isTestnet } from '@/lib/config';
 import { scheduledSeconds, type BlockSchedule } from '@/lib/block-timing';
 import { Tabs } from '@/components/ui/Tabs';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
+import { PoolLogo } from '@/components/PoolLogo';
 
 interface Block {
   software?: MiningSoftware;
@@ -50,7 +51,10 @@ function MinerIdentity({ block }: { block: Block }) {
   const software = block.software ?? classifyMiningSoftware(block.coinbase_hex);
   return (
     <div className="font-mono text-xs">
-      <p className={block.miner_pool ? 'text-primary' : 'text-muted'}>{block.miner_pool || 'Unattributed'}</p>
+      <p className={`flex items-center gap-1.5 ${block.miner_pool ? 'text-primary' : 'text-muted'}`}>
+        {block.miner_pool && <PoolLogo name={block.miner_pool} />}
+        {block.miner_pool || 'Unattributed'}
+      </p>
       <p className="mt-1 text-muted" title="Self-reported coinbase marker; not authenticated software identity">
         {getMiningSoftwareEmoji(software)} {SOFTWARE_LABELS[software]}
       </p>
@@ -147,7 +151,7 @@ function blockColumns(blocks: Block[], trailingBlock: Block | null, schedule: Bl
         return (
           <div className="flex items-center gap-1.5">
             {block.miner_pool ? (
-              <span className="text-xs font-mono text-primary">{block.miner_pool}</span>
+              <><PoolLogo name={block.miner_pool} /><span className="text-xs font-mono text-primary">{block.miner_pool}</span></>
             ) : (
               <span className="text-xs font-mono text-muted" title="No identified mining pool; the payout may be shielded">Unattributed</span>
             )}

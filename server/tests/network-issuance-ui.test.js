@@ -15,8 +15,10 @@ function load(file, dependencies = {}) {
 }
 
 const cards = load('components/ui/Card.tsx');
+const sectionIcons = load('components/icons/home-section.tsx');
 const { HalvingPanel } = load('components/network/HalvingPanel.tsx', {
   '@/components/ui/Card': cards,
+  '@/components/icons/home-section': sectionIcons,
   '@/lib/format-numbers': load('lib/format-numbers.ts'),
 });
 const unavailable = {
@@ -37,6 +39,7 @@ test('issuance copy describes observed cadence and keeps missing allocations una
     '@/components/ui/Card': cards,
     '@/components/ui/Skeleton': { Skeleton: () => null },
     '@/components/ui/SectionHeader': { SectionHeader: () => null },
+    '@/components/icons/home-section': sectionIcons,
     './HalvingPanel': { HalvingPanel },
     './SupplyIssuanceChart': { SupplyIssuanceChart: () => null },
     '@/lib/config': { CURRENCY: 'TAZ' },

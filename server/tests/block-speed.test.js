@@ -487,7 +487,25 @@ test('blocks-per-day view keeps the NU7 marker and clips irregular testnet days 
 test('NU7 cards draw only authoritative facts', () => {
   const cards = load('lib/nu7-cards.ts');
   assert.equal(cards.zatHeadline('811560160', 'TAZ'), '8.11 TAZ');
-  assert.equal(cards.zatHeadline('-1', 'ZEC'), '-0.00 ZEC');
+  assert.equal(cards.zatHeadline('-1', 'ZEC'), '-0.0000 ZEC');
+  assert.equal(cards.zatHeadline('1467004', 'ZEC'), '0.0146 ZEC', 'early NSM growth is truncated, not flattened to 0.01');
+  assert.equal(cards.zatHeadline('36859912524', 'ZEC'), '368.59 ZEC');
+
+  // Minutes after activation the NU7 side is the pace so far, never a "7-day average".
+  const window = (from, to, intervals, averageSeconds) => ({ fromHeight: 1, toHeight: 1 + intervals, fromTimestamp: from, toTimestamp: to, intervals,
+    averageSeconds, medianSeconds: averageSeconds, p90Seconds: averageSeconds, targetSeconds: 25 });
+  const day = (date, blocks) => ({ key: date, date, nu7: false, kind: 'measured', averageSeconds: 86400 / blocks, targetSeconds: 75, lastHeight: 1, blocks });
+  const early = cards.blocksCard({ network: 'mainnet', phase: 'active', before: window(0, 604800, 8021, 75.4), after: window(1000, 1000 + 4100, 83, 49.4),
+    points: [day('2026-11-04', 1146), day('2026-11-05', 1151)], irregular: null, activation: null, testnetNu7: null, tipHeight: 1 });
+  assert.equal(early.headline, '1,146 → 1,749');
+  assert.equal(early.caption, 'blocks per day, NU7 pace so far');
+  assert.equal(early.detail, '7-day average before NU7 → first 83 NU7 blocks (1.1 h); target 3,456 a day.');
+  assert.doesNotMatch(early.detail, /7-day averages/);
+  assert.deepEqual(early.visual.bars.at(-1), { value: 1749, nu7: true, projected: true }, 'the NU7 pace so far is an outlined gold bar');
+  const week = cards.blocksCard({ network: 'mainnet', phase: 'active', before: window(0, 604800, 8021, 75.4), after: window(0, 8 * 86400, 27000, 25.6),
+    points: [day('2026-11-05', 1151), { ...day('2026-11-07', 3375), nu7: true }], irregular: null, activation: null, testnetNu7: null, tipHeight: 1 });
+  assert.equal(week.detail, 'Measured 7-day averages before NU7 and with NU7.');
+  assert.equal(week.visual.bars.filter(bar => bar.projected).length, 0, 'full NU7 days replace the pace-so-far bar');
   assert.equal(cards.nsmCard('mainnet', { reserve: { growthSinceNu7Zat: null } }), null, 'no NSM card before activation');
   assert.equal(cards.readinessCard('mainnet', { referenceUpgrade: 'NU6.3', readinessPct: 100, totalActive: 5 }), null, 'old NU6.3 readiness is never shown as NU7');
   const ready = cards.readinessCard('mainnet', { referenceUpgrade: 'NU7', latestProtocol: 170190, readinessPct: 61.3, latestCount: 285, totalActive: 465 });

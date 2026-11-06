@@ -5605,6 +5605,42 @@
   },
   {
     "method": "GET",
+    "path": "/v1/uncles/observed",
+    "description": "Competing blocks the observer network saw lose the race without a reorg on the main node.",
+    "category": "reorgs",
+    "query": [
+      "limit",
+      "offset"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Node-validated captured blocks at an indexed height whose canonical block differs, excluding hashes that are canonical now and hashes already in /v1/uncles (reorg archives and external reports), so the two lists never overlap. Together with indexer reorg archives these make up the orphans counted by /v1/mining/orphan-rates, which uses 24h/7d/30d header-time windows. Each item has height, hash, header timestamp, firstSeenAt (earliest capture receipt), observerCount (observer nodes that received it), minerAddress, minerPool, minerPoolUrl and canonicalBlock (hash, header timestamp, miner, firstSeenAt). Observer names and endpoints are never served. Ordered by height descending; limit 1–200 (default 50) and offset up to 50,000. Coverage depends on observer availability and is not network-complete. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/uncles/forks",
     "description": "Detected chain forks.",
     "category": "reorgs",
@@ -5704,7 +5740,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "totalOrphanedBlocks counts every row in /v1/uncles since indexing began (reorgs on the main node and external reports, including hashes later restored). Additive observerOnlyOrphanedBlocks counts /v1/uncles/observed and observerCaptureStartedAt is when competing-block capture began; both are null when capture data is unavailable. These are all-time counts, unlike the windowed /v1/mining/orphan-rates.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

@@ -383,6 +383,10 @@
     "limit",
     "offset"
   ],
+  "GET /v1/uncles/observed": [
+    "limit",
+    "offset"
+  ],
   "GET /v1/uncles/forks": [
     "limit",
     "offset"

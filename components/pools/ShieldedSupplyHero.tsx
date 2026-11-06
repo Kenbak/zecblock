@@ -160,8 +160,8 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
               </defs>
               <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="2 6" opacity={0.5} />
               <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} ticks={axis.ticks} tickFormatter={axis.format}
-                tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 11 }} minTickGap={32} interval="preserveStartEnd" />
-              <YAxis orientation="right" width={56} tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 11 }} tickCount={4}
+                tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} minTickGap={32} interval="preserveStartEnd" />
+              <YAxis orientation="right" width={56} tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} tickCount={4}
                 tickFormatter={yFormat} domain={metric === 'share' ? ['auto', 'auto'] : [0, 'auto']} />
               <Tooltip content={<ScrubReporter onScrub={onScrub} />} cursor={{ stroke: colors.axis, strokeWidth: 1, strokeDasharray: '2 4' }} isAnimationActive={false} />
               {metric === 'total' && <Area type="monotone" dataKey="shielded" stroke={colors.shielded} strokeWidth={1.75} fill="url(#shieldedFade)" dot={false}

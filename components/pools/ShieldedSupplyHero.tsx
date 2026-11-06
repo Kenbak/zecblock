@@ -10,11 +10,11 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { useUrlState } from '@/lib/use-url-state';
 import { ShareableCard } from '@/components/ShareableCard';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
-import { PoolCurrencyNote, usePoolCurrency } from './PoolCurrency';
+import { PoolCurrencyNote, PoolCurrencyToggle, usePoolCurrency } from './PoolCurrency';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import type { HistoryPoint } from './supply-history';
 import { buildTopLevelSegments, MAX_SUPPLY_ZAT, SHIELDED_POOL_KEYS, type ShieldedPoolKey } from './supply-treemap-layout';
 import type { PoolOverviewData } from './PoolOverviewHero';
-import { isMainnet } from '@/lib/config';
 
 type Range = '30d' | '90d' | '1y' | 'all';
 type Metric = 'total' | 'pools' | 'public' | 'share';
@@ -48,21 +48,10 @@ function ScrubReporter({ active, label, onScrub }: { active?: boolean; label?: n
   return null;
 }
 
-function Pill({ active, onClick, children, label, disabled }: { active: boolean; onClick: () => void; children: React.ReactNode; label?: string; disabled?: boolean }) {
-  return <button type="button" aria-pressed={active} title={label} disabled={disabled} onClick={onClick}
-    className={`h-7 rounded-full px-3 text-caption font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold disabled:cursor-not-allowed disabled:opacity-40 ${active ? 'bg-glass-6 text-primary' : 'text-muted hover:text-primary'}`}>
-    {children}
-  </button>;
-}
-
-function PillGroup({ label, children }: { label: string; children: React.ReactNode }) {
-  return <div role="group" aria-label={label} className="inline-flex items-center rounded-full border border-cipher-border p-0.5">{children}</div>;
-}
-
 export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const { currency, setCurrency, price, format } = usePoolCurrency();
+  const { currency, price, format } = usePoolCurrency();
   const [range, setRange] = useUrlState<Range>('range', 'all', RANGES);
   const [metric, setMetric] = useState<Metric>('total');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -138,11 +127,9 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2" data-html2canvas-ignore="true">
-          <PillGroup label="Chart metric">{METRICS.map(m => <Pill key={m.key} active={metric === m.key} onClick={() => setMetric(m.key)}>{m.label}</Pill>)}</PillGroup>
-          <PillGroup label="Time range">{RANGES.map(r => <Pill key={r} active={range === r} onClick={() => { setRange(r); setActiveIndex(null); }}>{r === 'all' ? 'All' : r.toUpperCase()}</Pill>)}</PillGroup>
-          {isMainnet && <PillGroup label="Currency">{(['zec', 'usd'] as const).map(c => <Pill key={c} active={currency === c} disabled={c === 'usd' && price == null && currency !== 'usd'}
-            label={c === 'usd' ? price == null ? 'A fresh ZEC price is currently unavailable' : 'Value balances at the current ZEC price' : 'Balances in ZEC'}
-            onClick={() => setCurrency(c)}>{c.toUpperCase()}</Pill>)}</PillGroup>}
+          <PeriodPillTags options={METRICS.map(m => ({ key: m.key, label: m.label }))} value={metric} onChange={setMetric} aria-label="Chart metric" />
+          <PeriodPillTags options={RANGES.map(r => ({ key: r, label: r === 'all' ? 'All' : r.toUpperCase() }))} value={range} onChange={r => { setRange(r); setActiveIndex(null); }} aria-label="Time range" />
+          <PoolCurrencyToggle />
         </div>
       </div>
 

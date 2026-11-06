@@ -78,7 +78,7 @@ router.get('/api/pools/overview', async (req, res) => {
 
       const deltas = await pool.query(`
         SELECT date,
-               sprout_pool_size, sapling_pool_size, orchard_pool_size,
+               sprout_pool_size, sapling_pool_size, orchard_pool_size, ironwood_pool_size,
                transparent_pool_size, pool_size, chain_supply
         FROM privacy_trends_daily
         WHERE date IN (CURRENT_DATE - 1, CURRENT_DATE - 7, CURRENT_DATE - 30)

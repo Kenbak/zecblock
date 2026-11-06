@@ -29,3 +29,4 @@ export { EmptyState, SkeletonTable } from './EmptyState';
 export { DataTable, type DataTableColumn } from './DataTable';
 export { Tabs } from './Tabs';
 export { SegmentedToggle } from './SegmentedToggle';
+export { Select } from './Select';

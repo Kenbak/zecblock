@@ -17,6 +17,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/SectionHeader';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { WalletImplementationLogo } from '@/components/WalletImplementationLogo';
 import { useUrlState } from '@/lib/use-url-state';
@@ -116,18 +117,11 @@ export default function WalletsClient() {
         title="Zcash Wallet Signals"
         subtitle="Fee patterns, observable wallet signals and their limits. Matches describe transaction behavior, not identified users."
         actions={
-          <div className="filter-group">
-            {PERIODS.map(p => (
-              <button
-                key={p}
-                aria-pressed={period === p}
-                onClick={() => setPeriod(p)}
-                className={`filter-btn ${period === p ? 'filter-btn-active' : ''}`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          <PeriodPillTags
+            options={PERIODS.map(p => ({ key: p, label: p }))}
+            value={period}
+            onChange={setPeriod}
+          />
         }
       />
 

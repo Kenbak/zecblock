@@ -1,6 +1,7 @@
 'use client';
 
 import Link from 'next/link';
+import { FilterGroup, FilterButton } from '@/components/ui/FilterGroup';
 
 export function SegmentedControl<T extends string>({
   options,
@@ -14,25 +15,13 @@ export function SegmentedControl<T extends string>({
   className?: string;
 }) {
   return (
-    <div
-      className={`flex w-full rounded-lg border border-cipher-border/35 bg-glass-3/50 p-1 sm:w-auto sm:gap-1.5 sm:rounded-none sm:border-0 sm:bg-transparent sm:p-0 ${className}`}
-    >
+    <FilterGroup inline className={className}>
       {options.map(({ id, label }) => (
-        <button
-          key={id}
-          type="button"
-          onClick={() => onChange(id)}
-          aria-pressed={value === id}
-          className={`flex-1 rounded-md py-1.5 text-caption font-mono transition sm:flex-none sm:rounded-full sm:border sm:px-2.5 sm:py-0.5 sm:text-caption ${
-            value === id
-              ? 'bg-glass-6 text-primary shadow-sm sm:border-cipher-border sm:bg-glass-6 sm:shadow-none'
-              : 'text-muted hover:text-primary sm:border-cipher-border/50 sm:hover:border-cipher-border'
-          }`}
-        >
+        <FilterButton key={id} active={value === id} onClick={() => onChange(id)}>
           {label}
-        </button>
+        </FilterButton>
       ))}
-    </div>
+    </FilterGroup>
   );
 }
 

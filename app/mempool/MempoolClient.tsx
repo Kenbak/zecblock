@@ -14,6 +14,8 @@ import { TxTypeBadge, resolveTxCategory, type TxCategory } from '@/components/ui
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
 import { MetricCard } from '@/components/ui/MetricCard';
 import { HashLink } from '@/components/ui/HashLink';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
+import { FilterGroup, FilterButton } from '@/components/ui/FilterGroup';
 import { MempoolBubbles, type MempoolBubblesHandle } from '@/components/MempoolBubbles';
 import { MempoolTreemap, type MempoolTreemapHandle } from '@/components/MempoolTreemap';
 import { ExportButton } from '@/components/ExportButton';
@@ -203,29 +205,28 @@ export default function MempoolClient() {
           actions={
             <>
             {/* Visualization picker — same segmented control as the state pill */}
-            <div className="filter-group flex-shrink-0">
-              {(['bubbles', 'treemap'] as const).map(v => (
-                <button
-                  key={v}
-                  onClick={() => setView(v)}
-                  className={`filter-btn ${view === v ? 'filter-btn-active' : ''}`}
-                >
-                  {v === 'bubbles' ? 'BUBBLES' : 'TREEMAP'}
-                </button>
-              ))}
-            </div>
+            <PeriodPillTags
+              className="flex-shrink-0"
+              aria-label="Mempool visualization"
+              value={view}
+              onChange={setView}
+              options={[
+                { key: 'bubbles', label: 'BUBBLES' },
+                { key: 'treemap', label: 'TREEMAP' },
+              ]}
+            />
             {/* LIVE / PAUSED segmented pill — canonical filter-group pattern */}
-            <div className="filter-group flex-shrink-0">
+            <FilterGroup inline className="flex-shrink-0">
               {([true, false] as const).map(on => (
-                <button
+                <FilterButton
                   key={String(on)}
+                  active={autoRefresh === on}
                   onClick={() => setAutoRefresh(on)}
-                  className={`filter-btn ${autoRefresh === on ? 'filter-btn-active' : ''}`}
                 >
                   {on ? 'LIVE' : 'PAUSED'}
-                </button>
+                </FilterButton>
               ))}
-            </div>
+            </FilterGroup>
             {/* Fullscreen */}
             <button
               onClick={() => (view === 'treemap' ? treemapRef.current : bubblesRef.current)?.toggleFullscreen()}

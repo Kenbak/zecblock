@@ -932,63 +932,72 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
     display: inline-block;
   }
 
-  /* ===== FILTER GROUPS — Terminal Aesthetic ===== */
-  /* Segmented pill control — the one tab/filter pattern app-wide.
-     Matches the period selectors on /mining and the LIVE/PAUSED toggle
-     on /mempool. Active option = gold tint pill. */
+  /* ===== SEGMENTED CONTROLS — the one toggle/filter pattern app-wide ===== */
+  /* Every period selector, display-mode switch and list filter renders with
+     these classes (PeriodPillTags, SegmentedToggle, FilterGroup/FilterButton).
+     32px tall so they line up with <Select>; the active option is a raised
+     neutral chip. Gold stays reserved for links and primary actions. Active
+     weight matches inactive so switching never shifts the layout. */
   .filter-group {
     display: inline-flex;
-    gap: 0;
-    padding: 2px;
-    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    min-height: 32px;
+    max-width: 100%;
+    border-radius: var(--radius-lg);
     background: var(--glass-3);
   }
 
   .filter-btn {
-    padding: 4px 10px;
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    padding: 0 10px;
+    font-size: var(--text-caption);
     font-family: var(--font-geist-mono), monospace;
     font-weight: 500;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
     background: transparent;
     color: var(--color-text-muted);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: color var(--duration-fast) var(--ease-out-expo), background-color var(--duration-fast) var(--ease-out-expo), border-color var(--duration-fast) var(--ease-out-expo), box-shadow var(--duration-fast) var(--ease-out-expo);
+    transition: color var(--duration-fast) var(--ease-out-expo), background-color var(--duration-fast) var(--ease-out-expo), box-shadow var(--duration-fast) var(--ease-out-expo);
   }
 
-  .filter-btn:hover:not(.filter-btn-active):not(.filter-btn-danger):not(.filter-btn-warning) {
+  .filter-btn:hover:not(.filter-btn-active):not(.filter-btn-danger):not(.filter-btn-warning):not(:disabled) {
     color: var(--color-text-primary);
+  }
+
+  .filter-btn:focus-visible {
+    outline: 2px solid var(--color-cipher-gold);
+    outline-offset: 1px;
+  }
+
+  .filter-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
   }
 
   .filter-btn-active {
     background: var(--color-cipher-bg);
     color: var(--color-text-primary);
-    font-weight: 600;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
-    outline: 1px solid var(--glass-12);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15), inset 0 0 0 1px var(--glass-12);
   }
 
   .filter-btn-danger {
     background: var(--filter-danger-bg);
     color: var(--danger);
-    font-weight: 600;
   }
 
   .filter-btn-warning {
     background: var(--filter-warning-bg);
     color: var(--amber-strong);
-    font-weight: 600;
-  }
-
-  @media (min-width: 640px) {
-    .filter-btn {
-      padding: 5px 12px;
-      font-size: 12px;
-    }
   }
 
   /* ===== STATS BAR ===== */

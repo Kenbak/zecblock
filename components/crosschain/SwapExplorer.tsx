@@ -450,7 +450,7 @@ export function SwapExplorer({
             />
           </label>
           <div className="flex items-end gap-3">
-            <button className="filter-btn filter-btn-active py-2" type="submit">
+            <button className="filter-btn filter-btn-active" type="submit">
               Apply filters
             </button>
             <button

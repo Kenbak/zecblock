@@ -5,6 +5,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { readApiData } from '@/lib/api-client';
 import { getApiUrl } from '@/lib/api-config';
 import { CURRENCY } from '@/lib/config';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { AddressGraphSkeleton } from './AddressLoadingSkeleton';
 import { AddressBubbleMap } from './AddressBubbleMap';
 import { connectionNodes, type ConnectionsResponse } from './address-connections';
@@ -45,13 +46,9 @@ export function AddressGraph({ address }: { address: string }) {
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 className="text-base font-semibold text-primary">Explore address connections</h2>
           <p className="mt-2 text-sm text-muted max-w-2xl">Inspect public transaction associations and inferred clusters. These connections do not establish identity or ownership.</p></div>
-        <div className="flex gap-1 rounded-lg border border-cipher-border p-1" aria-label="Connection type">
-          {(['recent', 'cluster'] as const).map(value => <button key={value} type="button" aria-pressed={mode === value}
-            onClick={() => { setMode(value); setSelectedId(null); setQuery(''); }}
-            className={`rounded px-3 py-2 text-xs font-mono transition-colors ${mode === value ? 'bg-cipher-hover text-primary' : 'text-muted hover:text-primary'}`}>
-            {value === 'recent' ? 'Recent connections' : 'Co-spend cluster'}
-          </button>)}
-        </div>
+        <PeriodPillTags aria-label="Connection type" value={mode}
+          onChange={value => { setMode(value); setSelectedId(null); setQuery(''); }}
+          options={(['recent', 'cluster'] as const).map(value => ({ key: value, label: value === 'recent' ? 'Recent connections' : 'Co-spend cluster' }))} />
       </div>
       <div className="mt-5 flex flex-wrap gap-x-5 gap-y-2 text-xs font-mono text-muted">
         <span className="text-secondary">{nodes.length} connected addresses shown</span>

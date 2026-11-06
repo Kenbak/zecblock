@@ -12,6 +12,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useUrlState } from '@/lib/use-url-state';
 import { PanelShareControl, objectRowsCsv } from '@/components/charts/PanelShareControl';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 const BLOCK_TIME_PERIODS = ['6h', '24h', '7d'];
 
@@ -30,11 +31,10 @@ export function BlockTimeChart() {
   const latest = points.at(-1);
   const activation = data?.schedule?.nu7Height;
   const showActivation = activation != null && points.length > 0 && activation >= points[0].height && activation <= points[points.length - 1].height;
-  return <div ref={panelRef}><Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader label="BLOCK_INTERVAL" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2" aria-label="Average block interval period">
+  return <div ref={panelRef}><Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader label="BLOCK_INTERVAL" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2">
     <PanelShareControl title={`Zcash average block interval (${period})`} fileName={`zecblock-block-interval-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!points.length} />
-    {BLOCK_TIME_PERIODS.map(value => <button key={value} type="button" aria-pressed={period === value}
-      className={`filter-btn ${period === value ? 'filter-btn-active' : ''}`}
-      onClick={() => setPeriod(value)}>{value}</button>)}
+    <PeriodPillTags aria-label="Average block interval period" value={period} onChange={setPeriod}
+      options={BLOCK_TIME_PERIODS.map(value => ({ key: value, label: value }))} />
   </div>} />
     <p className="text-caption text-muted mb-4">{latest?.averageSeconds != null ? `${latest.averageSeconds.toFixed(1)}s observed` : 'Observed average unavailable'}
       {' · '}{latest?.targetSeconds != null ? `${latest.targetSeconds}s target` : 'Target unavailable'}</p>

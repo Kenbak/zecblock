@@ -8,6 +8,7 @@ import { useUrlState } from '@/lib/use-url-state';
 import { PageHeader, SectionHeader, DataTable, HashLink, type DataTableColumn } from '@/components/ui';
 import { BLOCK_FIRST_SEEN_EXPLANATION } from '@/components/BlockFirstSeen';
 import { CompetingBlocks, type ForkEvent, type ObservedOrphan, type OrphanedBlock } from '@/components/reorgs/CompetingBlocks';
+import { ForkEventsTable } from '@/components/reorgs/ForkEventsTable';
 import { ForkSummary, WINDOWS, type NodesSummary, type OrphanRates, type ReorgStats, type Window } from '@/components/reorgs/ForkSummary';
 
 const API_URL = getApiUrl();
@@ -30,6 +31,7 @@ interface MonitoredNode {
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'blocks', label: 'Competing blocks' },
+  { id: 'reorg-history', label: 'Reorg history' },
   { id: 'nodes', label: 'Monitored nodes' },
   { id: 'methodology', label: 'Data & definitions' },
 ];
@@ -185,7 +187,22 @@ export default function ForkWatchPage() {
         />
       </section>
 
-      <section id="nodes" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
+      <section id="reorg-history" className="scroll-mt-56 sm:scroll-mt-36 mb-6">
+        <details className="group card p-0 overflow-hidden">
+          <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6">
+            <span className="flex items-center gap-3">
+              <span className="font-mono text-sm text-primary">Reorg history</span>
+              {stats && <span className="text-caption font-mono text-muted">{stats.totalForkEvents.toLocaleString('en-US')} fork events · longest {stats.deepestReorg} block{stats.deepestReorg === 1 ? '' : 's'}</span>}
+            </span>
+            <span className="text-muted group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
+          </summary>
+          <div className="border-t border-cipher-border">
+            <ForkEventsTable forks={forkData?.forks ?? []} />
+          </div>
+        </details>
+      </section>
+
+      <section id="nodes" className="scroll-mt-56 sm:scroll-mt-36 mb-6">
         <details className="group card p-0 overflow-hidden">
           <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-5 py-4 sm:px-6">
             <span className="flex items-center gap-3">

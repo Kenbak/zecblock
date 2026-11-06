@@ -16,6 +16,7 @@ import {
 import { ChartTooltip as RechartsTooltip } from '@/components/charts/ChartTooltip';
 import { ShareableCard } from '@/components/ShareableCard';
 import { PeriodSelector, type Period } from '@/components/privacy/PeriodSelector';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { getChartColors } from '@/lib/chart-theme';
 import { formatTrendDate, normalizeTrendDateKey, parseTrendDate } from '@/lib/privacy-trend-dates';
 
@@ -52,14 +53,6 @@ function filterTrendsByPeriod(daily: TrendDay[], period: Period): TrendDay[] {
     const ms = parseTrendDate(row.date).getTime();
     return !Number.isNaN(ms) && ms >= cutoffMs;
   });
-}
-
-function segmentedClass(active: boolean) {
-  return `px-3 py-2 text-caption font-mono border-b-2 transition whitespace-nowrap ${
-    active
-      ? 'border-cipher-gold text-primary'
-      : 'border-transparent text-muted hover:text-primary'
-  }`;
 }
 
 function chartDescription(view: TrendChartView) {
@@ -170,19 +163,12 @@ export function PrivacyTrendsSection({
         className="mb-4 flex flex-wrap items-center justify-between gap-3"
         data-html2canvas-ignore="true"
       >
-        <div className="inline-flex flex-wrap gap-1">
-          {CHART_VIEWS.map(({ id, label }) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={view === id}
-              onClick={() => onViewChange(id)}
-              className={segmentedClass(view === id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
+        <PeriodPillTags
+          aria-label="Trend chart view"
+          options={CHART_VIEWS.map(({ id, label }) => ({ key: id, label }))}
+          value={view}
+          onChange={onViewChange}
+        />
         <PeriodSelector value={period} onChange={onPeriodChange} />
       </div>
 

@@ -22,6 +22,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { ShareableCard } from '@/components/ShareableCard';
 import { tooltipDate } from '@/lib/chart-dates';
 import { useUrlState } from '@/lib/use-url-state';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 type Period = '30d' | '90d' | '1y' | 'all';
 type View = 'rate' | 'composition' | 'pools';
@@ -60,12 +61,6 @@ interface PoolPoint {
   ironwood: number;
   transparent: number;
   shieldedSupplyPct: number | null;
-}
-
-function segmentedClass(active: boolean) {
-  return `px-2 py-1 text-caption font-mono uppercase tracking-wide rounded transition whitespace-nowrap ${
-    active ? 'bg-brand-gold/15 text-cipher-gold font-semibold' : 'text-muted hover:text-primary'
-  }`;
 }
 
 function SupplyChartFrame({ yLabel, children }: { yLabel: string; children: ReactNode }) {
@@ -256,33 +251,9 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
   const controls = (
     <div className="mb-4 flex flex-wrap items-center justify-end gap-2" data-html2canvas-ignore="true">
       <PoolCurrencyToggle />
-      <div className="inline-flex max-w-full flex-wrap gap-0 rounded-md bg-glass-3 p-0.5" role="group" aria-label="Chart view">
-        {viewOptions.map(({ key, label, title: tabTitle }) => (
-          <button
-            key={key}
-            type="button"
-            title={tabTitle}
-            aria-pressed={view === key}
-            onClick={() => setView(key)}
-            className={segmentedClass(view === key)}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-      <div className="inline-flex gap-0 rounded-md bg-glass-3 p-0.5" role="group" aria-label="Time range">
-        {(['30d', '90d', '1y', 'all'] as Period[]).map((p) => (
-          <button
-            key={p}
-            type="button"
-            aria-pressed={period === p}
-            onClick={() => setPeriod(p)}
-            className={segmentedClass(period === p)}
-          >
-            {p.toUpperCase()}
-          </button>
-        ))}
-      </div>
+      <PeriodPillTags aria-label="Chart view" value={view} onChange={setView} options={viewOptions} />
+      <PeriodPillTags aria-label="Time range" value={period} onChange={setPeriod}
+        options={(['30d', '90d', '1y', 'all'] as Period[]).map((p) => ({ key: p, label: p.toUpperCase() }))} />
     </div>
   );
 

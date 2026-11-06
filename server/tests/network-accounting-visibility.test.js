@@ -18,6 +18,7 @@ function render(data, { network = 'mainnet', error = null, historyData = undefin
     if (name === 'recharts') return Object.fromEntries(['ComposedChart','Bar','Line','XAxis','YAxis','ResponsiveContainer','CartesianGrid'].map(key => [key,key]));
     if (name === 'next/link') return { default: 'a' };
     if (name === '@/components/ui/SectionHeader') return { SectionHeader: 'SectionHeader' };
+    if (name === '@/components/ui/PeriodPillTags') return { PeriodPillTags: 'PeriodPillTags' };
     if (name === '@/components/charts/ChartTooltip') return { ChartTooltip: 'Tooltip' };
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };
     if (name === '@/lib/chart-theme') return { getChartColors: () => ({ gold: '#d4a44a' }) };
@@ -112,7 +113,7 @@ test('fee columns contain only the two allocations and the canonical block tag i
   assert.deepEqual(bars.map(node=>node.props.dataKey),['feesToNsmZatDisplay','minerFeeAllocationZatDisplay']);
   assert.ok(bars.every(node=>node.props.stackId==='fees'));
   assert.equal(nodes(result.tree,'SectionHeader')[0].props.actions.props.href,'/block/4400001');
-  assert.equal(nodes(result.tree,'button').length,8);
+  assert.equal(nodes(result.tree,'PeriodPillTags').reduce((count,node)=>count+node.props.options.length,0),8);
 });
 test('range changes never plot retained data under a new period, and reserve/cumulative use steps', () => {
   const data = snapshot(4400001,4400000,'test');

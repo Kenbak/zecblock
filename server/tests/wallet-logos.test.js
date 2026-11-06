@@ -77,6 +77,7 @@ test('implementation branding does not brand pattern-match rankings or erase con
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };
     if (name === '@/components/ui/Card') return { Card: box, CardBody: box };
     if (name === '@/components/ui/SectionHeader') return { PageHeader: box };
+    if (name === '@/components/ui/PeriodPillTags') return { PeriodPillTags: () => null };
     if (name === '@/components/PageSectionNav') return { PageSectionNav: () => null };
     if (name === '@/components/WalletImplementationLogo') return { WalletImplementationLogo: ({ name }) => React.createElement('span', { 'data-implementation-mark': name }) };
     throw new Error(`Unexpected import ${name}`);

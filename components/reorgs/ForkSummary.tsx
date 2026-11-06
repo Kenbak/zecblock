@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { Card, CardBody } from '@/components/ui';
+import { Card, CardBody, MetricCard } from '@/components/ui';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { PoolLogo } from '@/components/PoolLogo';
 import { OrphanRateDailyChart } from '@/components/mining/OrphanRateDailyChart';
@@ -65,7 +65,6 @@ export function ForkSummary({
                 {selected && selected.rate !== null
                   ? <><span className="text-cipher-gold">{pct(selected.rate)}</span> of {selected.canonicalBlocks.toLocaleString('en-US')} blocks</>
                   : selected?.unavailableReason ?? 'Observed orphan rate unavailable'}
-                {stats && <> · longest reorg on our node <span className="text-primary">{stats.deepestReorg > 0 ? `${stats.deepestReorg} block${stats.deepestReorg === 1 ? '' : 's'}` : '—'}</span></>}
               </p>
               {nodes && (
                 <p className="mt-3 inline-flex items-center gap-2 text-caption font-mono text-muted">
@@ -84,6 +83,20 @@ export function ForkSummary({
           </div>
         </CardBody>
       </Card>
+
+      {stats && (
+        <section aria-labelledby="fork-watch-all-time">
+          <h2 id="fork-watch-all-time" className="type-label text-muted uppercase mb-2">All time</h2>
+          <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+            <MetricCard size="compact" label="Fork events" value={stats.totalForkEvents.toLocaleString('en-US')} hint="Reorgs on our main node" />
+            <MetricCard size="compact" label="Reorged on our node" value={stats.totalOrphanedBlocks.toLocaleString('en-US')} hint="Blocks it accepted, then dropped" />
+            <MetricCard size="compact" label="Seen only by observers" value={stats.observerOnlyOrphanedBlocks != null ? stats.observerOnlyOrphanedBlocks.toLocaleString('en-US') : '—'}
+              hint={stats.observerCaptureStartedAt ? `Since ${new Date(stats.observerCaptureStartedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })}` : 'Observer capture'} />
+            <MetricCard size="compact" label="Longest reorg" value={stats.deepestReorg > 0 ? `${stats.deepestReorg} block${stats.deepestReorg === 1 ? '' : 's'}` : '—'}
+              accent={stats.deepestReorg > 3 ? 'orange' : 'default'} hint="On our main node" />
+          </div>
+        </section>
+      )}
 
         <Card>
           <CardBody>

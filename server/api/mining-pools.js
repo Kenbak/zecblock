@@ -62,11 +62,21 @@ const POOL_BY_ADDRESS = {
   },
 
   // --- Luxor ---
+  // Coinbase tag: "/Mined by Luxor/"
+  // Current payout since block 3524453; node coinbases at 3524453 and 3544044
+  // carry the same "/Mined by Luxor/" bytes as the previous address.
+  't1TVdjqU1APVQmCRRnzbqfjz6wR2qtBnnoc': {
+    name: 'Luxor',
+    url: 'https://luxor.tech',
+    region: 'US',
+  },
+  // Previous payout (last block 3522962, same coinbase tag).
   // Source: Shawn Murphy peer analysis (IP: 15.204.182.52, Reston VA)
   't1XQZdZMnzXBcL8yx2PR27dSNrqctgwLgux': {
     name: 'Luxor',
     url: 'https://luxor.tech',
     region: 'US',
+    deprecated: '2026-10-19',
   },
 
   // Live network feed and coinbase "mined by KuPool" (block 3512788).
@@ -249,6 +259,7 @@ const POOL_BY_TAG = {
   molepool: { name: 'Molepool', url: 'https://zec.molepool.com', region: null, attribution: 'coinbase-tag' },
   zecminingpool: { name: 'ZEC Mining Pool', url: 'https://zecminingpool.com', region: null, attribution: 'coinbase-tag' },
   foundry: { name: 'Foundry USA', url: 'https://foundrydigital.com', region: null, attribution: 'coinbase-tag' },
+  luxor: { name: 'Luxor', url: 'https://luxor.tech', region: null, attribution: 'coinbase-tag' },
 };
 // One ordered pattern registry keeps SQL filters and JS labels identical.
 // Match complete observed markers, not generic worker text or software emoji.
@@ -259,6 +270,7 @@ const TAG_PATTERNS = Object.entries({
   molepool: '/molepool.com/',
   zecminingpool: 'zecminingpool.com',
   foundry: 'Foundry Zcash Pool #PrivacyMatters',
+  luxor: '/Mined by Luxor/',
 }).map(([tag, marker]) => [tag, `^(?:[0-9a-f]{2})*${Buffer.from(marker).toString('hex')}(?:[0-9a-f]{2})*$`]);
 function getPoolTag(coinbaseHex) {
   if (typeof coinbaseHex !== 'string') return null;

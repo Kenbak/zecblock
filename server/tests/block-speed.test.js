@@ -122,6 +122,35 @@ test('days split by activation, and the current day, are not complete', async ()
   assert.equal(payload.days[0].averageSeconds, 75);
 });
 
+test('once NU7 is older than the history, the week before activation is still returned', async () => {
+  const tip = 3700000; const nu7 = 3543405;
+  const { pool, queries } = chainPool({ tip, nu7, before: 75, after: 25 });
+  const mainnetNu7 = { chain: 'main', blocks: tip, upgrades: { b: { name: 'Blossom', activationheight: 653600 }, n: { name: 'NU7', activationheight: nu7 } } };
+  const schedule = networkSchedule(mainnetNu7);
+  const activationTimestamp = nowTs - (tip - nu7) * 25;
+  const activationDay = Math.floor(activationTimestamp / DAY) * DAY;
+  const realQuery = pool.query;
+  pool.query = async (sql, params = []) => {
+    if (sql === DAYS_SQL && params[1] === nu7 - 1) {
+      queries.push({ sql, params });
+      return { rows: Array.from({ length: 8 }, (_, i) => ({ day_start: String(activationDay - (7 - i) * DAY), nu7: false, first_height: 1, last_height: 1152,
+        intervals: 1152, elapsed: '86400', median: 52, p90: 172 })) };
+    }
+    return realQuery(sql, params);
+  };
+  const payload = await loadBlockSpeed({ pool, info: mainnetNu7, schedule, now });
+  const baselineQuery = queries.find(q => q.sql === DAYS_SQL && q.params[1] === nu7 - 1);
+  assert.deepEqual(baselineQuery.params.slice(2), [activationDay - 7 * DAY, nu7]);
+  const baseline = payload.days.filter(d => d.start < activationDay + DAY);
+  assert.equal(baseline.length, 8);
+  assert.deepEqual(baseline.map(d => d.complete), [...Array(7).fill(true), false], 'the activation day itself is split, never complete');
+
+  const { pool: recent, queries: recentQueries } = chainPool({ tip: 4000, before: 75 });
+  const recentInfo = { chain: 'test', blocks: 4000, upgrades: {} };
+  await loadBlockSpeed({ pool: recent, info: recentInfo, schedule: { network: 'test', source: 'node-upgrade-schedule', nu7Height: 3900, eras: [{ height: 0, seconds: 75 }, { height: 3900, seconds: 25 }] }, now });
+  assert.equal(recentQueries.filter(q => q.sql === DAYS_SQL).length, 1, 'no extra query while history still covers the baseline');
+});
+
 test('mainnet without NU7 reports no activation or pre-upgrade window', async () => {
   const { pool, queries } = chainPool({ tip: 3526500, before: 75, summaryRow: { first_height: 1, last_height: 8064, first_timestamp: 1, last_timestamp: 2, intervals: 8064, elapsed: 607219, median: 52, p90: 172 } });
   const payload = await loadBlockSpeed({ pool, info: mainnetInfo, schedule: networkSchedule(mainnetInfo), now });
@@ -261,18 +290,67 @@ test('before mainnet activation, mainnet shows its own measured days, then the c
   assert.deepEqual(scheduled.activation, { height: 3527652, date: '2026-10-23', status: 'scheduled' }, 'the serving-node schedule wins, dated at the current target');
 });
 
-test('after mainnet activation, measured days replace the projection', () => {
+test('after mainnet activation, measured days replace the projection; the activation day and today show at once', () => {
+  const sized = (d, intervals) => ({ ...d, intervals, firstHeight: 1000, lastHeight: 1000 + intervals - 1 });
   const mainnet = payload('main', { activation: { height: 3543405, timestamp: Date.parse('2026-11-05T10:00:00Z') / 1000 }, schedule: { nu7Height: 3543405 },
-    days: [day('2026-11-04', false, 75), day('2026-11-05', false, 75, false), day('2026-11-05', true, 25, false), day('2026-11-06', true, 25)],
+    days: [sized(day('2026-11-04', false, 75), 1152), sized(day('2026-11-05', false, 76, false), 480), sized(day('2026-11-05', true, 26, false), 2016),
+      sized(day('2026-11-06', true, 25), 3456), sized(day('2026-11-07', true, 24.8, false), 900)],
     windows: { latest: summary(25.2, 18, 55, 25), beforeUpgrade: summary(75.1, 52, 171, 75) } });
   const story = speed.buildSpeedStory(speed.readBlockSpeed(mainnet, 'main'));
   assert.equal(story.phase, 'active');
   assert.equal(story.after.averageSeconds, 25.2);
   assert.equal(story.before.averageSeconds, 75.1);
-  assert.deepEqual(story.points.map(p => [p.date, p.nu7, p.kind]), [['2026-11-04', false, 'measured'], ['2026-11-06', true, 'measured']], 'the split activation day is omitted');
+  assert.deepEqual(story.points.map(p => [p.date, p.nu7, p.segment ?? null, p.inProgress ?? false]), [
+    ['2026-11-04', false, null, false], ['2026-11-05', false, 'before-nu7', false], ['2026-11-05', true, 'nu7', false],
+    ['2026-11-06', true, null, false], ['2026-11-07', true, null, true],
+  ], 'both sides of the activation day and today so far are drawn');
   assert.equal(story.activation.date, '2026-11-05');
+  const today = speed.buildSpeedStory(speed.readBlockSpeed({ ...mainnet, days: mainnet.days.slice(0, 3) }, 'main'));
+  assert.deepEqual(today.points.slice(1).map(p => [p.segment, p.inProgress ?? false]), [['before-nu7', false], ['nu7', true]],
+    'on activation day only the NU7 side is still filling');
   assert.match(panel(story, 'full'), /Mainnet · NU7 active since block #3,543,405, November 5, 2026/);
   assert.doesNotMatch(panel(story, 'full'), /Target projection/, 'active mainnet days are measured rather than projected');
+
+  const early = speed.buildSpeedStory(speed.readBlockSpeed({ ...mainnet, days: [...mainnet.days.slice(0, 4), sized(day('2026-11-07', true, 12, false), 8)] }, 'main'));
+  assert.ok(!early.points.some(p => p.date === '2026-11-07'), 'a day with a few early blocks is not drawn as a trend');
+});
+
+test('active mainnet always keeps a pre-NU7 week beside the latest NU7 days', () => {
+  const dates = n => Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10));
+  const pre = dates(10).map(date => ({ ...day(date, false, 75), intervals: 1152 }));
+  const post = dates(40).slice(10).map(date => ({ ...day(date, true, 25), intervals: 3456 }));
+  const story = speed.buildSpeedStory(speed.readBlockSpeed(payload('main', { activation: { height: 3543405, timestamp: pre.at(-1).start + DAY },
+    schedule: { nu7Height: 3543405 }, days: [...pre, ...post], windows: { latest: summary(25, 18, 55, 25), beforeUpgrade: summary(75, 52, 171, 75) } }), 'main'));
+  assert.equal(story.points.length, 21);
+  assert.equal(story.points.filter(p => !p.nu7).length, speed.PRE_NU7_DAYS);
+  assert.equal(story.points.at(-1).date, post.at(-1).date, 'the newest NU7 day is kept');
+  assert.equal(story.points[speed.PRE_NU7_DAYS - 1].date, pre.at(-1).date, 'the baseline is the week just before NU7');
+});
+
+test('the daily chart stacks an activation day for blocks per day and fades today', () => {
+  const { BlockSpeedChart } = load('components/network/BlockSpeedChart.tsx');
+  const point = (date, nu7, extra = {}) => ({ key: `${date}-${nu7}`, date, nu7, kind: 'measured', averageSeconds: nu7 ? 25 : 75, targetSeconds: nu7 ? 25 : 75, lastHeight: 10, blocks: nu7 ? 2000 : 400, ...extra });
+  const points = [point('2026-11-04', false), point('2026-11-05', false, { segment: 'before-nu7' }), point('2026-11-05', true, { segment: 'nu7', inProgress: true })];
+  const render = metric => renderToStaticMarkup(React.createElement(BlockSpeedChart, { points, activation: { height: 1, date: '2026-11-05', status: 'active' }, metric }));
+  const blocks = render('blocks');
+  assert.equal(linkedBars(blocks), 2, 'one column per UTC day');
+  assert.match(blocks, /400 blocks before NU7 \+ 2,000 with NU7 so far today/);
+  assert.equal((blocks.match(/data-day-segment="(before-nu7|nu7)"/g) || []).length, 2);
+  const wait = render('wait');
+  assert.equal(linkedBars(wait), 3, 'each side of activation keeps its own average');
+  assert.match(wait, /before NU7 activation · average block 75s/);
+  assert.match(wait, /class="speed-bar opacity-50"/);
+  assert.match(wait, /Today so far/);
+});
+
+test('per-block view keeps the pre-NU7 average once only NU7 blocks are shown', () => {
+  const { BlockSpeedLiveChart } = load('components/network/BlockSpeedLiveChart.tsx');
+  const blocks = Array.from({ length: 60 }, (_, i) => ({ height: 2000 + i, timestamp: 1000 + i * 25, intervalSeconds: 25, targetSeconds: 25, rollingSeconds: 25 }));
+  const html = renderToStaticMarkup(React.createElement(BlockSpeedLiveChart, { blocks, nu7Height: 1500, beforeSeconds: 75.4 }));
+  assert.match(html, /data-before-nu7-average="true"/);
+  assert.match(html, /Before NU7: 75\.4s average/);
+  const straddling = renderToStaticMarkup(React.createElement(BlockSpeedLiveChart, { blocks, nu7Height: 2030, beforeSeconds: 75.4 }));
+  assert.doesNotMatch(straddling, /data-before-nu7-average/, 'real pre-NU7 bars make the line unnecessary');
 });
 
 test('testnet shows its own NU7 days and marks the minimum-difficulty era as not comparable', () => {

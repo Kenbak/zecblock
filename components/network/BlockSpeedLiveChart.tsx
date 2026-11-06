@@ -45,7 +45,11 @@ function describe(block: LiveBlock, nu7: boolean) {
  * with the rolling ROLLING_BLOCKS average as a line. Same axes, target lines
  * and NU7 marker as the daily chart; blocks from the NU7 height on are gold.
  */
-export function BlockSpeedLiveChart({ blocks, nu7Height, height: chartHeight = 260 }: { blocks: LiveBlock[]; nu7Height: number | null; height?: number }) {
+export function BlockSpeedLiveChart({ blocks, nu7Height, beforeSeconds = null, height: chartHeight = 260 }: {
+  blocks: LiveBlock[]; nu7Height: number | null;
+  /** Average gap before NU7, drawn for comparison once the window holds only NU7 blocks. */
+  beforeSeconds?: number | null; height?: number;
+}) {
   // A callback ref re-measures whenever the wrapper node itself changes.
   const [wrapper, setWrapper] = useState<HTMLDivElement | null>(null);
   const [width, setWidth] = useState(720);
@@ -63,18 +67,19 @@ export function BlockSpeedLiveChart({ blocks, nu7Height, height: chartHeight = 2
   const shown = blocks.slice(-fits);
   return <div ref={setWrapper}>{shown.length < 2
     ? <p role="status" className="py-16 text-center text-sm text-muted">Recent blocks are unavailable.</p>
-    : <Plot blocks={shown} nu7Height={nu7Height} width={width} height={chartHeight} narrow={narrow} />}
+    : <Plot blocks={shown} nu7Height={nu7Height} beforeSeconds={beforeSeconds} width={width} height={chartHeight} narrow={narrow} />}
   </div>;
 }
 
-function Plot({ blocks, nu7Height, width, height: chartHeight, narrow }: { blocks: LiveBlock[]; nu7Height: number | null; width: number; height: number; narrow: boolean }) {
+function Plot({ blocks, nu7Height, beforeSeconds, width, height: chartHeight, narrow }: { blocks: LiveBlock[]; nu7Height: number | null; beforeSeconds: number | null; width: number; height: number; narrow: boolean }) {
   const isNu7 = (block: LiveBlock) => nu7Height != null && block.height >= nu7Height;
   const segments = targetSegments(blocks);
   const topTarget = Math.max(0, ...segments.map(segment => segment.target));
   const gaps = blocks.flatMap(block => block.intervalSeconds == null ? [] : [Math.max(0, block.intervalSeconds)]);
   const rolling = blocks.flatMap(block => block.rollingSeconds == null ? [] : [block.rollingSeconds]);
   const cap = topTarget ? topTarget * CLIP_TARGETS : Infinity;
-  const peak = Math.max(1, topTarget, ...rolling, Math.min(cap, Math.max(0, ...gaps)));
+  const baseline = nu7Height != null && blocks[0].height >= nu7Height && beforeSeconds != null && beforeSeconds > 0 ? beforeSeconds : null;
+  const peak = Math.max(1, topTarget, baseline ?? 0, ...rolling, Math.min(cap, Math.max(0, ...gaps)));
   // Clipped gaps reach the top exactly; otherwise leave headroom above the tallest bar.
   const ceiling = peak >= cap ? peak : peak * 1.1;
   const step = niceStep(ceiling);
@@ -133,6 +138,12 @@ function Plot({ blocks, nu7Height, width, height: chartHeight, narrow }: { block
           {x2 - x1 > labelWidth && <text x={x2 - 4} y={level - 6} textAnchor="end" className="fill-secondary stroke-cipher-bg" strokeWidth={4} paintOrder="stroke" strokeLinejoin="round">{label}</text>}
         </g>;
       })}
+      {baseline != null && <g pointerEvents="none" data-before-nu7-average="true">
+        <line x1={LEFT} x2={width - RIGHT} y1={y(baseline)} y2={y(baseline)} className="stroke-muted" strokeWidth={1.5} strokeDasharray="6 4" />
+        <text x={LEFT + 6} y={y(baseline) - 6} className="fill-secondary stroke-cipher-bg" strokeWidth={4} paintOrder="stroke" strokeLinejoin="round">
+          {narrow ? `Before NU7 ${formatSeconds(baseline)}` : `Before NU7: ${formatSeconds(baseline)} average`}
+        </text>
+      </g>}
       {nu7Index > 0 && <g pointerEvents="none">
         <line x1={edge(nu7Index)} x2={edge(nu7Index)} y1={TOP - 10} y2={y(0)} className="stroke-cipher-gold" strokeDasharray="3 4" />
         <text x={edge(nu7Index) + (labelFits(nu7Index, 'NU7') ? 5 : -5)} y={TOP - 14} textAnchor={labelFits(nu7Index, 'NU7') ? 'start' : 'end'} className="fill-cipher-gold">NU7</text>
@@ -148,6 +159,7 @@ function Plot({ blocks, nu7Height, width, height: chartHeight, narrow }: { block
       {hasNu7 && <Legend swatch="h-2.5 rounded-sm bg-cipher-gold">With NU7</Legend>}
       <Legend swatch="h-0.5 bg-primary">{ROLLING_BLOCKS}-block average</Legend>
       <Legend swatch="h-0 border-t border-dashed border-secondary">Target</Legend>
+      {baseline != null && <Legend swatch="h-0 border-t-2 border-dashed border-muted">Before NU7 average</Legend>}
     </div>
   </>;
 }

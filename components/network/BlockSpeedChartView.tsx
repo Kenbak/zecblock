@@ -19,12 +19,14 @@ const VIEWS = [{ id: 'wait', label: 'Wait for funds' }, { id: 'blocks', label: '
 const LIVE_REFRESH_MS = 15_000;
 
 function Footnote({ story, metric }: { story: SpeedStory; metric: SpeedMetric }) {
+  const today = story.points.some(point => point.inProgress);
+  const split = story.points.some(point => point.segment);
   if (metric === 'blocks') {
-    return <>Blocks with header times in each complete UTC day. {story.phase === 'upcoming' && story.network === 'mainnet'
+    return <>Blocks with header times in each UTC day{today ? '; the faded bar is today so far' : ''}. {split ? 'The activation day stacks blocks before and after NU7. ' : ''}{story.phase === 'upcoming' && story.network === 'mainnet'
       ? 'Outlined bars show the target pace: 1,152 a day at 75 seconds, 3,456 at 25.'
       : story.network === 'testnet' ? 'Earlier minimum-difficulty testnet days are faded and clipped at the top; they ran far above any target.' : 'Each bar links to that day’s last block.'}</>;
   }
-  return <>Daily averages. {story.phase === 'upcoming' && story.network === 'mainnet'
+  return <>Daily averages{today ? '; the faded bar is today so far' : ''}. {split ? 'The activation day has one bar for each side of NU7. ' : ''}{story.phase === 'upcoming' && story.network === 'mainnet'
     ? `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315). Outlined bars show targets.`
     : story.network === 'testnet' ? `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315). Earlier testnet timing was irregular.` : `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315).`}</>;
 }
@@ -58,7 +60,7 @@ function LiveBlocks({ story, height, onDaily }: { story: SpeedStory; height: num
       {now != null && <> · {ago(Math.max(0, now - latest!.timestamp))}</>}
       {rolling != null && <> · last {ROLLING_BLOCKS} blocks <span className={nu7Height != null && latest!.height >= nu7Height ? 'text-cipher-gold' : 'text-primary'}>{formatSeconds(Number(rolling.toFixed(1)))}</span> each · {SPENDABLE_CONFIRMATIONS} confirmations took {formatWait(rolling * ROLLING_BLOCKS)}</>}
     </p>
-    <BlockSpeedLiveChart blocks={blocks} nu7Height={nu7Height} height={height} />
+    <BlockSpeedLiveChart blocks={blocks} nu7Height={nu7Height} beforeSeconds={story.before?.averageSeconds ?? null} height={height} />
     {error && <p role="status" className="text-caption text-warning mt-2">Refresh unavailable. Showing the previous blocks.</p>}
   </>;
 }

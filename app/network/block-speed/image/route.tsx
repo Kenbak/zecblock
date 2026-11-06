@@ -88,7 +88,7 @@ export async function GET() {
           const first = y(minutes(point.averageSeconds, 1));
           const total = y(minutes(point.averageSeconds));
           const x = i * slot + (slot - barWidth) / 2;
-          return <g key={point.key}>
+          return <g key={point.key} opacity={point.inProgress ? 0.5 : 1}>
             <rect x={x} y={first} width={barWidth} height={Math.max(0, y(0) - first)} {...barStyle(point, colors.gold)} />
             <rect x={x} y={total} width={barWidth} height={Math.max(0, first - total)} {...barStyle(point, MUTED)} />
           </g>;

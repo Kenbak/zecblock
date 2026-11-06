@@ -30,29 +30,56 @@ function countClass(point: SpeedPoint) {
   return `${point.nu7 ? 'fill-cipher-gold' : 'fill-muted'}${point.kind === 'irregular' ? ' opacity-30' : ''}`;
 }
 
+const soFar = (point: SpeedPoint) => point.inProgress ? ' so far today' : '';
+
+function era(point: SpeedPoint) {
+  if (point.kind === 'irregular') return ' · minimum-difficulty era';
+  if (point.segment === 'before-nu7') return ' · before NU7 activation';
+  return point.nu7 ? ' · NU7' : '';
+}
+
+/** Points sharing a UTC day: an activation day has one point for each side of NU7. */
+type Column = { key: string; date: string; parts: SpeedPoint[] };
+
+function describeColumn(column: Column, metric: SpeedMetric) {
+  if (metric === 'wait' || column.parts.length === 1) return describe(column.parts[0], metric);
+  const [before, after] = column.parts;
+  return `${formatDay(column.date)} · ${before.blocks.toLocaleString('en-US')} blocks before NU7 + ${after.blocks.toLocaleString('en-US')} with NU7${soFar(after)}`;
+}
+
 function describe(point: SpeedPoint, metric: SpeedMetric = 'wait') {
   if (metric === 'blocks') {
-    const era = point.kind === 'irregular' ? ' · minimum-difficulty era' : point.nu7 ? ' · NU7' : '';
     return point.kind === 'projected'
       ? `${formatDay(point.date)} · projected ${point.blocks.toLocaleString('en-US')} blocks at the ${point.targetSeconds}s target`
-      : `${formatDay(point.date)}${era} · ${point.blocks.toLocaleString('en-US')} blocks`;
+      : `${formatDay(point.date)}${era(point)} · ${point.blocks.toLocaleString('en-US')} blocks${soFar(point)}`;
   }
   const waits = `first confirmation ${formatWait(point.averageSeconds)} · ${SPENDABLE_CONFIRMATIONS} confirmations ${formatWait(point.averageSeconds * SPENDABLE_CONFIRMATIONS)}`;
   if (point.kind === 'projected') return `${formatDay(point.date)} · projected at the ${point.targetSeconds}s block target · ${waits}`;
-  const era = point.kind === 'irregular' ? ' · minimum-difficulty era' : point.nu7 ? ' · NU7' : '';
-  return `${formatDay(point.date)}${era} · average block ${formatSeconds(point.averageSeconds)} · ${waits}`;
+  return `${formatDay(point.date)}${era(point)} · average block ${formatSeconds(point.averageSeconds)}${soFar(point)} · ${waits}`;
 }
 
-/** Consecutive points sharing a target, so each era draws its own target line. */
-function targetSegments(points: SpeedPoint[]) {
+/** Consecutive columns sharing a target, so each era draws its own target line. */
+function targetSegments(columns: Column[]) {
   const segments: { target: number; from: number; to: number }[] = [];
-  points.forEach((point, index) => {
+  columns.forEach((column, index) => {
     const last = segments.at(-1);
-    if (point.targetSeconds == null) return;
-    if (last && last.target === point.targetSeconds && last.to === index - 1) last.to = index;
-    else segments.push({ target: point.targetSeconds, from: index, to: index });
+    const target = column.parts.at(-1)!.targetSeconds;
+    if (target == null) return;
+    if (last && last.target === target && last.to === index - 1) last.to = index;
+    else segments.push({ target, from: index, to: index });
   });
   return segments;
+}
+
+/** One column per point for waits; blocks per day stack an activation day's two sides into one bar. */
+function columnsFor(points: SpeedPoint[], metric: SpeedMetric): Column[] {
+  const columns: Column[] = [];
+  for (const point of points) {
+    const last = columns.at(-1);
+    if (metric === 'blocks' && last && last.date === point.date && point.segment && last.parts[0].segment) last.parts.push(point);
+    else columns.push({ key: point.key, date: point.date, parts: [point] });
+  }
+  return columns;
 }
 
 /**
@@ -71,30 +98,32 @@ export function BlockSpeedChart({ points, activation, height = 260, metric = 'wa
   if (!points.length) return <p role="status" className="py-16 text-center text-sm text-muted">Daily block observations are unavailable.</p>;
 
   const narrow = width < 520;
-  const segments = targetSegments(points);
-  const value = metric === 'wait' ? totalMinutes : (point: SpeedPoint) => point.blocks;
+  const columns = columnsFor(points, metric);
+  const segments = targetSegments(columns);
+  const columnValue = (column: Column) => metric === 'wait' ? totalMinutes(column.parts[0]) : column.parts.reduce((sum, part) => sum + part.blocks, 0);
   const targetValue = (target: number) => metric === 'wait' ? target * SPENDABLE_CONFIRMATIONS / 60 : DAY_SECONDS / target;
   // Testnet's minimum-difficulty days ran at up to ~6× any target; scale to the
   // comparable days and clip those bars so the NU7 step stays readable.
-  const scaled = metric === 'blocks' && points.some(point => point.kind !== 'irregular')
-    ? points.filter(point => point.kind !== 'irregular') : points;
-  const peak = Math.max(...scaled.map(value), ...segments.map(segment => targetValue(segment.target)));
+  const scaled = metric === 'blocks' && columns.some(column => column.parts[0].kind !== 'irregular')
+    ? columns.filter(column => column.parts[0].kind !== 'irregular') : columns;
+  const peak = Math.max(...scaled.map(columnValue), ...segments.map(segment => targetValue(segment.target)));
   const step = niceStep(peak, metric);
   const max = Math.ceil(peak * 1.1 / step) * step;
   const plotHeight = height - TOP - BOTTOM;
   const y = (value: number) => TOP + plotHeight - value / max * plotHeight;
-  const slot = (width - LEFT - RIGHT) / points.length;
+  const slot = (width - LEFT - RIGHT) / columns.length;
   const barWidth = Math.max(2, slot * (narrow ? 0.7 : 0.72));
   const left = (index: number) => LEFT + index * slot + (slot - barWidth) / 2;
   const edge = (index: number) => LEFT + index * slot;
   const ticks = Array.from({ length: Math.floor(max / step) + 1 }, (_, i) => i * step);
-  const nu7Index = points.findIndex(point => point.nu7);
-  const todayIndex = points.findIndex(point => point.kind === 'projected');
+  const nu7Index = columns.findIndex(column => column.parts.some(part => part.nu7));
+  const todayIndex = columns.findIndex(column => column.parts[0].kind === 'projected');
   const nu7Label = 'NU7';
   const labelFits = (index: number, label: string) => edge(index) + 5 + label.length * 7 < width - RIGHT;
   const hasProjections = points.some(point => point.kind === 'projected');
   const hasIrregular = points.some(point => point.kind === 'irregular');
-  const dateLabels = [0, ...(nu7Index > 0 && !narrow ? [nu7Index] : []), points.length - 1]
+  const hasInProgress = points.some(point => point.inProgress);
+  const dateLabels = [0, ...(nu7Index > 0 && !narrow ? [nu7Index] : []), columns.length - 1]
     .filter((index, i, all) => i === 0 || edge(index) - edge(all[i - 1]) > 64);
 
   return <div ref={wrapper}>
@@ -106,42 +135,50 @@ export function BlockSpeedChart({ points, activation, height = 260, metric = 'wa
         <line x1={LEFT} x2={width - RIGHT} y1={y(tick)} y2={y(tick)} className="stroke-cipher-border" />
         <text x={LEFT - 8} y={y(tick) + 4} textAnchor="end" className="fill-muted">{tickLabel(tick, metric)}</text>
       </g>)}
-      <g key={metric}>{points.map((point, index) => {
+      <g key={metric}>{columns.map((column, index) => {
         const style = { '--bar-index': index } as CSSProperties;
+        const point = column.parts[0];
+        const label = describeColumn(column, metric);
+        const faded = column.parts.some(part => part.inProgress) ? 'opacity-50' : undefined;
+        const lastHeight = column.parts.at(-1)!.lastHeight;
+        let body;
         if (metric === 'blocks') {
-          const clipped = point.blocks > max;
-          const top = y(Math.min(point.blocks, max));
-          const bar = <>
-            <title>{describe(point, metric)}</title>
-            <rect x={left(index)} y={top} width={barWidth} height={Math.max(0, y(0) - top)} rx={1.5} className={`speed-bar ${countClass(point)}`} style={style}
-              strokeDasharray={point.kind === 'projected' ? '3 2' : undefined} />
-            {clipped && <path d={`M${left(index)} ${top + 7}l${barWidth / 2} -3l${barWidth / 2} 3`} className="stroke-cipher-bg" strokeWidth={2} fill="none" data-clipped="true" />}
+          const total = columnValue(column);
+          const clipped = total > max;
+          let base = 0;
+          body = <>
+            <title>{label}</title>
+            <g className={faded}>{column.parts.map(part => {
+              const from = base; base += part.blocks;
+              const top = y(Math.min(base, max)); const bottom = y(Math.min(from, max));
+              return <rect key={part.key} x={left(index)} y={top} width={barWidth} height={Math.max(0, bottom - top)} rx={1.5} className={`speed-bar ${countClass(part)}`} style={style}
+                strokeDasharray={part.kind === 'projected' ? '3 2' : undefined} data-day-segment={part.segment} />;
+            })}</g>
+            {clipped && <path d={`M${left(index)} ${y(max) + 7}l${barWidth / 2} -3l${barWidth / 2} 3`} className="stroke-cipher-bg" strokeWidth={2} fill="none" data-clipped="true" />}
           </>;
-          return point.lastHeight != null
-            ? <a key={point.key} href={`/block/${point.lastHeight}`} aria-label={describe(point, metric)} className="cadence-link">{bar}</a>
-            : <g key={point.key}>{bar}</g>;
+        } else {
+          const top = y(totalMinutes(point));
+          const split = y(point.averageSeconds / 60);
+          body = <>
+            <title>{label}</title>
+            <g className={`speed-bar${faded ? ` ${faded}` : ''}`} style={style} data-day-segment={point.segment}>
+              <rect data-confirmation-segment="remaining" x={left(index)} y={top} width={barWidth} height={Math.max(0, split - top)} rx={1.5} className={barClass(point, false)}
+                strokeDasharray={point.kind === 'projected' ? '3 2' : undefined} />
+              <rect data-confirmation-segment="first" x={left(index)} y={split} width={barWidth} height={Math.max(0, y(0) - split)} rx={1.5} className={barClass(point, true)}
+                strokeDasharray={point.kind === 'projected' ? '3 2' : undefined} />
+            </g>
+          </>;
         }
-        const top = y(totalMinutes(point));
-        const split = y(point.averageSeconds / 60);
-        const body = <>
-          <title>{describe(point)}</title>
-          <g className="speed-bar" style={style}>
-            <rect data-confirmation-segment="remaining" x={left(index)} y={top} width={barWidth} height={Math.max(0, split - top)} rx={1.5} className={barClass(point, false)}
-              strokeDasharray={point.kind === 'projected' ? '3 2' : undefined} />
-            <rect data-confirmation-segment="first" x={left(index)} y={split} width={barWidth} height={Math.max(0, y(0) - split)} rx={1.5} className={barClass(point, true)}
-              strokeDasharray={point.kind === 'projected' ? '3 2' : undefined} />
-          </g>
-        </>;
-        return point.lastHeight != null
-          ? <a key={point.key} href={`/block/${point.lastHeight}`} aria-label={describe(point)} className="cadence-link">{body}</a>
-          : <g key={point.key}>{body}</g>;
+        return lastHeight != null
+          ? <a key={column.key} href={`/block/${lastHeight}`} aria-label={label} className="cadence-link">{body}</a>
+          : <g key={column.key}>{body}</g>;
       })}</g>
       {segments.map(segment => {
         const label = narrow ? `${segment.target}s` : `${segment.target}s blocks`;
         const labelWidth = label.length * 7 + 12;
         const level = y(targetValue(segment.target));
         const x1 = edge(segment.from); const x2 = edge(segment.to + 1);
-        const tallest = y(Math.max(...points.slice(segment.from, segment.to + 1).map(value)));
+        const tallest = y(Math.max(...columns.slice(segment.from, segment.to + 1).map(columnValue)));
         const labelAtToday = todayIndex >= segment.from && todayIndex <= segment.to
           && x2 - edge(todayIndex) > labelWidth;
         return <g key={`${segment.from}-${segment.target}`} pointerEvents="none">
@@ -159,7 +196,7 @@ export function BlockSpeedChart({ points, activation, height = 260, metric = 'wa
         <text x={edge(nu7Index) + (labelFits(nu7Index, nu7Label) ? 5 : -5)} y={TOP - 14} textAnchor={labelFits(nu7Index, nu7Label) ? 'start' : 'end'} className="fill-cipher-gold">{nu7Label}</text>
       </g>}
       {dateLabels.map((index, i) => <text key={index} x={i === dateLabels.length - 1 ? width - RIGHT : edge(index)} y={height - 6}
-        textAnchor={i === dateLabels.length - 1 ? 'end' : 'start'} className="fill-muted">{formatDay(points[index].date)}</text>)}
+        textAnchor={i === dateLabels.length - 1 ? 'end' : 'start'} className="fill-muted">{formatDay(columns[index].date)}</text>)}
     </svg>
     <div className="grid grid-cols-1 gap-2 mt-3 text-caption text-muted sm:flex sm:flex-wrap sm:gap-x-5">
       {metric === 'wait' ? <>
@@ -169,6 +206,7 @@ export function BlockSpeedChart({ points, activation, height = 260, metric = 'wa
         {points.some(point => !point.nu7 && point.kind !== 'irregular') && <Legend swatch="bg-muted">Before NU7</Legend>}
         <Legend swatch="bg-cipher-gold">With NU7</Legend>
       </>}
+      {hasInProgress && <Legend swatch="bg-muted opacity-50">Today so far</Legend>}
       {hasProjections && <Legend swatch="border border-dashed border-secondary">Target projection</Legend>}
       {hasIrregular && <Legend swatch="bg-muted opacity-30">Earlier testnet · irregular</Legend>}
     </div>

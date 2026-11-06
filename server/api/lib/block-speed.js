@@ -3,6 +3,9 @@ const { targetSpacing } = require('./network-schedule');
 const DAY = 86400;
 const HISTORY_DAYS = 30;
 const SUMMARY_SECONDS = 7 * DAY;
+// Once NU7 is older than the rolling history, these UTC days before its
+// activation day are still returned so charts keep a pre-NU7 baseline.
+const BASELINE_DAYS = 7;
 // Header timestamps may sit hours away from their neighbours; search below the
 // requested start so that boundary blocks are not dropped.
 const TIMESTAMP_MARGIN = 3 * 3600;
@@ -147,7 +150,9 @@ async function loadBlockSpeed({ pool, info, schedule, now = Date.now() }) {
   const currentTarget = targetSpacing(schedule, tipHeight);
   const beforeTarget = nu7Active ? targetSpacing(schedule, nu7Height - 1) : null;
 
-  const [days, latest, before] = await Promise.all([
+  const activationDay = activationTimestamp == null ? null : Math.floor(activationTimestamp / DAY) * DAY;
+  const baselineStart = activationDay == null ? null : activationDay - BASELINE_DAYS * DAY;
+  const [days, latest, before, baseline] = await Promise.all([
     pool.query(DAYS_SQL, [lower.height, tipHeight, historyStart, nu7Height]),
     pool.query(SUMMARY_SQL, [Math.max(lower.height, latestMinHeight - 1), tipHeight, latestStart, NO_UPPER_TIMESTAMP, latestMinHeight, tipHeight + 1, currentTarget]),
     activationTimestamp == null ? null : (async () => {
@@ -155,6 +160,16 @@ async function loadBlockSpeed({ pool, info, schedule, now = Date.now() }) {
       const beforeLower = await findLowerHeight(pool, schedule, nu7Height - 1, activationTimestamp, start);
       const result = await pool.query(SUMMARY_SQL, [beforeLower.height, nu7Height - 1, start, NO_UPPER_TIMESTAMP, 0, nu7Height, beforeTarget]);
       return { row: result.rows[0], complete: beforeLower.complete };
+    })(),
+    baselineStart == null || baselineStart >= historyStart ? null : (async () => {
+      const baselineLower = await findLowerHeight(pool, schedule, nu7Height - 1, activationTimestamp, baselineStart);
+      const result = await pool.query(DAYS_SQL, [baselineLower.height, nu7Height - 1, baselineStart, nu7Height]);
+      // Only days the rolling history no longer covers; the activation day's
+      // pre-NU7 part is a split day and never complete.
+      return result.rows.filter(row => Number(row.day_start) < historyStart).map(row => ({
+        ...dayFromRow(row, schedule, nowTimestamp, new Set(), -Infinity),
+        complete: baselineLower.complete && Number(row.day_start) + DAY <= activationDay,
+      }));
     })(),
   ]);
   // The full history scan may be capped while still covering the recent week.
@@ -167,7 +182,7 @@ async function loadBlockSpeed({ pool, info, schedule, now = Date.now() }) {
     observedAt: new Date(now).toISOString(), nodeHeight: info.blocks, indexedHeight: tipHeight, tipTimestamp,
     schedule, activation: nu7Active ? { height: nu7Height, timestamp: activationTimestamp } : null,
     coverage: { fromTimestamp: lower.timestamp, complete: lower.complete, historyDays: HISTORY_DAYS },
-    days: mapDays(days.rows, schedule, nowTimestamp, lower),
+    days: [...(baseline ?? []), ...mapDays(days.rows, schedule, nowTimestamp, lower)],
     windows: {
       latest: latestCovered ? summaryFromRow(latest.rows[0], currentTarget) : null,
       beforeUpgrade: before && before.complete ? summaryFromRow(before.row, beforeTarget) : null,
@@ -175,4 +190,4 @@ async function loadBlockSpeed({ pool, info, schedule, now = Date.now() }) {
   };
 }
 
-module.exports = { loadBlockSpeed, findLowerHeight, DAYS_SQL, SUMMARY_SQL, HISTORY_DAYS, SPEED_BUCKETS };
+module.exports = { loadBlockSpeed, findLowerHeight, DAYS_SQL, SUMMARY_SQL, HISTORY_DAYS, BASELINE_DAYS, SPEED_BUCKETS };

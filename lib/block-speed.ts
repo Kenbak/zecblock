@@ -115,6 +115,10 @@ export type SpeedPoint = {
   averageSeconds: number; targetSeconds: number | null; lastHeight: number | null;
   /** Blocks with header times in this UTC day; projected days use the target pace. */
   blocks: number;
+  /** The current UTC day: still accumulating blocks. */
+  inProgress?: boolean;
+  /** Which side of NU7 this point covers when activation splits its UTC day. */
+  segment?: 'before-nu7' | 'nu7';
 };
 export type SpeedActivation = { height: number; date: string | null; status: 'active' | 'scheduled' | 'announced' };
 export type SpeedStory = {
@@ -136,6 +140,10 @@ export type SpeedStory = {
 };
 
 const HISTORY_POINTS = 21;
+/** Once NU7 is live, the daily chart always keeps this many days before it for comparison. */
+export const PRE_NU7_DAYS = 7;
+/** An unfinished day is drawn once it has this many intervals, so a few early blocks do not read as a trend. */
+const MIN_PARTIAL_INTERVALS = 60;
 const PROJECTED_NU7_DAYS = 7;
 const MAX_PROJECTED_DAYS = 30;
 const DAY = 86_400;
@@ -143,12 +151,29 @@ const DAY = 86_400;
 const isoDay = (seconds: number) => new Date(seconds * 1000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => isoDay(Date.parse(`${date}T00:00:00Z`) / 1000 + days * DAY);
 
-function measuredPoints(days: SpeedDay[], network: SpeedStory['network'], limit: number): SpeedPoint[] {
-  return days.filter(day => day.complete && day.averageSeconds != null).slice(-limit).map(day => ({
+function measuredPoints(days: SpeedDay[], network: SpeedStory['network'], limit: number, withPartial = false): SpeedPoint[] {
+  const split = new Set(days.filter((day, index) => days.findIndex(other => other.date === day.date) !== index).map(day => day.date));
+  const last = days.at(-1);
+  // Split activation days and the current day are incomplete by definition but are the
+  // first NU7 evidence; earlier incomplete rows (a capped scan's first day) stay hidden.
+  const shown = days.filter(day => day.averageSeconds != null && (day.complete
+    || (withPartial && (split.has(day.date) || day === last) && day.intervals >= MIN_PARTIAL_INTERVALS)));
+  return shown.slice(-limit).map(day => ({
     key: `${day.date}-${day.nu7 ? 'nu7' : 'pre'}`, date: day.date, nu7: day.nu7, averageSeconds: day.averageSeconds!, targetSeconds: day.targetSeconds,
     kind: network === 'testnet' && !day.nu7 ? 'irregular' : 'measured', lastHeight: day.lastHeight,
     blocks: day.lastHeight - day.firstHeight + 1,
+    // Only the newest row is still filling; the pre-NU7 side of an activation day is final.
+    ...(!day.complete && day === last ? { inProgress: true } : {}),
+    ...(split.has(day.date) ? { segment: day.nu7 ? 'nu7' : 'before-nu7' } as const : {}),
   }));
+}
+
+/** The latest days, always keeping PRE_NU7_DAYS before activation so the change stays visible. */
+function withBaseline(points: SpeedPoint[], limit: number): SpeedPoint[] {
+  const before = points.filter(point => !point.nu7);
+  const after = points.filter(point => point.nu7);
+  const keepBefore = Math.min(before.length, Math.max(PRE_NU7_DAYS, limit - after.length));
+  return [...before.slice(before.length - keepBefore), ...after.slice(Math.max(0, after.length - (limit - keepBefore)))];
 }
 
 /** Upcoming mainnet activation: the serving-node schedule wins over the editorial announcement. */
@@ -184,8 +209,9 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
   const network = host.network === 'main' ? 'mainnet' : 'testnet';
   const measured = measuredPoints(host.days, network, network === 'testnet' ? host.days.length : HISTORY_POINTS);
   if (host.activation) {
+    const all = measuredPoints(host.days, network, host.days.length, true);
     return {
-      network, phase: 'active', points: measured, testnetNu7: null, tipHeight: host.indexedHeight,
+      network, phase: 'active', points: network === 'mainnet' ? withBaseline(all, HISTORY_POINTS) : all, testnetNu7: null, tipHeight: host.indexedHeight,
       before: network === 'mainnet' ? host.windows.beforeUpgrade : null,
       after: host.windows.latest,
       irregular: network === 'testnet' ? host.windows.beforeUpgrade : null,

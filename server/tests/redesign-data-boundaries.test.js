@@ -87,3 +87,16 @@ test('shielded list API parameters omit the page-only type selector', () => {
   assert.deepEqual(shieldedListParams('all', 'all', 0), { flow_type: 'all', pool: 'all' });
   assert.deepEqual(shieldedListParams('shield', 'ironwood', 1), { flow_type: 'shield', pool: 'ironwood', min_zec: '1' });
 });
+test('chart exports get an opaque background: translucent cards are composited over the page', () => {
+  const { opaqueBackground } = load('lib/chart-export.ts');
+  const node = (backgroundColor, parentElement = null) => ({ backgroundColor, parentElement });
+  const previous = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = element => ({ backgroundColor: element.backgroundColor });
+  try {
+    const page = node('rgb(11, 12, 14)');
+    const glass = node('rgba(255, 255, 255, 0.1)', node('rgba(0, 0, 0, 0)', page));
+    assert.equal(opaqueBackground(glass), 'rgb(35, 36, 38)', '10% white over the page colour');
+    assert.equal(opaqueBackground(node('rgb(250, 250, 250)', page)), 'rgb(250, 250, 250)', 'an opaque card is kept');
+    assert.equal(opaqueBackground(node('transparent', node('rgb(255 255 255 / 50%)'))), 'rgb(133, 134, 135)', 'nothing opaque falls back to the dark page');
+  } finally { globalThis.getComputedStyle = previous; }
+});

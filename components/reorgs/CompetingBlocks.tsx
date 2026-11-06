@@ -7,6 +7,7 @@ import { Badge, Card, CardBody, EmptyState, FilterButton, FilterGroup, HashLink,
 import { BlockFirstSeen } from '@/components/BlockFirstSeen';
 import { PoolLogo } from '@/components/PoolLogo';
 import { ExportButton } from '@/components/ExportButton';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 export interface ReorgBlockSide {
   hash: string;
@@ -33,6 +34,9 @@ export interface OrphanedBlock {
   minerAddress: string | null;
   minerPool: string | null;
   source: string;
+  reportedBy?: string | null;
+  consensusValid?: boolean | null;
+  difficulty?: string | null;
   detectedAt: string;
   forkEventId: number | null;
   canonicalBlock?: ReorgBlockSide | null;
@@ -55,8 +59,11 @@ export interface ForkEvent {
   forkHeight: number;
   depth: number;
   orphanedCount: number;
+  canonicalTip?: number | null;
   source: string;
+  description?: string | null;
   detectedAt: string;
+  resolvedAt?: string | null;
 }
 
 export type CaughtBy = 'node' | 'observers';
@@ -75,6 +82,13 @@ interface CompetingBlock {
   transactionCount: number | null;
   size: number | null;
   canonical: ReorgBlockSide | null;
+  /** Node-reorg rows only: how the reorg was recorded and its fork event. */
+  source: string | null;
+  reportedBy: string | null;
+  consensusValid: boolean | null;
+  detectedAt: string | null;
+  forkEventId: number | null;
+  forkDescription: string | null;
 }
 
 export function isUnknownPool(pool: string | null | undefined) {
@@ -86,7 +100,7 @@ export function minerName(pool: string | null | undefined) {
 }
 
 function buildRows(orphans: OrphanedBlock[], observed: ObservedOrphan[], forks: ForkEvent[]): CompetingBlock[] {
-  const depthByEvent = new Map(forks.map(f => [f.id, f.depth]));
+  const eventById = new Map(forks.map(f => [f.id, f]));
   const rows: CompetingBlock[] = [
     ...orphans.map((b): CompetingBlock => ({
       key: `n-${b.id}`,
@@ -96,12 +110,18 @@ function buildRows(orphans: OrphanedBlock[], observed: ObservedOrphan[], forks: 
       firstSeenAt: b.firstSeenAt ?? null,
       caughtBy: 'node',
       observerCount: null,
-      depth: b.forkEventId != null ? depthByEvent.get(b.forkEventId) ?? null : null,
+      depth: b.forkEventId != null ? eventById.get(b.forkEventId)?.depth ?? null : null,
       minerPool: b.minerPool,
       minerAddress: b.minerAddress,
       transactionCount: b.transactionCount,
       size: b.size,
       canonical: b.canonicalBlock ?? (b.canonicalHash ? { hash: b.canonicalHash, timestamp: null, transactionCount: null, size: null, minerAddress: null, minerPool: null } : null),
+      source: b.source,
+      reportedBy: b.reportedBy ?? null,
+      consensusValid: b.consensusValid ?? null,
+      detectedAt: b.detectedAt,
+      forkEventId: b.forkEventId,
+      forkDescription: b.forkEventId != null ? eventById.get(b.forkEventId)?.description ?? null : null,
     })),
     ...observed.map((b): CompetingBlock => ({
       key: `o-${b.hash}`,
@@ -117,6 +137,12 @@ function buildRows(orphans: OrphanedBlock[], observed: ObservedOrphan[], forks: 
       transactionCount: null,
       size: null,
       canonical: b.canonicalBlock,
+      source: null,
+      reportedBy: null,
+      consensusValid: null,
+      detectedAt: null,
+      forkEventId: null,
+      forkDescription: null,
     })),
   ];
   return rows.sort((a, b) => b.height - a.height || (b.timestamp ?? 0) - (a.timestamp ?? 0));
@@ -139,6 +165,7 @@ function CaughtTag({ row }: { row: CompetingBlock }) {
   if (row.caughtBy === 'node') {
     return <span className="inline-flex items-center gap-1.5 text-caption font-mono text-secondary" title="Our main node accepted this block, then switched to the winning chain">
       <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-cipher-orange" />Our node reorged
+      {row.source && row.source !== 'indexer' && <Badge color={row.source === 'external' ? 'purple' : 'gold'}>{row.source}</Badge>}
     </span>;
   }
   const n = row.observerCount;
@@ -182,6 +209,27 @@ function SideCard({ label, block, height, lost }: { label: string; block: ReorgB
 
 const PAGE = 25;
 
+function RowDetails({ row }: { row: CompetingBlock }) {
+  const items: [string, React.ReactNode][] = row.caughtBy === 'node'
+    ? [
+        ['Fork event', row.forkEventId != null ? `#${row.forkEventId}${row.depth != null ? ` · ${row.depth}-block reorg` : ''}` : '—'],
+        ['Detected', row.detectedAt ? `${new Date(row.detectedAt).toISOString().replace('T', ' ').slice(0, 19)} UTC` : '—'],
+        ['Source', row.source ?? '—'],
+        ...(row.reportedBy ? [['Reported by', row.reportedBy] as [string, React.ReactNode]] : []),
+        ...(row.consensusValid != null ? [['Consensus valid', row.consensusValid ? 'Yes' : 'No'] as [string, React.ReactNode]] : []),
+        ...(row.size != null ? [['Size', `${row.size.toLocaleString('en-US')} bytes`] as [string, React.ReactNode]] : []),
+      ]
+    : [['Received by', row.observerCount != null ? `${row.observerCount} observer node${row.observerCount === 1 ? '' : 's'}` : '—']];
+  return (
+    <div className="mt-3">
+      <dl className="flex flex-wrap gap-x-6 gap-y-2 text-caption">
+        {items.map(([k, v]) => <div key={k}><dt className="inline font-mono uppercase text-muted">{k} </dt><dd className="inline font-mono text-secondary">{v}</dd></div>)}
+      </dl>
+      {row.forkDescription && <p className="mt-2 text-caption text-muted">{row.forkDescription}</p>}
+    </div>
+  );
+}
+
 const WINDOW_SECONDS = { '24h': 86_400, '7d': 7 * 86_400, '30d': 30 * 86_400 } as const;
 
 export function CompetingBlocks({
@@ -196,16 +244,19 @@ export function CompetingBlocks({
   loading: boolean;
 }) {
   const [caught, setCaught] = useState<'all' | CaughtBy>('all');
+  const [scope, setScope] = useState<'window' | 'all'>('window');
   const [deepOnly, setDeepOnly] = useState(false);
   const [shown, setShown] = useState(PAGE);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   const allRows = useMemo(() => buildRows(orphans, observed, forks), [orphans, observed, forks]);
   // Same rolling window (by block header time) as the summary above, so pool counts line up.
+  // "All loaded" keeps older history reachable (the latest 200 of each kind).
   const rows = useMemo(() => {
+    if (scope === 'all') return allRows;
     const cutoff = Date.now() / 1000 - WINDOW_SECONDS[window];
     return allRows.filter(r => r.timestamp != null && r.timestamp >= cutoff);
-  }, [allRows, window]);
+  }, [allRows, window, scope]);
   const deepCount = rows.filter(r => (r.depth ?? 0) >= 2).length;
   const miners = useMemo(() => {
     const counts = new Map<string, number>();
@@ -225,16 +276,18 @@ export function CompetingBlocks({
       <CardBody>
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
           <div className="flex flex-wrap items-center gap-2">
+            <PeriodPillTags aria-label="List range" value={scope} onChange={v => { setScope(v); setShown(PAGE); }}
+              options={[{ key: 'window', label: `Last ${window}` }, { key: 'all', label: 'All loaded' }]} />
             <FilterGroup inline>
               <FilterButton active={caught === 'all'} onClick={() => { setCaught('all'); setShown(PAGE); }}>All {rows.length}</FilterButton>
               <FilterButton active={caught === 'node'} onClick={() => { setCaught('node'); setShown(PAGE); }}>Our node reorged {nodeCount}</FilterButton>
               <FilterButton active={caught === 'observers'} onClick={() => { setCaught('observers'); setShown(PAGE); }}>Observers only {rows.length - nodeCount}</FilterButton>
             </FilterGroup>
-            {(deepCount > 0 || deepOnly) && (
-              <FilterGroup inline>
-                <FilterButton active={deepOnly} onClick={() => { setDeepOnly(v => !v); setShown(PAGE); }}>Reorg ≥ 2 blocks {deepCount}</FilterButton>
-              </FilterGroup>
-            )}
+            <FilterGroup inline>
+              <FilterButton active={deepOnly} disabled={deepCount === 0 && !deepOnly}
+                title={deepCount === 0 ? 'No reorg of 2 or more blocks in this window' : undefined}
+                onClick={() => { setDeepOnly(v => !v); setShown(PAGE); }}>Reorg ≥ 2 blocks {deepCount}</FilterButton>
+            </FilterGroup>
             <Select aria-label="Miner" value={miner ?? ''} onChange={e => { onMinerChange(e.target.value || null); setShown(PAGE); }}>
               <option value="">All miners</option>
               {miners.map(([name, n]) => <option key={name} value={name}>{name} ({n})</option>)}
@@ -245,10 +298,11 @@ export function CompetingBlocks({
               type="csv"
               data={filtered}
               filename="zecblock-competing-blocks"
-              csvHeaders={['Height', 'Lost hash', 'Winning hash', 'Caught by', 'Observers', 'Reorg depth', 'Lost by pool', 'Lost by address', 'Winning pool', 'Block time (UTC)', 'First seen (UTC)']}
+              csvHeaders={['Height', 'Lost hash', 'Winning hash', 'Caught by', 'Observers', 'Reorg depth', 'Fork event', 'Lost by pool', 'Lost by address', 'Winning pool', 'Block time (UTC)', 'First seen (UTC)', 'Detected (UTC)', 'Transactions', 'Size (bytes)', 'Source', 'Reported by', 'Consensus valid']}
               csvMapper={(r: CompetingBlock) => [
-                String(r.height), r.hash, r.canonical?.hash ?? '', r.caughtBy === 'node' ? 'our node reorged' : 'observers only', String(r.observerCount ?? ''), String(r.depth ?? ''),
+                String(r.height), r.hash, r.canonical?.hash ?? '', r.caughtBy === 'node' ? 'our node reorged' : 'observers only', String(r.observerCount ?? ''), String(r.depth ?? ''), String(r.forkEventId ?? ''),
                 r.minerPool ?? '', r.minerAddress ?? '', r.canonical?.minerPool ?? '', r.timestamp ? new Date(r.timestamp * 1000).toISOString() : '', r.firstSeenAt ?? '',
+                r.detectedAt ?? '', String(r.transactionCount ?? ''), String(r.size ?? ''), r.source ?? '', r.reportedBy ?? '', r.consensusValid == null ? '' : String(r.consensusValid),
               ]}
             />
           )}
@@ -322,6 +376,7 @@ export function CompetingBlocks({
                                 ? <SideCard label="Winning block" lost={false} height={row.height} block={row.canonical} />
                                 : <div className="flex-1 rounded-lg border border-cipher-border bg-glass-2 p-4 flex items-center justify-center text-xs text-muted font-mono">Winning block not indexed</div>}
                             </div>
+                            <RowDetails row={row} />
                           </td>
                         </tr>
                       )}
@@ -335,7 +390,7 @@ export function CompetingBlocks({
 
         {filtered.length > 0 && (
           <div className="mt-4 flex flex-wrap items-center justify-between gap-3 text-caption text-muted">
-            <span>Showing {visible.length} of {filtered.length} in the last {window === '24h' ? '24 hours' : window === '7d' ? '7 days' : '30 days'} · loaded from the latest {orphans.length} node reorgs and {observed.length} observer-only blocks</span>
+            <span>Showing {visible.length} of {filtered.length}{scope === 'window' ? ` in the last ${window === '24h' ? '24 hours' : window === '7d' ? '7 days' : '30 days'}` : ''} · loaded from the latest {orphans.length} node reorgs and {observed.length} observer-only blocks</span>
             {visible.length < filtered.length && (
               <button type="button" onClick={() => setShown(s => s + PAGE)} className="font-mono text-cipher-gold hover:underline">Show {Math.min(PAGE, filtered.length - visible.length)} more</button>
             )}

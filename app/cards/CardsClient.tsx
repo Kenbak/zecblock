@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ChartShareControl } from '@/components/charts/ChartShareControl';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { CARD_CATEGORIES, searchFactCards, type FactCardDef } from '@/lib/fact-cards';
 
 function embedCode(site: string, card: FactCardDef) {
@@ -62,9 +63,8 @@ export function CardsClient({ cards, site }: { cards: FactCardDef[]; site: strin
   const shown = searchFactCards(cards, query, category);
   return <>
     <div className="flex flex-wrap items-center justify-between gap-4 border-b border-cipher-border pb-5 mb-8">
-      <div className="flex flex-wrap gap-2" aria-label="Card categories">
-        {categories.map(c => <button type="button" key={c} aria-pressed={category === c} onClick={() => setCategory(c)} className={`filter-btn ${category === c ? 'filter-btn-active' : ''}`}>{c}</button>)}
-      </div>
+      <PeriodPillTags aria-label="Card categories" value={category} onChange={setCategory}
+        options={categories.map(c => ({ key: c, label: c }))} />
       <label className="flex w-full items-center gap-3 text-caption text-muted sm:w-auto">
         <span className="sr-only">Search cards</span>
         <input type="search" value={query} onChange={e => setQuery(e.target.value)} placeholder="Search: privacy, halving, maya…"

@@ -20,6 +20,8 @@ import { Analytics, Unit, value } from "./model";
 import { dailyTrends } from "./timeline";
 import { TimelineComparison } from "./TimelineComparison";
 import { objectRowsCsv } from "@/components/charts/PanelShareControl";
+import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
+import { Select } from "@/components/ui/Select";
 const BUCKETS = [
   "<$10",
   "$10–50",
@@ -85,22 +87,15 @@ export function ActivityCharts({
           share={{ title: `ZEC cross-chain swap volume and activity (${data.period})`, fileName: `zecblock-crosschain-activity-${data.period}`, csv: () => objectRowsCsv(points) }}
           height={300}
           controls={
-            <div className="filter-group">
-              <button
-                className={`filter-btn ${view === "volume" ? "filter-btn-active" : ""}`}
-                aria-pressed={view === "volume"}
-                onClick={() => setView("volume")}
-              >
-                Volume
-              </button>
-              <button
-                className={`filter-btn ${view === "count" ? "filter-btn-active" : ""}`}
-                aria-pressed={view === "count"}
-                onClick={() => setView("count")}
-              >
-                Swaps
-              </button>
-            </div>
+            <PeriodPillTags
+              aria-label="Activity metric"
+              value={view}
+              onChange={setView}
+              options={[
+                { key: "volume", label: "Volume" },
+                { key: "count", label: "Swaps" },
+              ]}
+            />
           }
         >
           <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
@@ -110,9 +105,8 @@ export function ActivityCharts({
             </p>
             <label className="text-xs text-muted flex items-center gap-2">
               Compare with
-              <select
+              <Select
                 aria-label="Compare activity with"
-                className="bg-cipher-bg border border-cipher-border rounded-lg px-2 py-1 text-xs text-secondary"
                 value={comparison}
                 onChange={(e) =>
                   setComparison(e.target.value as typeof comparison)
@@ -121,7 +115,7 @@ export function ActivityCharts({
                 <option value="none">None</option>
                 <option value="price">ZEC price</option>
                 <option value="shielding">Net shielding</option>
-              </select>
+              </Select>
             </label>
           </div>
           <ResponsiveContainer width="100%" height={260} minWidth={0}>
@@ -215,22 +209,15 @@ export function ActivityCharts({
           share={{ title: `ZEC cross-chain swap sizes (${data.period})`, fileName: `zecblock-crosschain-swap-sizes-${data.period}`, csv: () => objectRowsCsv(distribution) }}
           height={300}
           controls={
-            <div className="filter-group">
-              <button
-                className={`filter-btn ${sizeView === "count" ? "filter-btn-active" : ""}`}
-                aria-pressed={sizeView === "count"}
-                onClick={() => setSizeView("count")}
-              >
-                Count
-              </button>
-              <button
-                className={`filter-btn ${sizeView === "volume" ? "filter-btn-active" : ""}`}
-                aria-pressed={sizeView === "volume"}
-                onClick={() => setSizeView("volume")}
-              >
-                Volume
-              </button>
-            </div>
+            <PeriodPillTags
+              aria-label="Swap size metric"
+              value={sizeView}
+              onChange={setSizeView}
+              options={[
+                { key: "count", label: "Count" },
+                { key: "volume", label: "Volume" },
+              ]}
+            />
           }
         >
           <p className="text-xs text-muted mb-4">

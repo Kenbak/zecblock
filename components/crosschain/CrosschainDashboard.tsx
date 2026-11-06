@@ -9,6 +9,7 @@ import { ChainHistory } from "./ChainHistory";
 import { OutcomeBreakdown } from "./OutcomeBreakdown";
 import { ChainFlowOverview } from "./ChainFlowOverview";
 import { PageSectionNav } from "@/components/PageSectionNav";
+import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
 import { ActivityCharts } from "./ActivityCharts";
 import { SwapFilterLink, useAnalyticsPeriod } from "./SwapFilterLink";
 import { SwapExplorer } from "./SwapExplorer";
@@ -72,18 +73,12 @@ export function CrosschainDashboard({
     refreshInterval: 300000,
   });
   const unitToggle = (
-    <div className="filter-group" role="group" aria-label="Volume unit">
-      {(["usd", "zec"] as const).map((u) => (
-        <button
-          key={u}
-          onClick={() => setUnit(u)}
-          aria-pressed={unit === u}
-          className={`filter-btn ${unit === u ? "filter-btn-active" : ""}`}
-        >
-          {u.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <PeriodPillTags
+      aria-label="Volume unit"
+      value={unit}
+      onChange={setUnit}
+      options={(["usd", "zec"] as const).map((u) => ({ key: u, label: u.toUpperCase() }))}
+    />
   );
   if (loading && !data)
     return (
@@ -218,27 +213,19 @@ export function CrosschainDashboard({
           <ActivityCharts data={data} unit={unit} panel="sizes" />
           <section className="card space-y-4">
             <PanelTitle title="Top pairs" controls={
-              <div
-                className="filter-group"
-                role="group"
+              <PeriodPillTags
                 aria-label="Rank top pairs by"
-              >
-                {(["swaps", "usd", "zec"] as const).map((metric) => (
-                  <button
-                    key={metric}
-                    type="button"
-                    aria-pressed={pairSort === metric}
-                    disabled={metric !== "swaps" && !data.routeRankings}
-                    className={`filter-btn disabled:opacity-40 ${pairSort === metric ? "filter-btn-active" : ""}`}
-                    onClick={() => {
-                      setPairSort(metric);
-                      setAllRoutes(false);
-                    }}
-                  >
-                    {metric === "swaps" ? "Swaps" : `${metric.toUpperCase()} volume`}
-                  </button>
-                ))}
-              </div>
+                value={pairSort}
+                onChange={(metric) => {
+                  setPairSort(metric);
+                  setAllRoutes(false);
+                }}
+                options={(["swaps", "usd", "zec"] as const).map((metric) => ({
+                  key: metric,
+                  label: metric === "swaps" ? "Swaps" : `${metric.toUpperCase()} volume`,
+                  disabled: metric !== "swaps" && !data.routeRankings,
+                }))}
+              />
             } />
             <p className="text-xs text-muted">
               {pairSort === "swaps"

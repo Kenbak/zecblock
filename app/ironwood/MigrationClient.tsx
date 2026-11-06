@@ -36,6 +36,7 @@ import {
   type ScatterCursor,
 } from './compact-scatter';
 import { useUrlState } from '@/lib/use-url-state';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 export type { Cohort, Cohorts, Overview, ScatterData, ScatterTx } from './components';
 
@@ -275,15 +276,12 @@ export function MigrationClient({
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <div role="group" aria-label="Display currency" className="inline-flex gap-1 p-1 rounded-lg bg-glass-3">
-            {(['zec', 'usd'] as const).map(unit => (
-              <button key={unit} type="button" aria-pressed={currencyMode === unit}
-                onClick={() => setCurrencyMode(unit)}
-                className={`min-h-9 px-3 rounded-md text-xs font-mono uppercase transition-colors ${currencyMode === unit ? 'bg-cipher-bg text-primary shadow-sm ring-1 ring-glass-12' : 'text-muted hover:text-primary'}`}>
-                {unit.toUpperCase()}
-              </button>
-            ))}
-          </div>
+          <PeriodPillTags
+            aria-label="Display currency"
+            options={(['zec', 'usd'] as const).map(unit => ({ key: unit, label: unit.toUpperCase() }))}
+            value={currencyMode}
+            onChange={setCurrencyMode}
+          />
           <span className="text-caption font-mono text-muted px-2" aria-label={`Network: ${NETWORK_LABEL}`}>
             {NETWORK_LABEL}
           </span>

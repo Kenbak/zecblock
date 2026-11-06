@@ -5,6 +5,7 @@ import { ObservationLagSection } from '@/components/mining/ObservationLagSection
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -106,22 +107,12 @@ function formatPct(share: number): string {
 
 function PeriodSelector({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
   return (
-    <div className="inline-flex gap-0 p-0.5 rounded-md bg-glass-3 flex-shrink-0">
-      {PERIODS.map(p => (
-        <button
-          key={p}
-          aria-pressed={value === p}
-          onClick={() => onChange(p)}
-          className={`px-1.5 py-0.5 text-caption font-mono rounded transition whitespace-nowrap ${
-            value === p
-              ? 'bg-brand-gold/15 text-cipher-gold font-semibold'
-              : 'text-muted hover:text-primary'
-          }`}
-        >
-          {p.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <PeriodPillTags
+      options={PERIODS.map(p => ({ key: p, label: p.toUpperCase() }))}
+      value={value}
+      onChange={onChange}
+      className="flex-shrink-0"
+    />
   );
 }
 

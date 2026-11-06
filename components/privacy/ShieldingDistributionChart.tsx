@@ -16,6 +16,7 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PrivacyFlowCard } from './PrivacyFlowCard';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { PeriodSelector, PRIVACY_PERIODS, Period } from './PeriodSelector';
 import {
   PRIVACY_BAR_CHART_MARGIN,
@@ -39,14 +40,6 @@ type ViewMode = 'count' | 'volume';
 
 const CHART_HEIGHT = 340;
 
-function modePillClass(active: boolean) {
-  return `px-1.5 py-0.5 text-caption font-mono rounded transition whitespace-nowrap ${
-    active
-      ? 'bg-brand-gold/15 text-cipher-gold font-semibold'
-      : 'text-muted hover:text-primary'
-  }`;
-}
-
 export function ShieldingDistributionChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
@@ -68,19 +61,13 @@ export function ShieldingDistributionChart() {
 
   const controls = (
     <div className="flex flex-wrap items-center gap-2">
-      <div className="inline-flex flex-shrink-0 gap-0 rounded-md bg-glass-3 p-0.5">
-        {(['count', 'volume'] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            aria-pressed={mode === m}
-            onClick={() => setMode(m)}
-            className={modePillClass(mode === m)}
-          >
-            {m === 'count' ? 'COUNT' : 'VOLUME'}
-          </button>
-        ))}
-      </div>
+      <PeriodPillTags
+        aria-label="Flow measure"
+        className="flex-shrink-0"
+        options={(['count', 'volume'] as const).map((m) => ({ key: m, label: m === 'count' ? 'COUNT' : 'VOLUME' }))}
+        value={mode}
+        onChange={setMode}
+      />
       <PeriodSelector value={period} onChange={setPeriod} />
     </div>
   );

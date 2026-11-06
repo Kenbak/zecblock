@@ -75,6 +75,20 @@ interface Stats {
   totalForkEvents: number;
   reportsLast24h: number;
   deepestReorg: number;
+  observerOnlyOrphanedBlocks?: number | null;
+  observerCaptureStartedAt?: string | null;
+}
+
+/** A competing block the observer network received that lost the race without reorging our main node. */
+interface ObservedOrphan {
+  height: number;
+  hash: string;
+  timestamp: number | null;
+  firstSeenAt: string | null;
+  observerCount: number | null;
+  minerAddress: string | null;
+  minerPool: string | null;
+  canonicalBlock: ReorgBlockSide | null;
 }
 
 interface MonitoredNode {
@@ -159,6 +173,81 @@ const forkColumns: SortableColumn<ForkEvent>[] = [
     cell: (fork) => (
       <span className="text-xs text-muted font-mono whitespace-nowrap">
         {fork.detectedAt ? formatRelativeTime(new Date(fork.detectedAt).getTime() / 1000) : '—'}
+      </span>
+    ),
+  },
+];
+
+function MinerCell({ pool, address }: { pool: string | null; address: string | null }) {
+  if (isUnknownPool(pool)) {
+    return address
+      ? <HashLink value={address} href={`/address/${address}`} lead={6} tail={4} copy={false} />
+      : <span className="text-xs text-muted">—</span>;
+  }
+  const label = <><PoolLogo name={pool!} /><span className="truncate">{pool}</span></>;
+  return address
+    ? <Link href={`/address/${address}`} prefetch={false} className="inline-flex items-center gap-2 max-w-[150px] text-xs font-mono text-cipher-gold hover:underline" title={address}>{label}</Link>
+    : <span className="inline-flex items-center gap-2 max-w-[150px] text-xs font-mono text-cipher-gold">{label}</span>;
+}
+
+const observedColumns: SortableColumn<ObservedOrphan>[] = [
+  {
+    id: 'height',
+    header: 'Height',
+    sortValue: (block) => block.height,
+    cell: (block) => (
+      <Link href={`/block/${block.height}`} prefetch={false} className="text-cipher-gold hover:underline font-mono text-xs">
+        #{block.height.toLocaleString()}
+      </Link>
+    ),
+  },
+  {
+    id: 'lost',
+    header: 'Lost block',
+    cell: (block) => (
+      <span>
+        <HashLink value={block.hash} href={`/block/${block.hash}`} lead={10} tail={6} copy={false} linkClassName="text-xs font-mono text-cipher-orange hover:underline" />
+        <span className="sm:hidden block mt-0.5"><MinerCell pool={block.minerPool} address={block.minerAddress} /></span>
+      </span>
+    ),
+  },
+  {
+    id: 'miner',
+    header: 'Lost by',
+    className: 'hidden sm:table-cell',
+    sortValue: (block) => block.minerPool,
+    cell: (block) => <MinerCell pool={block.minerPool} address={block.minerAddress} />,
+  },
+  {
+    id: 'winner',
+    header: 'Winning block',
+    className: 'hidden md:table-cell',
+    cell: (block) => block.canonicalBlock ? (
+      <span className="inline-flex flex-col gap-0.5">
+        <HashLink value={block.canonicalBlock.hash} href={`/block/${block.height}`} lead={10} tail={6} copy={false} linkClassName="text-xs font-mono text-cipher-green hover:underline" />
+        {!isUnknownPool(block.canonicalBlock.minerPool) && <span className="text-caption text-muted">{block.canonicalBlock.minerPool}</span>}
+      </span>
+    ) : <span className="text-xs text-muted">—</span>,
+  },
+  {
+    id: 'observers',
+    header: 'Observers',
+    align: 'center',
+    sortValue: (block) => block.observerCount,
+    cell: (block) => (
+      <span className="font-mono text-xs text-secondary" title="Observer nodes that received this block">
+        {block.observerCount ?? '—'}
+      </span>
+    ),
+  },
+  {
+    id: 'time',
+    header: 'Time',
+    align: 'right',
+    sortValue: (block) => block.timestamp,
+    cell: (block) => (
+      <span className="text-xs text-muted font-mono whitespace-nowrap">
+        {block.timestamp ? formatRelativeTime(block.timestamp) : '—'}
       </span>
     ),
   },
@@ -268,8 +357,9 @@ const nodeColumns: DataTableColumn<MonitoredNode>[] = [
 ];
 
 export default function UnclesPage() {
-  const [tab, setTab] = useState<'forks' | 'orphans' | 'nodes'>('forks');
+  const [tab, setTab] = useState<'forks' | 'orphans' | 'observed' | 'nodes'>('forks');
   const [orphans, setOrphans] = useState<OrphanedBlock[]>([]);
+  const [observed, setObserved] = useState<ObservedOrphan[]>([]);
   const [forks, setForks] = useState<ForkEvent[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [nodes, setNodes] = useState<MonitoredNode[]>([]);
@@ -283,11 +373,13 @@ export default function UnclesPage() {
       setLoading(true);
       setError(null);
 
-      const [statsRes, orphansRes, forksRes, nodesRes] = await Promise.all([
+      const [statsRes, orphansRes, forksRes, nodesRes, observedRes] = await Promise.all([
         fetch(`${API_URL}/v1/uncles/stats`),
         fetch(`${API_URL}/v1/uncles?limit=50`),
         fetch(`${API_URL}/v1/uncles/forks?limit=100`),
         fetch(`${API_URL}/v1/uncles/nodes`),
+        // Optional: the rest of the page works without the observer list.
+        fetch(`${API_URL}/v1/uncles/observed?limit=50`).catch(() => null),
       ]);
 
       if (statsRes.ok) {
@@ -298,6 +390,11 @@ export default function UnclesPage() {
       if (orphansRes.ok) {
         const orphansData = await readApiData(orphansRes);
         if (orphansData) setOrphans(orphansData.orphanedBlocks || []);
+      }
+
+      if (observedRes?.ok) {
+        const observedData = await readApiData(observedRes);
+        if (observedData) setObserved(observedData.orphanedBlocks || []);
       }
 
       if (forksRes.ok) {
@@ -446,19 +543,29 @@ export default function UnclesPage() {
 
       {/* Stats */}
       {stats && (
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-3">
           <StatCard label="Fork Events" value={stats.totalForkEvents} />
-          <StatCard label="Orphaned Blocks" value={stats.totalOrphanedBlocks} />
+          <StatCard label="Reorged on our node" value={stats.totalOrphanedBlocks} />
+          <StatCard label="Seen only by observers" value={stats.observerOnlyOrphanedBlocks ?? '—'} />
           <StatCard label="Longest Reorg" value={stats.deepestReorg > 0 ? `${stats.deepestReorg} blocks` : '—'} color={stats.deepestReorg > 3 ? 'text-cipher-orange' : 'text-primary'} />
           <StatCard label="Nodes Monitored" value={nodesSummary ? `${nodesSummary.online}/${nodesSummary.total}` : '—'} color={nodesSummary && nodesSummary.forking > 0 ? 'text-cipher-orange' : 'text-primary'} />
         </div>
       )}
+      {stats && (
+        <p className="text-xs text-muted mb-8 max-w-3xl">
+          Reorged on our node counts blocks our main node accepted and later switched away from. Most competing blocks lose the race
+          before that happens, so our observer nodes catch them instead
+          {stats.observerCaptureStartedAt ? ` (since ${new Date(stats.observerCaptureStartedAt).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC' })})` : ''}. The{' '}
+          <Link href="/mining#orphans" prefetch={false} className="text-cipher-gold hover:underline">orphan rate on Mining</Link>{' '}
+          counts both kinds over 24-hour, 7-day and 30-day windows, so its totals differ from the all-time counts here.
+        </p>
+      )}
 
       {/* Tab Switcher */}
-      <div className="flex gap-1 mb-6 border-b border-cipher-border">
+      <div className="flex gap-1 mb-6 border-b border-cipher-border overflow-x-auto">
         <button
           onClick={() => setTab('forks')}
-          className={`px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
             tab === 'forks'
               ? 'border-cipher-gold text-cipher-gold'
               : 'border-transparent text-muted hover:text-secondary'
@@ -468,7 +575,7 @@ export default function UnclesPage() {
         </button>
         <button
           onClick={() => setTab('orphans')}
-          className={`px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
             tab === 'orphans'
               ? 'border-cipher-gold text-cipher-gold'
               : 'border-transparent text-muted hover:text-secondary'
@@ -477,8 +584,18 @@ export default function UnclesPage() {
           Orphaned Blocks ({orphans.length})
         </button>
         <button
+          onClick={() => setTab('observed')}
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
+            tab === 'observed'
+              ? 'border-cipher-gold text-cipher-gold'
+              : 'border-transparent text-muted hover:text-secondary'
+          }`}
+        >
+          Seen by Observers ({stats?.observerOnlyOrphanedBlocks ?? observed.length})
+        </button>
+        <button
           onClick={() => setTab('nodes')}
-          className={`px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
+          className={`shrink-0 whitespace-nowrap px-4 py-2 text-xs font-mono transition-colors border-b-2 ${
             tab === 'nodes'
               ? 'border-cipher-gold text-cipher-gold'
               : 'border-transparent text-muted hover:text-secondary'
@@ -486,7 +603,7 @@ export default function UnclesPage() {
         >
           Monitored Nodes ({nodes.length})
         </button>
-        <div className="ml-auto self-center pb-1">
+        <div className="ml-auto shrink-0 self-center pb-1">
           {tab === 'forks' && forks.length > 0 && (
             <ExportButton
               type="csv"
@@ -496,6 +613,18 @@ export default function UnclesPage() {
               csvMapper={(fork: ForkEvent) => [
                 String(fork.id), String(fork.forkHeight), String(fork.depth), String(fork.orphanedCount), String(fork.canonicalTip ?? ''),
                 fork.source, fork.detectedAt, fork.resolvedAt ?? '', fork.description ?? '',
+              ]}
+            />
+          )}
+          {tab === 'observed' && observed.length > 0 && (
+            <ExportButton
+              type="csv"
+              data={observed}
+              filename="zecblock-observer-orphans"
+              csvHeaders={['Height', 'Lost hash', 'Winning hash', 'Block time (UTC)', 'First seen (UTC)', 'Lost by pool', 'Lost by address', 'Winning pool', 'Observers']}
+              csvMapper={(block: ObservedOrphan) => [
+                String(block.height), block.hash, block.canonicalBlock?.hash ?? '', block.timestamp ? new Date(block.timestamp * 1000).toISOString() : '',
+                block.firstSeenAt ?? '', block.minerPool ?? '', block.minerAddress ?? '', block.canonicalBlock?.minerPool ?? '', String(block.observerCount ?? ''),
               ]}
             />
           )}
@@ -680,6 +809,24 @@ export default function UnclesPage() {
             </table>
           </div>
         </div>
+      )}
+
+      {/* Observer-only orphans */}
+      {!loading && !error && tab === 'observed' && (
+        observed.length > 0 ? (
+          <SortableDataTable
+            caption="Competing blocks seen only by the observer network"
+            columns={observedColumns}
+            rows={observed}
+            rowKey={(block) => block.hash}
+          />
+        ) : (
+          <Card>
+            <CardBody>
+              <EmptyState title="No observer-only orphans recorded" />
+            </CardBody>
+          </Card>
+        )
       )}
 
       {/* Monitored Nodes Table */}

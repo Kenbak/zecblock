@@ -125,6 +125,7 @@
   "POST /v1/crosslink/fork-monitor/nodes": "post-crosslink-fork-monitor-nodes",
   "DELETE /v1/crosslink/fork-monitor/nodes/:name": "delete-crosslink-fork-monitor-nodes-name",
   "GET /v1/uncles": "get-uncles",
+  "GET /v1/uncles/observed": "get-uncles-observed",
   "GET /v1/uncles/forks": "get-uncles-forks",
   "GET /v1/uncles/:hash": "get-uncles-hash",
   "POST /v1/uncles/reports": "post-uncles-reports",

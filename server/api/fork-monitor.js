@@ -15,7 +15,7 @@ const MAINNET_NODES = [
   { name: 'Cake Wallet', host: 'zec-node.cakewallet.com', port: 443, tls: true },
   { name: 'zprivacy', host: 'zprivacy.online', port: 443, tls: true },
   { name: 'z0n.jp', host: 'lwd.z0n.jp', port: 443, tls: true },
-  { name: 'Stardust EU', host: 'eu2.zec.stardust.rest', port: 443, tls: true },
+  { name: 'Stardust EU', host: 'eu.zec.stardust.rest', port: 443, tls: true },
   { name: 'ombie.cash (Zaino)', host: 'z.ombie.cash', port: 443, tls: true },
   { name: 'chmodas', host: 'chmodas.org', port: 443, tls: true },
   { name: 'zec.rocks NA', host: 'na.zec.rocks', port: 443, tls: true },

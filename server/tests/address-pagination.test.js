@@ -64,6 +64,45 @@ test('address page 2 preserves pagination and funding units; funding failure rem
   }
 });
 
+test('TEX addresses (ZIP 320) serve the history and graph of the P2PKH address they re-encode', async () => {
+  const TEX = 'tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte';
+  const P2PKH = 't1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC';
+  const queried = [];
+  const app = express();
+  app.locals.pool = { async connect() { return { query: this.query.bind(this), release() {} }; }, async query(sql, params) {
+    if (/^(BEGIN|COMMIT|ROLLBACK|SAVEPOINT|RELEASE)/.test(sql)) return { rows: [] };
+    if (params) queried.push(params[0]);
+    if (sql.includes('FROM blocks')) return { rows: [{ height: 1000, hash: 'a'.repeat(64) }] };
+    if (sql.includes('FROM addresses')) return { rows: [{ address: P2PKH, total_received: '12500000', total_sent: '0', balance: '12500000', tx_count: '1' }] };
+    if (sql.includes('WITH paged')) return { rows: [{ txid: 'tex-payment', tx_index: 0, block_height: 100, block_time: '1732359779', input_value: '0', output_value: '12500000' }] };
+    return { rows: [] };
+  } };
+  app.use(router);
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise(resolve => server.once('listening', resolve));
+  try {
+    const base = `http://127.0.0.1:${server.address().port}/api/address`;
+    let response = await fetch(`${base}/${TEX}`);
+    let body = await response.json();
+    assert.equal(response.status, 200);
+    assert.equal(body.address, TEX, 'the response keeps the address that was asked for');
+    assert.equal(body.transparentAddress, P2PKH);
+    assert.equal(body.balanceZat, '12500000');
+    assert.equal(body.transactions[0].txid, 'tex-payment');
+    response = await fetch(`${base}/${TEX}/graph`);
+    body = await response.json();
+    assert.equal(body.address, P2PKH);
+    assert.ok(queried.length > 0 && queried.every(value => value === P2PKH), 'every lookup uses the P2PKH form');
+    for (const invalid of [`${TEX.slice(0, -1)}q`, 'tex1not-an-address']) {
+      response = await fetch(`${base}/${invalid}`);
+      assert.equal(response.status, 404);
+      assert.deepEqual(await response.json(), { error: 'Invalid TEX address' });
+    }
+  } finally {
+    await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test('PostgreSQL: earliest inbound follows chain order and preserves zero outputs and funder labels', {
   skip: !process.env.ADDRESS_TEST_DATABASE_URL,
 }, async t => {

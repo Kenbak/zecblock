@@ -102,6 +102,7 @@ test('malformed transaction and address URLs return a styled 404 from Proxy, nev
     ['/address/zzz', 'Address not found'],
     ['/address/t1Kfws', 'Address not found'],
     ['/address/%E0%A4%A', 'Address not found'],
+    ['/address/tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgt', 'Address not found'],
   ];
   for (const [route, title] of cases) {
     const response = await proxy(new NextRequest(`https://explorer.example${route}`));
@@ -113,7 +114,20 @@ test('malformed transaction and address URLs return a styled 404 from Proxy, nev
   for (const route of [
     `/address/t1${'a'.repeat(33)}`,
     '/address/tmBsTi2xWTjUdEXnuTceL7fecEQKeWaPDJd',
+    '/address/tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte',
+    '/address/textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy',
   ]) {
     assert.equal((await proxy(new NextRequest(`https://explorer.example${route}`))).status, 200, route);
   }
+});
+
+test('well-formed TEX addresses bypass Proxy like the other address forms', () => {
+  const { config } = loadNetworkProxy('mainnet');
+  const prefix = '/address/:address(';
+  const pattern = config.matcher.find(matcher => matcher.startsWith(prefix));
+  const reachesProxy = new RegExp(`^/address/(?:${pattern.slice(prefix.length, -1)})$`);
+  assert.equal(reachesProxy.test('/address/tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgte'), false);
+  assert.equal(reachesProxy.test('/address/textest1qyqszqgpqyqszqgpqyqszqgpqyqszqgpfcjgfy'), false);
+  assert.equal(reachesProxy.test('/address/t1VmmGiyjVNeCjxDZzg7vZmd99WyzVby9yC'), false);
+  assert.equal(reachesProxy.test('/address/tex1s2rt77ggv6q989lr49rkgzmh5slsksa9khdgt'), true);
 });

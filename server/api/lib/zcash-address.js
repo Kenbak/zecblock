@@ -77,4 +77,43 @@ function isValidBase58CheckAddress(address) {
     && crypto.timingSafeEqual(checksum, expected);
 }
 
-module.exports = { isValidUnifiedAddress, isValidSaplingAddress, isValidBase58CheckAddress };
+function encodeBase58Check(payload) {
+  const checksum = crypto.createHash('sha256')
+    .update(crypto.createHash('sha256').update(payload).digest())
+    .digest()
+    .subarray(0, 4);
+  const bytes = Buffer.concat([payload, checksum]);
+  let number = BigInt(`0x${bytes.toString('hex')}`);
+  let encoded = '';
+  while (number > 0n) {
+    encoded = BASE58_ALPHABET[Number(number % 58n)] + encoded;
+    number /= 58n;
+  }
+  for (let i = 0; i < bytes.length && bytes[i] === 0; i += 1) encoded = `1${encoded}`;
+  return encoded;
+}
+
+// ZIP 320: TEX HRPs and the P2PKH lead bytes of the address they re-encode.
+const TEX_P2PKH_VERSIONS = new Map([
+  ['tex', '1cb8'], // mainnet P2PKH (t1)
+  ['textest', '1d25'], // testnet P2PKH (tm)
+]);
+
+/**
+ * Return the P2PKH address that a TEX address (ZIP 320) re-encodes, or null.
+ * A TEX address is Bech32m with HRP tex or textest over a 20-byte key hash,
+ * and payments to it are ordinary P2PKH outputs to that address.
+ */
+function texToTransparentAddress(address) {
+  try {
+    const { prefix, words } = bech32m.decode(address, MAX_BECH32_LENGTH);
+    const version = TEX_P2PKH_VERSIONS.get(prefix);
+    const keyHash = Buffer.from(bech32m.fromWords(words));
+    if (!version || keyHash.length !== 20) return null;
+    return encodeBase58Check(Buffer.concat([Buffer.from(version, 'hex'), keyHash]));
+  } catch {
+    return null;
+  }
+}
+
+module.exports = { isValidUnifiedAddress, isValidSaplingAddress, isValidBase58CheckAddress, texToTransparentAddress };

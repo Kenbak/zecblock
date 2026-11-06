@@ -1,5 +1,6 @@
 import { CopyButton } from '@/components/CopyButton';
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { buildPageMetadata, getAddressResolution, formatNumber, getBaseUrl } from '@/lib/seo';
 import type { AddressMeta } from '@/lib/seo';
@@ -20,6 +21,7 @@ export function generateStaticParams(): Array<{ address: string }> {
 }
 
 function getAddressTypeLabel(addr: string, type: string): string {
+  if (detectAddressType(addr) === 'tex') return 'TEX';
   if (addr.startsWith('u1') || addr.startsWith('utest')) return 'Unified';
   if (addr.startsWith('zs') || addr.startsWith('ztestsapling')) return 'Sapling Shielded';
   if (type === 'shielded') return 'Shielded';
@@ -99,7 +101,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title,
     description,
     path,
-    index: hasPublicActivity,
+    // A TEX page repeats the history of its P2PKH address; index that page only.
+    index: hasPublicActivity && detectAddressType(address) !== 'tex',
     imageAlt: `${typeLabel} Zcash address ${shortAddr}`,
   });
 }
@@ -125,6 +128,7 @@ export default async function AddressLayout({
   const canonical = new URL(path, `${getBaseUrl()}/`).toString();
   const summary = getAddressSummary(address, meta);
   const typeLabel = getAddressTypeLabel(address, meta?.type || detectAddressType(address));
+  const texTransparentAddress = detectAddressType(address) === 'tex' ? meta?.transparentAddress : undefined;
   const jsonLd = {
     '@context': 'https://schema.org',
     '@type': 'WebPage',
@@ -152,6 +156,13 @@ export default async function AddressLayout({
           <span className="flex items-start gap-2 mt-3 text-sm sm:text-base font-mono font-normal"><span className="min-w-0 break-all">{address}</span><CopyButton text={address} label="address" size="md" /></span>
         </h1>
         <p className="mt-3 text-sm text-secondary">{meta?.isShielded ? `${typeLabel} address. Shielded balances and activity are private.` : 'Public balance, indexed activity and transparent address connections.'}</p>
+        {texTransparentAddress ? (
+          <p className="mt-2 text-sm text-secondary break-all">
+            TEX form (ZIP 320) of transparent address{' '}
+            <Link href={`/address/${texTransparentAddress}`} prefetch={false} className="font-mono text-primary underline">{texTransparentAddress}</Link>
+            . Both forms share one balance and history.
+          </p>
+        ) : null}
       </header>
       <script
         type="application/ld+json"

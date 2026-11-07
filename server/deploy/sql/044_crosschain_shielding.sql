@@ -1,4 +1,5 @@
 -- Shielded-rate tracking for ZEC delivered by cross-chain swaps (NEAR 1Click).
+-- networks: mainnet
 -- One row per successful inflow swap identity. Rows are derived and may be
 -- recomputed at any time from crosschain_swaps_v2 + canonical chain tables.
 --

@@ -32,7 +32,7 @@ const slice = { swaps: 6, coveredSwaps: 4, swapCoverage: 0.6667, uncovered: { no
   coveredZat: '425000000', shieldedZat: '375000000', shieldedRate: 0.8823, breakdownZat: breakdown, shieldedArrivals: 1 };
 const data = { period: '90d', summary: slice, daily: [{ date: '2026-11-01', ...slice }], byChain: [{ chain: 'eth', ...slice }],
   timeToShield: { samples: 2, medianMinutes: 15.5, p90Minutes: 27.1 },
-  coverage: { sourceSwaps: 7, classifiedSwaps: 6, pendingClassification: 1, lastClassifiedAt: null } };
+  coverage: { sourceSwaps: 7, classifiedSwaps: 6, pendingClassification: 1, lastClassifiedAt: null, intentsBalanceSwaps: 3 } };
 
 test('renders rate, coverage and exclusions from exact zatoshi strings', () => {
   const calls = [];
@@ -46,6 +46,7 @@ test('renders rate, coverage and exclusions from exact zatoshi strings', () => {
   assert.match(html, /1 newer swaps await classification/);
   assert.match(html, /16 min/);
   assert.match(html, /Ethereum/);
+  assert.match(html, /3 more were kept as NEAR Intents balances/);
 });
 
 test('unavailable index shows no inferred rate', () => {

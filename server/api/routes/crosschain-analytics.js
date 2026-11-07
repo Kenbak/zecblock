@@ -1,6 +1,7 @@
 "use strict";
 const express = require("express");
 const { readAnalytics, readSwaps } = require("../../lib/crosschain/analytics");
+const { readShielding } = require("../../lib/crosschain/shielding");
 const { logSafeError } = require("../lib/safe-log");
 const router = express.Router();
 const caches = new WeakMap();
@@ -73,6 +74,41 @@ router.get("/api/crosschain/swaps", async (req, res) => {
     );
   } catch (err) {
     fail(res, err);
+  }
+});
+router.get("/api/crosschain/shielding", async (req, res) => {
+  // Keep explicit property reads for generated v1 query inventory.
+  const q = { period: req.query.period };
+  const pool = req.app.locals.pool;
+  if (!pool)
+    return res
+      .status(503)
+      .json({ success: false, error: "Database unavailable" });
+  const v2 = process.env.CROSSCHAIN_V2_READ_ENABLED === "1";
+  const cache = cacheFor(pool),
+    key = JSON.stringify(["shielding", v2, q]);
+  try {
+    let entry = cache.get(key);
+    if (!entry || Date.now() - entry.at > 60000) {
+      if (cache.size >= 24) cache.delete(cache.keys().next().value);
+      entry = { at: Date.now(), promise: readShielding(pool, q, { v2 }) };
+      cache.set(key, entry);
+      entry.promise.catch(() => {
+        if (cache.get(key) === entry) cache.delete(key);
+      });
+    }
+    res.set("Cache-Control", "no-store");
+    res.json(await entry.promise);
+  } catch (err) {
+    if (err.status === 400)
+      return res
+        .status(400)
+        .json({ success: false, error: "Invalid shielding period" });
+    logSafeError("Cross-chain shielding unavailable", err);
+    return res.status(503).json({
+      success: false,
+      error: "Shielding index temporarily unavailable",
+    });
   }
 });
 module.exports = router;

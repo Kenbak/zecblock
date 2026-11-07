@@ -53,6 +53,9 @@ function getQueryConstraint(route, name) {
   if (route === '/v1/shielded-pools/activity' && name === 'period') {
     return { required: false, schema: { type: 'string', enum: ['7d', '30d', '90d', '1y'], default: '30d' }, description: 'Trailing complete UTC calendar days, excluding today. One year means 365 days.' };
   }
+  if (route === '/v1/crosschain/shielding' && name === 'period') {
+    return { required: false, schema: { type: 'string', enum: ['30d', '90d', '1y', 'all'], default: '90d' }, description: 'Trailing UTC days by swap creation time, starting at the start of the UTC day; all covers every classified swap. Recent held ZEC may still be shielded later.' };
+  }
   if (['/v1/crosschain/analytics','/v1/crosschain/swaps'].includes(route)) {
     const schemas = {
       period: {type:'string',enum:['24h','7d','30d','90d','1y','all'],default:'30d',description:'Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete.'},

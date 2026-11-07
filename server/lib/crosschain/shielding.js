@@ -13,6 +13,11 @@ const ARRIVALS = ["no_zec_tx", "tx_not_indexed", "unmatched", "shielded", "trans
 const COVERED = ["shielded", "transparent"];
 const OUTCOMES = ["held", "shielded", "exchange", "bridge", "transferred"];
 const RECHECK_DAYS = 120; // held/uncovered rows newer than this are re-examined
+// Swaps credited to a NEAR Intents balance never reach a Zcash address, so they
+// are outside the population (reported separately), not uncovered deliveries.
+const POPULATION = `s.status='SUCCESS' AND s.direction='inflow'
+  AND COALESCE(s.payload->>'recipientType','DESTINATION_CHAIN') <> 'INTENTS'`;
+const INTENTS_BALANCE = `s.status='SUCCESS' AND s.direction='inflow' AND s.payload->>'recipientType' = 'INTENTS'`;
 
 /**
  * Recompute classification rows for the given swap identities in one
@@ -29,13 +34,15 @@ async function classifySwaps(client, targets, { v2 }) {
       `CREATE TEMP TABLE _cs_swaps ON COMMIT DROP AS
        ${source(v2)}
        SELECT s.deposit_address, s.deposit_memo, s.swap_created_at, s.source_chain,
-              s.payload->>'recipient' AS recipient, s.zec_txid,
+              s.payload->>'recipient' AS recipient,
+              -- A non-hex hash is a NEAR transaction, not a Zcash delivery.
+              CASE WHEN s.zec_txid ~ '^[0-9a-f]{64}$' THEN s.zec_txid END AS zec_txid,
               CASE WHEN s.dest_amount IS NOT NULL AND s.dest_amount >= 0 AND s.dest_amount <= 21000000
                    THEN round(s.dest_amount * 100000000)::bigint END AS reported_zat
        FROM swaps s
        JOIN unnest($1::text[], $2::text[]) AS t(address, memo)
          ON t.address = s.deposit_address AND t.memo = s.deposit_memo
-       WHERE s.status = 'SUCCESS' AND s.direction = 'inflow'`,
+       WHERE ${POPULATION}`,
       [addresses, memos],
     );
     // Canonical delivery transaction (orphaned transactions leave this table).
@@ -135,7 +142,7 @@ async function findUnclassified(client, { v2, limit }) {
   const r = await client.query(
     `${source(v2)}
      SELECT s.deposit_address AS address, s.deposit_memo AS memo FROM swaps s
-     WHERE s.status='SUCCESS' AND s.direction='inflow'
+     WHERE ${POPULATION}
        AND NOT EXISTS (SELECT 1 FROM crosschain_shielding c
                        WHERE c.deposit_address=s.deposit_address AND c.deposit_memo=s.deposit_memo)
      ORDER BY s.swap_created_at, s.deposit_address, s.deposit_memo LIMIT $1`,
@@ -168,6 +175,7 @@ async function findChanged(client, { v2, limit }) {
      FROM crosschain_shielding c JOIN crosschain_swaps_v2 v
        ON v.deposit_address=c.deposit_address AND v.deposit_memo=c.deposit_memo
      WHERE v.last_seen_at > c.classified_at OR v.status <> 'SUCCESS'
+        OR v.payload->>'recipientType' = 'INTENTS'
      ORDER BY c.classified_at LIMIT $1`,
     [limit],
   );
@@ -180,7 +188,7 @@ async function pruneStale(client, { v2 }) {
     `${source(v2)}
      DELETE FROM crosschain_shielding c WHERE NOT EXISTS (
        SELECT 1 FROM swaps s WHERE s.deposit_address=c.deposit_address AND s.deposit_memo=c.deposit_memo
-         AND s.status='SUCCESS' AND s.direction='inflow')`,
+         AND ${POPULATION})`,
   );
   return r.rowCount;
 }
@@ -242,8 +250,9 @@ async function readShielding(db, q, { v2 }) {
     ).then((r) => r.rows),
     // Successful inflows in the source index, to expose classification lag.
     db.query(
-      `${source(v2)} SELECT count(*)::int AS swaps FROM swaps s
-       WHERE s.status='SUCCESS' AND s.direction='inflow' AND ${sourceWindow}`,
+      `${source(v2)} SELECT count(*) FILTER (WHERE ${POPULATION})::int AS swaps,
+         count(*) FILTER (WHERE ${INTENTS_BALANCE})::int AS intents_balance
+       FROM swaps s WHERE s.status='SUCCESS' AND s.direction='inflow' AND ${sourceWindow}`,
       params,
     ).then((r) => r.rows[0]),
     db.query(
@@ -287,7 +296,7 @@ async function readShielding(db, q, { v2 }) {
     period,
     definition: {
       venue: "near-1click",
-      population: "Successful NEAR 1Click swaps into native ZEC, dated by provider creation time (UTC).",
+      population: "Successful NEAR 1Click swaps into native ZEC delivered to a Zcash address, dated by provider creation time (UTC). Swaps credited to a NEAR Intents balance are excluded and counted in coverage.intentsBalanceSwaps.",
       shielded: "ZEC delivered directly into a shielded pool, or whose delivered transparent output was next spent by a shielding transaction (one hop).",
       denominator: "Covered ZEC only: swaps whose Zcash delivery transaction is reported, canonical and tied to the recipient.",
       units: "zatoshis (decimal strings); rates are fractions 0..1 of covered ZEC.",
@@ -307,6 +316,7 @@ async function readShielding(db, q, { v2 }) {
       sourceSwaps: sourceRow.swaps,
       classifiedSwaps: totalRow.swaps,
       pendingClassification: Math.max(0, sourceRow.swaps - totalRow.swaps),
+      intentsBalanceSwaps: sourceRow.intents_balance,
       lastClassifiedAt: iso(freshRow.last_classified),
       oldestOpenCheckAt: iso(freshRow.oldest_open),
       recheckDays: RECHECK_DAYS,

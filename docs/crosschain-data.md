@@ -552,6 +552,12 @@ Authority and meaning:
 
 - Population: `SUCCESS` inflow identities from the active reader source (v2 when
   `CROSSCHAIN_V2_READ_ENABLED=1`), dated by provider `swap_created_at` (UTC).
+  Swaps with `recipientType=INTENTS` are credited to a NEAR Intents balance and never
+  reach a Zcash address; they are excluded and returned as
+  `coverage.intentsBalanceSwaps`. On 2026-11-07 that was 34,692 of 125,705 (27.6%),
+  most of the swaps that report no Zcash transaction.
+- Only a 64-character hex `destinationChainTxHashes[0]` is a Zcash delivery; a base58
+  NEAR hash is classified `no_zec_tx`.
 - The Zcash leg is `destinationChainTxHashes[0]`, joined to canonical `transactions`.
   Arrival classes: `no_zec_tx` (provider reported none), `tx_not_indexed`,
   `unmatched` (no output tied to the recipient), `shielded` (non-transparent

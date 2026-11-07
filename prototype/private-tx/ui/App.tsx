@@ -353,6 +353,6 @@ export function App() {
         <a href="https://zecblock.com" rel="noopener noreferrer" className="hover:text-primary transition-colors">zecblock.com</a>
       </div>
     </footer>
-    <PrivacyReceipt receipts={receipts} />
+    {['result', 'block', 'address', 'notfound'].includes(view.kind) && <PrivacyReceipt receipts={receipts} />}
   </>;
 }

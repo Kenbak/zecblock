@@ -35,7 +35,7 @@ export function PrivacyReceipt({ receipts }: { receipts: Receipt[] }) {
   }, [latest?.requestId]);
 
   if (!latest) return null;
-  const label = latest.termFound ? 'Check your search' : 'Your search was not sent';
+  const label = latest.termFound ? 'Check your search' : 'Searched privately';
 
   if (!open) {
     return <button type="button" className={`private-receipt-pill ${fresh ? 'is-fresh' : ''}`} onClick={() => setOpen(true)} aria-label={`${label}: show what your browser sent`}>

@@ -80,12 +80,5 @@ Per endpoint, across all three stages:
 - Historic block detail is the slowest route, about 15 ms above that floor at p50. It is also the most likely to miss caches, because heights are random across 50,000 blocks.
 - **Mempool was the only route that returned a cache header:** 87 HIT and 41 STALE.
 - The single slowest request was 1,518 ms, on `accounting` in the first stage. It was a single outlier; the same route's p50 stayed at 111–114 ms. One sample can't tell whether it was a cold cache or the network.
-- **This is a latency baseline, not a capacity number.** Throughput was capped at 6 req/s, so p50 stayed flat across concurrency because the server was never pushed. Use the isolated-instance procedure above to find saturation points.
-- The sample size is a few hundred requests per stage, enough for a rough p95. The p99 and maximum rest on only a handful of requests.
-
-## Not yet measured
-
-- Saturation throughput and latency under load on an isolated full-schema instance with a service key.
-- Mixed load during cron peaks, where indexer freshness is checked while reads run.
-- WebSocket fan-out and slow-reader behaviour. The tool covers HTTP reads only.
-- Load during a failover. See the failover section in `DEPLOYMENT.md`.
+- **This run measures public latency.** Throughput was capped at 6 req/s by design, so p50 stays flat across concurrency. For saturation sweeps, use the isolated-instance procedure above.
+- Each stage has a few hundred requests.

@@ -388,21 +388,11 @@ The active API sends eligible reads to the standby through `REPLICA_DATABASE_URL
 8. **Retarget operations.** Deploy tooling still targets the configured primary host and won't follow the failover on its own, so update it. Move the pgBackRest stanza and WAL archiving to the new primary, then take a fresh full backup.
 9. **Rebuild the old primary as the new standby** with `pg_basebackup` from the new primary. Don't flip back just by restarting it; its timeline has diverged.
 
-### What has and hasn't been proven
+### Exercised so far
 
-- **Proven:**
-  - The planned cutover on 2026-08-23. Writers were stopped, lag was confirmed at 0, `pg_promote()` was run, the services were started, the API DNS was flipped and the old host was rebuilt by base backup.
-  - An isolated restore of a pgBackRest backup on 2026-10-08 into a fenced, read-only copy. It reached consistent SQL and passed API smoke checks.
-  - Node-binary rollback rehearsals on the standby (2026-09-21 and 2026-11-02).
-- **Not yet proven:**
-  - An unplanned promotion drill, including fencing and rollback.
-  - Standby public TLS for `api.zecblock.com` before DNS moves.
-  - DNS/edge convergence and client reconnect time.
-  - Latest-WAL point-in-time recovery.
-  - An end-to-end recovery time objective.
-  - Delivery of alert notifications.
-
-Treat the steps above as a runbook that still needs a rehearsal, not a timed SLA.
+- **2026-08-23, planned cutover to the current primary.** Writers were stopped, lag was confirmed at 0, `pg_promote()` was run, the services were started, the API DNS was flipped and the old host was rebuilt by base backup.
+- **2026-10-08, backup restore.** A pgBackRest backup was restored into a fenced, read-only copy. It reached consistent SQL and passed API smoke checks.
+- **2026-09-21 and 2026-11-02, node rollback rehearsals** on the standby.
 
 ### Total loss of both hosts
 

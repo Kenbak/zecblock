@@ -32,11 +32,43 @@ const PIR = (() => {
 const at = path => PIR + path;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: PIR ? 'cors' : 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
+// Requests made during the current search, for the privacy receipt: where
+// each went, its method and sizes, and (kept only until the search ends) the
+// uploaded bytes, so they can be scanned for the search text.
+let wire = null;
 async function bytes(path, init = {}) {
   const response = await fetch(at(path), { ...options(AbortSignal.timeout(300_000)), ...init });
   if (response.status === 410) throw new Gone();
   if (!response.ok) throw new Error('transport');
-  return { body: new Uint8Array(await response.arrayBuffer()), response };
+  const body = new Uint8Array(await response.arrayBuffer());
+  wire?.push({ host: new URL(at(path), self.location.href).host, method: init.method ?? 'GET', path: path.replace(/\/[0-9a-f]{24}\//, '/…/'), sent: init.body?.length ?? 0, received: body.length, upload: init.body ?? null });
+  return { body, response };
+}
+
+// Every byte form the search could take on the wire: its text, and for a
+// 64-hex id also its 32 raw bytes in both orders.
+function termForms(term) {
+  const forms = [new TextEncoder().encode(term)];
+  if (/^[a-f\d]{64}$/i.test(term)) {
+    const raw = Uint8Array.from(term.match(/../g), h => parseInt(h, 16));
+    forms.push(raw, raw.slice().reverse());
+  }
+  return forms;
+}
+function contains(haystack, needle) {
+  outer: for (let i = 0; i + needle.length <= haystack.length; i++) {
+    if (haystack[i] !== needle[0]) continue;
+    for (let j = 1; j < needle.length; j++) if (haystack[i + j] !== needle[j]) continue outer;
+    return true;
+  }
+  return false;
+}
+function receipt(requestId, kind, term, requests) {
+  const forms = termForms(term);
+  const termFound = requests.some(r => r.upload && forms.some(f => contains(r.upload, f)))
+    || requests.some(r => forms.some(f => contains(new TextEncoder().encode(r.path), f)));
+  self.postMessage({ type: 'receipt', requestId, kind, termLength: term.length, termFound,
+    requests: requests.map(({ upload, ...r }) => r) });
 }
 const zec = zat => zat == null ? null : Number(BigInt(zat)) / 1e8;
 const tipOf = pair => pair.recent?.info.snapshotTip ?? pair.base?.info.snapshotTip ?? 0;
@@ -322,8 +354,10 @@ async function lookup({ requestId, txid, query }) {
   if (busy || !tx.base) return;
   busy = true;
   const term = String(query ?? txid ?? '').trim().toLowerCase();
+  const original = String(query ?? txid ?? '').trim();
+  const requests = wire = [];
+  const kind = ADDRESS.test(original) ? 'address' : /^\d{1,10}$/.test(term) ? 'height' : 'hash';
   try {
-    const original = String(query ?? txid ?? '').trim();
     if (ADDRESS.test(original)) {
       if (!addresses.base) throw new Error('addresses unavailable');
       const outcome = await withReload(() => lookupAddress(original), [addresses]);
@@ -352,7 +386,11 @@ async function lookup({ requestId, txid, query }) {
     }
   } catch {
     self.postMessage({ type: 'error', requestId, message: 'The private lookup could not complete. No retry or public lookup was made.' });
-  } finally { busy = false; }
+  } finally {
+    busy = false;
+    wire = null;
+    if (requests.length) receipt(requestId, kind, original, requests);
+  }
 }
 
 // The padded full form of a previewed record from `owner`; the other

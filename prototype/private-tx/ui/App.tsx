@@ -11,6 +11,7 @@ import { AddressView } from './AddressView';
 import type { PrivateAddress } from './AddressView';
 import type { BlockPartial, PrivateBlock } from './BlockView';
 import { HomeFeeds, type Feed } from './HomeFeeds';
+import { PrivacyReceipt, type Receipt } from './PrivacyReceipt';
 import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
 
 type Manifest = {
@@ -134,13 +135,17 @@ export function App() {
   const [loadingFull, setLoadingFull] = useState(false);
   const [measurements, setMeasurements] = useState<Measurements | null>(null);
   const [feed, setFeed] = useState<Feed | null>(null);
+  // Search terms stay in the page; the worker's receipt carries only sizes.
+  const termsRef = useRef(new Map<number, string>());
+  const [receipts, setReceipts] = useState<Receipt[]>([]);
   const viewRef = useRef(view);
   viewRef.current = view;
 
   function start(term: string) {
     setView({ kind: 'loading', txid: term });
     setMeasurements(null);
-    workerRef.current?.postMessage({ type: 'lookup', requestId: ++requestRef.current, query: term });
+    termsRef.current.set(++requestRef.current, term);
+    workerRef.current?.postMessage({ type: 'lookup', requestId: requestRef.current, query: term });
     window.scrollTo({ top: 0 });
   }
 
@@ -175,6 +180,12 @@ export function App() {
       if (data.type === 'feed') { setFeed(data.feed ?? null); return; }
       if (data.type === 'tip') { setManifest(data.manifest ?? null); return; }
       if (data.type === 'publication-warning') return;
+      if (data.type === 'receipt') {
+        const term = termsRef.current.get(data.requestId);
+        termsRef.current.delete(data.requestId);
+        if (term) setReceipts(list => [...list.slice(-19), { ...data, term }]);
+        return;
+      }
       if (data.requestId !== undefined && data.requestId !== requestRef.current) return;
       // A short haptic tick when a private lookup has decrypted (phones that
       // support it, after the visitor has interacted with the page).
@@ -342,5 +353,6 @@ export function App() {
         <a href="https://zecblock.com" rel="noopener noreferrer" className="hover:text-primary transition-colors">zecblock.com</a>
       </div>
     </footer>
+    <PrivacyReceipt receipts={receipts} />
   </>;
 }

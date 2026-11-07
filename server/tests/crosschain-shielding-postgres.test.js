@@ -42,8 +42,8 @@ async function withFixture(fn) {
   }
 }
 
-async function swap(db, id, { recipient = TADDR, zecTx = null, status = 'SUCCESS', amount = '1.5', chain = 'eth', created = '2026-11-01T00:00:00Z' } = {}) {
-  const payload = { recipient, destinationChainTxHashes: zecTx ? [zecTx] : [], originChainTxHashes: ['0xsrc' + id] };
+async function swap(db, id, { recipient = TADDR, zecTx = null, status = 'SUCCESS', amount = '1.5', chain = 'eth', created = '2026-11-01T00:00:00Z', recipientType = 'DESTINATION_CHAIN' } = {}) {
+  const payload = { recipient, recipientType, destinationChainTxHashes: zecTx ? [zecTx] : [], originChainTxHashes: ['0xsrc' + id] };
   await db.query(`INSERT INTO crosschain_swaps_v2 (deposit_address, deposit_memo, status, swap_created_at, source_chain, source_token,
     dest_chain, dest_token, dest_amount, payload) VALUES ($1,'',$2,$3,$4,'ETH','zec','ZEC',$5,$6)`,
   [`dep${id}`, status, created, chain, amount, payload]);
@@ -78,10 +78,16 @@ test('classifies arrivals and one-hop outcomes with exact zatoshis', { skip: !en
     await swap(db, 5); await swap(db, 6, { zecTx: T(6) });
     await swap(db, 7, { zecTx: T(7), recipient: 'u1other' }); await tx(db, T(7));
     await swap(db, 8, { zecTx: T(8), status: 'REFUNDED' });
+    // 9: credited to a NEAR Intents balance (never on Zcash); 10: NEAR hash reported as the destination tx
+    await swap(db, 9, { recipient: 'dc61c06abe9332fb539f7e0738e3d268c64ba8ee74214557a096534749b94b77', recipientType: 'INTENTS' });
+    await swap(db, 10, { zecTx: '5oA4ALFbSmryHbf7ehiz9iSJzaFfoLgFkgLDQbQf72oY' });
 
     const targets = await findUnclassified(db, { v2: true, limit: 100 });
-    assert.equal(targets.length, 7, 'refunded swap is not a candidate');
-    assert.equal(await classifySwaps(db, targets, { v2: true }), 7);
+    assert.equal(targets.length, 8, 'refunded and Intents-balance swaps are not candidates');
+    assert.equal(await classifySwaps(db, targets, { v2: true }), 8);
+    assert.equal(await row(db, 9), undefined);
+    assert.equal((await row(db, 10)).arrival, 'no_zec_tx', 'a NEAR hash is not a Zcash delivery');
+    assert.equal((await row(db, 10)).zec_txid, null);
 
     const r1 = await row(db, 1);
     assert.equal(r1.arrival, 'transparent');
@@ -116,14 +122,15 @@ test('classifies arrivals and one-hop outcomes with exact zatoshis', { skip: !en
     // Reader: covered = 1 (1.5) + 2 (2) + 4 (0.25) + 6 (0.5) = 4.25 ZEC; shielded = 1.5 + 2 + 0.25.
     const result = await readShielding(db, { period: 'all' }, { v2: true });
     const s = result.summary;
-    assert.equal(s.swaps, 6);
+    assert.equal(s.swaps, 7);
     assert.equal(s.coveredSwaps, 4);
-    assert.deepEqual(s.uncovered, { noZecTx: 1, txNotIndexed: 0, unmatched: 1 });
+    assert.deepEqual(s.uncovered, { noZecTx: 2, txNotIndexed: 0, unmatched: 1 });
     assert.equal(s.coveredZat, '425000000');
     assert.equal(s.shieldedZat, '375000000');
     assert.equal(s.shieldedRate, 0.8823);
     assert.equal(s.breakdownZat.held, '50000000');
-    assert.equal(result.coverage.sourceSwaps, 6);
+    assert.equal(result.coverage.sourceSwaps, 7);
+    assert.equal(result.coverage.intentsBalanceSwaps, 1);
     assert.equal(result.coverage.pendingClassification, 0);
     assert.equal(result.timeToShield.samples, 2);
     assert.equal(result.daily.length, 1);

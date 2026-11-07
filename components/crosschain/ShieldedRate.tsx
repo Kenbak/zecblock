@@ -42,7 +42,7 @@ export type Shielding = {
   daily: (Slice & { date: string })[];
   byChain: (Slice & { chain: string })[];
   timeToShield: { samples: number; medianMinutes: number | null; p90Minutes: number | null };
-  coverage: { sourceSwaps: number; classifiedSwaps: number; pendingClassification: number; lastClassifiedAt: string | null };
+  coverage: { sourceSwaps: number; classifiedSwaps: number; pendingClassification: number; lastClassifiedAt: string | null; intentsBalanceSwaps?: number };
 };
 
 const PERIODS = ["30d", "90d", "1y", "all"] as const;
@@ -239,7 +239,10 @@ export function ShieldedRate({ dashboardPeriod }: { dashboardPeriod: string }) {
       )}
 
       <p className="text-xs text-muted mt-4">
-        Successful NEAR Intents swaps into ZEC. A swap counts as shielded when its ZEC lands in a shielded pool
+        Successful NEAR Intents swaps into ZEC delivered to a Zcash address
+        {data.coverage.intentsBalanceSwaps
+          ? ` (${data.coverage.intentsBalanceSwaps.toLocaleString()} more were kept as NEAR Intents balances and never reached Zcash)`
+          : ""}. A swap counts as shielded when its ZEC lands in a shielded pool
         directly or its delivered transparent output is next spent by a shielding transaction (one hop, same rules
         as the Turnstile). The rate covers traceable ZEC only: {uncovered.toLocaleString()} swap{uncovered === 1 ? "" : "s"} in
         this period {uncovered === 1 ? "is" : "are"} excluded — {s.uncovered.noZecTx.toLocaleString()} with no Zcash transaction

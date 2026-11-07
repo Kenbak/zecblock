@@ -2892,6 +2892,39 @@
   },
   {
     "method": "GET",
+    "path": "/v1/crosschain/shielding",
+    "description": "Shielded rate of bridged ZEC: share delivered by successful NEAR 1Click inflows that reaches a shielded pool on arrival or on its first spend, with exact zatoshi breakdown and explicit coverage of swaps lacking a usable Zcash leg.",
+    "category": "crosschain",
+    "query": [
+      "period"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": null,
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "30d",
+            "90d",
+            "1y",
+            "all"
+          ],
+          "default": "90d"
+        },
+        "description": "Trailing UTC days by swap creation time, starting at the start of the UTC day; all covers every classified swap. Recent held ZEC may still be shielded later."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/crosschain/stats",
     "description": "Cross-chain swap stats.",
     "category": "crosschain",

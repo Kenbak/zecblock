@@ -55,6 +55,9 @@ export function getChartColors(theme: 'dark' | 'light') {
     inflowTransparent: steel,
     inflowSapling: sage,
     inflowCoinbase: stone,
+    // Residual "moved on" bucket; darker in dark mode so it separates from iris
+    // under CVD (validated with shielding/iris/gold/distinctive neighbours).
+    residual: dark ? '#5E6670' : steel,
     referenceLine: dark ? '#565D68' : '#A3ADBA',
     cursor: dark ? '#9CA4B0' : '#59616D',
     gridStroke: dark ? '#20242A' : '#E4E7EC',

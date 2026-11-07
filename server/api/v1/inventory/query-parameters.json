@@ -149,6 +149,9 @@
     "to",
     "token"
   ],
+  "GET /v1/crosschain/shielding": [
+    "period"
+  ],
   "GET /v1/crosschain/stats": [],
   "GET /v1/crosschain/inflows": [
     "limit",

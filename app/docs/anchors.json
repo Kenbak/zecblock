@@ -56,6 +56,7 @@
   "GET /v1/crosschain/volume-by-chain": "get-crosschain-volume-by-chain",
   "GET /v1/crosschain/addresses/:address": "get-crosschain-addresses-address",
   "GET /v1/crosschain/popular-pairs": "get-crosschain-popular-pairs",
+  "GET /v1/crosschain/shielding": "get-crosschain-shielding",
   "GET /v1/crosschain/size-distribution": "get-crosschain-size-distribution",
   "GET /v1/crosschain/wrapped-zec/supply": "get-crosschain-wrapped-zec-supply",
   "GET /v1/privacy/stats": "privacy-stats",

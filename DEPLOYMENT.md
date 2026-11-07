@@ -317,6 +317,97 @@ node zcg/milestone-3/verify.js https://cipherscan.app
 - `cipherscan-rust` slow-statement warnings in the journal (>1s address-summary writes indicate a query-plan regression)
 - Redis down: WebSocket rate limiting falls back to the bounded in-memory fail-closed limiter
 
+### External uptime and status page
+
+Better Stack checks four public URLs every 3 minutes from four regions, with TLS verification and a 5-minute confirmation window:
+
+- `https://zecblock.com`
+- `https://api.zecblock.com/health/deep`
+- `https://testnet.zecblock.com`
+- `https://api.testnet.zecblock.com/health/deep`
+
+An API monitor alerts when the response body does not contain `"status":"healthy"`. The public status page is [status.zecblock.com](https://status.zecblock.com), linked from the site footer. Its history starts on 2026-10-28.
+
+`/health/deep` checks:
+
+- the PostgreSQL primary (3 s deadline);
+- replica lag;
+- Redis (2 s);
+- node RPC (5 s).
+
+It returns `503` when any of them is unhealthy. On-host scripts also send alerts:
+
+- `check-ops-health.sh` runs every 10 min and checks disk, backup age, pgBackRest/WAL archiving, replication lag, replica connectivity and node sync.
+- `check-indexer-health.sh` runs every 5 min.
+
+A separate Prometheus/Alertmanager host scrapes the primary and the node observers.
+
+### Load testing
+
+`npm run perf:load` runs a staged read-load test. It refuses production hosts unless `--allow-production` is passed, and caps keyless production runs at 6 req/s. Published results and the isolated-instance capacity procedure are in [docs/load-test-results.md](docs/load-test-results.md).
+
+---
+
+## Failover
+
+Mainnet runs as a **primary plus a passive standby**. Failover is **manual** and must be decided by a person. A two-node cluster cannot tell "the primary is dead" from "the link between the hosts is broken", so automatic promotion would risk split-brain. Automatic failover (pg_auto_failover or Patroni plus a witness node) is a planned later phase.
+
+### Roles in normal operation
+
+| Role | Primary | Standby |
+|---|---|---|
+| PostgreSQL 16 | Writable primary; WAL archived by pgBackRest | Physical streaming replica, in recovery |
+| Zakura node | Active (indexer source, RPC, lightwalletd) | Running and synced (network redundancy, failover RPC) |
+| `cipherscan-rust` indexer | Active, single writer under `flock` | Installed, **disabled** |
+| API (`zcash-api-mainnet`) | Active | Installed at the same commit, **disabled** |
+| Bot, cron jobs, lightwalletd | Active | **Disabled** |
+| Caddy | Serves `api.zecblock.com` | Running; not the DNS target |
+
+Deploys update the standby checkout but leave its API, indexer and jobs stopped.
+
+### Read offload and its circuit breaker
+
+The active API sends eligible reads to the standby through `REPLICA_DATABASE_URL` (`server/api/pool-routing.js`).
+
+- Reads stay on the primary while the replica is more than 3 blocks behind.
+- After 3 consecutive replica failures the circuit opens, and reads fall back to the primary.
+- A probe every 15 s closes the circuit once the replica recovers. The state appears in `/health/deep`.
+- Only fork-monitor and reorg writes use the write pool.
+
+**A replica outage therefore degrades to primary-only reads; it is not a failover.** Watch primary connection-pool pressure while the circuit is open.
+
+### Promote the standby (primary lost)
+
+1. **Confirm the primary is really down, not slow.** Check `/health/deep`, the status page, host reachability from more than one network, and the provider console. A false failover is worse than a few minutes of degraded service.
+2. **Fence the old writer.** If the old primary is reachable at all, stop and disable `cipherscan-rust`, `zcash-api-mainnet`, the bot and the cron jobs there, and stop PostgreSQL. If it is unreachable, power it off or detach its network from the provider console. **Never let two indexers write.** The `flock` guard works only on a single host; it does not protect across hosts.
+3. **Promote the replica:** `SELECT pg_promote();` on the standby, as the postgres superuser. Then confirm `SELECT pg_is_in_recovery();` returns `false`.
+4. **Point the standby's services at the local writable database.** Set `DATABASE_URL` for the API and indexer, and **unset `REPLICA_DATABASE_URL`** so reads don't target the dead host. Check that the standby's Zakura node is at the network tip.
+5. **Start the services in order:** indexer → lightwalletd → API → bot/cron. Watch `journalctl -u cipherscan-rust -f` until indexing resumes at the tip.
+6. **Move traffic.** Repoint the `api.zecblock.com` A record (short TTL) to the standby and make sure its Caddy serves that hostname with a valid certificate. The Vercel frontend keeps `NEXT_PUBLIC_API_URL=https://api.zecblock.com`, so no frontend redeploy is needed as long as the hostname doesn't change.
+7. **Verify.** Run `curl -s https://api.zecblock.com/health/deep | jq .` and expect `healthy` with a database height at the tip. Check that the status page shows green and that WebSocket clients reconnect.
+8. **Retarget operations.** Deploy tooling still targets the configured primary host and won't follow the failover on its own, so update it. Move the pgBackRest stanza and WAL archiving to the new primary, then take a fresh full backup.
+9. **Rebuild the old primary as the new standby** with `pg_basebackup` from the new primary. Don't flip back just by restarting it; its timeline has diverged.
+
+### What has and hasn't been proven
+
+- **Proven:**
+  - The planned cutover on 2026-08-23. Writers were stopped, lag was confirmed at 0, `pg_promote()` was run, the services were started, the API DNS was flipped and the old host was rebuilt by base backup.
+  - An isolated restore of a pgBackRest backup on 2026-10-08 into a fenced, read-only copy. It reached consistent SQL and passed API smoke checks.
+  - Node-binary rollback rehearsals on the standby (2026-09-21 and 2026-11-02).
+- **Not yet proven:**
+  - An unplanned promotion drill, including fencing and rollback.
+  - Standby public TLS for `api.zecblock.com` before DNS moves.
+  - DNS/edge convergence and client reconnect time.
+  - Latest-WAL point-in-time recovery.
+  - An end-to-end recovery time objective.
+  - Delivery of alert notifications.
+
+Treat the steps above as a runbook that still needs a rehearsal, not a timed SLA.
+
+### Total loss of both hosts
+
+Provision a new host and restore the latest pgBackRest backup and WAL from the Storage Box. The isolated restore on 2026-10-08 fetched about 65 GB of selected media at about 32 MB/s under a bandwidth cap. Then rebuild the services from git (systemd units, Caddy config) and restore the Tor service keys from their backup. They are host-local and not in git; without them the `.onion` addresses change. Repoint DNS last. A node resync or a node-state copy dominates the wall-clock time.
+
 ---
 
 ## Tor Hidden Services

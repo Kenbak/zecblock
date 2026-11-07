@@ -11,6 +11,7 @@ import { ChainFlowOverview } from "./ChainFlowOverview";
 import { PageSectionNav } from "@/components/PageSectionNav";
 import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
 import { ActivityCharts } from "./ActivityCharts";
+import { ShieldedRate } from "./ShieldedRate";
 import { SwapFilterLink, useAnalyticsPeriod } from "./SwapFilterLink";
 import { SwapExplorer } from "./SwapExplorer";
 import { WrappedZecTracker, WrappedZecAsset } from "./WrappedZecTracker";
@@ -209,6 +210,7 @@ export function CrosschainDashboard({
           period={period}
         />
         <ChainHistory data={data} />
+        {venue === "near" ? <ShieldedRate dashboardPeriod={period} /> : null}
         <div id="routes" className="grid lg:grid-cols-2 gap-4">
           <ActivityCharts data={data} unit={unit} panel="sizes" />
           <section className="card space-y-4">

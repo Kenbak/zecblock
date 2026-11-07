@@ -541,3 +541,50 @@ Initial rollout on the primary, after the API release contains this code:
 
 Rollback: disable the timer and remove the read flag; the routes return 503 and
 the tables can stay. Dropping them is a separate, deliberate operation.
+
+## Shielded-rate tracking (migration 044)
+
+`GET /api/crosschain/shielding` and `/v1/crosschain/shielding` (`period` = `30d`,
+`90d` default, `1y`, `all`) report what share of ZEC delivered by **successful NEAR
+1Click inflows** reaches a shielded pool. The `/crosschain` Flows section renders it.
+
+Authority and meaning:
+
+- Population: `SUCCESS` inflow identities from the active reader source (v2 when
+  `CROSSCHAIN_V2_READ_ENABLED=1`), dated by provider `swap_created_at` (UTC).
+  Swaps with `recipientType=INTENTS` are credited to a NEAR Intents balance and never
+  reach a Zcash address; they are excluded and returned as
+  `coverage.intentsBalanceSwaps`. On 2026-11-07 that was 34,692 of 125,705 (27.6%),
+  most of the swaps that report no Zcash transaction.
+- Only a 64-character hex `destinationChainTxHashes[0]` is a Zcash delivery; a base58
+  NEAR hash is classified `no_zec_tx`.
+- The Zcash leg is `destinationChainTxHashes[0]`, joined to canonical `transactions`.
+  Arrival classes: `no_zec_tx` (provider reported none), `tx_not_indexed`,
+  `unmatched` (no output tied to the recipient), `shielded` (non-transparent
+  recipient and a `shield` flow in the delivery tx) and `transparent`.
+- Transparent outputs paid to the recipient follow Turnstile rules: one spend hop,
+  priority shield > exchange label > bridge label > transferred; unspent is held.
+- Only `shielded` + `transparent` arrivals are covered and form the denominator.
+  Uncovered swaps are counted and returned, never treated as zero or unshielded.
+- Transparent amounts are exact chain output zatoshis. Direct shielded deliveries
+  use the provider-reported amount (`amount_source='provider_reported'`) because
+  shielded values are private. Rates are exact-integer fractions truncated to 4 dp.
+- Shielding after two or more hops, or by another address, counts as transferred.
+  Held rows within 120 days are rechecked, so recent days can rise.
+
+Rollout (explicit operator steps, nothing applies automatically):
+
+1. Apply `server/deploy/sql/044_crosschain_shielding.sql` with `ON_ERROR_STOP=1` on
+   `zcash_explorer_mainnet` primary only. It creates one table plus two indexes and
+   copies `turnstile_daily` grants. Mirror the file in Rust `schema/migrations/`.
+2. Dry run: `node server/jobs/refresh-crosschain-shielding.js --dry-run`.
+3. Backfill in bounded batches, off-peak:
+   `node server/jobs/refresh-crosschain-shielding.js --backfill --batch=500 --max-batches=50`,
+   repeating until the dry run reports nothing new.
+4. Cron, after crosschain maintenance and Turnstile (see the job header): every five
+   minutes at :04 offsets, plus a daily `--sweep` at 04:30 UTC. Advisory lock 839272.
+5. Deploy the API, then the frontend. Until the API answers, the panel shows
+   "unavailable" and infers no rate.
+
+Rollback: remove the cron lines and stop deploying the panel; the table is derived
+and may be dropped or rebuilt at any time.

@@ -5,6 +5,9 @@ CRON_TZ=UTC
 */5 * * * * flock -n /run/cipherscan-sync-swaps.lock bash -lc 'cd /root/cipherscan/server/jobs && node sync-crosschain-swaps.js' >> /var/log/cipherscan/sync-swaps.log 2>&1
 */15 * * * * flock -n /run/cipherscan-sync-nodes.lock bash -lc 'cd /root/cipherscan/server/jobs && node sync-nodes.js' >> /var/log/cipherscan/sync-nodes.log 2>&1
 */5 * * * * flock -n /run/cipherscan-turnstile.lock bash -lc 'cd /root/cipherscan/server/jobs && node refresh-turnstile.js' >> /var/log/cipherscan/refresh-turnstile.log 2>&1
+# Shielded-rate tracking (migration 044): after crosschain maintenance (:02/:07) and Turnstile.
+4-59/5 * * * * flock -n /run/cipherscan-crosschain-shielding.lock bash -lc 'cd /root/cipherscan/server/jobs && node refresh-crosschain-shielding.js' >> /var/log/cipherscan/refresh-crosschain-shielding.log 2>&1
+30 4 * * * flock -n /run/cipherscan-crosschain-shielding.lock bash -lc 'cd /root/cipherscan/server/jobs && node refresh-crosschain-shielding.js --sweep' >> /var/log/cipherscan/refresh-crosschain-shielding.log 2>&1
 0 * * * * flock -n /run/cipherscan-privacy-stats.lock bash -lc 'cd /root/cipherscan/server/jobs && node update-privacy-stats.js' >> /var/log/cipherscan/privacy-stats.log 2>&1
 0 * * * * flock -n /run/cipherscan-chain-snapshots.lock bash -lc 'cd /root/cipherscan/server/jobs && node update-chain-snapshots.js' >> /var/log/cipherscan/chain-snapshots.log 2>&1
 0 3 * * * flock -n /run/cipherscan-mining-behavior.lock bash -lc 'cd /root/cipherscan/server/jobs && node snapshot-mining-behavior.js' >> /var/log/cipherscan/mining-behavior.log 2>&1

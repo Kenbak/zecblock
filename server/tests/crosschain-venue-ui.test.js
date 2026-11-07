@@ -83,6 +83,7 @@ test('venue tabs lead the controls that scope the statistics and shared visualiz
       './SwapExplorer': { SwapExplorer: stub },
       './LatencyComparisonChart': { LatencyComparisonChart: stub },
       './ChainHistory': { ChainHistory: stub },
+      './ShieldedRate': { ShieldedRate: stub },
       './OutcomeBreakdown': { OutcomeBreakdown: stub },
       './ChainFlowOverview': { ChainFlowOverview: stub },
       './WrappedZecTracker': { WrappedZecTracker: stub },

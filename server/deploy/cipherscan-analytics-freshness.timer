@@ -1,0 +1,10 @@
+[Unit]
+Description=Check analytics freshness every thirty minutes
+
+[Timer]
+OnCalendar=*-*-* *:10,40:00 UTC
+Persistent=true
+Unit=cipherscan-analytics-freshness.service
+
+[Install]
+WantedBy=timers.target

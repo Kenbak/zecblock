@@ -13,7 +13,7 @@ function load(relative, imports = {}) {
   }, module, module.exports);
   return module.exports;
 }
-const { CHART_CATALOG } = load('lib/chart-catalog.ts', { './network-overview': load('lib/network-overview.ts') });
+const { CHART_CATALOG } = load('lib/chart-catalog.ts', { './network-overview': load('lib/network-overview.ts'), './mining-metrics': load('lib/mining-metrics.ts') });
 const guides = CHART_CATALOG.map(({ id, title, description, unit, window, href }) => ({ id, title, description, unit, window, source: href }));
 fs.writeFileSync(path.join(root, 'lib/ask/chart-pages.json'), JSON.stringify(guides, null, 2) + '\n');
 console.log(`Wrote ${guides.length} Ask chart descriptions`);

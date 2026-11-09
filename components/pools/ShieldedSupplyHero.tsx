@@ -51,7 +51,7 @@ function ScrubReporter({ active, label, onScrub }: { active?: boolean; label?: n
 export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const { currency, price, format } = usePoolCurrency();
+  const { currency, price, format, formatSupplySegment } = usePoolCurrency();
   const [range, setRange] = useUrlState<Range>('range', 'all', RANGES);
   const [metric, setMetric] = useState<Metric>('total');
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
@@ -224,7 +224,7 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
                 {s.key === 'public' ? 'Public' : s.key === 'unmined' ? 'Not yet issued' : 'Shielded'}
               </dt>
               <dd className="text-sm font-mono tabular-nums">
-                <span className={s.key === 'shielded' ? 'text-cipher-gold' : 'text-primary'}>{format(zatToZec(s.zat))}</span>
+                <span className={s.key === 'shielded' ? 'text-cipher-gold' : 'text-primary'}>{formatSupplySegment(s)}</span>
                 <span className="ml-3 inline-block w-12 text-right text-caption text-muted">{(s.zat / MAX_SUPPLY_ZAT * 100).toFixed(1)}%</span>
               </dd>
             </div>)}

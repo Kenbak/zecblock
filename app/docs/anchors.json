@@ -77,6 +77,7 @@
   "GET /v1/privacy/anonymity-set": "anonymity-set",
   "GET /v1/privacy/shielding-distribution": "shielding-distribution",
   "GET /v1/network/fee-distribution": "get-network-fee-distribution",
+  "GET /v1/network/block-activity": "get-network-block-activity",
   "GET /v1/analytics/usage-clock": "get-analytics-usage-clock",
   "GET /v1/privacy/blend-check": "blend-check",
   "GET /v1/privacy/blend-check/split": "blend-check-split",

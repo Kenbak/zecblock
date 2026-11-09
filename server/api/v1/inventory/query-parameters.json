@@ -259,6 +259,7 @@
   "GET /v1/network/fee-distribution": [
     "period"
   ],
+  "GET /v1/network/block-activity": [],
   "GET /v1/analytics/usage-clock": [
     "period"
   ],

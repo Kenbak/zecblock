@@ -146,17 +146,17 @@
   {
     "id": "block-fees",
     "title": "Fees per block",
-    "description": "Total transaction fees per block, averaged over 100 blocks. Subsidy is separate.",
+    "description": "Average fees per block each completed UTC day, excluding subsidy. Mainnet blocks became three times as frequent at NU7 on November 6, 2026.",
     "unit": "ZEC",
-    "window": "100-block rolling averages · up to 500 samples",
+    "window": "Latest 400 completed UTC days",
     "source": "/mining#economics"
   },
   {
     "id": "tx-per-block",
     "title": "Transactions per block",
-    "description": "Reported transaction count averaged over 100 blocks, including coinbase.",
+    "description": "Average transactions per block each completed UTC day, including coinbase. Mainnet blocks became three times as frequent at NU7 on November 6, 2026.",
     "unit": "Transactions / block",
-    "window": "100-block rolling averages · up to 500 samples",
+    "window": "Latest 400 completed UTC days",
     "source": "/mining#economics"
   },
   {

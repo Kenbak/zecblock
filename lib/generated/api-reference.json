@@ -4134,6 +4134,20 @@
   },
   {
     "method": "GET",
+    "path": "/v1/network/block-activity",
+    "description": "Average transactions and fees per block for each completed UTC day.",
+    "category": "network",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Covers the latest 400 completed UTC days by block-header timestamp; the current partial day is excluded. Transaction counts include coinbase. totalFeesZat is an exact decimal-string zatoshi sum; feesPerBlockZec and txPerBlock are arithmetic means across every block of that day. A day containing a block with an unknown fee or transaction count returns null for that measure. Mainnet block spacing changed from 75 to 25 seconds at NU7, so per-block means before and after activation are not directly comparable.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/analytics/usage-clock",
     "description": "Time-of-day/week usage heatmap.",
     "category": "analytics",

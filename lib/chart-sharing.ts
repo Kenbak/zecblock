@@ -34,7 +34,8 @@ export function selectedChartSeries(chart: CatalogChart, value: unknown): Catalo
 }
 export function chartSharePath(id: string, range: ChartRange = '30d', series?: string[]): string {
   const query = new URLSearchParams();
-  query.set('range', range);
+  // Height and category charts ignore date ranges, so their links must not claim one.
+  if (!findShareChart(id)?.axis) query.set('range', range);
   if (series?.length) query.set('series', series.join(','));
   return `/charts/${id}${query.size ? `?${query}` : ''}`;
 }

@@ -67,6 +67,15 @@ export function formatZecPrecise(zec: number): string {
   return zec.toFixed(decimals).replace(/0+$/, '').replace(/\.$/, '');
 }
 
+/**
+ * Exact ZEC down to the zatoshi, keeping at least 4 decimals so a column of
+ * amounts stays aligned, e.g. `0.00132`, `0.00234694`, `0.0010`.
+ */
+export function formatZecExact(zec: number): string {
+  if (!Number.isFinite(zec)) return '—';
+  return zec.toFixed(8).replace(/(\.\d{4}\d*?)0+$/, '$1');
+}
+
 export function formatBytesCompact(bytes: number): string {
   if (!Number.isFinite(bytes)) return '—';
   if (bytes >= 1e12) return `${(bytes / 1e12).toFixed(2)} TB`;

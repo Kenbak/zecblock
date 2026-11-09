@@ -2,6 +2,7 @@
 
 import { ReactNode } from 'react';
 import { CURRENCY } from '@/lib/config';
+import { formatZecExact } from '@/lib/format-numbers';
 import { HashLink } from '@/components/ui/HashLink';
 import { CopyButton } from '@/components/CopyButton';
 import { Tooltip } from '@/components/Tooltip';
@@ -93,11 +94,11 @@ export function CopyableHash({
   );
 }
 
-export function BoldZec({ value, accent = 'text-primary', size = 'base' }: { value: number; accent?: string; size?: 'base' | 'lg' }) {
+export function BoldZec({ value, accent = 'text-primary', size = 'base', exact = false }: { value: number; accent?: string; size?: 'base' | 'lg'; exact?: boolean }) {
   const valueSize = size === 'lg' ? 'text-lg sm:text-xl' : 'text-sm sm:text-base';
   return (
     <div className="flex items-baseline gap-1.5">
-      <span className={`${valueSize} font-semibold font-mono tabular-nums ${accent}`}>{value.toFixed(4)}</span>
+      <span className={`${valueSize} font-semibold font-mono tabular-nums ${accent}`}>{exact ? formatZecExact(value) : value.toFixed(4)}</span>
       <span className="text-xs text-muted">{CURRENCY}</span>
     </div>
   );

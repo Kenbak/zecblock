@@ -332,7 +332,7 @@ test('page mapping separates metrics, handles known child routes and never seria
 
 
 test('individual chart guides track the catalogue and reject unknown chart routes', () => {
-  const { CHART_CATALOG } = load('lib/chart-catalog.ts', { './network-overview': load('lib/network-overview.ts') });
+  const { CHART_CATALOG } = load('lib/chart-catalog.ts', { './network-overview': load('lib/network-overview.ts'), './mining-metrics': load('lib/mining-metrics.ts') });
   const snapshot = require('../../lib/ask/chart-pages.json');
   assert.deepEqual(snapshot, CHART_CATALOG.map(({ id, title, description, unit, window, href }) => ({ id, title, description, unit, window, source: href })), 'Regenerate with write-ask-chart-guides.js when chart metadata changes');
   const { describePage } = require('../../lib/ask/pages');

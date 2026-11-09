@@ -138,25 +138,25 @@
   {
     "id": "difficulty",
     "title": "Mining difficulty",
-    "description": "Difficulty averaged over 20 blocks. Sample positions use actual block heights.",
+    "description": "Difficulty averaged over 100 blocks. Sample positions use actual block heights.",
     "unit": "Difficulty",
-    "window": "20-block rolling averages · up to 120 samples",
+    "window": "100-block rolling averages · up to 500 samples",
     "source": "/mining#economics"
   },
   {
     "id": "block-fees",
     "title": "Fees per block",
-    "description": "Total transaction fees per block, averaged over 20 blocks. Subsidy is separate.",
+    "description": "Total transaction fees per block, averaged over 100 blocks. Subsidy is separate.",
     "unit": "ZEC",
-    "window": "20-block rolling averages · up to 120 samples",
+    "window": "100-block rolling averages · up to 500 samples",
     "source": "/mining#economics"
   },
   {
     "id": "tx-per-block",
     "title": "Transactions per block",
-    "description": "Reported transaction count averaged over 20 blocks, including coinbase.",
+    "description": "Reported transaction count averaged over 100 blocks, including coinbase.",
     "unit": "Transactions / block",
-    "window": "20-block rolling averages · up to 120 samples",
+    "window": "100-block rolling averages · up to 500 samples",
     "source": "/mining#economics"
   },
   {

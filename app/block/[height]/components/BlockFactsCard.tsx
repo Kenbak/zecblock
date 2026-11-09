@@ -209,7 +209,7 @@ export function BlockFactsCard({
             <FactBox fit className="order-5 sm:order-none" label="Total Fees" tooltip="Total fees paid by all transactions in this block">
               {data.totalFees === null
                 ? <span className="text-sm text-muted">Unavailable</span>
-                : <BoldZec value={data.totalFees} />}
+                : <BoldZec value={data.totalFees} exact />}
             </FactBox>
           )}
         </div>

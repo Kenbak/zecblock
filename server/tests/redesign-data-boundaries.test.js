@@ -9,7 +9,7 @@ function load(file) {
   new Function('module', 'exports', 'require', code)(module, module.exports, id => load(id.startsWith('@/') ? `${id.slice(2)}.ts` : path.resolve(path.dirname(file), `${id}.ts`)));
   return module.exports;
 }
-const { parseSafeZatoshi, sumZatoshis } = load('lib/format-numbers.ts');
+const { parseSafeZatoshi, sumZatoshis, formatZecExact } = load('lib/format-numbers.ts');
 const { normalizeMigrationData, completedDayActivity } = load('app/ironwood/components/api-data.ts');
 const { nonCoinbaseActivity } = load('lib/transaction-list.ts');
 const { transformTransactions } = load('app/address/[address]/components/helpers.ts');
@@ -99,4 +99,14 @@ test('chart exports get an opaque background: translucent cards are composited o
     assert.equal(opaqueBackground(node('rgb(250, 250, 250)', page)), 'rgb(250, 250, 250)', 'an opaque card is kept');
     assert.equal(opaqueBackground(node('transparent', node('rgb(255 255 255 / 50%)'))), 'rgb(133, 134, 135)', 'nothing opaque falls back to the dark page');
   } finally { globalThis.getComputedStyle = previous; }
+});
+
+test('exact ZEC keeps every zatoshi and at least four decimals', () => {
+  assert.equal(formatZecExact(132000 / 1e8), '0.00132');
+  assert.equal(formatZecExact(234694 / 1e8), '0.00234694');
+  assert.equal(formatZecExact(100000 / 1e8), '0.0010');
+  assert.equal(formatZecExact(1 / 1e8), '0.00000001');
+  assert.equal(formatZecExact(0), '0.0000');
+  assert.equal(formatZecExact(12.5), '12.5000');
+  assert.equal(formatZecExact(Number.NaN), '—');
 });

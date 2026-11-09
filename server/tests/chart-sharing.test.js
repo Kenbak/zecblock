@@ -17,6 +17,15 @@ test('share selections are allowlisted, canonical path independent of filters',(
  assert.deepEqual(sharing.selectedChartSeries(source,'shielded,other').series.map(s=>s.key),['shielded']);
  assert.equal(sharing.selectedChartSeries(source,'other'),source);
 });
+test('charts without a date axis never advertise a date range in share links',()=>{
+ const rows=[{x:1,txCount:2},{x:2,txCount:3}];
+ for (const chart of CHART_CATALOG.filter(c=>c.axis)) {
+  for (const range of ['7d','30d','all']) assert.equal(sharing.chartSharePath(chart.id,range),`/charts/${chart.id}`);
+  assert.deepEqual(sharing.chartRangeRows(chart,rows,'7d'),rows);
+ }
+ assert.equal(sharing.chartSharePath('tx-per-block','30d',['txCount']),'/charts/tx-per-block?series=txCount');
+ assert.equal(sharing.chartImagePath(sharing.chartSharePath('tx-per-block')),'/charts/tx-per-block/image');
+});
 test('shared charts default to 30 days while explicit all-history selections round-trip',()=>{
  for (const value of [undefined,null,'']) assert.equal(sharing.normalizeChartRange(value),'30d');
  assert.equal(sharing.chartSharePath('supply'),'/charts/supply?range=30d');

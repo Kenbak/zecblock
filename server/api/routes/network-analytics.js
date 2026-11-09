@@ -1,6 +1,7 @@
 const { supplyProjection } = require('../lib/issuance-projection');
 const { networkSchedule, targetSeconds, targetSpacing, halvingIndex, halvingHeight } = require('../lib/network-schedule');
 const { cachedHashrateHistory } = require('../lib/hashrate');
+const { loadDifficultyStability } = require('../lib/difficulty-stability');
 const { logSafeError } = require('../lib/safe-log');
 const { subsidyZat, supplyZat, supplyHistory, mergedSupplyHistory, dailyNetSupplyChanges, observedBlockCadence } = require('../lib/network-issuance');
 /**
@@ -291,6 +292,38 @@ function registerNetworkAnalyticsRoutes(router) {
     } catch (error) {
       logSafeError('❌ [HASHRATE-HISTORY] Error:', error);
       res.status(500).json({ success: false, error: 'Failed to fetch hashrate history' });
+    }
+  });
+
+  // One comparison runs at a time; a cold request reads about two weeks of blocks per era.
+  const stabilityLoads = new WeakMap();
+  router.get('/api/network/difficulty-stability', async (req, res) => {
+    try {
+      const { pool, redisClient, callZebraRPC } = req.app.locals;
+      const cacheKey = 'network:difficulty-stability:v1';
+      const cached = await getFromRedisCache(redisClient, cacheKey);
+      if (cached) {
+        res.set('Cache-Control', 'public, max-age=300');
+        return res.json({ ...cached, cached: true });
+      }
+      let pending = stabilityLoads.get(pool);
+      if (!pending) {
+        pending = (async () => {
+          const schedule = networkSchedule(await callZebraRPC('getblockchaininfo'));
+          if (!schedule) throw new Error('Serving node upgrade schedule unavailable');
+          const response = { success: true, ...await loadDifficultyStability({ pool, schedule }) };
+          await setRedisCache(redisClient, cacheKey, response, 600);
+          return response;
+        })().finally(() => stabilityLoads.delete(pool));
+        stabilityLoads.set(pool, pending);
+      }
+      const response = await pending;
+      res.set('Cache-Control', 'public, max-age=300');
+      return res.json(response);
+    } catch (error) {
+      logSafeError('[DIFFICULTY-STABILITY]', error);
+      res.set('Cache-Control', 'no-store');
+      return res.status(503).json({ success: false, error: 'Difficulty stability unavailable' });
     }
   });
 

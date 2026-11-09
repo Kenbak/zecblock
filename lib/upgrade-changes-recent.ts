@@ -20,6 +20,7 @@ export function buildRecentUpgradeChanges(id: string, network: AppNetwork, activ
       sources: [zip(218)],
       links: [
         { label: 'See the effect on block speed', href: '/network/block-speed' },
+        { label: 'See difficulty swings before and after', href: '/mining#difficulty-stability', note: active ? undefined : 'Available after activation' },
         { label: 'Explore issuance and the next halving', href: '/network#issuance' },
       ],
     },

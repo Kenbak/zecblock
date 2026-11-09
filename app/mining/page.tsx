@@ -25,6 +25,7 @@ import { ChartCard } from '@/components/network/ChartCard';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { MiningMetricsChart } from '@/components/network/MiningMetricsChart';
 import { NetworkHashrateChart } from '@/components/network/NetworkHashrateChart';
+import { DifficultyStabilityChart } from '@/components/network/DifficultyStabilityChart';
 import { zatToZec } from '@/lib/format-numbers';
 import { PoolLogo } from '@/components/PoolLogo';
 import { useUrlState } from '@/lib/use-url-state';
@@ -734,6 +735,7 @@ export default function MiningPage() {
 
       <section id="metrics" className="scroll-mt-36 mb-12 animate-fade-in-up space-y-6">
         <NetworkHashrateChart />
+        <DifficultyStabilityChart />
       </section>
 
       <OrphanRateSection />

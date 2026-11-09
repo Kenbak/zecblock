@@ -16,8 +16,11 @@ export interface ChartExportData {
   network?: string;
 }
 export function findShareChart(id: string) { return CHART_CATALOG.find(chart => chart.id === id); }
-export function normalizeChartRange(value: unknown): ChartRange {
-  return CHART_RANGES.includes(value as ChartRange) ? value as ChartRange : '30d';
+export function chartRanges(chart?: CatalogChart): readonly ChartRange[] {
+  return chart?.ranges ?? CHART_RANGES;
+}
+export function normalizeChartRange(value: unknown, chart?: CatalogChart): ChartRange {
+  return chartRanges(chart).includes(value as ChartRange) ? value as ChartRange : '30d';
 }
 export function chartRangeRows(chart: CatalogChart, rows: ChartRow[], range: ChartRange): ChartRow[] {
   if (chart.axis || range === 'all' || !rows.length) return rows;

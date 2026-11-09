@@ -23,8 +23,23 @@ test('charts without a date axis never advertise a date range in share links',()
   for (const range of ['7d','30d','all']) assert.equal(sharing.chartSharePath(chart.id,range),`/charts/${chart.id}`);
   assert.deepEqual(sharing.chartRangeRows(chart,rows,'7d'),rows);
  }
- assert.equal(sharing.chartSharePath('tx-per-block','30d',['txCount']),'/charts/tx-per-block?series=txCount');
- assert.equal(sharing.chartImagePath(sharing.chartSharePath('tx-per-block')),'/charts/tx-per-block/image');
+ assert.equal(sharing.chartSharePath('difficulty','30d',['difficulty']),'/charts/difficulty?series=difficulty');
+ assert.equal(sharing.chartImagePath(sharing.chartSharePath('difficulty')),'/charts/difficulty/image');
+});
+test('daily per-block charts honour the range in their share links',()=>{
+ assert.equal(sharing.chartSharePath('tx-per-block','30d'),'/charts/tx-per-block?range=30d');
+ const chart=CHART_CATALOG.find(c=>c.id==='block-fees');
+ const day=86400000,rows=Array.from({length:40},(_,i)=>({x:i*day,feesPerBlockZec:.001}));
+ assert.equal(sharing.chartRangeRows(chart,rows,'30d').length,30);
+ assert.equal(sharing.chartRangeRows(chart,rows,'7d').length,7);
+});
+test('daily per-block charts stop at 90 days while other charts keep every range',()=>{
+ const daily=CHART_CATALOG.find(c=>c.id==='tx-per-block'),other=CHART_CATALOG.find(c=>c.id==='supply');
+ assert.deepEqual([...sharing.chartRanges(daily)],['7d','30d','90d']);
+ assert.equal(sharing.normalizeChartRange('90d',daily),'90d');
+ for (const range of ['all','1y']) assert.equal(sharing.normalizeChartRange(range,daily),'30d');
+ assert.equal(sharing.normalizeChartRange('all',other),'all');
+ assert.ok(sharing.chartRanges(other).includes('all'));
 });
 test('shared charts default to 30 days while explicit all-history selections round-trip',()=>{
  for (const value of [undefined,null,'']) assert.equal(sharing.normalizeChartRange(value),'30d');

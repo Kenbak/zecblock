@@ -11,7 +11,7 @@ export async function generateMetadata({ params, searchParams }: Props) {
   const chart = findShareChart((await params).slug);
   if (!chart) notFound();
   const query = await searchParams;
-  const range = normalizeChartRange(query.range);
+  const range = normalizeChartRange(query.range, chart);
   const selected = selectedChartSeries(chart, query.series);
   const path = chartSharePath(chart.id, range, selected.series.length === chart.series.length ? undefined : selected.series.map(s => s.key));
   const metadata = buildPageMetadata({ title: `${chartPublicTitle(chart)} | ZecBlock`, description: chart.description, path: `/charts/${chart.id}`, networks: ['mainnet'] });
@@ -22,7 +22,7 @@ export default async function ChartPage({ params, searchParams }: Props) {
   const chart = findShareChart((await params).slug);
   if (!chart) notFound();
   const query = await searchParams;
-  const range = normalizeChartRange(query.range);
+  const range = normalizeChartRange(query.range, chart);
   const selected = selectedChartSeries(chart, query.series);
   const snapshot = await loadShareChart(chart);
   const rows = snapshot ? chartRangeRows(chart, snapshot.rows, range) : [];

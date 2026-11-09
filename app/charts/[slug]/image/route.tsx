@@ -18,7 +18,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ slug
   if (!snapshot || !snapshot.rows.some(row => chart.series.some(s => typeof row[s.key] === 'number'))) {
     return new Response('Chart data temporarily unavailable', { status: 503, headers: { 'Cache-Control': 'no-store', 'Retry-After': '60' } });
   }
-  const rows = chartRangeRows(chart, snapshot.rows, normalizeChartRange(query.get('range')));
+  const rows = chartRangeRows(chart, snapshot.rows, normalizeChartRange(query.get('range'), chart));
   const [logo, font] = await Promise.all([readFile(join(process.cwd(), 'public/brand/zecblock-logotype.png')), readFile(join(process.cwd(), 'public/fonts/chart-export/Geist-Regular.ttf'))]);
   return new ImageResponse(<ChartExport data={{ chart: selectedChartSeries(chart, query.get('series')), rows, network: getNetwork(), asOf: delayedChartSnapshotLabel(snapshot.fetchedAt, snapshot.meta.freshness) ?? (chart.axis === 'category' ? chartSnapshotLabel(snapshot.payload) : undefined) }} logo={`data:image/png;base64,${logo.toString('base64')}`}/>, {
     ...EXPORT_SIZE,

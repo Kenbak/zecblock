@@ -16,7 +16,7 @@ const REBUILD_SQL=`WITH shielded AS (
  FROM analytics_history_daily a JOIN blocks b ON b.height=a.anchor_height AND b.hash=a.anchor_hash
  JOIN zec_price_daily p ON p.date=a.date JOIN privacy_trends_daily d ON d.date=a.date
  JOIN shielded s ON s.date=a.date
- WHERE a.date<CURRENT_DATE AND ($1::int IS NULL OR a.date>=CURRENT_DATE-$1::int)
+ WHERE a.date<(now() AT TIME ZONE 'UTC')::date AND ($1::int IS NULL OR a.date>=(now() AT TIME ZONE 'UTC')::date-$1::int)
  AND s.pools=(SELECT COUNT(DISTINCT pool) FROM pool_realized_cap_daily WHERE date<=a.date)
  AND ($2::date IS NULL OR a.date >= $2::date) AND ($3::date IS NULL OR a.date <= $3::date)
  AND d.chain_supply>0 AND p.price_usd>0

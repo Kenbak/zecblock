@@ -1,0 +1,11 @@
+[Unit]
+Description=Retry missing daily price collection hourly after UTC publication
+
+[Timer]
+OnCalendar=*-*-* *:17:00 UTC
+RandomizedDelaySec=120
+Persistent=true
+Unit=cipherscan-prices.service
+
+[Install]
+WantedBy=timers.target

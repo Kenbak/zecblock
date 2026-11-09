@@ -9,7 +9,9 @@ on:
 
 concurrency:
   group: docker-${{ github.ref }}
-  cancel-in-progress: true
+  # PR pushes supersede each other; every main/dev push must finish so each
+  # merge commit has a complete result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -21,6 +23,7 @@ jobs:
   hadolint:
     name: Hadolint
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install hadolint
@@ -38,6 +41,7 @@ jobs:
   build:
     name: Build image (${{ matrix.name }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     needs: hadolint
     strategy:
       fail-fast: false

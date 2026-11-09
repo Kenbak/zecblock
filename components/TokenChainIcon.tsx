@@ -1,5 +1,7 @@
 'use client';
 
+import { getChainLogoSrc } from '@/lib/chain-logos';
+
 // Token icons from /public/tokens/ (sourced from zipher-app)
 function getTokenIcon(symbol: string): string | null {
   const key = symbol.toLowerCase();
@@ -34,40 +36,7 @@ function getTokenIcon(symbol: string): string | null {
     xmr: '/tokens/xmr.png',
     cbzec: '/tokens/cbzec.png',
     cbbtc: '/tokens/cbbtc.png',
-  };
-  return map[key] || null;
-}
-
-// Chain icons from /public/chains/ (sourced from zipher-app)
-function getChainIcon(chain: string): string | null {
-  const key = chain.toLowerCase();
-  const map: Record<string, string> = {
-    eth: '/chains/eth.png',
-    sol: '/chains/sol.png',
-    btc: '/chains/btc.png',
-    near: '/chains/near.png',
-    base: '/chains/base.svg',
-    arb: '/chains/arb.png',
-    op: '/chains/op.png',
-    pol: '/chains/pol.png',
-    avax: '/chains/avax.png',
-    bsc: '/chains/bsc.png',
-    bnb: '/chains/bsc.png',
-    trx: '/chains/tron.png',
-    tron: '/chains/tron.png',
-    zec: '/tokens/zec.png',
-    apt: '/chains/aptos.png',
-    aptos: '/chains/aptos.png',
-    sui: '/chains/sui.png',
-    ton: '/chains/ton.png',
-    doge: '/chains/doge.png',
-    xrp: '/chains/xrp.png',
-    bch: '/chains/bch.png',
-    ltc: '/chains/ltc.png',
-    stellar: '/chains/stellar.png',
-    xlm: '/chains/stellar.png',
-    starknet: '/chains/starknet.png',
-    cardano: '/chains/cardano.png',
+    mon: '/chains/monad.svg',
   };
   return map[key] || null;
 }
@@ -90,6 +59,8 @@ const NATIVE_PAIRS: Record<string, string> = {
   sui: 'sui',
   ltc: 'ltc',
   ada: 'ada',
+  monad: 'mon',
+  dash: 'dash',
 };
 
 interface TokenChainIconProps {
@@ -106,8 +77,8 @@ export function TokenChainIcon({ token, chain, size = 32, className = '' }: Toke
   const isNative = NATIVE_PAIRS[chainKey] === tokenKey;
   const showBadge = !isNative && chainKey !== tokenKey;
 
-  const tokenUrl = getTokenIcon(tokenKey) || getChainIcon(tokenKey);
-  const chainUrl = getChainIcon(chainKey);
+  const tokenUrl = getTokenIcon(tokenKey) || getChainLogoSrc(tokenKey);
+  const chainUrl = getChainLogoSrc(chainKey);
 
   return (
     <div className={`relative inline-flex shrink-0 ${className}`} style={{ width: size, height: size }}>

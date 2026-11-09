@@ -1,7 +1,9 @@
 'use strict';
 // Operator-only fixed cases. LIVE requires an isolated serving wrapper which
 // counts and caps actual outbound attempts BEFORE contacting the provider.
-const {cases:catalogue,selectedCases}=require('../v1/lib/ask-research-eval-cases');
+const {cases:published,pendingCases,selectedCases}=require('../v1/lib/ask-research-eval-cases');
+// --all validation also compiles pending cases (unpublished datasets) in preview.
+const catalogue=[...published,...pendingCases];
 const {modelProfile,attestRuntime}=require('../v1/lib/ask-model-profile');
 const {comparisonQuery,gradeReply}=require('../v1/lib/ask-research-eval');
 const {compileResearchSQL}=require('../v1/lib/ask-research-sql');
@@ -20,7 +22,7 @@ function options(args,env={}){
  return {live,all,profile,limit,cases,url};
 }
 async function validateCases(cases){
- for(const item of cases){if(item.kind!=='research')continue;const query=(await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true})).request;
+ for(const item of cases){if(item.kind!=='research')continue;const query=(await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true,preview:pendingCases.includes(item)})).request;
   await comparisonQuery(item,{query,columns:item.roles.map((role,i)=>({key:`c${i}`,label:`role_${i}`,type:['date','month'].includes(role)?'text':'number'})),rows:[],truncated:false,datasets:['activity_daily'],fingerprint:'a'.repeat(64),retrievedAt:'2026-10-16T00:00:00Z',indexedThrough:'2026-10-16T00:00:00Z',coverage:'validation only',units:'validation only'});
  }
 }
@@ -56,13 +58,17 @@ async function run(args,env,{request=fetch,worker=null,emit=record=>console.log(
   if(!client){client=require('../v1/lib/ask-analytics-client').createAnalyticsClient(env);ownedClient=true;}
   if(!client?.jobsEnabled)throw Error('Private verification worker required');
   for(const item of config.cases){
-   const started=now(),maximumProviderAttempts=item.kind==='research'?4:2;let ticket=null,checks=[],passed=false,before=null,fatal=false,diagnostics=null,dimensions={result:item.kind==='research'?'not-checked':'not-applicable',narrative:'not-checked',expectedOutcome:item.kind==='research'?'not-applicable':'not-checked'};
+   const started=now(),maximumProviderAttempts=item.kind==='research'?5:3;let ticket=null,checks=[],passed=false,before=null,fatal=false,diagnostics=null,dimensions={result:item.kind==='research'?'not-checked':'not-applicable',narrative:'not-checked',expectedOutcome:item.kind==='research'?'not-applicable':'not-checked'};
    try{
     await attest();before=identity.providerAttempts;
     // /chat selection includes the SQL draft and at most one SQL repair.
     // Research explanation can also need its one budgeted format repair.
     // Reserve the whole possible path inside the unchanged 12-attempt cap.
     // Wrongly routed nonresearch jobs are cancelled.
+    // A research caption may be restated once after a failed number check.
+    // With ASK_AGENT=true a decline or clarification can follow two repaired
+    // steps, so nonresearch cases allow three; research stays at three steps
+    // plus the caption.
     if(before+maximumProviderAttempts>identity.providerAttemptLimit)throw Object.assign(Error('Provider attempt budget insufficient'),{kind:'attempt-budget'});
     let reply=await post('/chat',{page:'ask',question:item.question,context:null,history:[],locale:'en',challenge:env.ASK_EVAL_CHALLENGE||'operator-fixed-evaluation'});
     if(item.kind==='research'){

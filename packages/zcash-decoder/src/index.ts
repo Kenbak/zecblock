@@ -5,8 +5,8 @@
  *
  * Features:
  * - 100% client-side memo decryption (viewing key never leaves browser)
- * - Batch compact block filtering (13x faster than sequential)
- * - Web Worker compatible (zero UI freeze)
+ * - Orchard/Ironwood compact block filtering
+ * - Web Worker compatible for large scans
  * - TypeScript support
  *
  * @example
@@ -61,24 +61,31 @@ export class ZcashWASM {
    * const wasm = await ZcashWASM.init();
    * ```
    */
-  static async init(): Promise<ZcashWASM> {
+  static async init(wasmInput?: ArrayBuffer | Uint8Array): Promise<ZcashWASM> {
     const instance = new ZcashWASM();
-    await instance.loadWASM();
+    await instance.loadWASM(wasmInput);
     return instance;
   }
 
   /**
    * Load the WASM module from the wasm/ directory
    */
-  private async loadWASM(): Promise<void> {
+  private async loadWASM(wasmInput?: ArrayBuffer | Uint8Array): Promise<void> {
     if (this.wasmModule) return;
 
     try {
       // Dynamically import the WASM module
       const wasmInit = await import('../wasm/zcash_wasm.js');
 
-      // Initialize WASM
-      await wasmInit.default();
+      // Node cannot fetch file: URLs. Read only our packaged artifact locally.
+      if (wasmInput === undefined && typeof process !== 'undefined' && process.versions?.node) {
+        const moduleName = 'node:fs/promises';
+        const { readFile } = await import(/* webpackIgnore: true */ /* @vite-ignore */ moduleName);
+        wasmInput = await readFile(new URL('../wasm/zcash_wasm_bg.wasm', import.meta.url));
+      }
+      await wasmInit.default(wasmInput === undefined ? undefined : {
+        module_or_path: wasmInput instanceof Uint8Array ? new Uint8Array(wasmInput) : wasmInput,
+      });
 
       this.wasmModule = {
         decrypt_memo: wasmInit.decrypt_memo,
@@ -113,8 +120,11 @@ export class ZcashWASM {
     }
 
     try {
-      const patchedHex = ZcashWASM.patchBranchId(txHex);
-      const resultJson = this.wasmModule.decrypt_memo(patchedHex, viewingKey);
+      if (typeof txHex !== 'string' || txHex.length > 4_000_000 ||
+          txHex.length % 2 !== 0 || !/^[0-9a-f]+$/i.test(txHex)) {
+        throw new Error('Transaction must be hexadecimal bytes, at most 2 MB.');
+      }
+      const resultJson = this.wasmModule.decrypt_memo(txHex, viewingKey);
       return JSON.parse(resultJson);
     } catch (error) {
       throw new Error(`Failed to decrypt memo: ${error}`);
@@ -122,28 +132,11 @@ export class ZcashWASM {
   }
 
   /**
-   * Patch unknown consensus branch IDs to NU5 for parsing.
-   * NU6/NU6.1/NU6.2 use the same v5 tx format — only proof rules changed.
-   * The WASM only needs to parse structure for decryption, not validate proofs.
-   */
-  private static patchBranchId(hex: string): string {
-    if (hex.length < 24) return hex;
-    const knownBranchIds = [
-      '00000000', '191ba85b', 'bb09b876', '602bb42b', '0b23b9f5',
-      'a675ffe9', 'b4d0d6c2',
-    ];
-    const branchIdHex = hex.substring(16, 24);
-    if (!knownBranchIds.includes(branchIdHex)) {
-      return hex.substring(0, 16) + 'b4d0d6c2' + hex.substring(24);
-    }
-    return hex;
-  }
-
-  /**
    * Filter compact blocks to find transactions matching the viewing key
    *
    * This is much faster than full decryption as it only checks compact block data.
-   * Use this for "birthday scans" to find all transactions for a viewing key.
+   * This returns Orchard/Ironwood matches only; it does not scan Sapling outputs.
+   * Mixed blocks keep supported matches; Sapling-only input is unsupported.
    *
    * @param compactBlocks - Array of compact blocks from Lightwalletd
    * @param viewingKey - Unified Full Viewing Key (UFVK)
@@ -171,82 +164,76 @@ export class ZcashWASM {
       throw new Error('WASM module not initialized. Call ZcashWASM.init() first.');
     }
 
+    if (!Array.isArray(compactBlocks)) throw new Error('Compact blocks must be an array.');
     const totalBlocks = compactBlocks.length;
     const matchingTxs: MatchingTransaction[] = [];
     const txMap = new Map<string, MatchingTransaction>();
 
-    // Process in chunks for progress updates
-    const CHUNK_SIZE = 10000;
-
-    for (let chunkStart = 0; chunkStart < totalBlocks; chunkStart += CHUNK_SIZE) {
-      const chunkEnd = Math.min(chunkStart + CHUNK_SIZE, totalBlocks);
-      const chunk = compactBlocks.slice(chunkStart, chunkEnd);
-
-      // Extract all Orchard and Sapling outputs
-      const allOutputs: any[] = [];
-
-      for (const block of chunk) {
-        for (const tx of block.vtx || []) {
-          // Orchard actions
-          for (const action of tx.actions || []) {
-            allOutputs.push({
-              pool: action.pool,
-              nullifier: action.nullifier,
-              cmx: action.cmx,
-              ephemeral_key: action.ephemeralKey,
-              ciphertext: action.ciphertext,
-              txid: tx.hash,
-              height: parseInt(block.height),
-              timestamp: block.time,
-            });
-          }
-
-          // Sapling outputs
-          for (const output of tx.outputs || []) {
-            allOutputs.push({
-              nullifier: '0000000000000000000000000000000000000000000000000000000000000000',
-              cmx: output.cmu,
-              ephemeral_key: output.ephemeralKey,
-              ciphertext: output.ciphertext,
-              txid: tx.hash,
-              height: parseInt(block.height),
-              timestamp: block.time,
-            });
-          }
+    // Bound calls by output count, independently of block/transaction size.
+    type Output = {
+      pool?: 'orchard' | 'ironwood'; nullifier: string; cmx: string;
+      ephemeral_key: string; ciphertext: string; txid: string;
+      height: number; timestamp: number;
+    };
+    let outputs: Output[] = [];
+    let supportedOutputs = 0;
+    let saplingOutputs = 0;
+    const flush = () => {
+      if (!outputs.length) return;
+      const matches: { index: number }[] = JSON.parse(
+        this.wasmModule!.batch_filter_compact_outputs(JSON.stringify(outputs), viewingKey));
+      for (const match of matches) {
+        const output = outputs[match.index];
+        if (!output) throw new Error('WASM returned an invalid output index.');
+        if (!txMap.has(output.txid)) {
+          const tx = { txid: output.txid, height: output.height, timestamp: output.timestamp };
+          txMap.set(tx.txid, tx);
+          matchingTxs.push(tx);
         }
       }
-
-      if (allOutputs.length > 0) {
-        // Call WASM batch filter
-        const outputsJson = JSON.stringify(allOutputs);
-        const matchesJson = this.wasmModule.batch_filter_compact_outputs(outputsJson, viewingKey);
-        const matches = JSON.parse(matchesJson);
-
-        // Map indices back to transactions
-        for (const match of matches) {
-          const output = allOutputs[match.index];
-          if (!txMap.has(output.txid)) {
-            const tx = {
-              txid: output.txid,
-              height: output.height,
-              timestamp: output.timestamp,
-            };
-            txMap.set(output.txid, tx);
-            matchingTxs.push(tx);
+      outputs = [];
+    };
+    const field = (value: string, bytes: number) => {
+      if (typeof value !== 'string' || value.length !== bytes * 2 || !/^[0-9a-f]+$/i.test(value)) {
+        throw new Error(`Invalid compact field: expected ${bytes} hexadecimal bytes.`);
+      }
+      return value;
+    };
+    for (let blockIndex = 0; blockIndex < totalBlocks; blockIndex++) {
+      const block = compactBlocks[blockIndex];
+      if (!block || typeof block.height !== 'string' || !/^[0-9]+$/.test(block.height) ||
+          !Number.isSafeInteger(Number(block.height)) || !Number.isSafeInteger(block.time) || block.time < 0 ||
+          !Array.isArray(block.vtx)) throw new Error('Invalid compact block metadata.');
+      for (const tx of block.vtx) {
+        if (!tx || typeof tx.hash !== 'string' || tx.hash.length > 128 ||
+            (tx.actions !== undefined && !Array.isArray(tx.actions)) ||
+            (tx.outputs !== undefined && !Array.isArray(tx.outputs))) throw new Error('Invalid compact transaction.');
+        // Lightwalletd blocks can contain multiple pools. This API filters only
+        // Orchard/Ironwood; never reinterpret Sapling ciphertext as Orchard.
+        saplingOutputs += tx.outputs?.length || 0;
+        for (const action of tx.actions || []) {
+          if (!action || (action.pool !== undefined && action.pool !== 'orchard' && action.pool !== 'ironwood')) {
+            throw new Error('Invalid compact pool.');
           }
+          supportedOutputs++;
+          outputs.push({
+            pool: action.pool,
+            nullifier: field(action.nullifier, 32), cmx: field(action.cmx, 32),
+            ephemeral_key: field(action.ephemeralKey, 32), ciphertext: field(action.ciphertext, 52),
+            txid: tx.hash, height: Number(block.height), timestamp: block.time,
+          });
+          if (outputs.length === 4096) flush();
         }
       }
-
-      // Report progress
-      if (onProgress) {
-        onProgress({
-          blocksProcessed: chunkEnd,
-          totalBlocks,
-          matchesFound: matchingTxs.length,
-        });
+      if ((blockIndex + 1) % 250 === 0 || blockIndex + 1 === totalBlocks) {
+        flush();
+        onProgress?.({ blocksProcessed: blockIndex + 1, totalBlocks, matchesFound: matchingTxs.length });
       }
     }
 
+    if (supportedOutputs === 0 && saplingOutputs > 0) {
+      throw new Error('Sapling compact output filtering is not supported by this decoder.');
+    }
     return matchingTxs;
   }
 

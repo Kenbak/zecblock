@@ -89,6 +89,7 @@ interface Reliability {
 
 interface UpgradeReadiness {
   latestProtocol: number;
+  referenceUpgrade?: string;
   readinessPct: number | null;
   latestCount: number;
   totalActive: number;
@@ -280,12 +281,12 @@ export default function NodesClient() {
               <CardBody>
                 <div className="flex items-start justify-between mb-5 gap-3">
                   <div>
-                    <h3 className="text-sm font-semibold text-primary">Protocol adoption</h3>
-                    <p className="text-caption text-muted mt-0.5">Reference protocol {upgrade.latestProtocol} or newer · among nodes reporting a protocol version</p>
+                    <h3 className="text-sm font-semibold text-primary">{upgrade.referenceUpgrade ? `${upgrade.referenceUpgrade} readiness` : 'Protocol adoption'}</h3>
+                    <p className="text-caption text-muted mt-0.5">Advertising protocol {upgrade.latestProtocol} or newer{upgrade.referenceUpgrade ? ` (${upgrade.referenceUpgrade})` : ''} · among nodes reporting a protocol version</p>
                   </div>
                   <span className="text-2xl font-semibold font-mono tabular-nums" style={upgrade.readinessPct != null ? { color: scoreColor(upgrade.readinessPct) } : undefined}>{upgrade.readinessPct != null ? `${upgrade.readinessPct}%` : '—'}</span>
                 </div>
-                <p className="text-caption text-muted mb-4">{upgrade.latestCount.toLocaleString()} of {upgrade.totalActive.toLocaleString()} reporting nodes meet the reference protocol.</p>
+                <p className="text-caption text-muted mb-4">{upgrade.latestCount.toLocaleString()} of {upgrade.totalActive.toLocaleString()} reporting nodes advertise it. A protocol version is self-reported and does not prove a node will follow the upgrade.</p>
                 <div className="space-y-2.5">
                   {upgrade.versions.map(v => (
                     <div key={v.protocolVersion} className="flex items-center gap-2 text-caption">

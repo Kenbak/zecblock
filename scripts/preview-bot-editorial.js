@@ -11,6 +11,8 @@ const p = require('../server/bot/lib/editorial-policy');
 const { poolMilestoneStories } = require('../server/bot/lib/pool-activity-milestones');
 const { insightFixtures } = require('../server/bot/lib/editorial-insights');
 const { addDays } = require('../server/lib/transaction-activity');
+const nu7 = require('../server/bot/lib/nu7-stories');
+const schedule = require('../server/api/lib/network-schedule');
 
 const arg = (name, fallback) => process.argv.find(a => a.startsWith(`--${name}=`))?.slice(name.length + 3) || fallback;
 const output = path.resolve(arg('output', 'output/bot-editorial-review'));
@@ -58,6 +60,51 @@ function fromPublished(row) {
   return null;
 }
 
+// Illustrative legacy-pool drain: a year of daily closes ending in a crossing.
+function poolDrainFixtures() {
+  const target = '2026-12-02', zat = zec => String(Math.round(zec * 1e8));
+  const rows = Array.from({ length: 400 }, (_, i) => {
+    const sapling = i === 399 ? 398760 : 560000 - i * 380 + (i % 9) * 900, ironwood = 3.2e6 + i * 2600;
+    return { date: addDays(target, i - 399), sapling_pool_size: zat(Math.max(sapling, 400200)), orchard_pool_size: zat(352000 - i * 20),
+      sprout_pool_size: zat(22200), ironwood_pool_size: zat(ironwood), pool_size: zat(ironwood + Math.max(sapling, 400200) + 352000 - i * 20 + 22200) };
+  });
+  rows[399].sapling_pool_size = zat(398760); rows[30].sapling_pool_size = zat(396000);
+  const share = rows.map(r => ({ ...r, ironwood_pool_size: r === rows[399] ? zat(4.3e6) : r.ironwood_pool_size }));
+  const pick = (list, prefix) => p.poolDrainStories(list, target).find(story => story.key.startsWith(prefix));
+  return [['Sapling pool drain milestone', pick(rows, 'milestone:sapling_below')], ['Ironwood share milestone', pick(share, 'milestone:ironwood_share')]];
+}
+
+// Illustrative NU7 stories at mainnet's scheduled height. Times, pools and
+// amounts are synthetic; the gates and copy are the production builders.
+function nu7Fixtures() {
+  const H = 3543405, T = Date.parse('2026-11-06T00:31:00Z') / 1000, at = s => new Date(s * 1000);
+  const jitter = i => [0.4, 1.7, 0.9, 1.2, 0.3, 2.1, 0.8, 1.1][i % 8];
+  const recent = [];
+  for (let t = T - 75, h = H - 1; t > T - 1200; h--) { recent.unshift({ height: h, timestamp: Math.round(t) }); t -= 75 * jitter(h); }
+  for (let t = T, h = H; t < T + 360; h++) { recent.push({ height: h, timestamp: Math.round(t) }); t += 25 * jitter(h); }
+  const tip = recent.at(-1);
+  const plan = { network: 'main', nu7Height: H, eras: [{ height: 0, seconds: 150 }, { height: 653600, seconds: 75 }, { height: H, seconds: 25 }] };
+  let lo = 3535800, hi = 6132390;
+  while (lo < hi) { const m = (lo + hi) >> 1; if (schedule.targetSeconds(plan, m, 6132390) / 86400 <= 364.5) hi = m; else lo = m + 1; }
+  return [
+    ['NU7 countdown · a day before', nu7.countdownStory({ nu7Height: H, tip: { height: H - 1120, timestamp: T - 84000 },
+      readiness: { referenceUpgrade: 'NU7', latestProtocol: 170190, latestCount: 371, totalActive: 466, readinessPct: 79.6 } })],
+    ['NU7 is live', nu7.activationStory({ nu7Height: H, block: { height: H, timestamp: T }, tip, pool: 'ViaBTC', recent, now: at(tip.timestamp + 60) })],
+    ['NU7 first 24 hours', nu7.firstDayStory({ nu7Height: H, activationTime: T, now: at(T + 87000),
+      after: { blocks: 3448, averageSeconds: 25.06 }, before: { blocks: 1149, averageSeconds: 75.2 } })],
+    ['NU7 block milestone', nu7.blockMilestoneStory({ nu7Height: H, tip: { height: H + 10040 }, start: { height: H - 1, timestamp: T - 75 },
+      crossing: { height: H + 9999, timestamp: T + 250600 }, now: at(T + 251000) })],
+    ['NSM reserve milestone', nu7.nsmMilestoneStory({ nu7Height: H, now: at(T + 9 * 86400),
+      baseline: { height: H - 1, nsmZat: '0' }, current: { height: H + 30500, nsmZat: '1012345678' },
+      crossing: { height: H + 30100, timestamp: T + 8.8 * 86400, nsmZat: '1000081234' }, quote: { usd: 1247.5 },
+      daily: Array.from({ length: 9 }, (_, i) => ({ date: addDays('2026-11-06', i), nsmZat: i === 8 ? '1012345678' : String(Math.round((i + 1) * 111000000)) })) })],
+    ['NSM reserve dollar milestone', nu7.nsmUsdMilestoneStory({ nu7Height: H, now: at(T + 40 * 86400), quote: { usd: 1302.4 },
+      baseline: { height: H - 1, nsmZat: '0' }, current: { height: H + 138000, nsmZat: '8013377001' } })],
+    ...poolDrainFixtures(),
+    ['Halving countdown', nu7.halvingCountdownStory({ schedule: plan, tip: { height: lo, timestamp: T + 390 * 86400 }, ...schedule })],
+  ];
+}
+
 async function main() {
   fs.mkdirSync(output, { recursive: true });
   const examples = [], declined = [];
@@ -90,7 +137,7 @@ async function main() {
   const [briefing, reversal, streak, pace] = insightFixtures();
   for (const [label, story] of [['Weekly network briefing', briefing], ['Public flow reversal', reversal],
     ['Sustained public inflows', streak], ['Changing public-flow pace', pace],
-    ['Ironwood weekly-share milestone', poolFixture()], ['Ironwood / Orchard crossover', poolFixture(true)]]) {
+    ['Ironwood weekly-share milestone', poolFixture()], ['Ironwood / Orchard crossover', poolFixture(true)], ...nu7Fixtures()]) {
     if (story) examples.push({ label, basis: 'Illustrative fixture · synthetic numbers, not live data', story });
   }
   const manifest = [];
@@ -124,7 +171,7 @@ async function main() {
     <header><small>PRE-DEPLOYMENT REVIEW · NOTHING PUBLISHED</small><h1>More stories worth reading.<br>Evidence that earns the space.</h1>
     <p>These examples use the new selection, copy, chart renderer and first-reply source format. Measured examples use a read-only canonical database snapshot or saved evidence from published posts. Synthetic examples are labeled individually; they show the new formats and do not claim current events.</p></header>
     ${mix ? `<details class="measure"><summary>Measured feed mix: 83 of the last 100 posts concerned money movement</summary><p>46 shielding/deshielding alerts + 23 swaps + 14 cross-chain summaries. Other posts: 14 daily activity, 2 network signals, 1 weekly activity. Read-only outbox observation: ${escape(mix.observedAt)}.</p><table><tbody>${mixRows}</tbody></table></details>` : ''}
-    <nav aria-label="Example filters"><button class="active" data-filter="all">All examples</button><button data-filter="network_briefing">Weekly briefing</button><button data-filter="pool_trend">Trends</button><button data-filter="milestone">Ironwood</button><button data-filter="historical">Measured examples</button></nav>
+    <nav aria-label="Example filters"><button class="active" data-filter="all">All examples</button><button data-filter="network_briefing">Weekly briefing</button><button data-filter="pool_trend">Trends</button><button data-filter="milestone">Ironwood</button><button data-filter="nu7">NU7</button><button data-filter="historical">Measured examples</button></nav>
     <main class="examples">${cards}</main><footer>Publication is unchanged. New code is local only; no X calls, token refresh, production DB writes or deployment are performed by this preview command. Website charts update over time; each post records its dated observation. ${declined.length} historical daily examples were declined by the new significance gate.</footer>
     <script>document.querySelectorAll('button[data-filter]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('button[data-filter]').forEach(b=>b.classList.toggle('active',b===button));document.querySelectorAll('article').forEach(article=>{const f=button.dataset.filter;article.hidden=f==='historical'?article.dataset.measured!=='true':f!=='all'&&article.dataset.type!==f})}));</script></body></html>`;
   fs.writeFileSync(path.join(output, 'index.html'), html);

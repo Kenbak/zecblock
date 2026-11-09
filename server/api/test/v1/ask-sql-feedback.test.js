@@ -19,19 +19,23 @@ test('readable SQL display recompiles to the identical canonical query',async()=
     'SELECT pg_catalog.count(*) FROM analytics_public.blocks_query',
     'SELECT count(*) FROM blocks AS "blocks"'];
   for(const sql of cases){
-    const canonical=await compileResearchSQL({version:3,sql},{extended:true});
+    const canonical=await compileResearchSQL({version:3,sql},{extended:true,preview:true});
     const shown=displaySQL(canonical.request.sql);
     assert.doesNotMatch(shown,/analytics_public|pg_catalog\.[a-z_]+\(/,sql);
-    assert.equal((await compileResearchSQL({version:3,sql:shown},{extended:true})).fingerprint,canonical.fingerprint,sql);
+    assert.equal((await compileResearchSQL({version:3,sql:shown},{extended:true,preview:true})).fingerprint,canonical.fingerprint,sql);
   }
 });
 
 test('starter queries pass the research policy for their catalogue',async()=>{
   assert.ok(examplesFor(false).length>=4);assert.ok(examplesFor(false).every(example=>!example.extended));
   assert.equal(new Set(sqlExamples.map(example=>example.id)).size,sqlExamples.length);
+  // Examples for unpublished datasets are hidden until the dataset is published.
+  assert.ok(examplesFor(true).some(example=>example.id==='supply-now')&&examplesFor(true).some(example=>example.id==='issuance-split'));
+  assert.ok(!examplesFor(false).some(example=>example.id==='supply-now'));
   for(const example of sqlExamples){
-    const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:100},{extended:example.extended});
+    const compiled=await compileResearchSQL({version:3,sql:example.sql,limit:100},{extended:example.extended,preview:Boolean(example.datasets)});
     assert.ok(compiled.datasets.length>=1,example.id);
+    if(example.datasets)assert.deepEqual(compiled.datasets,example.datasets,example.id);
     if(!example.extended)assert.ok(compiled.datasets.every(id=>['blocks','transactions','flows'].includes(id)),example.id);
   }
 });
@@ -132,11 +136,13 @@ test('real PostgreSQL cost estimates and error messages',{skip:process.env.ASK_S
     CREATE TABLE analytics_public.activity_daily_query(date date PRIMARY KEY,blocks bigint,transactions bigint,shielded_transactions bigint,transparent_transactions bigint,unclassified_transactions bigint,bytes numeric,fees numeric,missing_fees bigint,missing_bytes bigint);
     CREATE TABLE analytics_public.flow_daily_query(date date,pool text,direction text,records bigint,amount numeric,missing_amounts bigint,PRIMARY KEY(date,pool,direction));
     CREATE TABLE analytics_public.blocks_query(height integer PRIMARY KEY,hash text,timestamp bigint,miner text,transactions integer,bytes bigint,fees bigint);
+    CREATE TABLE analytics_public.supply_daily_query(date date PRIMARY KEY,height bigint,hash text,timestamp bigint,chain_supply bigint,lockbox bigint,circulating_supply bigint,net_change bigint);
+    CREATE TABLE analytics_public.issuance_query(height bigint PRIMARY KEY,hash text,timestamp bigint,subsidy bigint,miner_subsidy bigint,founders bigint,funding_streams bigint,lockbox bigint,lockbox_disbursed bigint,fees bigint);
     INSERT INTO analytics_public.blocks_query SELECT i,md5(i::text),1700000000+i*75,'t1fixture',2,1000,i FROM generate_series(1,200000) i;
     ANALYZE analytics_public.blocks_query;`);
   await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   await client.query("SET LOCAL search_path=pg_catalog; SET LOCAL max_parallel_workers_per_gather=0; SET LOCAL jit=off");
-  const cost=async sql=>{const compiled=await compileResearchSQL({version:3,sql,limit:100},{extended:true});try{return await checkResearchCost(client,compiled,5e7);}catch(error){return error;}};
+  const cost=async sql=>{const compiled=await compileResearchSQL({version:3,sql,limit:100},{extended:true,preview:true});try{return await checkResearchCost(client,compiled,5e7);}catch(error){return error;}};
   const small=await cost('SELECT height,fees FROM blocks ORDER BY height DESC LIMIT 10');
   assert.equal(typeof small,'number');assert.ok(small<1000,`indexed latest blocks estimate ${small}`);
   const scan=await cost("SELECT date_trunc('month',to_timestamp(timestamp)) AS month,sum(fees) FROM blocks GROUP BY 1");

@@ -11,7 +11,7 @@ test('source aliases and equivalent UTC numeric bounds preserve only the proven 
  assert.equal((await diagnose(renamed)).issues.length,1);
  assert.equal((await diagnose(sql.replace("GROUP BY 1)","GROUP BY utc_date)"))).issues.length,1);
 });
-test('the efficient fixed per-day reference remains accepted without a repair diagnostic',async()=>{const {cases}=require('../../v1/lib/ask-research-eval-cases');const ref=cases.find(c=>c.id==='daily_address_incidences').referenceSQL;assert.deepEqual((await diagnose(ref)).issues,[]);});
+test('the efficient fixed per-day references remain accepted without a repair diagnostic',async()=>{const {cases}=require('../../v1/lib/ask-research-eval-cases'),{benchmarks}=require('../../v1/lib/ask-research-benchmarks');for(const ref of [cases.find(c=>c.id==='daily_address_incidences').referenceSQL,benchmarks.find(b=>b.id==='address_incidence').sql])assert.deepEqual((await diagnose(ref)).issues,[]);});
 test('one-day, custom-grain and unresolved source queries remain queryable without this hint',async()=>{
  const rejected=[sql.replace("2026-10-01 00:00:00+00","2026-09-02 00:00:00+00"),sql.replace("count(DISTINCT address)","count(address)"),sql.replace("count(*) AS address_transaction_incidences","count(txid) AS address_transaction_incidences").replace("::bigint),daily_counts", "::bigint LIMIT 100),daily_counts"),sql.replace("count(DISTINCT address)","count(DISTINCT txid)"),sql.replace("'YYYY-MM-DD'","'YYYY-MM'")];
  for(const statement of rejected){const {compiled,issues}=await diagnose(statement);assert.deepEqual(issues,[],statement);assert.ok(compiled.request.sql);}
@@ -66,7 +66,8 @@ test('one model-only per-day repair carries requested flags into BOTH counts whi
  const {cases}=require('../../v1/lib/ask-research-eval-cases');
  const item=cases.find(item=>item.id==='daily_address_incidences');
  const filtered=sql.replace('WHERE timestamp>=','WHERE (is_input OR is_output) AND timestamp>=');
- const repaired=item.referenceSQL.replaceAll('FROM address_activity a WHERE','FROM address_activity a WHERE (a.is_input OR a.is_output) AND');
+ // The filter rules out address_daily, so the repair is the raw per-day benchmark shape.
+ const repaired=require('../../v1/lib/ask-research-benchmarks').benchmarks.find(b=>b.id==='address_incidence').sql.replaceAll('FROM address_activity a WHERE','FROM address_activity a WHERE (a.is_input OR a.is_output) AND');
  let calls=0;
  const query=await compileResearchDraft(filtered,{question:item.question+' Retain only published incidences where is_input OR is_output is true.'},async(input)=>{
   calls++;assert.match(input.diagnostics.join('\n'),/predicate unchanged in BOTH/);return {sql:repaired};

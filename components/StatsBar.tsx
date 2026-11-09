@@ -2,10 +2,12 @@
 
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { CURRENCY, isCrosslink } from '@/lib/config';
+import { CURRENCY, isCrosslink, isMainnet } from '@/lib/config';
 import { SlidersIcon } from '@/components/icons/common';
 import { HASHRATE_DESCRIPTION, type HashrateSnapshot } from '@/lib/hashrate';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { useZecBtcQuote } from '@/hooks/useZecBtcQuote';
+import { btcPercentage } from '@/lib/zec-btc';
 
 interface StatsData {
   blockHeight: number | null;
@@ -33,7 +35,8 @@ type StatId =
   | 'privacyScore'
   | 'ironwoodPool'
   | 'ironwoodPct'
-  | 'price';
+  | 'price'
+  | 'zecBtc';
 
 // Canonical display order — filtering by selection never reorders the bar,
 // so toggling one stat off and back on doesn't shuffle the others.
@@ -49,6 +52,7 @@ const STAT_ORDER: StatId[] = [
   'ironwoodPct',
   'privacyScore',
   'price',
+  ...(isMainnet ? ['zecBtc' as const] : []),
 ];
 
 const STAT_MENU_LABELS: Record<StatId, string> = {
@@ -63,6 +67,7 @@ const STAT_MENU_LABELS: Record<StatId, string> = {
   ironwoodPct: '% Migrated',
   privacyScore: 'Privacy Score',
   price: `${CURRENCY} Price`,
+  zecBtc: 'ZEC / BTC',
 };
 
 // Measured (not guessed) against the bar's real available width — see the
@@ -172,6 +177,8 @@ export function StatsBar() {
   const [selected, setSelected] = useState<StatId[]>(DEFAULT_STATS);
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const btcQuery = useZecBtcQuote(isMainnet && selected.includes('zecBtc'));
+  const btcPercent = btcPercentage(btcQuery.quote?.btcPerZec);
 
   useEffect(() => {
     try {
@@ -259,7 +266,7 @@ export function StatsBar() {
       resizeObserver.disconnect();
     };
     // Re-check once stats finish loading, since that's what changes content width.
-  }, [updateScrollFade, stats, selected]);
+  }, [updateScrollFade, stats, selected, btcQuery.quote, btcQuery.delayed]);
 
   const scrollFadeClass = canScrollLeft && canScrollRight
     ? 'stats-bar-fade-both'
@@ -381,6 +388,13 @@ export function StatsBar() {
             </span>
           </StatItem>
         ) : null;
+      case 'zecBtc':
+        return isMainnet ? (
+          <StatItem href="/valuation#zec-btc" label="ZEC/BTC" title={`One ZEC as a percentage of one BTC · CoinGecko${btcQuery.quote?.observedAt ? ` · ${new Date(btcQuery.quote.observedAt).toLocaleString('en-GB', { timeZone: 'UTC' })} UTC` : ''} · ${btcPercent === null ? 'Quote unavailable' : btcQuery.delayed ? 'Delayed quote' : 'View chart'}`}>
+            {btcPercent === null ? '—' : `${btcPercent.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: btcPercent < 0.01 ? 6 : 2 })}%`}
+            {btcPercent !== null && btcQuery.delayed && <span className="text-muted"> · delayed</span>}
+          </StatItem>
+        ) : null;
       default:
         return null;
     }
@@ -448,6 +462,7 @@ export function StatsBar() {
                       key={id}
                       onClick={() => toggleStat(id)}
                       disabled={isDisabled}
+                      aria-pressed={isChecked}
                       className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-md text-data dropdown-item ${
                         isDisabled ? 'opacity-40 cursor-not-allowed' : ''
                       }`}

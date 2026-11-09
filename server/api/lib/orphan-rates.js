@@ -9,18 +9,31 @@ const PERIODS = ['24h', '7d', '30d'];
 const ORPHAN_RATES_SQL = `
 WITH clock AS (
   SELECT floor(extract(epoch FROM now()))::bigint AS as_of
+), capture AS (
+  SELECT min(collection_started_at) AS capture_start, max(heartbeat_at) AS capture_heartbeat,
+    count(*) FILTER (WHERE stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)::integer AS healthy_observers,
+    count(*)::integer AS observers,
+    -- Private identifiers only; formatOrphanRates maps them to public city names.
+    coalesce(jsonb_agg(jsonb_build_object('network', network, 'observer', observer,
+      'healthy', stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)), '[]'::jsonb) AS observer_rows
+  FROM block_capture_observers
+), activation AS (
+  -- The canonical NU7 activation block's header time; absent until it is indexed.
+  SELECT timestamp::bigint AS ts FROM blocks WHERE height = $1::integer
 ), windows AS (
   SELECT period, as_of - seconds AS window_start, as_of AS window_end
   FROM clock CROSS JOIN (VALUES ('24h', 86400), ('7d', 604800), ('30d', 2592000)) p(period, seconds)
+  UNION ALL
+  -- Up to 30 days before activation, starting no earlier than competing-block
+  -- capture so both sides share one collection method.
+  SELECT 'pre-nu7', greatest(a.ts - 2592000, coalesce(floor(extract(epoch FROM capture.capture_start))::bigint, a.ts - 2592000)), a.ts
+  FROM activation a CROSS JOIN capture
+  UNION ALL
+  SELECT 'nu7', a.ts, clock.as_of FROM activation a CROSS JOIN clock
 ), tip AS (
   SELECT height, hash, timestamp FROM blocks ORDER BY height DESC LIMIT 1
 ), history AS (
   SELECT min(timestamp) AS history_start FROM blocks
-), capture AS (
-  SELECT min(collection_started_at) AS capture_start, max(heartbeat_at) AS capture_heartbeat,
-    count(*) FILTER (WHERE stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)::integer AS healthy_observers,
-    count(*)::integer AS observers
-  FROM block_capture_observers
 ), observed AS (
   -- Prefer the established archive's attribution when both sources saw a hash.
   SELECT DISTINCT ON (hash) hash, timestamp, miner_address, coinbase_hex
@@ -58,45 +71,98 @@ FROM windows w CROSS JOIN history h CROSS JOIN capture LEFT JOIN tip t ON true
 LEFT JOIN counts c ON c.period = w.period
 `;
 
+// Public location of each known observer, keyed by network and private observer
+// name. Names, endpoints and IPs are never returned; an observer missing here is
+// counted only as unlisted. Keep in sync with the wiki observer host table.
+// ZecBlock's own observers carry no operator; partner nodes name the operator
+// that runs them (with their permission). Never IPs or endpoints.
+const PARTNER_ZECMININGPOOL = 'zecminingpool.com';
+const OBSERVER_LOCATIONS = new Map([
+  ['mainnet:local-node', { city: 'Helsinki' }],
+  ['mainnet:do-nyc3', { city: 'New York' }],
+  ['mainnet:do-sgp1', { city: 'Singapore' }],
+  ['mainnet:do-syd1', { city: 'Sydney' }],
+  ['mainnet:ext-zcashpools-austin', { city: 'Austin', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-use1', { city: 'Northern Virginia', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-ogd', { city: 'Ogden', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-bhs', { city: 'Beauharnois', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-lim', { city: 'Limburg', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-sin', { city: 'Singapore', operator: PARTNER_ZECMININGPOOL }],
+]);
+
+function observerLocations(rows) {
+  const places = new Map();
+  let unlisted = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const place = OBSERVER_LOCATIONS.get(`${row?.network}:${row?.observer}`);
+    if (!place) { unlisted += 1; continue; }
+    const operator = place.operator ?? null;
+    const key = `${operator ?? ''}|${place.city}`;
+    const prev = places.get(key);
+    places.set(key, { city: place.city, operator, collecting: (prev?.collecting ?? false) || row.healthy === true });
+  }
+  // Display order is OBSERVER_LOCATIONS order: ZecBlock's own first, then partners.
+  const order = [...OBSERVER_LOCATIONS.values()].map(v => `${v.operator ?? ''}|${v.city}`);
+  return {
+    locations: [...places.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([, v]) => v),
+    unlistedObservers: unlisted,
+  };
+}
+
 function count(value) {
   const n = Number(value);
   if (!Number.isSafeInteger(n) || n < 0) throw new Error('Invalid orphan-rate count');
   return n;
 }
 
-function formatOrphanRates(rows) {
-  const first = rows[0];
+function formatWindow(period, selected) {
+  const { window_start: start, window_end: end, history_start: historyStart } = selected[0];
+  const pools = new Map();
+  let canonicalBlocks = 0, orphanedBlocks = 0;
+  for (const row of selected) {
+    const canonical = count(row.canonical_blocks), orphaned = count(row.orphaned_blocks);
+    canonicalBlocks += canonical;
+    orphanedBlocks += orphaned;
+    if (canonical + orphaned === 0) continue;
+    const name = getPoolName(row.miner_address) || POOL_BY_TAG[row.tag]?.name || 'Unknown';
+    const pool = pools.get(name) || { name, canonicalBlocks: 0, orphanedBlocks: 0 };
+    pool.canonicalBlocks += canonical;
+    pool.orphanedBlocks += orphaned;
+    pools.set(name, pool);
+  }
+  const unavailableReason = period === 'pre-nu7' && Number(start) >= Number(end) ? 'capture-began-after-activation'
+    : historyStart == null || Number(historyStart) > Number(start)
+      ? 'incomplete-canonical-history' : canonicalBlocks === 0 ? 'no-canonical-blocks' : null;
+  return {
+    period, windowStart: new Date(Number(start) * 1000).toISOString(),
+    windowEnd: new Date(Number(end) * 1000).toISOString(),
+    canonicalBlocks, orphanedBlocks,
+    rate: unavailableReason ? null : orphanedBlocks / (canonicalBlocks + orphanedBlocks),
+    unavailableReason,
+    pools: [...pools.values()].map(pool => ({
+      ...pool, rate: unavailableReason ? null : pool.orphanedBlocks / (pool.canonicalBlocks + pool.orphanedBlocks),
+    })).sort((a, b) => b.orphanedBlocks - a.orphanedBlocks || b.canonicalBlocks - a.canonicalBlocks || a.name.localeCompare(b.name)),
+  };
+}
+
+function formatOrphanRates(rows, nu7Height = null) {
+  // Rolling windows share the snapshot clock; NU7 windows may end at activation.
+  const first = rows.find(row => row.period === PERIODS[0]);
   if (!first) throw new Error('Missing orphan-rate snapshot');
   const periods = PERIODS.map(period => {
     const selected = rows.filter(row => row.period === period);
     if (!selected.length) throw new Error('Incomplete orphan-rate snapshot');
-    const { window_start: start, window_end: end, history_start: historyStart } = selected[0];
-    const pools = new Map();
-    let canonicalBlocks = 0, orphanedBlocks = 0;
-    for (const row of selected) {
-      const canonical = count(row.canonical_blocks), orphaned = count(row.orphaned_blocks);
-      canonicalBlocks += canonical;
-      orphanedBlocks += orphaned;
-      if (canonical + orphaned === 0) continue;
-      const name = getPoolName(row.miner_address) || POOL_BY_TAG[row.tag]?.name || 'Unknown';
-      const pool = pools.get(name) || { name, canonicalBlocks: 0, orphanedBlocks: 0 };
-      pool.canonicalBlocks += canonical;
-      pool.orphanedBlocks += orphaned;
-      pools.set(name, pool);
-    }
-    const unavailableReason = historyStart == null || Number(historyStart) > Number(start)
-      ? 'incomplete-canonical-history' : canonicalBlocks === 0 ? 'no-canonical-blocks' : null;
-    return {
-      period, windowStart: new Date(Number(start) * 1000).toISOString(),
-      windowEnd: new Date(Number(end) * 1000).toISOString(),
-      canonicalBlocks, orphanedBlocks,
-      rate: unavailableReason ? null : orphanedBlocks / (canonicalBlocks + orphanedBlocks),
-      unavailableReason,
-      pools: [...pools.values()].map(pool => ({
-        ...pool, rate: unavailableReason ? null : pool.orphanedBlocks / (pool.canonicalBlocks + pool.orphanedBlocks),
-      })).sort((a, b) => b.orphanedBlocks - a.orphanedBlocks || b.canonicalBlocks - a.canonicalBlocks || a.name.localeCompare(b.name)),
-    };
+    return formatWindow(period, selected);
   });
+  const before = rows.filter(row => row.period === 'pre-nu7');
+  const since = rows.filter(row => row.period === 'nu7');
+  // Before/after NU7 on one collection method. Null until the activation block is indexed.
+  const nu7 = before.length && since.length ? {
+    activationHeight: nu7Height,
+    activationTimestamp: new Date(Number(since[0].window_start) * 1000).toISOString(),
+    before: formatWindow('pre-nu7', before),
+    since: formatWindow('nu7', since),
+  } : null;
   return {
     success: true, asOf: new Date(Number(first.window_end) * 1000).toISOString(),
     indexedHeight: first.indexed_height == null ? null : count(first.indexed_height),
@@ -110,13 +176,16 @@ function formatOrphanRates(rows) {
       observers: Number(first.observers ?? 0),
       healthyObservers: Number(first.healthy_observers ?? 0),
       status: Number(first.healthy_observers ?? 0) > 0 ? 'collecting' : 'unavailable',
+      ...observerLocations(first.observer_rows),
     },
     periods,
+    nu7,
   };
 }
 
-async function orphanRates(pool) {
-  return formatOrphanRates((await pool.query(ORPHAN_RATES_SQL)).rows);
+async function orphanRates(pool, { nu7Height = null } = {}) {
+  const height = Number.isSafeInteger(nu7Height) && nu7Height > 0 ? nu7Height : null;
+  return formatOrphanRates((await pool.query(ORPHAN_RATES_SQL, [height])).rows, height);
 }
 
-module.exports = { orphanRates, formatOrphanRates, ORPHAN_RATES_SQL };
+module.exports = { orphanRates, formatOrphanRates, observerLocations, ORPHAN_RATES_SQL };

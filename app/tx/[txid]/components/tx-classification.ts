@@ -59,6 +59,7 @@ export function classifyTransaction(data: TransactionData): TxClassification {
   const hasSaplingOutputs = data.saplingOutputCount > 0;
 
   const valueBalance =
+    (data.valueBalanceSprout || 0) +
     (data.valueBalanceSapling || 0) +
     (data.valueBalanceOrchard || 0) +
     (data.valueBalanceIronwood || 0);
@@ -66,7 +67,7 @@ export function classifyTransaction(data: TransactionData): TxClassification {
   const isShielding = hasTransparentInputs && !hasTransparentOutputs && valueBalance < 0;
   const isUnshielding = !hasTransparentInputs && hasTransparentOutputs && valueBalance > 0;
 
-  const migrationSourcePool =
+  const ironwoodSourcePool =
     hasIronwood && (data.valueBalanceIronwood || 0) !== 0 && !hasTransparent
       ? (data.valueBalanceOrchard || 0) > 0
         ? 'Orchard'
@@ -74,13 +75,28 @@ export function classifyTransaction(data: TransactionData): TxClassification {
           ? 'Sapling'
           : null
       : null;
+
+  // With no transparent side and no Orchard/Ironwood, whatever entered Sapling
+  // alongside a JoinSplit came out of Sprout — a Sprout → Sapling migration,
+  // not a Sapling-internal transfer. Inferred from Sapling's balance so it
+  // also holds where valueBalanceSprout isn't available yet.
+  const hasSprout = data.hasSprout === true;
+  const isSproutMigration =
+    hasSprout && !hasTransparent && !hasOrchard && !hasIronwood && (data.valueBalanceSapling || 0) < 0;
+  const isSproutOnly =
+    hasSprout && !hasTransparent && !hasOrchard && !hasIronwood && !hasSaplingSpends && !hasSaplingOutputs;
+
+  const migrationSourcePool = ironwoodSourcePool ?? (isSproutMigration ? 'Sprout' : null);
+  const migrationDestPool = ironwoodSourcePool ? 'Ironwood' : isSproutMigration ? 'Sapling' : null;
   const isMigration = migrationSourcePool !== null;
 
   const txType = isCoinbase
     ? 'COINBASE'
     : isMigration
       ? 'MIGRATION'
-      : hasIronwood && !hasTransparent
+      : isSproutOnly
+        ? 'SPROUT'
+        : hasIronwood && !hasTransparent
         ? 'IRONWOOD'
         : hasOrchard && !hasTransparent
           ? 'ORCHARD'
@@ -107,6 +123,7 @@ export function classifyTransaction(data: TransactionData): TxClassification {
     hasIronwood,
     hasOrchard,
     hasSapling,
+    hasSprout,
     hasTransparentInputs,
     hasTransparentOutputs,
     hasTransparent,
@@ -117,6 +134,7 @@ export function classifyTransaction(data: TransactionData): TxClassification {
     isShielding,
     isUnshielding,
     migrationSourcePool,
+    migrationDestPool,
     isMigration,
     txType,
     allBridges,

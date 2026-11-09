@@ -79,10 +79,15 @@
     "window"
   ],
   "GET /v1/mining/orphan-rates": [],
+  "GET /v1/mining/orphan-rates/daily": [
+    "days"
+  ],
+  "GET /v1/mining/observation-lag": [],
   "GET /v1/mining/hashrate-history": [
     "period",
     "window"
   ],
+  "GET /v1/mining/difficulty-stability": [],
   "GET /v1/shielded-pools/history": [
     "format",
     "period"
@@ -144,6 +149,9 @@
     "status",
     "to",
     "token"
+  ],
+  "GET /v1/crosschain/shielding": [
+    "period"
   ],
   "GET /v1/crosschain/stats": [],
   "GET /v1/crosschain/inflows": [
@@ -376,6 +384,10 @@
   "POST /v1/crosslink/fork-monitor/nodes": [],
   "DELETE /v1/crosslink/fork-monitor/nodes/:name": [],
   "GET /v1/uncles": [
+    "limit",
+    "offset"
+  ],
+  "GET /v1/uncles/observed": [
     "limit",
     "offset"
   ],

@@ -6,7 +6,7 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 const { once } = require('node:events');
-const { loadBlockSpeed, DAYS_SQL, SUMMARY_SQL } = require('../api/lib/block-speed');
+const { loadBlockSpeed, DAYS_SQL, SUMMARY_SQL, SPEED_BUCKETS } = require('../api/lib/block-speed');
 const { networkSchedule } = require('../api/lib/network-schedule');
 
 function load(file, overrides = {}) {
@@ -74,12 +74,34 @@ test('seven-day windows respect activation and target spacing', async () => {
   const { pool, queries } = chainPool({ tip, nu7, before: 10, after: 25, summaryRow });
   const payload = await loadBlockSpeed({ pool, info: testnetInfo, schedule: networkSchedule(testnetInfo), now });
   const [latest, before] = queries.filter(q => q.sql === SUMMARY_SQL);
-  assert.deepEqual(latest.params.slice(2), [nowTs - 7 * DAY, Number.MAX_SAFE_INTEGER, nu7, tip + 1], 'latest window starts no earlier than activation');
-  assert.deepEqual(before.params.slice(1), [nu7 - 1, payload.activation.timestamp - 7 * DAY, Number.MAX_SAFE_INTEGER, 0, nu7]);
+  assert.deepEqual(latest.params.slice(2), [nowTs - 7 * DAY, Number.MAX_SAFE_INTEGER, nu7, tip + 1, 25], 'latest window starts no earlier than activation');
+  assert.deepEqual(before.params.slice(1), [nu7 - 1, payload.activation.timestamp - 7 * DAY, Number.MAX_SAFE_INTEGER, 0, nu7, 75], 'each window buckets against its own target');
   assert.equal(payload.windows.latest.averageSeconds, 25);
   assert.equal(payload.windows.latest.p90Seconds, 54);
   assert.equal(payload.windows.latest.targetSeconds, 25);
   assert.equal(payload.windows.beforeUpgrade.targetSeconds, 75);
+});
+
+test('seven-day summaries count intervals in target-relative buckets', async () => {
+  assert.deepEqual(SPEED_BUCKETS.map(b => b.upToTarget), [0.25, 1, 2, 4, null]);
+  assert.match(SUMMARY_SQL, /COUNT\(\*\) FILTER \(WHERE dt < \$7::double precision \* 0\.25\)::integer AS bucket_0/, 'non-positive header intervals fall in the first bucket');
+  assert.match(SUMMARY_SQL, /FILTER \(WHERE dt >= \$7::double precision \* 0\.25 AND dt < \$7::double precision \* 1\)::integer AS bucket_1/);
+  assert.match(SUMMARY_SQL, /FILTER \(WHERE dt >= \$7::double precision \* 4\)::integer AS bucket_4/);
+  const summaryRow = { first_height: 1, last_height: 8064, first_timestamp: 1, last_timestamp: 2, intervals: 8064, elapsed: 607219, median: 52, p90: 172,
+    bucket_0: 1800, bucket_1: 3300, bucket_2: 1900, bucket_3: 920, bucket_4: 144 };
+  const { pool, queries } = chainPool({ tip: 3526500, before: 75, summaryRow });
+  const payload = await loadBlockSpeed({ pool, info: mainnetInfo, schedule: networkSchedule(mainnetInfo), now });
+  assert.equal(queries.find(q => q.sql === SUMMARY_SQL).params[6], 75);
+  assert.deepEqual(payload.windows.latest.distribution, [
+    { key: 'super-fast', upToTarget: 0.25, upToSeconds: 18.75, blocks: 1800 },
+    { key: 'fast', upToTarget: 1, upToSeconds: 75, blocks: 3300 },
+    { key: 'slow', upToTarget: 2, upToSeconds: 150, blocks: 1900 },
+    { key: 'very-slow', upToTarget: 4, upToSeconds: 300, blocks: 920 },
+    { key: 'long-wait', upToTarget: null, upToSeconds: null, blocks: 144 },
+  ]);
+  const { pool: untargeted } = chainPool({ tip: 3526500, before: 75, summaryRow });
+  const unscheduled = await loadBlockSpeed({ pool: untargeted, info: mainnetInfo, schedule: null, now });
+  assert.equal(unscheduled.windows.latest.distribution, null, 'no target spacing means no buckets rather than zero counts');
 });
 
 test('days split by activation, and the current day, are not complete', async () => {
@@ -98,6 +120,35 @@ test('days split by activation, and the current day, are not complete', async ()
     ['2026-10-20', false, true, 75], ['2026-10-21', false, false, 75], ['2026-10-21', true, false, 25], ['2026-10-22', true, false, 25],
   ]);
   assert.equal(payload.days[0].averageSeconds, 75);
+});
+
+test('once NU7 is older than the history, the week before activation is still returned', async () => {
+  const tip = 3700000; const nu7 = 3543405;
+  const { pool, queries } = chainPool({ tip, nu7, before: 75, after: 25 });
+  const mainnetNu7 = { chain: 'main', blocks: tip, upgrades: { b: { name: 'Blossom', activationheight: 653600 }, n: { name: 'NU7', activationheight: nu7 } } };
+  const schedule = networkSchedule(mainnetNu7);
+  const activationTimestamp = nowTs - (tip - nu7) * 25;
+  const activationDay = Math.floor(activationTimestamp / DAY) * DAY;
+  const realQuery = pool.query;
+  pool.query = async (sql, params = []) => {
+    if (sql === DAYS_SQL && params[1] === nu7 - 1) {
+      queries.push({ sql, params });
+      return { rows: Array.from({ length: 8 }, (_, i) => ({ day_start: String(activationDay - (7 - i) * DAY), nu7: false, first_height: 1, last_height: 1152,
+        intervals: 1152, elapsed: '86400', median: 52, p90: 172 })) };
+    }
+    return realQuery(sql, params);
+  };
+  const payload = await loadBlockSpeed({ pool, info: mainnetNu7, schedule, now });
+  const baselineQuery = queries.find(q => q.sql === DAYS_SQL && q.params[1] === nu7 - 1);
+  assert.deepEqual(baselineQuery.params.slice(2), [activationDay - 7 * DAY, nu7]);
+  const baseline = payload.days.filter(d => d.start < activationDay + DAY);
+  assert.equal(baseline.length, 8);
+  assert.deepEqual(baseline.map(d => d.complete), [...Array(7).fill(true), false], 'the activation day itself is split, never complete');
+
+  const { pool: recent, queries: recentQueries } = chainPool({ tip: 4000, before: 75 });
+  const recentInfo = { chain: 'test', blocks: 4000, upgrades: {} };
+  await loadBlockSpeed({ pool: recent, info: recentInfo, schedule: { network: 'test', source: 'node-upgrade-schedule', nu7Height: 3900, eras: [{ height: 0, seconds: 75 }, { height: 3900, seconds: 25 }] }, now });
+  assert.equal(recentQueries.filter(q => q.sql === DAYS_SQL).length, 1, 'no extra query while history still covers the baseline');
 });
 
 test('mainnet without NU7 reports no activation or pre-upgrade window', async () => {
@@ -239,18 +290,67 @@ test('before mainnet activation, mainnet shows its own measured days, then the c
   assert.deepEqual(scheduled.activation, { height: 3527652, date: '2026-10-23', status: 'scheduled' }, 'the serving-node schedule wins, dated at the current target');
 });
 
-test('after mainnet activation, measured days replace the projection', () => {
+test('after mainnet activation, measured days replace the projection; the activation day and today show at once', () => {
+  const sized = (d, intervals) => ({ ...d, intervals, firstHeight: 1000, lastHeight: 1000 + intervals - 1 });
   const mainnet = payload('main', { activation: { height: 3543405, timestamp: Date.parse('2026-11-05T10:00:00Z') / 1000 }, schedule: { nu7Height: 3543405 },
-    days: [day('2026-11-04', false, 75), day('2026-11-05', false, 75, false), day('2026-11-05', true, 25, false), day('2026-11-06', true, 25)],
+    days: [sized(day('2026-11-04', false, 75), 1152), sized(day('2026-11-05', false, 76, false), 480), sized(day('2026-11-05', true, 26, false), 2016),
+      sized(day('2026-11-06', true, 25), 3456), sized(day('2026-11-07', true, 24.8, false), 900)],
     windows: { latest: summary(25.2, 18, 55, 25), beforeUpgrade: summary(75.1, 52, 171, 75) } });
   const story = speed.buildSpeedStory(speed.readBlockSpeed(mainnet, 'main'));
   assert.equal(story.phase, 'active');
   assert.equal(story.after.averageSeconds, 25.2);
   assert.equal(story.before.averageSeconds, 75.1);
-  assert.deepEqual(story.points.map(p => [p.date, p.nu7, p.kind]), [['2026-11-04', false, 'measured'], ['2026-11-06', true, 'measured']], 'the split activation day is omitted');
+  assert.deepEqual(story.points.map(p => [p.date, p.nu7, p.segment ?? null, p.inProgress ?? false]), [
+    ['2026-11-04', false, null, false], ['2026-11-05', false, 'before-nu7', false], ['2026-11-05', true, 'nu7', false],
+    ['2026-11-06', true, null, false], ['2026-11-07', true, null, true],
+  ], 'both sides of the activation day and today so far are drawn');
   assert.equal(story.activation.date, '2026-11-05');
+  const today = speed.buildSpeedStory(speed.readBlockSpeed({ ...mainnet, days: mainnet.days.slice(0, 3) }, 'main'));
+  assert.deepEqual(today.points.slice(1).map(p => [p.segment, p.inProgress ?? false]), [['before-nu7', false], ['nu7', true]],
+    'on activation day only the NU7 side is still filling');
   assert.match(panel(story, 'full'), /Mainnet · NU7 active since block #3,543,405, November 5, 2026/);
   assert.doesNotMatch(panel(story, 'full'), /Target projection/, 'active mainnet days are measured rather than projected');
+
+  const early = speed.buildSpeedStory(speed.readBlockSpeed({ ...mainnet, days: [...mainnet.days.slice(0, 4), sized(day('2026-11-07', true, 12, false), 8)] }, 'main'));
+  assert.ok(!early.points.some(p => p.date === '2026-11-07'), 'a day with a few early blocks is not drawn as a trend');
+});
+
+test('active mainnet always keeps a pre-NU7 week beside the latest NU7 days', () => {
+  const dates = n => Array.from({ length: n }, (_, i) => new Date(Date.UTC(2026, 9, 1 + i)).toISOString().slice(0, 10));
+  const pre = dates(10).map(date => ({ ...day(date, false, 75), intervals: 1152 }));
+  const post = dates(40).slice(10).map(date => ({ ...day(date, true, 25), intervals: 3456 }));
+  const story = speed.buildSpeedStory(speed.readBlockSpeed(payload('main', { activation: { height: 3543405, timestamp: pre.at(-1).start + DAY },
+    schedule: { nu7Height: 3543405 }, days: [...pre, ...post], windows: { latest: summary(25, 18, 55, 25), beforeUpgrade: summary(75, 52, 171, 75) } }), 'main'));
+  assert.equal(story.points.length, 21);
+  assert.equal(story.points.filter(p => !p.nu7).length, speed.PRE_NU7_DAYS);
+  assert.equal(story.points.at(-1).date, post.at(-1).date, 'the newest NU7 day is kept');
+  assert.equal(story.points[speed.PRE_NU7_DAYS - 1].date, pre.at(-1).date, 'the baseline is the week just before NU7');
+});
+
+test('the daily chart stacks an activation day for blocks per day and fades today', () => {
+  const { BlockSpeedChart } = load('components/network/BlockSpeedChart.tsx');
+  const point = (date, nu7, extra = {}) => ({ key: `${date}-${nu7}`, date, nu7, kind: 'measured', averageSeconds: nu7 ? 25 : 75, targetSeconds: nu7 ? 25 : 75, lastHeight: 10, blocks: nu7 ? 2000 : 400, ...extra });
+  const points = [point('2026-11-04', false), point('2026-11-05', false, { segment: 'before-nu7' }), point('2026-11-05', true, { segment: 'nu7', inProgress: true })];
+  const render = metric => renderToStaticMarkup(React.createElement(BlockSpeedChart, { points, activation: { height: 1, date: '2026-11-05', status: 'active' }, metric }));
+  const blocks = render('blocks');
+  assert.equal(linkedBars(blocks), 2, 'one column per UTC day');
+  assert.match(blocks, /400 blocks before NU7 \+ 2,000 with NU7 so far today/);
+  assert.equal((blocks.match(/data-day-segment="(before-nu7|nu7)"/g) || []).length, 2);
+  const wait = render('wait');
+  assert.equal(linkedBars(wait), 3, 'each side of activation keeps its own average');
+  assert.match(wait, /before NU7 activation · average block 75s/);
+  assert.match(wait, /class="speed-bar opacity-50"/);
+  assert.match(wait, /Today so far/);
+});
+
+test('per-block view keeps the pre-NU7 average once only NU7 blocks are shown', () => {
+  const { BlockSpeedLiveChart } = load('components/network/BlockSpeedLiveChart.tsx');
+  const blocks = Array.from({ length: 60 }, (_, i) => ({ height: 2000 + i, timestamp: 1000 + i * 25, intervalSeconds: 25, targetSeconds: 25, rollingSeconds: 25 }));
+  const html = renderToStaticMarkup(React.createElement(BlockSpeedLiveChart, { blocks, nu7Height: 1500, beforeSeconds: 75.4 }));
+  assert.match(html, /data-before-nu7-average="true"/);
+  assert.match(html, /Before NU7: 75\.4s average/);
+  const straddling = renderToStaticMarkup(React.createElement(BlockSpeedLiveChart, { blocks, nu7Height: 2030, beforeSeconds: 75.4 }));
+  assert.doesNotMatch(straddling, /data-before-nu7-average/, 'real pre-NU7 bars make the line unnecessary');
 });
 
 test('testnet shows its own NU7 days and marks the minimum-difficulty era as not comparable', () => {
@@ -388,7 +488,7 @@ test('server-rendered block-speed content has one heading, linked sections and t
   assert.equal((html.match(/<h1\b/g) || []).length, 1);
   assert.match(html, /<h1[^>]*>Zcash block speed<\/h1>/);
   assert.match(html, /href="\/network"/);
-  for (const section of ['daily', 'confirmations', 'live', 'method']) {
+  for (const section of ['daily', 'distribution', 'confirmations', 'live', 'method']) {
     assert.match(html, new RegExp(`href="#${section}"`));
     assert.match(html, new RegExp(`id="${section}"`));
   }
@@ -448,4 +548,132 @@ test('block-speed image keeps Crosslink absent and outages uncached, then recove
   assert.doesNotMatch(imageHtml, /seconds per block/, 'the exported image uses the same stacked confirmation metric');
   snapshot = { host, story: { ...snapshot.story, points: [] } };
   assert.equal((await route.GET()).status, 503, 'an empty chart does not become a cached image');
+});
+
+test('blocks-per-day view keeps the NU7 marker and clips irregular testnet days to the comparable scale', () => {
+  const point = (date, nu7, kind, blocks, target) => ({ key: date, date, nu7, kind, averageSeconds: 86400 / blocks, targetSeconds: target, lastHeight: 1, blocks });
+  const points = [point('2026-10-01', false, 'irregular', 17000, 75), point('2026-10-05', true, 'measured', 3400, 25), point('2026-10-06', true, 'measured', 3460, 25)];
+  const html = renderToStaticMarkup(React.createElement(load('components/network/BlockSpeedChart.tsx').BlockSpeedChart, { points, activation: null, metric: 'blocks' }));
+  assert.match(html, /aria-label="Blocks mined per UTC day/);
+  assert.match(html, /<text[^>]*>4k<\/text>/, 'scaled to the comparable NU7 days, not the 17k irregular day');
+  assert.equal((html.match(/data-clipped="true"/g) || []).length, 1);
+  assert.match(html, /Oct 1 · minimum-difficulty era · 17,000 blocks/);
+  assert.match(html, /fill-cipher-gold[^"]*"/);
+  assert.match(html, /NU7 activation|Estimated NU7 activation/);
+});
+
+test('NU7 cards draw only authoritative facts', () => {
+  const cards = load('lib/nu7-cards.ts');
+  assert.equal(cards.zatHeadline('811560160', 'TAZ'), '8.11 TAZ');
+  assert.equal(cards.zatHeadline('-1', 'ZEC'), '-0.0000 ZEC');
+  assert.equal(cards.zatHeadline('1467004', 'ZEC'), '0.0146 ZEC', 'early NSM growth is truncated, not flattened to 0.01');
+  assert.equal(cards.zatHeadline('36859912524', 'ZEC'), '368.59 ZEC');
+
+  // Minutes after activation the NU7 side is the pace so far, never a "7-day average".
+  const window = (from, to, intervals, averageSeconds) => ({ fromHeight: 1, toHeight: 1 + intervals, fromTimestamp: from, toTimestamp: to, intervals,
+    averageSeconds, medianSeconds: averageSeconds, p90Seconds: averageSeconds, targetSeconds: 25 });
+  const day = (date, blocks) => ({ key: date, date, nu7: false, kind: 'measured', averageSeconds: 86400 / blocks, targetSeconds: 75, lastHeight: 1, blocks });
+  const early = cards.blocksCard({ network: 'mainnet', phase: 'active', before: window(0, 604800, 8021, 75.4), after: window(1000, 1000 + 4100, 83, 49.4),
+    points: [day('2026-11-04', 1146), day('2026-11-05', 1151)], irregular: null, activation: null, testnetNu7: null, tipHeight: 1 });
+  assert.equal(early.headline, '1,146 → 1,749');
+  assert.equal(early.caption, 'blocks per day, NU7 pace so far');
+  assert.equal(early.detail, '7-day average before NU7 → first 83 NU7 blocks (1.1 h); target 3,456 a day.');
+  assert.doesNotMatch(early.detail, /7-day averages/);
+  assert.deepEqual(early.visual.bars.at(-1), { value: 1749, nu7: true, projected: true }, 'the NU7 pace so far is an outlined gold bar');
+  const week = cards.blocksCard({ network: 'mainnet', phase: 'active', before: window(0, 604800, 8021, 75.4), after: window(0, 8 * 86400, 27000, 25.6),
+    points: [day('2026-11-05', 1151), { ...day('2026-11-07', 3375), nu7: true }], irregular: null, activation: null, testnetNu7: null, tipHeight: 1 });
+  assert.equal(week.detail, 'Measured 7-day averages before NU7 and with NU7.');
+  assert.equal(week.visual.bars.filter(bar => bar.projected).length, 0, 'full NU7 days replace the pace-so-far bar');
+  assert.equal(cards.nsmCard('mainnet', { reserve: { growthSinceNu7Zat: null } }), null, 'no NSM card before activation');
+  assert.equal(cards.readinessCard('mainnet', { referenceUpgrade: 'NU6.3', readinessPct: 100, totalActive: 5 }), null, 'old NU6.3 readiness is never shown as NU7');
+  const ready = cards.readinessCard('mainnet', { referenceUpgrade: 'NU7', latestProtocol: 170190, readinessPct: 61.3, latestCount: 285, totalActive: 465 });
+  assert.equal(ready.headline, '61.3%');
+  assert.match(ready.detail, /285 of 465 nodes report protocol 170190/);
+});
+
+test('fast-versus-slow buckets validate, scale with the target and compare with a random-arrival model', () => {
+  const buckets = (target, counts) => [0.25, 1, 2, 4, null].map((upToTarget, index) => ({
+    key: ['super-fast', 'fast', 'slow', 'very-slow', 'long-wait'][index], upToTarget, upToSeconds: upToTarget == null ? null : target * upToTarget, blocks: counts[index] }));
+  assert.deepEqual([0, 1, 2, 3, 4].map(i => speed.bucketRange(buckets(75, [1, 1, 1, 1, 1]), i)), ['< 19s', '19–75s', '75–150s', '150s–5 min', '≥ 5 min']);
+  assert.deepEqual([0, 1, 2, 3, 4].map(i => speed.bucketRange(buckets(25, [1, 1, 1, 1, 1]), i)), ['< 7s', '7–25s', '25–50s', '50–100s', '≥ 100s']);
+  const expected = [0, 1, 2, 3, 4].map(speed.expectedBucketShare);
+  assert.ok(Math.abs(expected.reduce((a, b) => a + b, 0) - 1) < 1e-12);
+  assert.deepEqual(expected.map(v => Math.round(v * 1000) / 10), [22.1, 41.1, 23.3, 11.7, 1.8]);
+
+  const withDistribution = distribution => payload('main', { windows: { latest: { ...summary(75.3, 52, 172, 75), distribution }, beforeUpgrade: null } });
+  assert.ok(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, 5])), 'main'));
+  assert.ok(speed.readBlockSpeed(payload('main', { windows: { latest: summary(75.3, 52, 172, 75), beforeUpgrade: null } }), 'main'), 'older responses without buckets remain valid');
+  assert.equal(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, -1])), 'main'), null);
+  assert.equal(speed.readBlockSpeed(withDistribution(buckets(75, [1, 2, 3, 4, 5]).slice(1)), 'main'), null);
+
+  const Distribution = load('components/network/BlockSpeedDistribution.tsx').BlockSpeedDistribution;
+  const render = story => renderToStaticMarkup(React.createElement(Distribution, { story }));
+  const upcoming = speed.buildSpeedStory(speed.readBlockSpeed(withDistribution(buckets(75, [7752, 13820, 8312, 3995, 649])), 'main'));
+  const html = render(upcoming);
+  assert.match(html, />22%<\/span> of blocks/);
+  assert.match(html, /of blocks in the last 7 days arrived in under 19s/);
+  assert.match(html, /took 5 min or more/);
+  assert.match(html, />62%<\/span> were faster than the 75s target: a thin tail/);
+  assert.equal((html.match(/class="speed-spectrum"/g) || []).length, 1);
+  assert.equal((html.match(/class="speed-spectrum-expected"/g) || []).length, 4);
+  assert.match(html, /Random model 22%/);
+  assert.match(html, /34,528 blocks · 75s target/);
+
+  const active = { ...upcoming, phase: 'active', before: upcoming.before, after: { ...summary(25.1, 17, 58, 25), distribution: buckets(25, [5300, 9900, 5600, 2800, 440]) } };
+  const activeHtml = render(active);
+  assert.equal((activeHtml.match(/class="speed-spectrum"/g) || []).length, 2, 'before and since NU7 share one scale');
+  assert.match(activeHtml, /of blocks since NU7 arrived in under 7s/);
+  assert.match(activeHtml, /≥ 100s/);
+  assert.match(render(null), /distribution is unavailable/);
+  assert.match(render({ ...upcoming, before: summary(75.3, 52, 172, 75) }), /distribution is unavailable/, 'an older API response degrades to a status message');
+});
+
+test('per-block zoom leads around NU7 activation and the daily chart leads otherwise', () => {
+  const story = (tipHeight, activation = { height: 3543405, date: null, status: 'scheduled' }) => ({ tipHeight, activation });
+  assert.equal(speed.defaultSpeedZoom(null), 'days');
+  assert.equal(speed.defaultSpeedZoom(story(3543405, null)), 'days', 'no activation, nothing to watch');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 - 289)), 'days', 'more than ~6 hours of 75s blocks away');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 - 288)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 + 10367)), 'blocks');
+  assert.equal(speed.defaultSpeedZoom(story(3543405 + 10368)), 'days', 'after ~3 days of 25s blocks the daily comparison leads again');
+  assert.equal(speed.defaultSpeedZoom({ activation: { height: 1 } }), 'days', 'an older story without a tip height stays daily');
+});
+
+test('live blocks keep the newest consecutive run and average the last ten gaps', () => {
+  const point = (height, timestamp, targetSeconds = 75) => ({ height, timestamp, intervalSeconds: 999, targetSeconds, averageSeconds: null, intervals: 0 });
+  assert.deepEqual(speed.readLiveBlocks({ period: '6h', points: [point(1, 1)] }), [], 'only the per-block period is accepted');
+  assert.deepEqual(speed.readLiveBlocks(null), []);
+  const points = [point(50, 100), ...Array.from({ length: 12 }, (_, i) => point(100 + i, 1000 + i * 30 + (i === 5 ? 200 : 0)))];
+  points.push({ height: 'bad', timestamp: 1 });
+  const blocks = speed.readLiveBlocks({ period: 'blocks', points: points.reverse() });
+  assert.deepEqual(blocks.map(block => block.height), Array.from({ length: 12 }, (_, i) => 100 + i), 'a height gap starts a new run; invalid points are dropped');
+  assert.equal(blocks[0].intervalSeconds, 999, 'the oldest block keeps the API predecessor gap');
+  assert.equal(blocks[5].intervalSeconds, 230);
+  assert.equal(blocks[6].intervalSeconds, -170, 'backward header times stay visible as negative gaps');
+  assert.equal(blocks[9].rollingSeconds, null);
+  assert.equal(blocks[10].rollingSeconds, 30, 'ten gaps span the full timestamp difference');
+});
+
+test('per-block chart draws one linked bar per block, the NU7 step and the rolling average', () => {
+  const block = (height, intervalSeconds, targetSeconds) => ({ height, timestamp: height * 10, intervalSeconds, targetSeconds, rollingSeconds: height >= 105 ? targetSeconds : null });
+  const blocks = [...Array.from({ length: 6 }, (_, i) => block(100 + i, i === 2 ? 900 : 70, 75)), ...Array.from({ length: 6 }, (_, i) => block(106 + i, 20, 25))];
+  const Chart = load('components/network/BlockSpeedLiveChart.tsx').BlockSpeedLiveChart;
+  const html = renderToStaticMarkup(React.createElement(Chart, { blocks, nu7Height: 106 }));
+  assert.match(html, /aria-label="Seconds between consecutive blocks, #100 to #111, with the 10-block average"/);
+  assert.equal(linkedBars(html), 12);
+  assert.match(html, /href="\/block\/106"/);
+  assert.equal((html.match(/speed-bar fill-cipher-gold/g) || []).length, 6, 'blocks from the NU7 height on are gold');
+  assert.equal((html.match(/speed-bar fill-muted/g) || []).length, 6);
+  assert.equal((html.match(/data-clipped="true"/g) || []).length, 1, 'a 900s gap is clipped at four times the 75s target');
+  assert.match(html, /<text[^>]*>5m<\/text>/, 'the axis tops out near 4× the highest target, not at the outlier');
+  assert.match(html, />NU7<\/text>/);
+  assert.match(html, />75s blocks<\/text>/);
+  assert.match(html, />25s blocks<\/text>/);
+  assert.match(html, /data-rolling-average="true"/);
+  assert.match(html, /Block #106 · NU7 · 20s after the previous block · 25s target/);
+  const upcoming = renderToStaticMarkup(React.createElement(Chart, { blocks: blocks.slice(0, 6), nu7Height: 106 + 99 }));
+  assert.match(upcoming, /NU7 in 100 blocks/);
+  assert.doesNotMatch(upcoming, /speed-bar fill-cipher-gold/, 'no block before activation is drawn as NU7');
+  assert.match(renderToStaticMarkup(React.createElement(Chart, { blocks: [], nu7Height: null })), /Recent blocks are unavailable/);
 });

@@ -1,9 +1,11 @@
 'use client';
 import { MiningSoftwareSection } from '@/components/mining/MiningSoftwareSection';
 import { OrphanRateSection } from '@/components/mining/OrphanRateSection';
+import { ObservationLagSection } from '@/components/mining/ObservationLagSection';
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
@@ -23,7 +25,9 @@ import { ChartCard } from '@/components/network/ChartCard';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { MiningMetricsChart } from '@/components/network/MiningMetricsChart';
 import { NetworkHashrateChart } from '@/components/network/NetworkHashrateChart';
+import { DifficultyStabilityChart } from '@/components/network/DifficultyStabilityChart';
 import { zatToZec } from '@/lib/format-numbers';
+import { PoolLogo } from '@/components/PoolLogo';
 import { useUrlState } from '@/lib/use-url-state';
 import { ExportButton } from '@/components/ExportButton';
 import { zatToZecString } from '@/lib/csv';
@@ -33,6 +37,7 @@ import { SortableDataTable } from '@/components/ui/SortableDataTable';
 const SECTIONS = [
   { id: 'metrics', label: 'Network' },
   { id: 'orphans', label: 'Orphan rates' },
+  { id: 'timing', label: 'Header vs seen' },
   { id: 'distribution', label: 'Distribution' },
   { id: 'ranking', label: 'Ranking' },
   { id: 'software', label: 'Mining software' },
@@ -57,7 +62,7 @@ interface PoolDist {
 
 interface PoolRank {
   rank: number;
-  address: string;
+  address: string | null;
   name: string;
   url: string | null;
   region: string | null;
@@ -103,22 +108,12 @@ function formatPct(share: number): string {
 
 function PeriodSelector({ value, onChange }: { value: Period; onChange: (p: Period) => void }) {
   return (
-    <div className="inline-flex gap-0 p-0.5 rounded-md bg-glass-3 flex-shrink-0">
-      {PERIODS.map(p => (
-        <button
-          key={p}
-          aria-pressed={value === p}
-          onClick={() => onChange(p)}
-          className={`px-1.5 py-0.5 text-caption font-mono rounded transition whitespace-nowrap ${
-            value === p
-              ? 'bg-brand-gold/15 text-cipher-gold font-semibold'
-              : 'text-muted hover:text-primary'
-          }`}
-        >
-          {p.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <PeriodPillTags
+      options={PERIODS.map(p => ({ key: p, label: p.toUpperCase() }))}
+      value={value}
+      onChange={onChange}
+      className="flex-shrink-0"
+    />
   );
 }
 
@@ -214,7 +209,7 @@ function RankingSection() {
                   filename={`zecblock-pool-ranking-${period}`}
                   csvHeaders={['Rank', 'Pool', 'Payout address', 'Region', 'Blocks', 'Share (fraction of blocks)', 'Average block interval (s)', 'Total fees (ZEC)']}
                   csvMapper={(pool: PoolRank) => [
-                    String(pool.rank), pool.name, pool.address, pool.region ?? '', String(pool.blocks), String(pool.share),
+                    String(pool.rank), pool.name, pool.address ?? '', pool.region ?? '', String(pool.blocks), String(pool.share),
                     String(pool.avgBlockInterval ?? ''), zatToZecString(pool.totalFeesZat),
                   ]}
                 />
@@ -242,10 +237,7 @@ function RankingSection() {
                     header: 'Pool',
                     cell: (pool) => (
                       <div className="flex items-center gap-2">
-                        <div
-                          className="w-2 h-2 rounded-full flex-shrink-0"
-                          style={{ backgroundColor: categoryColor(pool.name, theme) }}
-                        />
+                        <PoolLogo name={pool.name} />
                         <span className="font-mono text-xs text-primary font-medium">{pool.name}</span>
                         {pool.region && (
                           <span className="text-caption font-mono text-muted px-1 py-0.5 bg-glass-3 rounded">{pool.region}</span>
@@ -306,7 +298,7 @@ function RankingSection() {
                   },
                 ]}
                 rows={ranking}
-                rowKey={(pool) => `${pool.rank}:${pool.name}:${pool.address}`}
+                rowKey={(pool) => pool.name}
               />
               <p className="text-caption text-muted font-mono mt-3">
                 {total.toLocaleString()} total blocks in {period}
@@ -743,9 +735,11 @@ export default function MiningPage() {
 
       <section id="metrics" className="scroll-mt-36 mb-12 animate-fade-in-up space-y-6">
         <NetworkHashrateChart />
+        <DifficultyStabilityChart />
       </section>
 
       <OrphanRateSection />
+      <ObservationLagSection />
       <DistributionSection />
       <RankingSection />
       <MiningSoftwareSection />

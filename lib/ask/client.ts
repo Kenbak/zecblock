@@ -1,20 +1,20 @@
 import { ApiError, readApiResponse } from '@/lib/api-client';
 import { getAskApiUrl } from './api-base';
-import type { AskLocale, AskReply, AskTurn } from './chat';
+import type { AskLocale, AskProgressStage, AskReply, AskTurn, AskTurnScope } from './chat';
 import type { AnalysisSpec } from './contract';
 const aiAlternatives = ' You can still run SQL directly or use starter charts, subject to their own limits.';
 const keptSQL = ' Your query and current results are kept.';
 const keptRequest = ' Your draft and current results are kept.';
 const quotaFailures: Record<string, { title: string; detail: string; maxRetrySeconds?: number }> = Object.freeze({
   'ask-request-attempts': { title: 'Request limit reached', detail: 'Too many submission or verification attempts from your connection. This limit applies to Ask and SQL.' + keptRequest, maxRetrySeconds: 60 },
-  'ask-request-minute': { title: 'Request limit reached', detail: 'Your connection has reached its per-minute request limit. This limit applies to Ask and SQL.' + keptRequest },
-  'ask-request-day': { title: 'Request limit reached', detail: 'Your connection has reached its daily request limit. This limit applies to Ask and SQL.' + keptRequest },
+  'ask-request-minute': { title: 'Request limit reached', detail: 'Ask and SQL have reached their per-minute request allowance across all visitors. Try again in a minute.' + keptRequest },
+  'ask-request-day': { title: 'Request limit reached', detail: 'Ask and SQL have reached their daily request allowance across all visitors. It resets at 00:00 UTC.' + keptRequest },
   'ask-request-global-hour': { title: 'Request limit reached', detail: 'Ask and SQL have reached the site-wide hourly request limit.' + keptRequest },
   'ask-request-global-day': { title: 'Request limit reached', detail: 'Ask and SQL have reached the site-wide daily request limit.' + keptRequest },
-  'ask-ai-minute': { title: 'AI limit reached', detail: 'Your connection has reached its per-minute AI request limit.' + aiAlternatives },
-  'ask-ai-day': { title: 'AI limit reached', detail: 'Your connection has reached its daily AI request limit.' + aiAlternatives },
-  'ask-sql-minute': { title: 'SQL limit reached', detail: 'Your connection has reached its per-minute SQL query limit.' + keptSQL },
-  'ask-sql-day': { title: 'SQL limit reached', detail: 'Your connection has reached its daily SQL query limit.' + keptSQL },
+  'ask-ai-minute': { title: 'AI limit reached', detail: 'Zift’s AI has reached its per-minute allowance across all visitors. Try again in a minute.' + aiAlternatives },
+  'ask-ai-day': { title: 'AI limit reached', detail: 'Zift’s AI has reached its daily allowance across all visitors. It resets at 00:00 UTC.' + aiAlternatives },
+  'ask-sql-minute': { title: 'SQL limit reached', detail: 'SQL has reached its per-minute allowance across all visitors. Try again in a minute.' + keptSQL },
+  'ask-sql-day': { title: 'SQL limit reached', detail: 'SQL has reached its daily allowance across all visitors. It resets at 00:00 UTC.' + keptSQL },
   'ask-ai-calls-day': { title: 'AI limit reached', detail: 'AI has reached its site-wide daily call limit.' + aiAlternatives },
   'ask-ai-budget-day': { title: 'AI limit reached', detail: 'AI has reached its site-wide daily usage allowance.' + aiAlternatives },
   'ask-ai-budget-month': { title: 'AI limit reached', detail: 'AI has reached its site-wide monthly usage allowance.' + aiAlternatives },
@@ -57,9 +57,41 @@ export async function askCapability(signal: AbortSignal): Promise<AskCapability>
   if (meta.network !== 'mainnet') throw new Error('Wrong network');
   return data;
 }
-export async function askChat(question: string, page: string, context: AnalysisSpec | null, locale: AskLocale, history: string[], challenge: string, signal: AbortSignal, block?: string, transaction?: string, currentAnalytics?: import('./chat').QueryPlan, currentResearch?: import('./research-contract').ResearchQuery): Promise<AskReply> {
-  const response = await fetch(`${getAskApiUrl()}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, cache: 'no-store', signal, body: JSON.stringify({ question, page, context, locale, currentAnalytics, currentResearch, history: history.slice(-4), challenge, block, transaction }) });
-  const { data, meta } = await readApiResponse<AskReply>(response);
+const progressStages: Record<AskProgressStage, true> = { planning: true, checking: true, running: true, repairing: true, explaining: true, looking_up: true, reading: true };
+// The NDJSON progress stream: stage lines, then one result or problem line
+// holding the usual envelope, returned as an ordinary response to check.
+async function readProgress(response: Response, onProgress: (stage: AskProgressStage) => void): Promise<Response> {
+  const reader = response.body!.pipeThrough(new TextDecoderStream()).getReader();
+  let buffer = '';
+  while (true) {
+    const { done, value } = await reader.read();
+    buffer += value || '';
+    const lines = buffer.split('\n');
+    buffer = done ? '' : lines.pop()!;
+    for (const text of lines) {
+      if (!text.trim()) continue;
+      let line: { type?: unknown; stage?: unknown; status?: unknown; retryAfter?: unknown; body?: unknown };
+      try { line = JSON.parse(text); } catch { throw new ApiError('The API returned an invalid response.', 502); }
+      if (line.type === 'progress') { if (typeof line.stage === 'string' && Object.hasOwn(progressStages, line.stage)) onProgress(line.stage as AskProgressStage); continue; }
+      if ((line.type === 'result' || line.type === 'problem') && Number.isInteger(line.status) && (line.status as number) >= 200 && (line.status as number) <= 599) {
+        await reader.cancel();
+        const headers: Record<string, string> = { 'content-type': 'application/json' };
+        const requestId = response.headers.get('x-request-id');
+        if (requestId) headers['x-request-id'] = requestId;
+        if (typeof line.retryAfter === 'string') headers['retry-after'] = line.retryAfter;
+        return new Response(JSON.stringify(line.body ?? null), { status: line.status as number, headers });
+      }
+    }
+    if (done) throw new ApiError('The API returned an incomplete response.', 502);
+  }
+}
+// turnScope: the previous reply's scope, sent back for follow-ups. onProgress
+// asks for the progress stream; without it the reply is plain JSON.
+export interface AskChatOptions { turnScope?: AskTurnScope; onProgress?: (stage: AskProgressStage) => void }
+export async function askChat(question: string, page: string, context: AnalysisSpec | null, locale: AskLocale, history: string[], challenge: string, signal: AbortSignal, block?: string, transaction?: string, currentAnalytics?: import('./chat').QueryPlan, currentResearch?: import('./research-contract').ResearchQuery, options: AskChatOptions = {}): Promise<AskReply> {
+  const response = await fetch(`${getAskApiUrl()}/chat`, { method: 'POST', headers: { 'Content-Type': 'application/json', ...(options.onProgress ? { Accept: 'application/x-ndjson, application/json' } : {}) }, cache: 'no-store', signal, body: JSON.stringify({ question, page, context, locale, currentAnalytics, currentResearch, turnScope: options.turnScope, history: history.slice(-4), challenge, block, transaction }) });
+  const streamed = options.onProgress && response.ok && /^application\/x-ndjson\b/i.test(response.headers.get('content-type') || '');
+  const { data, meta } = await readApiResponse<AskReply>(streamed ? await readProgress(response, options.onProgress!) : response);
   if (meta.network !== 'mainnet') throw new Error('Wrong network');
   return data;
 }

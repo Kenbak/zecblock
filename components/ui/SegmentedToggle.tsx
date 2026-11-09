@@ -23,11 +23,7 @@ export function SegmentedToggle<T extends string>({
   className?: string;
 }) {
   return (
-    <div
-      className={`inline-flex gap-1 p-1 rounded-lg overflow-x-auto no-scrollbar w-fit max-w-full ${className}`.trim()}
-      style={{ backgroundColor: 'var(--glass-3)' }}
-      role="tablist"
-    >
+    <div className={`filter-group flex-nowrap overflow-x-auto no-scrollbar ${className}`.trim()} role="tablist">
       {options.map((opt) => {
         const isActive = value === opt.id;
         return (
@@ -37,9 +33,7 @@ export function SegmentedToggle<T extends string>({
             role="tab"
             aria-selected={isActive}
             onClick={() => onChange(opt.id)}
-            className={`flex-shrink-0 px-3 py-1.5 text-xs font-mono uppercase tracking-wider rounded-md transition whitespace-nowrap ${
-              isActive ? 'bg-cipher-bg text-primary shadow-sm ring-1 ring-glass-12' : 'text-muted hover:text-secondary'
-            }`}
+            className={`filter-btn shrink-0 ${isActive ? 'filter-btn-active' : ''}`}
           >
             {opt.label}
           </button>

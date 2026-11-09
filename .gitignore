@@ -58,6 +58,7 @@ artifacts/perf/*.json
 # private docs
 /docs/*
 !/docs/ttfb-performance.md
+!/docs/load-test-results.md
 server/DEPLOYMENT.md
 
 # test directories

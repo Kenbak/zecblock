@@ -12,6 +12,9 @@ const router = express.Router();
 const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName } = require('../mining-pools');
 const { logSafeError } = require('../lib/safe-log');
 const { orphanRates } = require('../lib/orphan-rates');
+const { observationLag } = require('../lib/observation-lag');
+const { orphanRateDaily, parseDays } = require('../lib/orphan-rate-daily');
+const { networkSchedule } = require('../lib/network-schedule');
 const minerBehavior = require('../lib/miner-behavior');
 
 let pool;
@@ -80,13 +83,42 @@ router.get('/api/mining/software', async (req,res) => {
 
 router.get('/api/mining/orphan-rates', async (req, res) => {
   try {
-    // Use the request's read pool; no node RPC, writes or schema changes.
-    const data = await orphanRates(req.app.locals.pool);
+    // Read-only. The node schedule only selects NU7 windows; without it the
+    // rolling windows are still served and the NU7 comparison is null.
+    const { pool, callZebraRPC } = req.app.locals;
+    const schedule = callZebraRPC ? await callZebraRPC('getblockchaininfo').then(networkSchedule, () => null) : null;
+    const data = await orphanRates(pool, { nu7Height: schedule?.nu7Height ?? null });
     res.set('Cache-Control', 'public, max-age=30');
     res.json(data);
   } catch (error) {
     logSafeError('Observed orphan rates failed:', error);
     res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observed orphan rates unavailable' });
+  }
+});
+
+router.get('/api/mining/orphan-rates/daily', async (req, res) => {
+  const days = parseDays(req.query.days);
+  if (days === null) return res.status(400).json({ success: false, error: 'days must be an integer from 7 to 90' });
+  try {
+    const { pool, callZebraRPC } = req.app.locals;
+    const schedule = callZebraRPC ? await callZebraRPC('getblockchaininfo').then(networkSchedule, () => null) : null;
+    const data = await orphanRateDaily(pool, { days, nu7Height: schedule?.nu7Height ?? null });
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (error) {
+    logSafeError('Daily orphan rates failed:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Daily orphan rates unavailable' });
+  }
+});
+
+router.get('/api/mining/observation-lag', async (req, res) => {
+  try {
+    const data = await observationLag(req.app.locals.pool);
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (error) {
+    logSafeError('Observation lag failed:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observation lag unavailable' });
   }
 });
 

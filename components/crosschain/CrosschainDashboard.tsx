@@ -9,7 +9,9 @@ import { ChainHistory } from "./ChainHistory";
 import { OutcomeBreakdown } from "./OutcomeBreakdown";
 import { ChainFlowOverview } from "./ChainFlowOverview";
 import { PageSectionNav } from "@/components/PageSectionNav";
+import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
 import { ActivityCharts } from "./ActivityCharts";
+import { ShieldedRate } from "./ShieldedRate";
 import { SwapFilterLink, useAnalyticsPeriod } from "./SwapFilterLink";
 import { SwapExplorer } from "./SwapExplorer";
 import { WrappedZecTracker, WrappedZecAsset } from "./WrappedZecTracker";
@@ -72,18 +74,12 @@ export function CrosschainDashboard({
     refreshInterval: 300000,
   });
   const unitToggle = (
-    <div className="filter-group" role="group" aria-label="Volume unit">
-      {(["usd", "zec"] as const).map((u) => (
-        <button
-          key={u}
-          onClick={() => setUnit(u)}
-          aria-pressed={unit === u}
-          className={`filter-btn ${unit === u ? "filter-btn-active" : ""}`}
-        >
-          {u.toUpperCase()}
-        </button>
-      ))}
-    </div>
+    <PeriodPillTags
+      aria-label="Volume unit"
+      value={unit}
+      onChange={setUnit}
+      options={(["usd", "zec"] as const).map((u) => ({ key: u, label: u.toUpperCase() }))}
+    />
   );
   if (loading && !data)
     return (
@@ -214,31 +210,24 @@ export function CrosschainDashboard({
           period={period}
         />
         <ChainHistory data={data} />
+        {venue === "near" ? <ShieldedRate dashboardPeriod={period} /> : null}
         <div id="routes" className="grid lg:grid-cols-2 gap-4">
           <ActivityCharts data={data} unit={unit} panel="sizes" />
           <section className="card space-y-4">
             <PanelTitle title="Top pairs" controls={
-              <div
-                className="filter-group"
-                role="group"
+              <PeriodPillTags
                 aria-label="Rank top pairs by"
-              >
-                {(["swaps", "usd", "zec"] as const).map((metric) => (
-                  <button
-                    key={metric}
-                    type="button"
-                    aria-pressed={pairSort === metric}
-                    disabled={metric !== "swaps" && !data.routeRankings}
-                    className={`filter-btn disabled:opacity-40 ${pairSort === metric ? "filter-btn-active" : ""}`}
-                    onClick={() => {
-                      setPairSort(metric);
-                      setAllRoutes(false);
-                    }}
-                  >
-                    {metric === "swaps" ? "Swaps" : `${metric.toUpperCase()} volume`}
-                  </button>
-                ))}
-              </div>
+                value={pairSort}
+                onChange={(metric) => {
+                  setPairSort(metric);
+                  setAllRoutes(false);
+                }}
+                options={(["swaps", "usd", "zec"] as const).map((metric) => ({
+                  key: metric,
+                  label: metric === "swaps" ? "Swaps" : `${metric.toUpperCase()} volume`,
+                  disabled: metric !== "swaps" && !data.routeRankings,
+                }))}
+              />
             } />
             <p className="text-xs text-muted">
               {pairSort === "swaps"
@@ -597,6 +586,9 @@ export function CrosschainDashboard({
           {c.internalSwaps.toLocaleString()} indexed Zcash → Zcash routes are
           available in the swap explorer but excluded from the external-route
           analytics.
+        </p>
+        <p>
+          Dash logo by <a href="https://www.dash.org/brand-guidelines/" className="underline">Dash</a>, used unchanged under <a href="https://creativecommons.org/licenses/by/4.0/" className="underline">CC BY 4.0</a>.
         </p>
         <a
           href={venue === "near" ? "https://docs.near-intents.org/api-reference/get-transactions" : venue === "maya" ? "https://docs.mayaprotocol.com/mayachain-dev-docs/concepts/connecting-to-mayachain" : "https://dev.thorchain.org/concepts/connecting-to-thorchain.html"}

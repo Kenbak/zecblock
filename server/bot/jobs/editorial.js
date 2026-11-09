@@ -14,6 +14,10 @@ const LOCK = 839307;
 const ACTIVATION_KEY = 'analysis:activation:v1';
 const POOL_ACTIVATION_KEY = 'analysis:pool_activity:activation:v1';
 const INSIGHTS_ACTIVATION_KEY = 'analysis:insights:activation:v1';
+// Maya/THORChain swap posts start from their own deployment, never replaying
+// swaps created before venue support existed.
+const VENUE_SWAPS_ACTIVATION_KEY = 'analysis:venue_swaps:activation:v1';
+const venueOf = story => story.type === 'swap' ? story.evidence?.venue || 'near' : null;
 
 async function activationTime(pool, dryRun, now, key = ACTIVATION_KEY) {
   if (!dryRun) await pool.query(`INSERT INTO social_post_outbox(post_type,dedup_key,content,metadata,status)
@@ -81,6 +85,7 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
       ? await activationTime(pool,xClient.dryRun,now,POOL_ACTIVATION_KEY) : null;
     const insightsActivatedAt = collectors.insightCandidates
       ? await activationTime(pool,xClient.dryRun,now,INSIGHTS_ACTIVATION_KEY) : null;
+    const venueSwapsActivatedAt = await activationTime(pool,xClient.dryRun,now,VENUE_SWAPS_ACTIVATION_KEY);
     const { rows: history } = await pool.query(`SELECT post_type,dedup_key,status,created_at,metadata
       FROM social_post_outbox WHERE created_at >= $1::timestamptz-interval '90 days'
         AND post_type<>'source_reply'`, [now.toISOString()]);
@@ -101,6 +106,11 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
     };
     if (pacing) await collect('reorg', () => collectors.reorgCandidates(reader,now));
     else await collect('live', () => collectors.liveCandidates(reader,now));
+    // NU7 is live is time-critical and may break pacing; other NU7 stories wait their turn.
+    if (collectors.nu7Candidates) await collect('nu7', async () => {
+      const result = await collectors.nu7Candidates(reader,now);
+      return pacing ? { candidates: result.candidates.filter(c => c.evidence.nu7Kind === 'activation'), decisions: result.decisions } : result;
+    });
     if (!pacing && now.getUTCHours() >= 6 && Date.parse(`${now.toISOString().slice(0,10)}T06:00:00Z`) >= Date.parse(activatedAt)) {
       const target = addDays(now.toISOString().slice(0,10), -1);
       const week = addDays(completedWeekEnd(now), -7);
@@ -126,8 +136,9 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
         if (!history.some(p => p.dedup_key === key)) await collect(name,fn,key);
       }
     }
-    const fresh = candidates.filter(c=>isNew(c,activatedAt));
-    decisions.push(...candidates.filter(c=>!isNew(c,activatedAt)).map(c=>({key:c.key,reason:'before-activation'})));
+    const eligible = c => isNew(c,activatedAt) && (!['maya','thorchain'].includes(venueOf(c)) || isNew(c,venueSwapsActivatedAt));
+    const fresh = candidates.filter(eligible);
+    decisions.push(...candidates.filter(c=>!eligible(c)).map(c=>({key:c.key,reason:'before-activation'})));
     const selection = select(fresh,history,now);
     decisions.push(...selection.skipped);
     const toPublish = selection.selected.slice(0,1);
@@ -148,7 +159,7 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
         VALUES ('editorial_scan',$1,'',$2::jsonb,'evaluated') ON CONFLICT(dedup_key) DO NOTHING`,
       [scan.key,JSON.stringify({ capturedAt:now.toISOString(),decisions,selected:toPublish.map(c => c.key) })]);
     }
-    return { activatedAt, candidates, selected:selection.selected, decisions, results, sourceReplies };
+    return { activatedAt, venueSwapsActivatedAt, candidates, selected:selection.selected, decisions, results, sourceReplies };
   } finally {
     if (locked) await lock.query('SELECT pg_advisory_unlock($1)',[LOCK]);
     lock.removeListener?.('error',leaseLost);
@@ -156,4 +167,4 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
   }
 }
 
-module.exports = { run, publish, activationTime };
+module.exports = { run, publish, activationTime, VENUE_SWAPS_ACTIVATION_KEY };

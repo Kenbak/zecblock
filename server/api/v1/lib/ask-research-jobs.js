@@ -121,9 +121,9 @@ function createResearchJobs(env,{analytics,redis}){
    // Losing Redis or ownership cancels PostgreSQL; it cannot continue unfenced.
    let checking=false;
    monitor=setInterval(async()=>{if(checking)return;checking=true;try{if(!Number(await evaluate(HEARTBEAT,[slot.lock,PREFIX+id],[owner])))controller.abort();}catch{controller.abort();}finally{checking=false;}},500);monitor.unref();
-   let state='succeeded',error='',result='',quota='',sql='',datasets=[],features=[];const executionStarted=Date.now();
+   let state='succeeded',error='',result='',quota='',sql='',datasets=[],shape=null;const executionStarted=Date.now();
    try{
-    const compiled=await compileResearchSQL(JSON.parse(raw),{extended:env.ASK_RESEARCH_EXTENDED==='true'});const query=compiled.request;datasets=compiled.datasets;features=compiled.features;
+    const compiled=await compileResearchSQL(JSON.parse(raw),{extended:env.ASK_RESEARCH_EXTENDED==='true'});const query=compiled.request;datasets=compiled.datasets;shape=compiled.shape;
     const evidence=await analytics.execute(query,{redis,signal:controller.signal,execution:'background'});
     result=JSON.stringify(researchResultSchema.parse(evidence.result));
     if(Buffer.byteLength(result)>262144)throw askError('resource');
@@ -131,7 +131,7 @@ function createResearchJobs(env,{analytics,redis}){
    }catch(cause){state='failed';result='';error=stopped?'interrupted':cause?.askKind&&['timeout','resource','query','source','dataset','quota','unavailable'].includes(cause.askKind)?cause.askKind:['AbortError','TimeoutError'].includes(cause?.name)?'timeout':'source';if(error==='quota'){const details=sqlQuotaDetails(cause);if(details)quota=JSON.stringify(details);}
     const feedback=['query','resource'].includes(error)?sqlFeedbackSchema.safeParse(cause?.sqlFeedback):null;if(feedback?.success)sql=JSON.stringify(feedback.data);}
    clearInterval(monitor);monitor=null;
-   if(env.ASK_RESEARCH_METRICS_ENABLED==='true')await require('./ask-research-metrics').recordMetrics(redis,{outcome:controller.signal.aborted&&!stopped?'cancelled':state==='succeeded'?'success':error==='interrupted'?'unavailable':error,datasets,features,elapsedMs:Date.now()-executionStarted});
+   if(env.ASK_RESEARCH_METRICS_ENABLED==='true')await require('./ask-research-metrics').recordMetrics(redis,{outcome:controller.signal.aborted&&!stopped?'cancelled':state==='succeeded'?'success':error==='interrupted'?'unavailable':error,datasets,...(shape?{features:shape.features,span:shape.span}:{}),mode:'queued',elapsedMs:Date.now()-executionStarted});
    await evaluate(FINISH,[slot.lock,PREFIX+id],[owner,state,new Date().toISOString(),error,result,quota,sql]);
   }catch{/* No raw exceptions or SQL in logs. Lease expiry makes recovery safe. */}
   finally{clearInterval(monitor);slot.current=null;slot.ticking=false;}

@@ -156,6 +156,8 @@ test('an AI-submitted job can finish explanation after AI exhaustion without a s
   const body = { ...ticket, question: chatBody.question, locale: 'en' };
   const explained = await post('/research/jobs/explain', body);
   assert.equal(explained.status, 200); assert.ok(explained.body.data.research); assert.match(explained.body.data.answer, /100,000/);
+  // The explanation carries the scope of what ran, for the next question.
+  assert.equal(explained.body.data.turnScope.kind, 'sql'); assert.ok(explained.body.data.turnScope.datasets.length);
   assert.deepEqual(state.attempts, { ai: 1, sql: 1 }); assert.equal(state.provider, 2); assert.equal(state.reserved, 2);
   for (const path of ['/research/jobs/status', '/research/jobs/cancel']) assert.equal((await post(path, ticket)).status, 200);
   assert.equal((await post('/research/jobs/explain', body)).status, 200);

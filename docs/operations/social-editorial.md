@@ -226,6 +226,31 @@ periods, baseline, source tip and capture time. No all-time or adoption claims
 are introduced. One trend/day and a three-day same-topic/lens cooldown apply,
 unless its net total changes by at least 25% from the recent published trend.
 
+## NU7 and halving stories
+
+`server/bot/lib/nu7-stories.js` builds them and `nu7-source.js` reads them, on every tick (mainnet only, read-only snapshot).
+The NU7 height comes from the serving node's upgrade schedule stored on the latest *canonical*
+`node_accounting_observations` row (joined to `blocks` by height and hash), never from the announcement.
+
+| Story (`type`, key) | When it qualifies | Data |
+|---|---|---|
+| Countdown (`nu7`, `nu7:countdown:<h>`) | 864–1,152 blocks remain (about a day at 75 s) | tip height; NU7 node readiness from the node census (protocol 170190+, self-reported; line omitted if unavailable). Census source is `NODE_SOURCE`, defaulting to `crawl` like the mainnet API |
+| NU7 is live (`nu7`, `nu7:activation:<h>`) | activation block has 3 confirmations and is under 12 h old | activation block, pool attribution, last 20 min of header times (pulse card) |
+| First 24 hours (`nu7`, `nu7:first_day:<h>`) | 24–48 h after activation | blocks and average header interval in the 24 h after vs before activation |
+| Block milestones (`nu7`, `nu7:blocks:<n>`) | 10k/25k/50k/100k blocks since activation, within 24 h of the crossing block and no later than 30 days after activation | measured header-time span vs `n × 75 s` |
+| NSM milestones (`nu7`, `nu7:nsm:<zec>`) | reserve growth since the last pre-activation observation crosses 1/10/25/… ZEC, within 24 h of the first crossing | node NSM counter, exact zatoshi (BigInt); growth includes every reserve inflow |
+| NSM dollar milestones (`nu7`, `nu7:nsm_usd:<usd>`) | growth since NU7 × CoinGecko spot (detection time, ≤5 min old) passes $10K/100K/500K/1M/5M/10M/50M/100M/500M/1B | same NSM growth; never posted without a fresh quote. ZEC milestones add "(about $X)" when a quote is available |
+| Legacy pool drain (`milestone`, `milestone:<sapling\|orchard\|sprout>_below:<zec>`) | first daily close below 500K/400K/…/1K ZEC after 30 closes at or above it | `privacy_trends_daily` per-pool closes (optional columns; absent reads as null); names the last earlier day at or below today's balance |
+| Ironwood share (`milestone`, `milestone:ironwood_share:<pct>`) | first close at each whole percent from 85% | Ironwood ÷ shielded pool size, daily closes |
+| Halving countdown (`halving`, `halving:<height>:<n>d`) | estimated days to the next halving within a day of 730/365/180/100/30/7/1 | consensus eras; subsidy `floor(12.5 ZEC × spacing / 150) >> halvings` |
+
+Block-speed stories (first 24 hours, block milestones) are launch news and stop 30 days after activation; NSM milestones continue indefinitely.
+Selection: "NU7 is live" uses protected lane 950 and is collected even while pacing; the countdown uses lane 700.
+Other NU7 stories share two slots per UTC day (`nu7-daily-cap`); halving uses the per-type daily cap. Every story
+carries `evidence.eventAt`, which `eventTime` uses for the activation watermark. Source replies scope each claim
+(header times are not arrival times; protocol versions are self-reported). Previews:
+`node scripts/preview-bot-editorial.js` renders illustrative NU7 fixtures through the production builders.
+
 ## Delivery and operations
 
 A session advisory lock (839307) serializes senders. A unique outbox claim uses

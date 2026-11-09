@@ -1,7 +1,7 @@
 'use strict';
 const test=require('node:test'),assert=require('node:assert/strict');
 const {once}=require('node:events');
-const {createMemoryPressure,CGROUP,TTL_MS,EVENT_HOLD_MS}=require('../../v1/lib/ask-memory-pressure');
+const {createMemoryPressure,CGROUP,TTL_MS,EVENT_HOLD_MS,CACHE_FLOOR}=require('../../v1/lib/ask-memory-pressure');
 const {askError}=require('../../v1/lib/ask-errors');
 function fixture(overrides={}){
  const values={'memory.current':'100','memory.high':'1000','memory.max':'2000','memory.events':'low 0\nhigh 0\nmax 0\noom 0\noom_kill 0\n','memory.pressure':'some avg10=0.00 avg60=0.00 avg300=0.00 total=0\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0\n','memory.stat':'anon 50\nfile 50\ninactive_file 0\nactive_file 50\n',...overrides};
@@ -36,6 +36,26 @@ test('new pressure events and counter rewind hold admission closed before later 
   await assert.rejects(f.guard.assertAvailable(),e=>e.askKind==='resource');f.advance(EVENT_HOLD_MS);await f.guard.assertAvailable();
   f.values['memory.events']=f.values['memory.events'].replace(counter+' 1',counter+' 0');f.advance(TTL_MS);await assert.rejects(f.guard.assertAvailable(),e=>e.askKind==='resource');
  }
+});
+test('high events from routine cache reclaim do not hold admission; scarce cache still does',async()=>{
+ // Production 2026-10-31: current 25.76 GB of high 25.77 GB, 13.3 GB inactive
+ // file cache, PSI 0. Each small query's reads raised memory.events high and
+ // held every research query for 30 s.
+ const warm='anon 40\nfile 950\ninactive_file 500\nactive_file 450\n';
+ const f=fixture({'memory.current':'990','memory.stat':warm});await f.guard.assertAvailable();
+ for(let n=1;n<=5;n++){f.values['memory.events']=f.values['memory.events'].replace(/high \d+/,'high '+n);f.advance(TTL_MS);await f.guard.assertAvailable();}
+ // Cache below the floor: the kernel is reclaiming beyond spare cache, so hold.
+ f.values['memory.stat']=`anon 40\nfile 950\ninactive_file ${1000*CACHE_FLOOR-1}\nactive_file 700\n`;f.values['memory.current']='300';
+ f.values['memory.events']=f.values['memory.events'].replace(/high \d+/,'high 6');f.advance(TTL_MS);
+ await assert.rejects(f.guard.assertAvailable(),e=>e.askKind==='resource');f.advance(EVENT_HOLD_MS);await f.guard.assertAvailable();
+ // max/oom/oom_kill increments and any counter rewind still hold regardless of cache.
+ for(const counter of ['max','oom','oom_kill']){
+  const g=fixture({'memory.current':'990','memory.stat':warm});await g.guard.assertAvailable();
+  g.values['memory.events']=g.values['memory.events'].replace(counter+' 0',counter+' 1');g.advance(TTL_MS);
+  await assert.rejects(g.guard.assertAvailable(),e=>e.askKind==='resource',counter);
+ }
+ const r=fixture({'memory.current':'990','memory.stat':warm,'memory.events':'low 0\nhigh 9\nmax 0\noom 0\noom_kill 0\n'});await r.guard.assertAvailable();
+ r.values['memory.events']=r.values['memory.events'].replace('high 9','high 8');r.advance(TTL_MS);await assert.rejects(r.guard.assertAvailable(),e=>e.askKind==='resource');
 });
 test('pressure refuses new quick/queued execution, keeps status/cancel and leaves active execution alone',async t=>{
  const {spawn}=require('node:child_process'),fs=require('node:fs/promises'),path=require('node:path'),os=require('node:os'),{createClient}=require('redis');

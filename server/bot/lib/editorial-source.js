@@ -30,11 +30,22 @@ function chartSource(story, original) {
 
 function scope(story) {
   const type = story.type, e = story.evidence || {};
+  if (type === 'swap' && ['maya', 'thorchain'].includes(e.venue)) return `Successful native-ZEC ${e.venue === 'maya' ? 'Maya' : 'THORChain'} swaps indexed from Midgard. USD uses the provider's first-stream-interval price, not settlement value. Venues are not summed.`;
   if (type === 'swap' || type === 'crosschain_daily') return 'Tracked successful NEAR Intents swaps; provider-reported source USD.';
   if (type.startsWith('flow_')) return 'Public pool-boundary flow; private transferred amounts are not visible.';
   if (type === 'migration') return 'Pool migration, not new shielding.';
   if (type === 'pool_trend') return 'Net public Sapling/Orchard/Ironwood flows; Sprout and migrations excluded.';
   if (type === 'hashrate') return 'Estimated mining power; seven-day windows.';
+  if (type === 'milestone' && /_below$|ironwood_share/.test(e.metric || '')) return 'Daily UTC closes of node-reported pool balances.';
+  if (type === 'halving') return 'Estimated from consensus target spacing; actual timing follows block production.';
+  if (type === 'nu7') return ({
+    countdown: 'Serving-node NU7 schedule. Node protocol versions are self-reported.',
+    activation: 'Serving-node NU7 schedule; canonical block data.',
+    first_day: 'Canonical block-header times, not arrival times.',
+    blocks: 'Canonical block-header times, not arrival times.',
+    nsm: 'Node-reported NSM reserve change since activation, in exact zatoshi. USD at the spot price when posted.',
+    nsm_usd: 'Node-reported NSM reserve change since activation, valued at the CoinGecko spot price when posted.',
+  })[e.nu7Kind] || '';
   if (e.metric === 'mvrv') return 'Modeled cost basis; not holder profit or a price forecast.';
   if (e.metric === 'exchange_deposit_zat') return 'Tracked transparent exchange deposits; not necessarily sales.';
   if (type.startsWith('activity_') || type === 'network_briefing' || e.achievements) return 'Canonical non-coinbase activity; counts do not measure users.';

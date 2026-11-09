@@ -17,6 +17,7 @@ import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { useUrlState } from '@/lib/use-url-state';
 import { PanelShareControl, objectRowsCsv } from '@/components/charts/PanelShareControl';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 const PERIODS = ['7d', '30d', '90d', '1y', 'all'] as const;
 type Period = typeof PERIODS[number];
@@ -37,7 +38,7 @@ export function FeeDistributionChart({ initialData, initialFetchedAt }: { initia
   const last = [...points].reverse().find(p => p.median != null);
   const dateLabel = formatDateLabelUTC;
   return <div ref={panelRef} className="h-full"><Card className="h-full"><CardBody>
-    <SectionHeader label="OBSERVED_FEES" actions={<div className="flex flex-wrap items-center gap-1"><div className="flex gap-1" aria-label="Fee history range">{PERIODS.map(value => <button key={value} onClick={() => setPeriod(value)} aria-pressed={period === value} className={`filter-btn ${period === value ? 'filter-btn-active' : ''}`}>{value.toUpperCase()}</button>)}</div><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
+    <SectionHeader label="OBSERVED_FEES" actions={<div className="flex flex-wrap items-center gap-1"><PeriodPillTags aria-label="Fee history range" value={period} onChange={setPeriod} options={PERIODS.map(value => ({ key: value, label: value.toUpperCase() }))} /><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
     <p className="text-caption text-muted mb-4">Daily median and 10th–90th percentile range. Observed fees, not a fee quote.</p>
     {loading && !usable ? <ChartSkeleton height={228} /> : !usable ? <p role="status" className="min-h-[240px] flex items-center justify-center text-sm text-muted">{loading || isRefreshing ? 'Loading observed fees…' : 'Fee history unavailable.'}</p> : <>
       <><ResponsiveContainer width="100%" height={228} initialDimension={{ width: 400, height: 228 }}>

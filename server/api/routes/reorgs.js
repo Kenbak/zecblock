@@ -6,6 +6,7 @@
 const express = require('express');
 const crypto = require('crypto');
 const { getPoolName, getPoolInfo } = require('../mining-pools');
+const { firstSeenLateralSql, firstSeenSql } = require('../lib/first-seen');
 const { parseSafeListPagination, offsetExceededError } = require('../lib/pagination');
 const { logSafeError } = require('../lib/safe-log');
 const router = express.Router();
@@ -24,6 +25,18 @@ router.use((req, res, next) => {
   writePool = req.app.locals.writePool || req.app.locals.pool;
   next();
 });
+
+// Competing blocks the observer network received that lost to the indexed
+// canonical block at the same height and were never part of a reorg on the
+// main node, so they have no orphaned_blocks row. Same capture rule as the
+// orphan-rate cards: only heights already indexed, never a hash that is
+// canonical now. Observers report receipts only; validation is by our nodes.
+const OBSERVER_ONLY_SQL = `
+  FROM captured_blocks c
+  JOIN blocks r ON r.height = c.height
+  WHERE r.hash <> c.hash
+    AND NOT EXISTS (SELECT 1 FROM blocks canonical WHERE canonical.hash = c.hash)
+    AND NOT EXISTS (SELECT 1 FROM orphaned_blocks ob WHERE ob.hash = c.hash)`;
 
 // GET /api/uncles — List orphaned blocks, most recent first
 router.get('/api/uncles', async (req, res) => {
@@ -56,8 +69,8 @@ router.get('/api/uncles', async (req, res) => {
                 b.miner_address as canonical_miner_address
          FROM orphaned_blocks ob
          LEFT JOIN blocks b ON b.height = ob.height
-         LEFT JOIN block_observations oo ON oo.hash = ob.hash
-         LEFT JOIN block_observations co ON co.hash = b.hash
+         LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
+         LEFT JOIN ${firstSeenLateralSql('b.hash')} co ON true
          ORDER BY ob.height DESC, ob.detected_at DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset]
@@ -85,6 +98,52 @@ router.get('/api/uncles', async (req, res) => {
   } catch (error) {
     logSafeError('Error fetching orphaned blocks:', error);
     res.status(500).json({ success: false, error: 'Failed to fetch orphaned blocks' });
+  }
+});
+
+// GET /api/uncles/observed — Observer-only orphans, most recent first
+router.get('/api/uncles/observed', async (req, res) => {
+  try {
+    const { limit, offset, requestedOffset, offsetExceeded } = parseSafeListPagination(req.query, {
+      defaultLimit: 50,
+      maxLimit: 200,
+      maxOffset: MAX_REORGS_OFFSET,
+    });
+    if (offsetExceeded) {
+      return res.status(400).json(offsetExceededError({ requestedOffset, maxOffset: MAX_REORGS_OFFSET }));
+    }
+    const [result, countResult] = await Promise.all([
+      pool.query(
+        `SELECT c.height, c.hash, c.timestamp, c.first_seen_at, c.miner_address, c.coinbase_hex,
+                (SELECT count(*) FROM block_capture_receipts br WHERE br.hash = c.hash)::integer AS observer_count,
+                r.hash AS canonical_block_hash, r.timestamp AS canonical_timestamp,
+                r.transaction_count AS canonical_transaction_count, r.size AS canonical_size,
+                r.miner_address AS canonical_miner_address, r.coinbase_hex AS canonical_coinbase_hex,
+                ${firstSeenSql('r.hash')} AS canonical_first_seen_at
+         ${OBSERVER_ONLY_SQL}
+         ORDER BY c.height DESC, c.first_seen_at DESC
+         LIMIT $1 OFFSET $2`,
+        [limit, offset]
+      ),
+      pool.query(`SELECT count(*) AS total ${OBSERVER_ONLY_SQL}`),
+    ]);
+    const total = parseInt(countResult.rows[0].total);
+    res.set('Cache-Control', 'public, max-age=30');
+    res.json({
+      success: true,
+      orphanedBlocks: result.rows.map(formatObserverOrphan),
+      pagination: {
+        total,
+        limit,
+        offset,
+        totalPages: Math.ceil(total / limit),
+        page: Math.floor(offset / limit) + 1,
+        hasMore: offset + limit < total
+      }
+    });
+  } catch (error) {
+    logSafeError('Error fetching observer-only orphans:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observer-only orphans unavailable' });
   }
 });
 
@@ -134,8 +193,8 @@ router.get('/api/uncles/forks', async (req, res) => {
                 b.miner_address as canonical_miner_address
          FROM orphaned_blocks ob
          LEFT JOIN blocks b ON b.height = ob.height
-         LEFT JOIN block_observations oo ON oo.hash = ob.hash
-         LEFT JOIN block_observations co ON co.hash = b.hash
+         LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
+         LEFT JOIN ${firstSeenLateralSql('b.hash')} co ON true
          WHERE ob.fork_event_id = ANY($1::int[])
          ORDER BY ob.height ASC`,
         [forkIds]
@@ -188,7 +247,7 @@ router.get('/api/uncle/:hash', async (req, res) => {
               oo.first_seen_at, oo.source as observation_source, oo.poll_interval_ms
        FROM orphaned_blocks ob
        LEFT JOIN fork_events fe ON ob.fork_event_id = fe.id
-       LEFT JOIN block_observations oo ON oo.hash = ob.hash
+       LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
        WHERE ob.hash = $1`,
       [hash]
     );
@@ -311,7 +370,7 @@ router.post('/api/uncle/report', async (req, res) => {
 // GET /api/uncles/stats — Summary stats for the dashboard
 router.get('/api/uncles/stats', async (req, res) => {
   try {
-    const [orphanCount, forkCount, recentReports, deepestFork] = await Promise.all([
+    const [orphanCount, forkCount, recentReports, deepestFork, observerOnly] = await Promise.all([
       pool.query('SELECT COUNT(*) as total FROM orphaned_blocks'),
       pool.query('SELECT COUNT(*) as total FROM fork_events'),
       pool.query(
@@ -320,7 +379,13 @@ router.get('/api/uncles/stats', async (req, res) => {
       ),
       pool.query(
         'SELECT MAX(depth) as max_depth FROM fork_events'
-      )
+      ),
+      pool.query(`SELECT count(*) AS total, floor(extract(epoch FROM (SELECT min(collection_started_at) FROM block_capture_observers)))::bigint AS capture_start
+        ${OBSERVER_ONLY_SQL}`).catch(error => {
+        // Capture tables are optional on older databases; the reorg stats stay available.
+        logSafeError('Observer-only orphan count unavailable:', error);
+        return null;
+      })
     ]);
 
     res.json({
@@ -328,7 +393,10 @@ router.get('/api/uncles/stats', async (req, res) => {
       totalOrphanedBlocks: parseInt(orphanCount.rows[0].total),
       totalForkEvents: parseInt(forkCount.rows[0].total),
       reportsLast24h: parseInt(recentReports.rows[0].total),
-      deepestReorg: parseInt(deepestFork.rows[0].max_depth) || 0
+      deepestReorg: parseInt(deepestFork.rows[0].max_depth) || 0,
+      observerOnlyOrphanedBlocks: observerOnly ? parseInt(observerOnly.rows[0].total) : null,
+      observerCaptureStartedAt: observerOnly?.rows[0].capture_start != null
+        ? new Date(Number(observerOnly.rows[0].capture_start) * 1000).toISOString() : null
     });
   } catch (error) {
     logSafeError('Error fetching uncle stats:', error);
@@ -428,6 +496,21 @@ function formatOrphanedBlock(row) {
     consensusValid: row.consensus_valid,
     detectedAt: row.detected_at,
     forkEventId: row.fork_event_id
+  };
+}
+
+function formatObserverOrphan(row) {
+  const poolInfo = getPoolInfo(row.miner_address, row.coinbase_hex);
+  return {
+    height: parseInt(row.height),
+    hash: row.hash,
+    timestamp: row.timestamp != null ? parseInt(row.timestamp) : null,
+    firstSeenAt: row.first_seen_at || null,
+    observerCount: row.observer_count ?? null,
+    minerAddress: row.miner_address || null,
+    minerPool: getPoolName(row.miner_address, row.coinbase_hex),
+    minerPoolUrl: poolInfo?.url || null,
+    canonicalBlock: formatCanonicalBlockSummary(row),
   };
 }
 

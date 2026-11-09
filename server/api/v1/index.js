@@ -36,6 +36,7 @@ const { createInternalClient } = require('./lib/internal-client');
 const { createFeatureGate } = require('./middleware/feature-gate');
 const { createRequestContext } = require('./middleware/request-context');
 const { sendProblem } = require('./lib/problem');
+const { ASK_BODY_BYTES } = require('./lib/ask-budget');
 const { buildV1Routes } = require('./routes/index');
 const { buildOpenApiDocument } = require('./openapi');
 const { logSafeError } = require('../lib/safe-log');
@@ -66,13 +67,13 @@ function createV1Router(envOverrides = {}) {
   router.use(createRequestContext(config, internalClient));
   // MCP shares the public gate/context and existing adapter authority. Mount
   // before the general JSON parser so its smaller request bound is enforced.
-  const mcpRouter = createMcpRouter(config);
+  const mcpRouter = createMcpRouter(config, { env });
   router.use('/mcp', mcpRouter);
   // Ask accepts only a short question and a small recipe, never file uploads.
   // Apply before the general parser on standalone hosts; also check decoded
   // bodies when the parent application already parsed the request.
-  router.use('/ask', express.json({ limit: '16kb' }), (req, res, next) => {
-    if (req.body && Buffer.byteLength(JSON.stringify(req.body), 'utf8') > 16384) {
+  router.use('/ask', express.json({ limit: ASK_BODY_BYTES }), (req, res, next) => {
+    if (req.body && Buffer.byteLength(JSON.stringify(req.body), 'utf8') > ASK_BODY_BYTES) {
       return sendProblem(res, 'validation-error', { status: 413, detail: 'Ask request body exceeds 16 KiB.' });
     }
     next();

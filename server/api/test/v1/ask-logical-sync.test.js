@@ -346,6 +346,16 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
   assert.equal((await refreshAdmission(target)).state,'stale');
   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
   assert.equal((await refreshAdmission(target)).state,'verified');
+  // 2026-11-01: the Sprout repair backfilled historical pool='sprout' flows and
+  // admission quarantined them as unknown pools. A Sprout flow is valid history.
+  await source.query("INSERT INTO shielded_flows VALUES(12,'replacement-b2-tx',2,1700000002,'deshield','sprout',50,'excluded-secret')");
+  await wait(async()=>(await target.query("SELECT count(*)::int AS n FROM public.shielded_flows WHERE pool='sprout'")).rows[0].n===1);
+  await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+  assert.equal((await refreshAdmission(target)).state,'verified');
+  await source.query('DELETE FROM shielded_flows WHERE id=12');
+  await wait(async()=>(await target.query("SELECT count(*)::int AS n FROM public.shielded_flows WHERE pool='sprout'")).rows[0].n===0);
+  await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+  assert.equal((await refreshAdmission(target)).state,'verified');
   await admission.test('extended catalogue copies public columns, gates readiness, derives summaries and denies writes',async()=>{
    const strip=text=>text.replace(/^\\set.*$/gm,'');
    const migration=strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics/catalogue-destination-v1.sql'),'utf8'));
@@ -399,12 +409,291 @@ test('isolated PG16: filtered initial copy, atomic CDC, pause/resume, restart an
    // SQL publication text names no provider secrets/payload/address labels.
    assert.doesNotMatch(sourceMigration,/deposit_address|senders|recipient|raw_origin_asset/);
   });
+  await admission.test('supply archive replicates after its destination migration; issuance derives from canonical blocks',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   await target.query(read('supply-issuance-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='supply_daily'")).rows[0].ready,false);
+   await source.query("CREATE TABLE chain_supply_daily(date date PRIMARY KEY,block_height bigint NOT NULL,block_hash text NOT NULL,block_time bigint NOT NULL,chain_supply_zat bigint NOT NULL,source text NOT NULL DEFAULT 'node-getblock-chain-supply-v1',computed_at timestamptz NOT NULL DEFAULT now())");
+   const [first,second]=(await source.query('SELECT height::int,hash,timestamp::text FROM blocks ORDER BY height LIMIT 2')).rows;
+   // Two consecutive canonical dates plus a later row whose hash is not canonical.
+   await source.query("INSERT INTO chain_supply_daily(date,block_height,block_hash,block_time,chain_supply_zat,source) VALUES('2023-11-14',$1,$2,$3,62500,'secret'),('2023-11-15',$4,$5,$6,187500,'secret'),('2023-11-16',$4,$7,$6,999,'secret')",[first.height,first.hash,first.timestamp,second.height,second.hash,second.timestamp,'f'.repeat(64)]);
+   const before=(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   await source.query(read('supply-issuance-source-v1.sql').replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n===before+1);
+   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+   assert.equal((await refreshAdmission(target)).state,'verified');
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='supply_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query('SELECT date::text,height::text,chain_supply::text,lockbox::text,circulating_supply::text,net_change::text FROM analytics_public.supply_daily_query ORDER BY date')).rows,[
+    {date:'2023-11-14',height:String(first.height),chain_supply:'62500',lockbox:'0',circulating_supply:'62500',net_change:null},
+    {date:'2023-11-15',height:String(second.height),chain_supply:'187500',lockbox:'0',circulating_supply:'187500',net_change:'125000'}]);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.chain_supply_daily'::regclass AND attnum>0 ORDER BY attnum")).rows.map(r=>r.attname),['date','block_height','block_hash','block_time','chain_supply_zat']);
+   // Fixture heights are in the slow start: 62500 zat per height, founders 20%.
+   assert.deepEqual((await reader.query('SELECT height::int,subsidy::text,miner_subsidy::text,founders::text,funding_streams::text,lockbox::text,lockbox_disbursed::text FROM analytics_public.issuance_query ORDER BY height LIMIT 2')).rows,[
+    {height:first.height,subsidy:String(62500*first.height),miner_subsidy:String(50000*first.height),founders:String(12500*first.height),funding_streams:'0',lockbox:'0',lockbox_disbursed:'0'},
+    {height:second.height,subsidy:String(62500*second.height),miner_subsidy:String(50000*second.height),founders:String(12500*second.height),funding_streams:'0',lockbox:'0',lockbox_disbursed:'0'}]);
+   for(const sql of ['SELECT * FROM public.chain_supply_daily','DELETE FROM public.chain_supply_daily','SELECT source FROM analytics_public.supply_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   // Rollback order: source publication first, then subscription refresh, then destination.
+   await assert.rejects(target.query(read('supply-issuance-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(read('supply-issuance-source-v1-rollback.sql').replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.chain_supply_daily') IS NULL AND to_regclass('analytics_public.issuance_query') IS NULL AS gone")).rows[0].gone,true);
+   await source.query("INSERT INTO chain_supply_daily(date,block_height,block_hash,block_time,chain_supply_zat) VALUES('2023-11-17',1,'x',1,1)");
+   await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+   assert.equal((await refreshAdmission(target)).state,'verified');
+  });
+  await admission.test('mining tables replicate only reviewed columns, every listed table gates readiness, and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   const ready=async()=>Object.fromEntries((await reader.query("SELECT dataset,ready FROM analytics_public.dataset_coverage WHERE dataset IN('mining_daily','software_daily','block_timing','issuance_daily')")).rows.map(r=>[r.dataset,r.ready]));
+   // issuance_daily reads supply_daily: reinstate the supply archive first.
+   await target.query(read('supply-issuance-v1.sql'));
+   let before=await subscribed();
+   await source.query(fixtureSource('supply-issuance-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+1);
+   const [first,second]=(await source.query('SELECT height::int,hash,timestamp::bigint AS timestamp FROM blocks ORDER BY height LIMIT 2')).rows;
+   await source.query(`CREATE TABLE analytics_history_daily(date date PRIMARY KEY,anchor_height bigint,anchor_hash text,method text,cohorts jsonb,sopr numeric,mining_pool_blocks jsonb);
+    CREATE TABLE block_software_daily(day integer,software text,blocks bigint,PRIMARY KEY(day,software));
+    CREATE TABLE block_software_state(version integer,ready boolean);INSERT INTO block_software_state VALUES(1,true);
+    CREATE TABLE block_observations(hash text PRIMARY KEY,height bigint,first_seen_at timestamptz,source text,poll_interval_ms integer);
+    CREATE TABLE captured_blocks(hash text PRIMARY KEY,network text,height bigint,first_seen_at timestamptz,coinbase_hex text,raw_block bytea)`);
+   await source.query("INSERT INTO analytics_history_daily VALUES('2023-11-14',$1,$2,'m','{\"secret\":1}',1.5,'{\"F2Pool\":2,\"Unknown\":1}')",[second.height,second.hash]);
+   await source.query("INSERT INTO block_software_daily VALUES(19675,'zebra',2),(19675,'unknown',1)");
+   await source.query("INSERT INTO block_observations VALUES($1,$2,to_timestamp($3::bigint+2.5),'local-node-rpc',1000)",[first.hash,first.height,first.timestamp]);
+   await source.query("INSERT INTO captured_blocks VALUES($1,'mainnet',$2,to_timestamp($3::bigint+1),'73656372657421','\\x00')",[second.hash,second.height,second.timestamp]);
+   await target.query(read('mining-v1.sql'));
+   assert.deepEqual(await ready(),{mining_daily:false,software_daily:false,block_timing:false,issuance_daily:false});
+   before=await subscribed();
+   await source.query(fixtureSource('mining-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+4);
+   await refreshed();
+   assert.deepEqual(await ready(),{mining_daily:true,software_daily:true,block_timing:true,issuance_daily:true});
+   for(const [table,columns] of [['analytics_history_daily',['date','anchor_height','anchor_hash','mining_pool_blocks']],['block_software_daily',['day','software','blocks']],['block_observations',['hash','height','first_seen_at']],['captured_blocks',['hash','height','first_seen_at']]])
+    assert.deepEqual((await target.query(`SELECT attname FROM pg_attribute WHERE attrelid='public.${table}'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum`)).rows.map(r=>r.attname),columns,table);
+   assert.deepEqual((await reader.query('SELECT height::int,lag_seconds::text,observed_by FROM analytics_public.block_timing_query ORDER BY height')).rows,[
+    {height:first.height,lag_seconds:'2.500',observed_by:'local-node-rpc'},{height:second.height,lag_seconds:'1.000',observed_by:'node-block-stream'}]);
+   assert.deepEqual((await reader.query("SELECT pool,blocks::int,day_blocks::int FROM analytics_public.mining_daily_query ORDER BY pool")).rows,[{pool:'F2Pool',blocks:2,day_blocks:3},{pool:'Unknown',blocks:1,day_blocks:3}]);
+   for(const sql of ['SELECT * FROM public.captured_blocks','SELECT * FROM public.analytics_history_daily','SELECT raw_block FROM analytics_public.block_timing_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   // A dataset is ready only while every listed table is subscribed.
+   await source.query('ALTER PUBLICATION ask_public_core_v1 DROP TABLE captured_blocks');
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await refreshed();
+   assert.deepEqual(await ready(),{mining_daily:true,software_daily:true,block_timing:false,issuance_daily:true});
+   await source.query('ALTER PUBLICATION ask_public_core_v1 ADD TABLE captured_blocks(hash,height,first_seen_at)');
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await wait(async()=>(await target.query("SELECT bool_and(srsubstate='r') AS done FROM pg_subscription_rel WHERE srrelid='public.captured_blocks'::regclass")).rows[0].done===true);
+   await refreshed();
+   assert.equal((await ready()).block_timing,true);
+   // Rollback order: source publication first, then subscription refresh, then destination.
+   await assert.rejects(target.query(read('mining-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('mining-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('mining-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.captured_blocks') IS NULL AND to_regclass('analytics_public.issuance_daily_query') IS NULL AS gone")).rows[0].gone,true);
+   await source.query("INSERT INTO block_software_daily VALUES(19676,'zebra',1)");
+   await source.query(fixtureSource('supply-issuance-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('supply-issuance-v1-rollback.sql'));
+   await refreshed();
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
+  await admission.test('reorg tables replicate only reviewed columns, convert Berlin detection times and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   // The reorg migration builds on the mining catalogue; its destination views are enough here.
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));
+   const [,second]=(await source.query('SELECT height::int,hash,timestamp::bigint AS timestamp FROM blocks ORDER BY height LIMIT 2')).rows;
+   await source.query("SET TIME ZONE 'Europe/Berlin'");
+   await source.query(`CREATE TABLE fork_events(id serial PRIMARY KEY,fork_height bigint,depth integer,canonical_tip bigint,orphaned_count integer,source text,description text,detected_at timestamp DEFAULT now(),resolved_at timestamp);
+    CREATE TABLE orphaned_blocks(id serial PRIMARY KEY,height bigint,hash text UNIQUE,canonical_hash text,timestamp bigint,transaction_count integer,size integer,difficulty text,miner_address text,fork_event_id integer REFERENCES fork_events(id) ON DELETE SET NULL,source text,reported_by text,detected_at timestamp DEFAULT now(),coinbase_hex text,raw_hex text,block_metadata jsonb)`);
+   await source.query("INSERT INTO fork_events(fork_height,depth,canonical_tip,orphaned_count,source,description,detected_at) VALUES($1,1,$1,1,'indexer','secret text','2026-10-31 08:01:40')",[second.height]);
+   await source.query("INSERT INTO orphaned_blocks(height,hash,canonical_hash,timestamp,transaction_count,size,miner_address,fork_event_id,source,reported_by,detected_at,coinbase_hex,raw_hex) VALUES($1,$2,$3,$4,2,700,'t1orphan',1,'indexer','node-a','2026-10-31 08:01:40','deadbeef','00'),($1,'f'||repeat('0',63),$2,$4,1,300,'t1other',1,'indexer','node-a','2026-10-31 08:01:40','beef','00')",[second.height,second.hash,'e'.repeat(64),second.timestamp]);
+   await source.query('RESET TIME ZONE');
+   const before=await subscribed();
+   // Production runs under the server zone; the source step refuses any other.
+   await source.query(fixtureSource('reorgs-source-v1.sql').replace('BEGIN;',"BEGIN;SET LOCAL TimeZone='Europe/Berlin';"));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+2);
+   await refreshed();
+   assert.deepEqual((await reader.query("SELECT dataset,ready FROM analytics_public.dataset_coverage WHERE dataset IN('reorgs','orphaned_blocks') ORDER BY dataset")).rows,[{dataset:'orphaned_blocks',ready:true},{dataset:'reorgs',ready:true}]);
+   for(const [table,columns] of [['fork_events',['id','fork_height','depth','orphaned_count','detected_at']],['orphaned_blocks',['id','height','hash','canonical_hash','timestamp','transaction_count','size','miner_address','fork_event_id','detected_at']]])
+    assert.deepEqual((await target.query(`SELECT attname FROM pg_attribute WHERE attrelid='public.${table}'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum`)).rows.map(r=>r.attname),columns,table);
+   assert.deepEqual((await reader.query('SELECT reorg_id,depth,reported_orphans,orphans::int,detected_at::text FROM analytics_public.reorgs_query')).rows,[{reorg_id:1,depth:1,reported_orphans:1,orphans:2,detected_at:'1793430100'}]);
+   // The first orphan row records the hash that is canonical in the fixture chain.
+   assert.deepEqual((await reader.query('SELECT miner,canonical_now FROM analytics_public.orphaned_blocks_query ORDER BY miner')).rows,[{miner:'t1orphan',canonical_now:true},{miner:'t1other',canonical_now:false}]);
+   for(const sql of ['SELECT * FROM public.fork_events','SELECT raw_hex FROM analytics_public.orphaned_blocks_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('reorgs-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('reorgs-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.fork_events') IS NULL AND to_regclass('analytics_public.supply_daily_query') IS NULL AS gone")).rows[0].gone,true);
+   await source.query("INSERT INTO fork_events(fork_height,depth,orphaned_count) VALUES(1,1,0)");
+   await refreshed();
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
+  await admission.test('swap detail re-publishes cross_chain_swaps in place, backfills amounts and rolls back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));await target.query(read('swaps-v1.sql'));
+   // Amounts written before the source step are not replicated: the backfill copies them.
+   await source.query("ALTER TABLE cross_chain_swaps ADD COLUMN source_amount numeric,ADD COLUMN dest_amount numeric,ADD COLUMN deposit_address text");
+   await source.query("UPDATE cross_chain_swaps SET source_amount=id*0.5,dest_amount=id*2.25,deposit_address='secret'");
+   await source.query(`CREATE TABLE crosschain_venue_actions(venue text,id text,action_type text,status text,swap_created_at timestamptz,source_chain text,source_token text,source_asset text,dest_chain text,dest_token text,dest_asset text,source_amount numeric,dest_amount numeric,zec_amount_zat numeric,source_amount_usd numeric,dest_amount_usd numeric,source_tx_hashes text[],dest_tx_hashes text[],payload jsonb,PRIMARY KEY(venue,id))`);
+   await source.query("INSERT INTO crosschain_venue_actions SELECT 'maya','m'||n,'swap','SUCCESS','2023-11-14T12:00Z','btc','BTC','BTC.BTC','zec','ZEC','ZEC.ZEC',0.01,1,100000000,700,690,ARRAY['secrethash'],ARRAY['secrettxid'],'{\"sourceAddress\":\"secret\"}' FROM generate_series(1,5) n");
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('swaps-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+1);
+   // Dropped and re-added in one transaction: not re-copied, so no duplicate-key apply error.
+   await source.query("INSERT INTO cross_chain_swaps(id,status,source_chain,source_token,source_amount_usd,dest_chain,dest_token,dest_amount_usd,swap_created_at,private_marker,source_amount,dest_amount,deposit_address) VALUES(4,'SUCCESS','eth','eth',40,'zec','zec',39,'2023-11-14T13:00Z','secret',0.01,3.5,'secret')");
+   await wait(async()=>(await target.query('SELECT dest_amount::text FROM public.cross_chain_swaps WHERE id=4')).rows[0]?.dest_amount==='3.5');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+   assert.deepEqual((await target.query('SELECT id,dest_amount::text FROM public.cross_chain_swaps ORDER BY id')).rows,[{id:1,dest_amount:null},{id:2,dest_amount:null},{id:3,dest_amount:null},{id:4,dest_amount:'3.5'}]);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.crosschain_venue_actions'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['venue','id','action_type','status','swap_created_at','source_chain','source_token','dest_chain','dest_token','zec_amount_zat','source_amount_usd','dest_amount_usd']);
+   await target.query(read('swaps-grant-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='swap_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query("SELECT venue,direction,swaps::int,zec::text,missing_zec::int FROM analytics_public.swap_daily_query ORDER BY venue,direction")).rows,[
+    {venue:'maya',direction:'inflow',swaps:5,zec:'5',missing_zec:0},{venue:'near-intents',direction:'inflow',swaps:2,zec:null,missing_zec:1},{venue:'near-intents',direction:'outflow',swaps:1,zec:null,missing_zec:1}]);
+   // swaps.md backfill, by id range, only rows still missing both amounts.
+   await target.query("CREATE TEMP TABLE swap_amount_backfill(id integer PRIMARY KEY,source_amount numeric,dest_amount numeric)");
+   for(const row of (await source.query('SELECT id,source_amount,dest_amount FROM cross_chain_swaps ORDER BY id')).rows)await target.query('INSERT INTO swap_amount_backfill VALUES($1,$2,$3)',[row.id,row.source_amount,row.dest_amount]);
+   await target.query('UPDATE public.cross_chain_swaps s SET source_amount=b.source_amount,dest_amount=b.dest_amount FROM swap_amount_backfill b WHERE s.id=b.id AND s.id BETWEEN 1 AND 100000 AND s.source_amount IS NULL AND s.dest_amount IS NULL');
+   assert.deepEqual((await reader.query("SELECT sum(missing_zec)::int AS missing FROM analytics_public.swap_daily_query")).rows,[{missing:0}]);
+   assert.deepEqual((await reader.query('SELECT direction,usd::text FROM analytics_public.swaps_query')).rows.map(r=>r.direction+':'+r.usd).sort(),['inflow:125.75','inflow:40','outflow:null']);
+   for(const sql of ['SELECT * FROM public.crosschain_venue_actions','SELECT source_amount FROM public.cross_chain_swaps','SELECT deposit_address FROM analytics_public.swap_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('swaps-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('swaps-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('swaps-v1-rollback.sql'));await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.crosschain_venue_actions') IS NULL AND NOT EXISTS(SELECT FROM pg_attribute WHERE attrelid='public.cross_chain_swaps'::regclass AND attname='source_amount' AND NOT attisdropped) AS gone")).rows[0].gone,true);
+   // After rollback the original nine columns keep replicating.
+   await source.query("UPDATE cross_chain_swaps SET source_amount_usd=41,source_amount=9 WHERE id=4");
+   await wait(async()=>(await target.query('SELECT source_amount_usd::text FROM public.cross_chain_swaps WHERE id=4')).rows[0].source_amount_usd==='41');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
+  await admission.test('value-pool observations replicate only reviewed columns, snapshot canonical day ends and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   await target.query(read('supply-issuance-v1.sql'));await target.query(read('mining-v1.sql'));await target.query(read('reorgs-v1.sql'));await target.query(read('swaps-v1.sql'));await target.query(read('value-pools-v1.sql'));await target.query(read('value-pools-v2.sql'));
+   // The indexer's table, private columns included; one observation per canonical block plus an orphan observation.
+   await source.query(`CREATE TABLE node_accounting_observations(hash text PRIMARY KEY,height bigint NOT NULL,observed_at timestamptz NOT NULL,chain text,nsm_balance_zat bigint,circulating_supply_zat bigint,pool_balances_zat jsonb NOT NULL,subsidy jsonb,upgrades jsonb,source text NOT NULL,poll_interval_ms integer NOT NULL)`);
+   await source.query(`INSERT INTO node_accounting_observations SELECT hash,height,now(),'main',0,1000+height,jsonb_build_object('transparent',(900+height)::text,'lockbox','100'),'{"fundingstreams":[{"address":"t3secret"}]}','{"secret":true}','getblockchaininfo',1000 FROM blocks`);
+   await source.query(`INSERT INTO node_accounting_observations SELECT repeat('f',64),max(height),now(),'main',0,1,'{"transparent":"1"}',NULL,NULL,'getblockchaininfo',1000 FROM blocks`);
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('value-pools-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+1);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.node_accounting_observations'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['hash','height','observed_at','chain','nsm_balance_zat','circulating_supply_zat','pool_balances_zat']);
+   assert.equal((await target.query('SELECT count(*)::int AS n FROM public.node_accounting_observations')).rows[0].n,(await source.query('SELECT count(*)::int AS n FROM node_accounting_observations')).rows[0].n);
+   await target.query(read('value-pools-grant-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='value_pools_daily'")).rows[0].ready,true);
+   // Each completed date shows its highest canonical block; the orphan observation never appears.
+   const expected=(await source.query(`SELECT DISTINCT ON(d) d::text AS date,height::text,(900+height)::text AS transparent,(1000+height)::text AS chain_supply FROM (SELECT (to_timestamp(timestamp) AT TIME ZONE 'UTC')::date AS d,height FROM blocks) b WHERE d<(now() AT TIME ZONE 'UTC')::date ORDER BY d,height DESC`)).rows;
+   assert.ok(expected.length>0);
+   assert.deepEqual((await reader.query('SELECT date::text,height::text,transparent::text,chain_supply::text FROM analytics_public.value_pools_daily_query ORDER BY date')).rows,expected);
+   for(const sql of ['SELECT * FROM public.node_accounting_observations','SELECT subsidy FROM analytics_public.value_pools_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('value-pools-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('value-pools-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   await target.query(read('value-pools-v1-rollback.sql'));await target.query(read('swaps-v1-rollback.sql'));await target.query(read('reorgs-v1-rollback.sql'));await target.query(read('mining-v1-rollback.sql'));await target.query(read('supply-issuance-v1-rollback.sql'));
+   assert.equal((await target.query("SELECT to_regclass('public.node_accounting_observations') IS NULL AS gone")).rows[0].gone,true);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
+  await admission.test('UTXO summaries replicate only reviewed columns, join on matching counts and roll back in order',async()=>{
+   const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+   const fixtureSource=name=>read(name).replaceAll("'zcash_explorer_mainnet'","'ask_logical_fixture'").replaceAll('ask_core_replicator','ask_fixture_replicator');
+   const subscribed=async()=>(await target.query("SELECT count(*)::int AS n FROM pg_subscription_rel WHERE srsubstate='r'")).rows[0].n;
+   const errors=async()=>(await target.query("SELECT apply_error_count::int+sync_error_count::int AS n FROM pg_stat_subscription_stats WHERE subname='ask_public_core_v1'")).rows[0].n;
+   const refreshed=async()=>{await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);assert.equal((await refreshAdmission(target)).state,'verified');};
+   for(const name of ['supply-issuance-v1.sql','mining-v1.sql','reorgs-v1.sql','swaps-v1.sql','value-pools-v1.sql','value-pools-v2.sql','utxo-daily-v1.sql'])await target.query(read(name));
+   // The explorer's tables, bookkeeping column included.
+   await source.query(`CREATE TABLE utxo_age_daily(date date PRIMARY KEY,lt_1m_zat bigint DEFAULT 0,b_1_3m_zat bigint DEFAULT 0,b_3_6m_zat bigint DEFAULT 0,b_6_12m_zat bigint DEFAULT 0,b_1_2y_zat bigint DEFAULT 0,gt_2y_zat bigint DEFAULT 0,total_unspent_zat bigint DEFAULT 0,utxo_count integer DEFAULT 0,cdd double precision DEFAULT 0,avg_dormancy_days double precision DEFAULT 0,spent_count integer DEFAULT 0,created_at timestamptz DEFAULT now())`);
+   await source.query('CREATE TABLE transparent_realized_cap_daily(date date PRIMARY KEY,realized_cap_usd numeric,unspent_count bigint,avg_cost_basis_usd numeric)');
+   await source.query(`INSERT INTO utxo_age_daily(date,gt_2y_zat,total_unspent_zat,utxo_count,cdd,spent_count) SELECT d::date,n,10*n,n,n*1.5,n FROM generate_series(1,3) n,LATERAL (SELECT DATE '2026-10-28'+n AS d) x`);
+   await source.query(`INSERT INTO transparent_realized_cap_daily SELECT DATE '2026-10-28'+n,n*1000,n,n*10 FROM generate_series(1,3) n`);
+   const before=await subscribed(),errorsBefore=await errors();
+   await source.query(fixtureSource('utxo-daily-source-v1.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=true)');
+   await wait(async()=>await subscribed()===before+2);
+   // A morning repair rewrites the latest date in place.
+   await source.query("UPDATE utxo_age_daily SET total_unspent_zat=99,created_at=now() WHERE date=DATE '2026-10-31'");
+   await wait(async()=>(await target.query("SELECT total_unspent_zat::text AS t FROM public.utxo_age_daily WHERE date=DATE '2026-10-31'")).rows[0]?.t==='99');
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.deepEqual((await target.query("SELECT attname FROM pg_attribute WHERE attrelid='public.utxo_age_daily'::regclass AND attnum>0 AND NOT attisdropped ORDER BY attnum")).rows.map(r=>r.attname),['date','lt_1m_zat','b_1_3m_zat','b_3_6m_zat','b_6_12m_zat','b_1_2y_zat','gt_2y_zat','total_unspent_zat','utxo_count','cdd','avg_dormancy_days','spent_count']);
+   await target.query(read('utxo-daily-grant-v1.sql'));
+   assert.equal((await reader.query("SELECT ready FROM analytics_public.dataset_coverage WHERE dataset='utxo_daily'")).rows[0].ready,true);
+   assert.deepEqual((await reader.query('SELECT date::text,utxos::int,unspent::text,age_gt_2y::text,cdd::text,realized_cap_usd::text FROM analytics_public.utxo_daily_query ORDER BY date')).rows,[
+    {date:'2026-10-29',utxos:1,unspent:'10',age_gt_2y:'1',cdd:'1.5000',realized_cap_usd:'1000.00'},
+    {date:'2026-10-30',utxos:2,unspent:'20',age_gt_2y:'2',cdd:'3.0000',realized_cap_usd:'2000.00'},
+    {date:'2026-10-31',utxos:3,unspent:'99',age_gt_2y:'3',cdd:'4.5000',realized_cap_usd:'3000.00'}]);
+   for(const sql of ['SELECT * FROM public.utxo_age_daily','SELECT * FROM public.transparent_realized_cap_daily','SELECT created_at FROM analytics_public.utxo_daily_query']){const attack=await reader.connect();try{await assert.rejects(attack.query(sql));}finally{attack.release();}}
+   await assert.rejects(target.query(read('utxo-daily-v1-rollback.sql')),/removed from the subscription/);
+   await source.query(fixtureSource('utxo-daily-source-v1-rollback.sql'));
+   await target.query('ALTER SUBSCRIPTION ask_public_core_v1 REFRESH PUBLICATION WITH(copy_data=false)');
+   for(const name of ['utxo-daily-v1-rollback.sql','value-pools-v1-rollback.sql','swaps-v1-rollback.sql','reorgs-v1-rollback.sql','mining-v1-rollback.sql','supply-issuance-v1-rollback.sql'])await target.query(read(name));
+   assert.equal((await target.query("SELECT to_regclass('public.utxo_age_daily') IS NULL AND to_regclass('public.transparent_realized_cap_daily') IS NULL AS gone")).rows[0].gone,true);
+   await refreshed();
+   assert.equal(await errors(),errorsBefore);
+   assert.equal((await target.query("SELECT bool_and(subenabled) AS enabled FROM pg_subscription")).rows[0].enabled,true);
+  });
   await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
   assert.equal((await refreshAdmission(target)).state,'quarantined');
   await source.query('UPDATE blocks SET transaction_count=2 WHERE height=1');
   await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===2);
   assert.equal((await refreshAdmission(target)).state,'quarantined');
+  // 2026-11-02: once an error epoch is acknowledged, the strict helper needs a
+  // verified baseline, which quarantine clears. A released store stayed stale.
+  const strip=text=>text.replace(/^\\set.*$/gm,''),read=name=>strip(fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8'));
+  // Fixture roles only: the cluster superuser is ask_fixture_admin. postgres owns
+  // the ledger, and its foreign-key checks run as that owner, so it is superuser as in production.
+  await target.query('CREATE ROLE postgres NOLOGIN SUPERUSER');
+  const operator=name=>read(name).replace("OR current_user<>'postgres'","OR NOT (SELECT rolsuper FROM pg_roles WHERE rolname=current_user)");
+  await target.query(operator('replication-recovery-v1.sql'));
+  const acknowledge=async(tag,generation)=>{
+   await target.query(`INSERT INTO analytics_meta.replication_recovery_events(event_id,subid,stats_reset,apply_errors,sync_errors,source_generation,source_system_identifier,source_timeline,origin_name,event_at,evidence)
+    SELECT $1,stats.subid,stats.stats_reset,stats.apply_error_count,stats.sync_error_count,coalesce($2::uuid,signal.generation),signal.system_identifier,signal.timeline,'pg_'||stats.subid::text,clock_timestamp(),'{"classification":"disposable-fixture-only"}'::jsonb
+    FROM pg_stat_subscription_stats stats CROSS JOIN analytics_feed_meta.signal signal`,[tag.repeat(64),generation??null]);
+   await target.query('INSERT INTO analytics_meta.replication_recovery_ack(subid,event_id) SELECT subid,$1 FROM analytics_meta.replication_recovery_events WHERE event_id=$1 ON CONFLICT(subid) DO UPDATE SET event_id=excluded.event_id',[tag.repeat(64)]);
+  };
+  const release=async()=>{await target.query("UPDATE analytics_meta.sync_state SET state='stale' WHERE state='quarantined'");await signal();await wait(async()=>(await target.query("SELECT sampled_at>clock_timestamp()-interval '120 seconds' AS fresh FROM analytics_feed_meta.signal")).rows[0].fresh);return refreshAdmission(target);};
+  await acknowledge('a');
+  assert.equal((await release()).state,'stale','v1 alone: a released quarantine cannot run its baseline');
+  await target.query(operator('replication-recovery-v2.sql'));
+  await source.query('UPDATE blocks SET transaction_count=3 WHERE height=1');
+  await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===3);
+  assert.equal((await release()).state,'quarantined','the baseline re-quarantines history that is still broken');
+  await source.query('UPDATE blocks SET transaction_count=2 WHERE height=1');
+  await wait(async()=>(await target.query('SELECT transaction_count FROM blocks WHERE height=1')).rows[0].transaction_count===2);
+  await acknowledge('b','00000000-0000-4000-8000-000000000002');
+  assert.equal((await release()).state,'stale','an acknowledgement for another generation never releases');
+  await acknowledge('c');
+  const released=await release();assert.deepEqual([released.state,released.checked_heights],['verified','baseline']);
+  assert.deepEqual((await target.query('SELECT c.baseline_verified,analytics_meta.replication_errors_acknowledged() AS strict FROM analytics_meta.admission_control c')).rows[0],{baseline_verified:true,strict:true});
+  assert.equal((await target.query('SELECT count(*)::int AS n FROM analytics_meta.dirty_heights d CROSS JOIN analytics_meta.admission_control c WHERE d.height<=c.baseline_through')).rows[0].n,0,'the baseline clears every dirty height it verified');
  });
  await target.query('DROP SUBSCRIPTION ask_public_core_v1');
  assert.equal((await source.query('SELECT count(*) FROM pg_replication_slots')).rows[0].count,'0');

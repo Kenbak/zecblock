@@ -5,6 +5,7 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { quoteIsFresh, type PriceQuote } from '@/lib/valuation';
 import { formatPoolAmount, type PoolCurrency } from '@/lib/pool-display';
 import { isMainnet } from '@/lib/config';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 const PoolCurrencyContext = createContext({
   currency: 'zec' as PoolCurrency,
@@ -34,14 +35,12 @@ export function usePoolCurrency() {
 export function PoolCurrencyToggle() {
   const { currency, setCurrency, price } = usePoolCurrency();
   if (!isMainnet) return null;
-  return <div className="inline-flex shrink-0 rounded-md border border-cipher-border p-0.5" role="group" aria-label="Pool balance currency" data-html2canvas-ignore="true">
-    {(['zec', 'usd'] as const).map(unit => <button key={unit} type="button" aria-pressed={currency === unit}
-      disabled={unit === 'usd' && price == null && currency !== 'usd'}
-      title={unit === 'usd' ? price == null ? 'A fresh ZEC price is currently unavailable' : 'Value pool balances at the current ZEC price' : 'Pool balances in ZEC'}
-      onClick={() => setCurrency(unit)}
-      className={`rounded px-3 py-1.5 text-caption font-mono focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold disabled:opacity-50 disabled:cursor-not-allowed ${currency === unit ? 'bg-brand-gold/15 text-cipher-gold' : 'text-muted hover:bg-glass-3 hover:text-primary'}`}>
-      {unit.toUpperCase()}
-    </button>)}
+  return <div data-html2canvas-ignore="true" className="shrink-0">
+    <PeriodPillTags aria-label="Pool balance currency" value={currency} onChange={setCurrency} options={[
+      { key: 'zec', label: 'ZEC', title: 'Pool balances in ZEC' },
+      { key: 'usd', label: 'USD', disabled: price == null && currency !== 'usd',
+        title: price == null ? 'A fresh ZEC price is currently unavailable' : 'Value pool balances at the current ZEC price' },
+    ]} />
   </div>;
 }
 

@@ -195,3 +195,33 @@ test('canonical pool activity and missing coverage execute against PostgreSQL', 
     await admin.end();
   }
 });
+
+test('overview reports Ironwood deltas from the daily history it selects', async () => {
+  const express = require('express');
+  const day = offset => new Date(Date.now() - offset * 86400000).toISOString().slice(0, 10);
+  const app = express();
+  app.locals.pool = {
+    query: async sql => {
+      if (/FROM privacy_stats/.test(sql)) {
+        return { rows: [{ sprout_pool_size: 100, sapling_pool_size: 200, orchard_pool_size: 300, ironwood_pool_size: 1000,
+          transparent_pool_size: 50, shielded_pool_size: 1600, chain_supply: 2000, updated_at: new Date().toISOString() }] };
+      }
+      // Like PostgreSQL, a row only carries the columns the query selected.
+      const selectsIronwood = /ironwood_pool_size/.test(sql);
+      return { rows: [[1, 900], [7, 800], [30, 700]].map(([offset, ironwood]) => ({
+        date: day(offset), sprout_pool_size: 100, sapling_pool_size: 200, orchard_pool_size: 300,
+        ...(selectsIronwood ? { ironwood_pool_size: ironwood } : {}),
+        transparent_pool_size: 50, pool_size: 1500, chain_supply: 2000,
+      })) };
+    },
+  };
+  app.use(require('../api/routes/pools'));
+  const server = await new Promise(resolve => { const server = app.listen(0, '127.0.0.1', () => resolve(server)); });
+  try {
+    const body = await (await fetch(`http://127.0.0.1:${server.address().port}/api/pools/overview`)).json();
+    assert.deepEqual(body.deltas.ironwood, { '24h': 100, '7d': 200, '30d': 300 });
+  } finally {
+    server.closeAllConnections();
+    await new Promise(resolve => server.close(resolve));
+  }
+});

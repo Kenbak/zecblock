@@ -1,0 +1,48 @@
+# Regional census vantage crawler (Phase 0 observers). See
+# server/deploy/REGIONAL-CENSUS-VANTAGES.md. Install the same verified crawler
+# artifact as the primary to /opt/zcash-crawler/target/release/crawler.
+#
+# /etc/zcash-crawler/observer.env (root:root 0644) must set the WireGuard RPC
+# bind address, e.g. CRAWLER_RPC_ADDR=10.77.0.2:54321. The RPC has no
+# authentication: never bind 0.0.0.0 or a public address, and allow 54321/tcp
+# only from the primary (10.77.0.1) on wg0.
+[Unit]
+Description=Ziggurat Zcash Network Crawler (regional census vantage)
+After=network-online.target wg-quick@wg0.service
+Wants=network-online.target
+Requires=wg-quick@wg0.service
+
+StartLimitIntervalSec=900
+StartLimitBurst=3
+
+[Service]
+Type=simple
+EnvironmentFile=/etc/zcash-crawler/observer.env
+WorkingDirectory=/opt/zcash-crawler
+ExecStart=/opt/zcash-crawler/target/release/crawler \
+  --seed-addrs "mainnet.seeder.zfnd.org" "mainnet.is.yolo.money" "dnsseed.str4d.xyz" \
+  --node-listening-port 8233 \
+  --rpc-addr ${CRAWLER_RPC_ADDR}
+Restart=always
+RestartSec=10
+TimeoutStopSec=30
+
+# Same budget as the primary's direct crawler. These are caps, not measured
+# usage; qualify them on the first observer before enabling the next one.
+LimitNOFILE=4096
+MemoryMax=2G
+MemoryHigh=1536M
+CPUQuota=50%
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+ReadWritePaths=/opt/zcash-crawler/data
+
+[Install]
+WantedBy=multi-user.target

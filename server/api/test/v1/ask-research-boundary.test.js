@@ -76,7 +76,8 @@ test('the Ask chat routes custom research and follow-ups through SQL without a s
   if(++stages===1){assert.deepEqual(body.currentResearch,query);assert.match(task.instruction,/three public tables/);return task.validator.parse({intent:'research',sql:query.sql,spec:null,blockQuery:null,transactionQuery:null,flowQuery:null,topics:['block'],locale:'en'});}
   assert.equal(body.evidence.facts.row_a_a,'9,007,199,254,740,993');
   assert.equal(body.evidence.facts.row_a_b,'unavailable');
-  assert.equal(task.validator.safeParse({finding:'Block 123 collected lots of fees.'}).success,false);
+  // Findings are written freely and every number is verified afterwards.
+  assert.equal(task.validator.safeParse({finding:'Block 123 collected lots of fees.'}).success,true);
   return task.validator.parse({finding:'The first returned block is {{row_a_a}}; its fee value is {{row_a_b}}.'});
  },null,new AbortController().signal,'fixed chart instructions',{},analytics);
  assert.equal(stages,2);assert.equal(executions,1);assert.equal(reply.research.rows[0][0],'9007199254740993');assert.match(reply.answer,/9,007,199,254,740,993/);assert.equal(reply.spec,null);
@@ -120,15 +121,14 @@ test('row counts and figures without placeholders cannot surface as misleading n
  const question={question:'How many blocks had fees above 50000 zatoshis?',history:[]};
  const reply=await researchReply(result,question,async(input,task)=>{
   assert.equal(input.evidence.facts.row_count,'1');assert.equal(input.evidence.facts.row_a_a,'59');
-  assert.equal(task.validator.shape.finding.safeParse('Among the last {{returned_rows}} blocks.').success,false);
-  assert.match(task.instruction,/never write digits/);
+  assert.match(task.instruction,/checked against the evidence/);
   return {finding:'There were  {{row_a_a}}  blocks with fees above the threshold you specified.'};
  },'en');
  assert.equal(reply.answer,'There were 59 blocks with fees above the threshold you specified.');
  const template='The result has block count 59.';
  // Observed live: the count was reused as the threshold, and strict decoding
  // replaced unavailable figures with a stray letter or punctuation glyph.
- for(const summary of ['Among recent blocks, {{row_a_a}} had fees above {{row_a_a}} zatoshis.','There were {{row_a_a}} blocks with fees greater than ɯ.','Among the last \u{1104D} blocks, {{row_a_a}} had high fees.']){
+ for(const summary of ['Among recent blocks, {{row_a_a}} had fees above {{row_a_a}} zatoshis.','Among recent blocks, {{row_a_a}} had fees above 59 zatoshis.','Among the last {{returned_rows}} blocks, {{row_a_a}} had high fees.','There were 73 blocks with high fees.','There were {{row_a_a}} blocks with fees greater than ɯ.','Among the last \u{1104D} blocks, {{row_a_a}} had high fees.']){
   const fallback=await researchReply(result,question,async()=>({finding:summary}),'en');
   assert.equal(fallback.answer,template,summary);assert.deepEqual(fallback.research.rows,result.rows);
  }
@@ -165,7 +165,7 @@ test('a unit attached to a research value must match its column conversion',asyn
   assert.deepEqual(reply.research,result);assert.equal(reply.evidenceKey,result.fingerprint);return reply.answer;
  };
  const zatoshiFallback='The result has average fee per block 225,510.4 zatoshis.';
- const zecFallback='The result has average fee zec 0.002255104 ZEC.';
+ const zecFallback='The result has average fee 0.002255104 ZEC.';
  // Observed live: a zatoshi average was published as 225,510.4 ZEC.
  const wrongZEC=await answer(zatoshis,'The average fee per block is {{row_a_a}} ZEC.');
  assert.equal(wrongZEC,zatoshiFallback);assert.doesNotMatch(wrongZEC,/225,510\.4 ZEC|average fee per block is/i);
@@ -196,8 +196,7 @@ test('a unit attached to a research value must match its column conversion',asyn
 test('research facts preserve exact figures and legitimate ranks, dates and repeated values',async()=>{
  const {researchReply}=require('../../v1/lib/ask-research-reply');
  const base={query:{version:3,sql:'SELECT count(*) AS total FROM transactions',limit:100},columns:[{key:'c0',label:'total',type:'number'}],rows:[['542746']],truncated:false,datasets:['transactions'],fingerprint:'a'.repeat(64),retrievedAt:'2026-10-15T00:00:00Z',indexedThrough:'2026-10-15T00:00:00Z',coverage:'verified canonical records',units:'exact'};
- const answer=async(result,summary,locale='en')=>(await researchReply(result,{question:'Explain the result',history:[]},async(input,task)=>{
-  for(const invalid of ['Transactions amounted to {{returned_rows}} {{row_a_a}}.','Transactions amounted to {{returned_rows}}.'])assert.equal(task.validator.shape.finding.safeParse(invalid).success,false);
+ const answer=async(result,summary,locale='en')=>(await researchReply(result,{question:'Explain the result',history:[]},async()=>{
   return {finding:summary};
  },locale)).answer;
  assert.equal(await answer(base,'Transactions amounted to {{row_a_a}}.'),'Transactions amounted to 542,746.');
@@ -258,7 +257,8 @@ test('paired pool aliases cannot relabel stored zatoshis as ZEC',async()=>{
   calls++;assert.equal(input.evidence.columns[1].unit,'unlabelled');assert.equal(input.evidence.facts.row_a_b,'100,000,000');
   return {finding:'Orchard holds {{row_a_b}} ZEC.'};
  },'en');
- assert.equal(calls,1);assert.doesNotMatch(reply.answer,/ZEC/);
+ // The unit conflict is restated once, then the template keeps the bare figures.
+ assert.equal(calls,2);assert.doesNotMatch(reply.answer,/ZEC/);
  assert.equal(reply.answer,'The result is Sep 3, 2026, with 100,000,000 orchard_zec and 200,000,000 ironwood_zec.');
 });
 

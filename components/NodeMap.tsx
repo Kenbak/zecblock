@@ -220,15 +220,17 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
 
       {/* Mount only the active view so the globe stops drawing when hidden. */}
       <div className="relative overflow-hidden bg-cipher-bg">
-        <div role="tablist" aria-label="Node map view"
-          className="absolute top-3 right-3 z-10 inline-flex rounded-md border border-cipher-border bg-cipher-surface-solid/90 backdrop-blur-sm p-1">
-          {(['globe', 'map'] as const).map(option => <button key={option} type="button" role="tab"
-            id={`${viewId}-${option}-tab`} aria-controls={`${viewId}-${option}-panel`}
-            aria-selected={view === option} tabIndex={view === option ? 0 : -1} data-node-view={option}
-            onClick={() => changeView(option)} onKeyDown={handleViewKey}
-            className={`h-9 rounded-sm px-3 text-caption font-mono transition-colors focus-visible:outline-2 focus-visible:outline-cipher-gold ${view === option ? 'bg-brand-gold/10 text-cipher-gold' : 'text-muted hover:text-primary hover:bg-cipher-hover'}`}>
-            {option === 'globe' ? 'Globe' : 'Map'}
-          </button>)}
+        {/* Solid backing keeps the shared segmented control legible over the globe. */}
+        <div className="absolute top-3 right-3 z-10 rounded-lg bg-cipher-surface-solid/90 backdrop-blur-sm">
+          <div role="tablist" aria-label="Node map view" className="filter-group">
+            {(['globe', 'map'] as const).map(option => <button key={option} type="button" role="tab"
+              id={`${viewId}-${option}-tab`} aria-controls={`${viewId}-${option}-panel`}
+              aria-selected={view === option} tabIndex={view === option ? 0 : -1} data-node-view={option}
+              onClick={() => changeView(option)} onKeyDown={handleViewKey}
+              className={`filter-btn ${view === option ? 'filter-btn-active' : ''}`.trim()}>
+              {option === 'globe' ? 'Globe' : 'Map'}
+            </button>)}
+          </div>
         </div>
         {/* Active filter indicator */}
         {selectedCountryData && (

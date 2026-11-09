@@ -53,6 +53,9 @@ function getQueryConstraint(route, name) {
   if (route === '/v1/shielded-pools/activity' && name === 'period') {
     return { required: false, schema: { type: 'string', enum: ['7d', '30d', '90d', '1y'], default: '30d' }, description: 'Trailing complete UTC calendar days, excluding today. One year means 365 days.' };
   }
+  if (route === '/v1/crosschain/shielding' && name === 'period') {
+    return { required: false, schema: { type: 'string', enum: ['30d', '90d', '1y', 'all'], default: '90d' }, description: 'Trailing UTC days by swap creation time, starting at the start of the UTC day; all covers every classified swap. Recent held ZEC may still be shielded later.' };
+  }
   if (['/v1/crosschain/analytics','/v1/crosschain/swaps'].includes(route)) {
     const schemas = {
       period: {type:'string',enum:['24h','7d','30d','90d','1y','all'],default:'30d',description:'Trailing UTC window; all starts at the earliest indexed record. Coverage can be incomplete.'},
@@ -82,7 +85,7 @@ function getQueryConstraint(route, name) {
     if (name === 'before') return { required: false, schema: { type: 'integer', minimum: 0, maximum: 499999999, description: 'Exclusive canonical block-height cursor.' } };
   }
   if (route === '/v1/network/block-time' && name === 'period') {
-    const schema = { type: 'string', enum: ['6h', '24h', '7d'], default: '24h', description: 'Trailing block-header observation window.' };
+    const schema = { type: 'string', enum: ['blocks', '6h', '24h', '7d'], default: '24h', description: 'Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling.' };
     return { required: false, schema, description: schema.description };
   }
   if (route === '/v1/mining/hashrate-history') {

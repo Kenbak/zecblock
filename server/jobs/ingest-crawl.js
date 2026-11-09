@@ -24,10 +24,11 @@ const { log, loadEnv, withAdvisoryLock } = require('../lib/job-utils');
 const { getPool } = require('../lib/db-pool');
 const { callZebraRPC } = require('../lib/zebra-rpc');
 const { parsePeerClient, parsePeerAddress } = require('../lib/peer-client');
-const { CENSUS_VERSION, validateCrawlSnapshot, mergeVerifiedNodes, livePeerNodes, COMBINED_ELIGIBILITY, CRAWL_PROOF_MATCH, CRAWL_ELIGIBILITY, CENSUS_OBSERVED_AT } = require('../lib/node-census');
+const { CENSUS_VERSION, validateCrawlSnapshot, verifiedNodes, mergeVerifiedNodes, livePeerNodes, COMBINED_ELIGIBILITY, CRAWL_PROOF_MATCH, CRAWL_ELIGIBILITY, CENSUS_OBSERVED_AT } = require('../lib/node-census');
 const { parseTorExitList, publishTorClassificationStatus } = require('../lib/tor-classification');
 const { validateTopologySnapshots } = require('../lib/node-topology');
 const { persistTopologySnapshot } = require('../lib/node-topology-store');
+const { parseVantages, persistVantageStatus, isPrimarySource } = require('../lib/census-vantages');
 
 const execFileAsync = promisify(execFile);
 
@@ -36,6 +37,12 @@ loadEnv(__dirname);
 const CRAWLER_RPC_HOST = process.env.CRAWLER_RPC_HOST || '127.0.0.1';
 const CRAWLER_RPC_PORT = parseInt(process.env.CRAWLER_RPC_PORT || '54321');
 const CRAWLER_TOR_RPC_PORT = parseInt(process.env.CRAWLER_TOR_RPC_PORT || '54322');
+// Regional crawlers on observers, polled over WireGuard only. See
+// server/deploy/REGIONAL-CENSUS-VANTAGES.md. Empty means primary-only.
+const CRAWLER_VANTAGES = process.env.CRAWLER_VANTAGES || '';
+const CRAWLER_VANTAGE_NETWORK = process.env.CRAWLER_VANTAGE_NETWORK || undefined;
+const VANTAGE_RPC_TIMEOUT_MS = 15000;
+const MAX_RPC_RESPONSE_BYTES = 64 * 1024 * 1024;
 const CRUNCHER_BIN = process.env.CRUNCHER_BIN || '/opt/zcash-crawler/target/release/cruncher';
 const MAXMIND_DB_PATH = process.env.MAXMIND_DB_PATH || '/opt/zcash-crawler/data/GeoLite2-City.mmdb';
 const NODE_SOURCE = process.env.NODE_SOURCE || 'peer';
@@ -47,19 +54,24 @@ const pool = getPool({ max: 3, idleTimeoutMillis: 10000 });
 /**
  * Call a crawler's JSON-RPC endpoint.
  */
-function callCrawlerRPC(method, port = CRAWLER_RPC_PORT) {
+function callCrawlerRPC(method, port = CRAWLER_RPC_PORT, host = CRAWLER_RPC_HOST, { timeout = 30000 } = {}) {
   return new Promise((resolve, reject) => {
     const body = JSON.stringify({ jsonrpc: '2.0', method, params: [], id: 1 });
     const req = http.request({
-      hostname: CRAWLER_RPC_HOST,
+      hostname: host,
       port,
       path: '/',
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
-      timeout: 30000,
+      timeout,
     }, (res) => {
       let raw = '';
-      res.on('data', (chunk) => { raw += chunk; });
+      let bytes = 0;
+      res.on('data', (chunk) => {
+        bytes += chunk.length;
+        if (bytes > MAX_RPC_RESPONSE_BYTES) { req.destroy(new Error('RPC response too large')); return; }
+        raw += chunk;
+      });
       res.on('end', () => {
         try {
           const parsed = JSON.parse(raw);
@@ -157,28 +169,81 @@ function getTargetTable() {
 /**
  * Main ingestion logic.
  */
-async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now = Date.now, crunch = runCruncher, torExits = fetchTorExitNodes, dbPool = pool, classificationPublisher = publishTorClassificationStatus } = {}) {
+/**
+ * Poll every configured crawler. Each source is admitted independently: an
+ * unreachable or stale vantage is skipped without touching the others, and the
+ * primary's loopback collectors keep their existing semantics.
+ */
+async function collectCrawlerSources({ rpc, vantages, now }) {
+  const sources = [
+    { source: 'direct', call: () => rpc('getmetrics') },
+    { source: 'tor', call: () => rpc('getmetrics', CRAWLER_TOR_RPC_PORT) },
+    ...vantages.map(vantage => ({ source: vantage.source,
+      call: () => rpc('getmetrics', vantage.port, vantage.host, { timeout: VANTAGE_RPC_TIMEOUT_MS }) })),
+  ];
+  const results = await Promise.allSettled(sources.map(source => source.call()));
+  return sources.map(({ source }, index) => {
+    const attemptedAtMs = now();
+    if (results[index].status === 'rejected') return { source, attemptedAtMs, outcome: 'unreachable', metrics: null };
+    try {
+      const metrics = validateCrawlSnapshot(results[index].value, attemptedAtMs);
+      return { source, attemptedAtMs, outcome: 'admitted', metrics,
+        generatedAtMs: metrics.generated_at_ms, verifiedEndpoints: verifiedNodes(metrics, attemptedAtMs).length };
+    } catch {
+      return { source, attemptedAtMs, outcome: 'rejected', metrics: null };
+    }
+  });
+}
+
+function configuredVantages(spec = CRAWLER_VANTAGES, network = CRAWLER_VANTAGE_NETWORK) {
+  try {
+    const { vantages, errors } = parseVantages(spec, network);
+    for (const error of errors) log(`Census vantage skipped: ${error}`);
+    return vantages;
+  } catch (error) {
+    log(`Census vantages disabled: ${error.message}`);
+    return [];
+  }
+}
+
+/**
+ * Main ingestion logic.
+ */
+async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now = Date.now, crunch = runCruncher, torExits = fetchTorExitNodes, dbPool = pool, classificationPublisher = publishTorClassificationStatus, vantages = configuredVantages() } = {}) {
   const startTime = Date.now();
   const targetTable = getTargetTable();
-  log(`Starting crawl ingestion (target: ${targetTable}, dry-run: ${DRY_RUN})`);
+  log(`Starting crawl ingestion (target: ${targetTable}, dry-run: ${DRY_RUN}, vantages: ${vantages.length})`);
 
   // Collect independently: a crawler outage must not suppress live peers, and
   // a node RPC outage must not refresh or erase previous peer observations.
-  const sources = await Promise.allSettled([
-    rpc('getmetrics').then(m => validateCrawlSnapshot(m, now())),
-    rpc('getmetrics', CRAWLER_TOR_RPC_PORT).then(m => validateCrawlSnapshot(m, now())),
-    peerRpc('getpeerinfo', [], { timeout: 8000 }).then(peers => livePeerNodes(peers, now())),
+  const [crawlerSources, peerSource] = await Promise.all([
+    collectCrawlerSources({ rpc, vantages, now }),
+    peerRpc('getpeerinfo', [], { timeout: 8000 }).then(peers => ({ status: 'fulfilled', value: livePeerNodes(peers, now()) }),
+      reason => ({ status: 'rejected', reason })),
   ]);
-  const snapshots = sources.slice(0, 2).filter(s => s.status === 'fulfilled').map(s => s.value);
-  const qualifiedTopology = validateTopologySnapshots(sources.slice(0, 2).flatMap((source, index) =>
-    source.status === 'fulfilled' ? [{ source: index === 0 ? 'direct' : 'tor', metrics: source.value }] : []), now());
-  const peers = sources[2].status === 'fulfilled' ? sources[2].value : [];
-  sources.forEach((source, i) => {
-    if (source.status === 'rejected') log(`${['Direct crawler', 'Tor crawler', 'Live peers'][i]} unavailable (not refreshed)`);
-  });
-  if (!snapshots.length && sources[2].status === 'rejected') throw new Error('All node observation sources unavailable');
+  const admitted = crawlerSources.filter(source => source.outcome === 'admitted');
+  const snapshots = admitted.map(source => source.metrics);
+  const qualifiedTopology = validateTopologySnapshots(admitted.map(({ source, metrics }) => ({ source, metrics })), now());
+  const gossipBySource = new Map(qualifiedTopology.snapshots.map(snapshot => [snapshot.source, snapshot]));
+  const vantageStatuses = crawlerSources.map(status => ({ source: status.source,
+    attemptedAtMs: status.attemptedAtMs, outcome: status.outcome, generatedAtMs: status.generatedAtMs,
+    verifiedEndpoints: status.verifiedEndpoints, gossipSupported: gossipBySource.has(status.source),
+    gossipReceipts: gossipBySource.get(status.source)?.edgeCount ?? null }));
+  const configuredSources = crawlerSources.map(source => source.source);
+  const peers = peerSource.status === 'fulfilled' ? peerSource.value : [];
+  for (const source of crawlerSources) {
+    if (source.outcome !== 'admitted') log(`Crawler ${source.source} ${source.outcome} (not refreshed)`);
+  }
+  if (peerSource.status === 'rejected') log('Live peers unavailable (not refreshed)');
+  if (!snapshots.length && peerSource.status === 'rejected') throw new Error('All node observation sources unavailable');
   const metrics = structuredClone(snapshots[0] || { generated_at_ms: Date.now(), num_good_nodes: 0, num_known_nodes: 0, num_known_connections: 0, num_versions: 0, protocol_versions: {}, user_agents: {}, crawler_runtime: { secs: 0, nanos: 0 }, node_info: [], node_network_types: [], nodes_indices: [], all_node_addrs: [], all_nodes_indices: [], all_node_reachable: [] });
-  const crawled = mergeVerifiedNodes(snapshots, now());
+  // One IP is one census identity across every vantage: the latest chain proof
+  // wins. Handshake latency is distance-dependent, so ping_ms stays a primary
+  // (Helsinki) measurement; a regional-only IP has no comparable latency.
+  const primaryLatency = new Map(mergeVerifiedNodes(admitted.filter(source => isPrimarySource(source.source))
+    .map(source => source.metrics), now()).map(node => [parsePeerAddress(node.addr).host, node.handshake_time_ms ?? null]));
+  const crawled = mergeVerifiedNodes(snapshots, now()).map(node => ({ ...node,
+    handshake_time_ms: primaryLatency.get(parsePeerAddress(node.addr).host) ?? null }));
   const crawlByHost = new Map(crawled.map(n => [parsePeerAddress(n.addr).host, n]));
   const peerByHost = new Map(peers.map(n => [parsePeerAddress(n.addr).host, n]));
   const combined = new Map(crawlByHost);
@@ -515,10 +580,13 @@ async function ingestCrawl({ rpc = callCrawlerRPC, peerRpc = callZebraRPC, now =
       // New directed receipts retain their original proof/receipt clocks. Legacy
       // adjacency remains quarantined; advertised targets never enter nodes.
       if (!DRY_RUN && NODE_SOURCE === 'crawl') {
-        const stored = await persistTopologySnapshot(client, qualifiedTopology);
+        const stored = await persistTopologySnapshot(client, qualifiedTopology, { configuredSources });
         log(stored
           ? `Qualified gossip: ${qualifiedTopology.edges.length} receipts from ${qualifiedTopology.snapshots.length} supported sources`
           : 'Qualified gossip unavailable: provenance schema not installed');
+        if (!await persistVantageStatus(client, vantageStatuses, configuredSources) && vantages.length) {
+          log('Census vantage status not recorded: migration 043 not installed');
+        }
       }
 
       // Record snapshot
@@ -608,4 +676,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { ingestCrawl, fetchTorExitNodes };
+module.exports = { ingestCrawl, fetchTorExitNodes, collectCrawlerSources, configuredVantages };

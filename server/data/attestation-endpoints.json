@@ -10,20 +10,20 @@
     "referenceUrl": "https://forum.zcashcommunity.com/t/zero-indexer-protecting-network-privacy-for-zcash-users/57113",
     "baseline": {
       "authority": "reproduced",
-      "commit": "a6067268a04d14f9821edf6c83d3bdd94dab3776",
-      "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/1a0f33814eba48ecee161a9e5e3902e5a88a2536/server/data/attestation-builds/zecrocks-mainnet-34327234175/README.md",
+      "commit": "e0c834cc9f1554f04c489639ce377ea0408d417e",
+      "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/bc7ee834273a18180528721fc006e28730735dea/server/data/attestation-builds/zecrocks-mainnet-42061912754/README.md",
       "pcrs": {
-        "PCR0": "8f916a556a1cc661d1738aa0410905f33d064f666d422515e0ce40cfbb841a3e6c3b4eda5f640ffd941df04c2bfb11c1",
-        "PCR1": "8f916a556a1cc661d1738aa0410905f33d064f666d422515e0ce40cfbb841a3e6c3b4eda5f640ffd941df04c2bfb11c1",
+        "PCR0": "0dc77beee945df52dc872218f89edd51eb3f437275c97be0fc5ed921e87f30826f2823ca6702e0a92a867aec2b1f1f02",
+        "PCR1": "0dc77beee945df52dc872218f89edd51eb3f437275c97be0fc5ed921e87f30826f2823ca6702e0a92a867aec2b1f1f02",
         "PCR2": "21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a"
       },
-      "tag": "deploy-fdb613db-a606726",
-      "tagReferenceUrl": "https://github.com/zecrocks/zeronym-shim-mainnet-deploy/tree/a6067268a04d14f9821edf6c83d3bdd94dab3776",
-      "tagReviewedAt": "2026-09-10",
+      "tag": "deploy-fdb613db-e0c834c",
+      "tagReferenceUrl": "https://github.com/zecrocks/zeronym-shim-mainnet-deploy/tree/e0c834cc9f1554f04c489639ce377ea0408d417e",
+      "tagReviewedAt": "2026-11-05",
       "hubConfiguration": {
         "hostname": "hub.zcash.caution.co",
-        "address": "54.251.201.143:443",
-        "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/1a0f33814eba48ecee161a9e5e3902e5a88a2536/server/data/attestation-builds/zecrocks-mainnet-34327234175/README.md"
+        "address": "54.151.176.23:443",
+        "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/bc7ee834273a18180528721fc006e28730735dea/server/data/attestation-builds/zecrocks-mainnet-42061912754/README.md"
       }
     }
   },
@@ -49,16 +49,16 @@
     "referenceUrl": "https://forum.zcashcommunity.com/t/zero-indexer-protecting-network-privacy-for-zcash-users/57113",
     "baseline": {
       "authority": "reproduced",
-      "commit": "da024a0e3113810a4a10ffc085d43bb849f1a1a0",
-      "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/1a0f33814eba48ecee161a9e5e3902e5a88a2536/server/data/attestation-builds/zecrocks-testnet-34327233990/README.md",
+      "commit": "656c99fcfb4168e6f1685e8239c918bcc20c07b2",
+      "referenceUrl": "https://github.com/Kenbak/cipherscan/blob/bc7ee834273a18180528721fc006e28730735dea/server/data/attestation-builds/zecrocks-testnet-42061984480/README.md",
       "pcrs": {
-        "PCR0": "0f40593a4135162261a89b9057a26ae297d1a0d0a2b8c19c36d0b87db1f110581368c485bbde4c18723009af630e5ebd",
-        "PCR1": "0f40593a4135162261a89b9057a26ae297d1a0d0a2b8c19c36d0b87db1f110581368c485bbde4c18723009af630e5ebd",
+        "PCR0": "aee11cafddbcab068ab10759bc9a3b9654c1a00e1f9eebc5b7ad85000a2767d0b1688170b51bc36a5ffe20a7be837021",
+        "PCR1": "aee11cafddbcab068ab10759bc9a3b9654c1a00e1f9eebc5b7ad85000a2767d0b1688170b51bc36a5ffe20a7be837021",
         "PCR2": "21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a"
       },
-      "tag": "deploy-a67b428a-da024a0",
-      "tagReferenceUrl": "https://github.com/zecrocks/zeronym-shim-deploy/tree/da024a0e3113810a4a10ffc085d43bb849f1a1a0",
-      "tagReviewedAt": "2026-09-10"
+      "tag": "deploy-a67b428a-656c99f",
+      "tagReferenceUrl": "https://github.com/zecrocks/zeronym-shim-deploy/tree/656c99fcfb4168e6f1685e8239c918bcc20c07b2",
+      "tagReviewedAt": "2026-11-05"
     }
   }
 ]

@@ -7,7 +7,7 @@ const { createAskRouter, providerConfig } = require('../../v1/routes/ask');
 const { chat, guidedReply, answerTaskFor } = require('../../v1/lib/ask-chat');
 const { chatRequestSchema } = require('../../../../lib/ask/chat');
 const { describePage, pageById } = require('../../../../lib/ask/pages');
-const { maximumCost, reserve, admit } = require('../../v1/lib/ask-budget');
+const { maximumCost, reserve, admit, MAX_CONTEXT_BYTES } = require('../../v1/lib/ask-budget');
 const { renderExplanation } = require('../../v1/lib/ask-explanation');
 const env = { ASK_ENABLED: 'true', ASK_PROVIDER: 'openai', ASK_MODEL: 'fixture', ASK_API_KEY: 'fixture', ASK_DAILY_CALL_LIMIT: '50', ASK_DAILY_BUDGET_USD: '2', ASK_MONTHLY_BUDGET_USD: '30', ASK_MAX_INPUT_USD_PER_MILLION: '0.125', ASK_MAX_OUTPUT_USD_PER_MILLION: '0.5', ASK_ABUSE_SECRET: 'x'.repeat(32), ASK_TURNSTILE_SECRET: 'fixture', ASK_TURNSTILE_HOSTNAME: 'example.test', ASK_TURNSTILE_SITE_KEY: 'fixture' };
 const input = { question: 'What is Zodl?', page: 'ask', context: null, history: [], locale: 'auto' };
@@ -203,7 +203,7 @@ test('monetary config fails closed and charges the UTF-8 bound, not JavaScript c
   const config = providerConfig(env); assert.ok(config);
   for (const extra of [{ ASK_DAILY_BUDGET_USD: '' }, { ASK_MONTHLY_BUDGET_USD: 'Infinity' }, { ASK_MAX_INPUT_USD_PER_MILLION: '0' }, { ASK_TURNSTILE_SECRET: '' }]) assert.equal(providerConfig({ ...env, ...extra }), null);
   assert.ok(maximumCost(config, '日本語') > maximumCost(config, 'abc'));
-  assert.throws(() => maximumCost(config, 'a'.repeat(48001)));
+  assert.throws(() => maximumCost(config, 'a'.repeat(MAX_CONTEXT_BYTES + 1)));
 });
 
 test('bot validation rejects wrong host/action and missing token before provider access', async () => {

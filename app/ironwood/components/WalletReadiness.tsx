@@ -1,4 +1,5 @@
 import { MIGRATION_LIBRARIES, READINESS_REVIEWED_AT, WALLET_READINESS, type ReadinessEntry } from './wallet-readiness-data';
+import { WalletReadinessLogo } from '@/components/WalletImplementationLogo';
 
 function ReadinessList({ entries, label }: { entries: ReadinessEntry[]; label: string }) {
   return (
@@ -6,7 +7,10 @@ function ReadinessList({ entries, label }: { entries: ReadinessEntry[]; label: s
       {entries.map(entry => (
         <li key={`${entry.name}-${entry.platform}`} className="grid gap-3 py-4 lg:grid-cols-[13rem_12rem_1fr] lg:gap-6">
           <div>
-            <h3 className="text-sm font-medium text-primary break-words">{entry.name}</h3>
+            <h3 className="flex items-center gap-2 text-sm font-medium text-primary">
+              <WalletReadinessLogo name={entry.name} />
+              <span className="min-w-0 break-words">{entry.name}</span>
+            </h3>
             <p className="text-caption text-muted mt-1">{entry.platform}</p>
           </div>
           <div>

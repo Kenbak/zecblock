@@ -10,7 +10,9 @@ on:
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # PR pushes supersede each other; every main/dev push must finish so each
+  # merge commit has a complete result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,6 +29,7 @@ jobs:
   deployment-trust:
     name: Deployment trust
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - run: python3 -m unittest discover -s scripts -p 'test_deployment_trust.py'
@@ -37,6 +40,7 @@ jobs:
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -52,7 +56,7 @@ jobs:
       - name: Protected staging proxy regressions
         run: node --test server/tests/ask-staging-proxy.test.js server/tests/staging-data-proxy.test.js
       - name: Ask conversation and saved-result regressions
-        run: node --test server/tests/ask-conversation-results.test.js server/tests/ask-follow-ups.test.js server/tests/ask-composer.test.js server/tests/ask-feedback-limits.test.js server/tests/research-display.test.js server/tests/research-library.test.js server/tests/research-share.test.js server/tests/research-portable-narrative.test.js server/tests/ask-research-tools.test.js server/tests/ask-workspace-saved-context.test.js server/tests/ask-sql-explain.test.js
+        run: node --test server/tests/ask-conversation-results.test.js server/tests/ask-follow-ups.test.js server/tests/ask-composer.test.js server/tests/ask-feedback-limits.test.js server/tests/ask-answer-rating.test.js server/tests/research-display.test.js server/tests/research-library.test.js server/tests/research-share.test.js server/tests/research-portable-narrative.test.js server/tests/ask-research-tools.test.js server/tests/ask-workspace-saved-context.test.js server/tests/ask-sql-explain.test.js server/tests/ask-chat-progress.test.js
       - name: Inbox orchestration and worker lifecycle regressions
         run: node --test server/tests/inbox-scan.test.js server/tests/scan-worker-pool.test.js
       - name: Supply-map accounting regressions
@@ -68,6 +72,7 @@ jobs:
     # The isolated Ask fixture invokes the runner's PostgreSQL 16 binaries;
     # avoid changing its database major when ubuntu-latest advances.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       TEST_REDIS_URL: redis://127.0.0.1:6379
       ADDRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -147,7 +152,13 @@ jobs:
         env:
           ASK_EVAL_TEST_POSTGRES: "1"
           ASK_LOGICAL_PG_BIN: /usr/lib/postgresql/16/bin
-        run: node --test --test-timeout=45000 test/v1/ask-research-eval-postgres.test.js
+        run: node --test --test-timeout=45000 test/v1/ask-research-eval-postgres.test.js test/v1/ask-research-supply-issuance.test.js test/v1/ask-research-mining.test.js test/v1/ask-research-reorgs.test.js test/v1/ask-research-swaps.test.js test/v1/ask-research-value-pools.test.js test/v1/ask-research-utxo-daily.test.js
+      - name: Replicate the Ask catalogue between disposable PostgreSQL 16 clusters
+        env:
+          ASK_LOGICAL_TEST_POSTGRES: "1"
+          ASK_RECOVERY_TEST_POSTGRES: "1"
+          ASK_LOGICAL_PG_BIN: /usr/lib/postgresql/16/bin
+        run: node --test --test-timeout=240000 test/v1/ask-logical-sync.test.js test/v1/ask-replication-recovery.test.js
       - name: Route/lib regression tests
         # These live under server/tests/ (not server/api/test/) but exercise
         # server/api/routes/* and server/lib/* directly with mocked pools —
@@ -177,6 +188,7 @@ jobs:
   indexer:
     name: Indexer
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: server/indexer
@@ -196,6 +208,7 @@ jobs:
   zcash-decoder:
     name: Package (zcash-decoder)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/zcash-decoder
@@ -215,6 +228,7 @@ jobs:
   wasm:
     name: WASM (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: wasm
@@ -243,6 +257,7 @@ jobs:
   python-environments:
     name: Python dependencies (${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -268,6 +283,7 @@ jobs:
     # Preserve the branch-protection check name while requiring both runtimes.
     name: Python jobs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: always()
     needs: python-environments
     steps:
@@ -280,6 +296,7 @@ jobs:
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install shellcheck

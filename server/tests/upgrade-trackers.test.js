@@ -41,7 +41,7 @@ const testActivation = 4465026;
 const timestamp = Date.parse('2026-11-04T23:59:30Z') / 1000;
 const stats = (network, height, nu7Height) => ({
   blockchain: { height, latestBlockTime: timestamp },
-  mining: { avgBlockTime: 75, schedule: { network: network === 'mainnet' ? 'main' : 'test', source: 'node-upgrade-schedule', nu7Height,
+  mining: { avgBlockTime: 75, targetBlockTime: 75, blocks24h: 1152, schedule: { network: network === 'mainnet' ? 'main' : 'test', source: 'node-upgrade-schedule', nu7Height,
     eras: [{ height: 0, seconds: 150 }, { height: network === 'mainnet' ? 653600 : 584000, seconds: 75 }, ...(nu7Height == null ? [] : [{ height: nu7Height, seconds: 25 }])],
   } },
 });
@@ -118,7 +118,7 @@ test('major-change tools use existing routes and stable supporting sections', ()
     const changes = buildUpgradeHistory(null, network).flatMap(milestone => buildUpgradeChanges(milestone.id, network));
     const sectionSources = {
       '/network': ['app/network/NetworkClient.tsx', 'components/network/MiningIssuance.tsx', 'components/network/NetworkAccounting.tsx'],
-      '/mining': ['app/mining/page.tsx'],
+      '/mining': ['app/mining/page.tsx', 'components/network/DifficultyStabilityChart.tsx'],
       '/pools': ['app/pools/page.tsx'],
       '/ironwood': ['MigrationActivity', 'PrivacyScore', 'MigrationTiers', 'WalletReadiness', 'SupplyVerification'].map(name => `app/ironwood/components/${name}.tsx`),
     };
@@ -190,7 +190,10 @@ test('NU7 dashboard separates pending context from verified exact signed account
       '/v1/network/accounting': { data: { schedule: { network: chain, nu7Height: activation }, nodeHeight: activation, nsmBalanceZat: '-1' }, error: null },
     };
     const pending = renderImpact('nu7', network, responses);
-    assert.match(pending.html, /75\.0s/);
+    // One unambiguous daily count instead of an average whose window differs by page.
+    assert.match(pending.html, /Blocks · last 24h/);
+    assert.match(pending.html, />1,152</);
+    assert.match(pending.html, /Target 1,152 today · 3,456 with NU7/);
     assert.match(pending.html, /At NU7/);
     assert.match(pending.html, /Accounting begins at activation/);
     assert.ok(pending.html.includes('href="/network#nu7-accounting"'));
@@ -433,7 +436,7 @@ test('timeline hash selection replaces the single details panel and cleans up it
   }
 });
 
-test('tracker loading uses bounded five-minute observations and preserves the directory on unavailable or wrong-network data', async () => {
+test('tracker loading uses bounded one-minute observations (2–3 NU7 blocks) and preserves the directory on unavailable or wrong-network data', async () => {
   let response = stats('mainnet', mainActivation - 1, mainActivation);
   let fail = false;
   const calls = [];
@@ -449,7 +452,7 @@ test('tracker loading uses bounded five-minute observations and preserves the di
   const good = await loadUpgradeTrackers('mainnet');
   assert.equal(good.trackers[0].status, 'scheduled');
   assert.equal(calls[0].url, 'https://api.mainnet.test/v1/network/stats');
-  assert.equal(calls[0].init.next.revalidate, 300);
+  assert.equal(calls[0].init.next.revalidate, 60);
   const wrongNetwork = await loadUpgradeTrackers('testnet');
   assert.equal(wrongNetwork.snapshot, null);
   assert.equal(wrongNetwork.trackers[0].status, 'unavailable');

@@ -53,7 +53,7 @@ test('official SDK initializes the stateless endpoint and discovers only curated
   const api = await serve(t);
   const client = await api.client();
   const { tools } = await client.listTools();
-  assert.equal(tools.length, 20);
+  assert.equal(tools.length, 21);
   assert.equal(tools.some(tool => /sql|broadcast|scan|private|ask/.test(tool.name)), false);
   for (const tool of tools) {
     assert.equal(tool.annotations.readOnlyHint, true);

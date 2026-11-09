@@ -1,3 +1,18 @@
+# Current npm artifact build — 2026-11-04
+
+The npm decoder now uses Zakura Common 4.0.0 for complete v5/v6 parsing and
+Orchard/Ironwood decryption. From `packages/zcash-decoder`, use
+`npm run build:wasm` with wasm-bindgen-cli 0.2.127. The script selects the pinned
+Rust 1.97.1 toolchain from this directory, uses `Cargo.lock` with `--locked`,
+remaps absolute source paths and generates `wasm/build-info.json` with source
+and artifact SHA-256 receipts. It updates only the npm package artifact.
+A separate explorer release must deliberately rebuild/copy and qualify its
+`public/wasm` assets. Do not infer a deployed artifact from a source change.
+
+The benchmark and wasm-pack integration notes below describe the earlier
+scanner builds and are retained as dated history; they are not measurements
+of the Common 4 artifact or its NU7 consensus-validation capability.
+
 # 🛠️ Building the Zcash WASM Module
 
 ## 📋 Prerequisites

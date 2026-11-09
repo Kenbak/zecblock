@@ -5,6 +5,7 @@ import { ChartWatermark } from '@/components/ChartWatermark';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/ui/SectionHeader';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import styles from './usage-clock.module.css';
 import { feature } from 'topojson-client';
 import {
@@ -496,18 +497,7 @@ export function UsageClockClient({
 
       {/* Period selector + range */}
       <div className={styles.toolbar}>
-        <div className={styles.periods} role="group" aria-label="Activity period">
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
-              aria-pressed={period === p.key}
-              className={styles.period}
-            >
-              {p.label}
-            </button>
-          ))}
-        </div>
+        <PeriodPillTags options={PERIODS} value={period} onChange={setPeriod} aria-label="Activity period" />
         {data && (
           <div className="text-caption font-mono text-muted">
             {data.dateRange.from} → {data.dateRange.to} · {data.totalBlocks.toLocaleString()} blocks · {fmt(data.totalTxs)} txs

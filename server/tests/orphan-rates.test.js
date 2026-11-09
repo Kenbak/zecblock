@@ -1,7 +1,7 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const express = require('express');
-const { formatOrphanRates, orphanRates } = require('../api/lib/orphan-rates');
+const { formatOrphanRates, orphanRates, observerLocations } = require('../api/lib/orphan-rates');
 
 const viaBTC = 't1MKn34KBa8Xh4g8qU8psibBXvURafphVn7';
 function fixture(patch = {}) {
@@ -44,6 +44,58 @@ test('observed zero differs from absent or insufficient canonical history', () =
   assert.throws(() => formatOrphanRates(fixture({ orphaned_blocks: '-1' })));
 });
 
+test('NU7 comparison uses its own windows and stays null until activation is indexed', () => {
+  assert.equal(formatOrphanRates(fixture()).nu7, null);
+  const nu7Rows = [
+    ...fixture(),
+    { ...fixture()[0], period: 'pre-nu7', window_start: 2000000, window_end: 3000000, canonical_blocks: '1000', orphaned_blocks: '5' },
+    { ...fixture()[0], period: 'nu7', window_start: 3000000, window_end: 4000000, canonical_blocks: '3000', orphaned_blocks: '30' },
+  ];
+  const data = formatOrphanRates([nu7Rows.at(-1), ...nu7Rows.slice(0, -1)], 3000);
+  assert.equal(data.asOf, new Date(4000000 * 1000).toISOString(), 'snapshot clock comes from a rolling window');
+  assert.equal(data.periods.length, 3);
+  assert.equal(data.nu7.activationHeight, 3000);
+  assert.equal(data.nu7.activationTimestamp, new Date(3000000 * 1000).toISOString());
+  assert.equal(data.nu7.before.rate, 5 / 1005);
+  assert.equal(data.nu7.since.rate, 30 / 3030);
+  // Capture started after activation: no comparable pre-NU7 window, never a zero.
+  const late = formatOrphanRates([...fixture(), { ...nu7Rows[3], window_start: 3000000 }, nu7Rows[4]], 3000);
+  assert.equal(late.nu7.before.rate, null);
+  assert.equal(late.nu7.before.unavailableReason, 'capture-began-after-activation');
+  assert.equal(late.nu7.since.rate, 30 / 3030);
+});
+
+test('observer locations expose only known cities, never names or other networks', () => {
+  const out = observerLocations([
+    { network: 'mainnet', observer: 'do-syd1', healthy: false },
+    { network: 'mainnet', observer: 'local-node', healthy: true },
+    { network: 'mainnet', observer: 'do-nyc3', healthy: true },
+    { network: 'testnet', observer: 'local-node', healthy: true },
+    { network: 'mainnet', observer: 'mystery', healthy: true },
+  ]);
+  assert.deepEqual(out.locations, [
+    { city: 'Helsinki', operator: null, collecting: true }, { city: 'New York', operator: null, collecting: true },
+    { city: 'Sydney', operator: null, collecting: false },
+  ]);
+  assert.equal(out.unlistedObservers, 2);
+  assert.ok(!/mystery|do-|local-node/.test(JSON.stringify(out)));
+  assert.deepEqual(observerLocations(null), { locations: [], unlistedObservers: 0 });
+});
+
+test('partner observers carry the operator name and stay apart from our same-city observer', () => {
+  const out = observerLocations([
+    { network: 'mainnet', observer: 'ext-zcashpools-sin', healthy: true },
+    { network: 'mainnet', observer: 'do-sgp1', healthy: true },
+    { network: 'mainnet', observer: 'ext-zcashpools-use1', healthy: false },
+  ]);
+  assert.deepEqual(out.locations, [
+    { city: 'Singapore', operator: null, collecting: true },
+    { city: 'Northern Virginia', operator: 'zecminingpool.com', collecting: false },
+    { city: 'Singapore', operator: 'zecminingpool.com', collecting: true },
+  ]);
+  assert.ok(!/\d+\.\d+\.\d+\.\d+|ext-zcashpools/.test(JSON.stringify(out)), 'no IPs or internal names');
+});
+
 test('public rate route returns snapshots and fails closed without leaking database errors', async t => {
   const app = express();
   let fail = false;
@@ -75,7 +127,7 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
   await db.query(`BEGIN;
     CREATE TEMP TABLE blocks(height bigint, hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text);
     CREATE TEMP TABLE captured_blocks(hash text PRIMARY KEY, height bigint, timestamp bigint, miner_address text, coinbase_hex text);
-    CREATE TEMP TABLE block_capture_observers(collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
+    CREATE TEMP TABLE block_capture_observers(observer text, network text, collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
     CREATE TEMP TABLE orphaned_blocks(hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text, source text, consensus_valid boolean);
     INSERT INTO blocks(height,hash,timestamp,miner_address) SELECT i, 'canonical-'||i,
       floor(extract(epoch FROM now()))::bigint + seconds, '${viaBTC}'
@@ -98,22 +150,34 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
     ('new-competitor',1,floor(extract(epoch FROM now()))::bigint-10,null,null),
     ('canonical-1',1,floor(extract(epoch FROM now()))::bigint-100,null,null),
     ('ahead',999999,floor(extract(epoch FROM now()))::bigint-10,null,null);
-    INSERT INTO block_capture_observers VALUES (now()-interval '1 hour',now(),true,0)`);
+    INSERT INTO block_capture_observers VALUES ('local-node','mainnet',now()-interval '1 hour',now(),true,0),
+      ('do-unknown9','mainnet',now()-interval '1 hour',now(),true,0)`);
   const captured = await orphanRates(db);
   assert.equal(captured.periods[0].orphanedBlocks, 3, 'new competitor counted, duplicate/canonical/ahead excluded');
   assert.equal(captured.capture.status, 'collecting');
+  assert.deepEqual(captured.capture.locations, [{ city: 'Helsinki', operator: null, collecting: true }]);
+  assert.equal(captured.capture.unlistedObservers, 1);
+  assert.ok(!JSON.stringify(captured).includes('do-unknown9'), 'observer names stay private');
   await db.query(`UPDATE blocks SET hash='new-competitor' WHERE height=1`);
   const switched = await orphanRates(db);
   assert.equal(switched.periods[0].orphanedBlocks, 3, 'old canonical capture replaces newly canonical competitor');
   await db.query(`UPDATE blocks SET hash='canonical-1' WHERE height=1; DELETE FROM captured_blocks;
     UPDATE block_capture_observers SET heartbeat_at=now()-interval '1 minute'`);
-  assert.equal((await orphanRates(db)).capture.status, 'unavailable');
+  const stale = await orphanRates(db);
+  assert.equal(stale.capture.status, 'unavailable');
+  assert.deepEqual(stale.capture.locations, [{ city: 'Helsinki', operator: null, collecting: false }]);
   // A hash becoming canonical again must disappear from both network and pool losses.
   await db.query(`INSERT INTO blocks VALUES(8,'observed',floor(extract(epoch FROM now()))::bigint-10,null,null)`);
   const restored = await orphanRates(db);
   assert.equal(restored.periods[0].orphanedBlocks, 1);
   assert.equal(restored.periods[0].canonicalBlocks, 3);
   assert.equal(restored.periods[0].rate, 1 / 4);
+  // Activation at height 1 (100 s ago): it and the restored block 8 fall in the half-open NU7 window.
+  const preNu7 = await orphanRates(db, { nu7Height: 1 });
+  assert.equal(preNu7.nu7.since.canonicalBlocks, 2, 'activation block is inside the NU7 window');
+  assert.ok(Date.parse(preNu7.nu7.before.windowStart) >= Date.now() - 3_700_000, 'pre-NU7 window starts at capture');
+  assert.equal(preNu7.nu7.before.windowEnd, preNu7.nu7.activationTimestamp);
+  assert.equal((await orphanRates(db, { nu7Height: 999 })).nu7, null, 'unindexed activation has no comparison');
   await db.query('TRUNCATE blocks, orphaned_blocks');
   const empty = await orphanRates(db);
   assert.ok(empty.periods.every(p => p.rate === null && p.canonicalBlocks === 0 && p.orphanedBlocks === 0 && !p.pools.length));

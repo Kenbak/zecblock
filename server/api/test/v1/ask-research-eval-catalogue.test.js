@@ -4,7 +4,7 @@ const {parse}=require('pgsql-parser');
 const {cases,selectedCases,defaultCaseIds,liveCaseLimit}=require('../../v1/lib/ask-research-eval-cases');
 const {compileResearchSQL}=require('../../v1/lib/ask-research-sql');
 const {comparisonQuery}=require('../../v1/lib/ask-research-eval');
-const {researchIds}=require('../../../../lib/ask/research-catalogue');
+const {publishedIds}=require('../../../../lib/ask/research-catalogue');
 const firstFive=['annual_2025','shielded_baseline','fee_units','ambiguous_growth','private_ownership'];
 const numericRoles=new Set(['count','height','number','numeric','average','percent','zec','usd','zatoshi']);
 const roleNames=new Set([...numericRoles,'text','date','month','boolean']);
@@ -13,9 +13,9 @@ const byId=id=>{const item=cases.find(entry=>entry.id===id);assert.ok(item,id);r
 function walk(value,visit){if(!value||typeof value!=='object')return;visit(value);for(const child of Object.values(value))walk(child,visit);}
 
 test('operator catalogue expands coverage while preserving the five-case live default',()=>{
- assert.equal(cases.length,40);assert.deepEqual(cases.slice(0,5).map(item=>item.id),firstFive);
+ assert.equal(cases.length,55);assert.deepEqual(cases.slice(0,5).map(item=>item.id),firstFive);
  assert.deepEqual(defaultCaseIds,firstFive);assert.deepEqual(selectedCases().map(item=>item.id),firstFive);
- assert.equal(liveCaseLimit,6);assert.equal(cases.filter(item=>item.kind==='research').length,33);
+ assert.equal(liveCaseLimit,6);assert.equal(cases.filter(item=>item.kind==='research').length,47);
  assert.equal(cases.filter(item=>item.fixtureOnly).length,5);
  assert.deepEqual(new Set(cases.map(item=>item.kind)),new Set(['research','clarify','unavailable']));
  assert.equal(new Set(cases.map(item=>item.id)).size,cases.length);
@@ -82,10 +82,10 @@ for(const item of cases.filter(entry=>entry.kind==='research'))test('unchanged c
 });
 
 // labels is an inlined constant table, covered by ask-research-question-scope.test.js.
-test('references exercise all nine admitted datasets and retain complex relational shapes',async()=>{
+test('references exercise every published dataset and retain complex relational shapes',async()=>{
  const datasets=new Set(),features=new Set();
  for(const item of cases.filter(entry=>entry.kind==='research')){const compiled=await compileResearchSQL({version:3,sql:item.referenceSQL,limit:100},{extended:true});for(const name of compiled.datasets)datasets.add(name);for(const feature of compiled.features)features.add(feature);}
- assert.deepEqual([...datasets].sort(),researchIds.filter(id=>id!=='labels').sort());
+ assert.deepEqual([...datasets].sort(),publishedIds.filter(id=>id!=='labels').sort());
  for(const feature of ['cte','window','join','group'])assert.ok(features.has(feature),feature);
  for(const id of ['bounded_block_transaction_join','bounded_transaction_flow_join']){
   const tree=await parse(byId(id).referenceSQL);let independentlyBound=0;

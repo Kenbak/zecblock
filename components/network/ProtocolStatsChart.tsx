@@ -11,6 +11,7 @@ import { getChartColors } from '@/lib/chart-theme';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ChartCard } from './ChartCard';
 import { useUrlState } from '@/lib/use-url-state';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
 export interface RawPoint {
@@ -86,34 +87,13 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   }, [rawData, period]);
 
   const controls = (
-    <div className="flex flex-wrap gap-1">
-      {(['commitments', 'nullifiers'] as const).map(v => (
-        <button
-          type="button"
-          key={v}
-          onClick={() => setView(v)}
-          aria-pressed={view === v}
-          className={`px-2 py-0.5 text-caption font-mono rounded transition-colors ${
-            view === v ? 'bg-brand-gold/20 text-cipher-gold' : 'text-muted hover:text-secondary'
-          }`}
-        >
-          {v === 'commitments' ? 'Trees' : 'Nullifiers'}
-        </button>
-      ))}
-      <span className="w-px bg-cipher-border-alpha/30 mx-1" />
-      {(['30d', '2y', '4y', 'all'] as const).map(p => (
-        <button
-          type="button"
-          key={p}
-          onClick={() => setPeriod(p)}
-          aria-pressed={period === p}
-          className={`px-2 py-0.5 text-caption font-mono rounded transition-colors ${
-            period === p ? 'bg-brand-gold/20 text-cipher-gold' : 'text-muted hover:text-secondary'
-          }`}
-        >
-          {p === 'all' ? 'All' : p.toUpperCase()}
-        </button>
-      ))}
+    <div className="flex flex-wrap gap-2">
+      <PeriodPillTags aria-label="Protocol metric" value={view} onChange={setView} options={[
+        { key: 'commitments', label: 'Trees' },
+        { key: 'nullifiers', label: 'Nullifiers' },
+      ]} />
+      <PeriodPillTags aria-label="Time range" value={period} onChange={setPeriod}
+        options={(['30d', '2y', '4y', 'all'] as const).map(p => ({ key: p, label: p === 'all' ? 'All' : p.toUpperCase() }))} />
     </div>
   );
 

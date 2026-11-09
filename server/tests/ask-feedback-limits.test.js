@@ -104,7 +104,7 @@ async function workspaceFixture(t,scope) {
     '@/components/ask/AskChallenge':{AskChallenge:()=>null},'@/components/ask/AskTransactions':{AskTransactions:()=>null},'@/components/ask/AskBlocks':{AskBlocks:()=>null},'@/components/ask/AskTransfers':{AskTransfers:()=>null},'@/components/ask/AskAnalytics':{AskAnalytics:()=>null},'@/components/ask/AskSources':{AskSources:()=>null},
     '@/lib/ask/client':{peekAskHandoff:()=>null,clearAskHandoff(){},askChat:async question=>{calls.push(question);return{answer:'A block contains confirmed transactions.',sources:[],spec:null,locale:'en',mode:'ai'};}},
     '@/lib/ask/composer':require('../../lib/ask/composer'),
-    '@/components/ask/AskFeedback':{AskFeedback:()=>null,AskFailureFeedback:()=>null,useAskFeedback:()=>feedback},
+    '@/components/ask/AskAnswerRating':{AskAnswerRating:()=>null},'@/components/ask/AskFeedback':{AskFeedback:()=>null,AskFailureFeedback:()=>null,useAskFeedback:()=>feedback},
     '@/lib/ask/data':require('../../lib/ask/data'),'@/lib/ask/research-share':require('../../lib/ask/research-share'),'@/lib/ask/follow-ups':require('../../lib/ask/follow-ups'),...require('./ask-sql-test-imports'),
     './AskAnalysis':{AskAnalysis:()=>null},
   };

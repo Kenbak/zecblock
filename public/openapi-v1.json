@@ -2,9 +2,9 @@
   "openapi": "3.1.0",
   "info": {
     "title": "ZecBlock API v1",
-    "version": "1.0.0-preview",
+    "version": "1.0.0",
     "summary": "Versioned, contract-stable read/write API for the Zcash blockchain data and privacy-intelligence features exposed by ZecBlock.",
-    "description": "This is the v1 contract layer. It is gated behind API_V1_ENABLED and, pre-launch, an X-API-Preview-Key header (see the previewKey security scheme) — see server/api/v1/README.md in the repository for exact mount instructions and current caveats. Every success response uses the {data, meta} envelope; every error response is an RFC 9457 problem+json document. Every public inventory entry is adapted; The manifest explicitly identifies retained operational routes and payment-protected services.",
+    "description": "This is the v1 contract layer. Public production reads need no API key or preview header; protected deployments may still require X-API-Preview-Key. Individual operations document their own credentials (for example X-Node-Token). Every success response uses the {data, meta} envelope; every error response is an RFC 9457 problem+json document. Every public inventory entry is adapted; The manifest explicitly identifies retained operational routes and payment-protected services.",
     "contact": {
       "name": "ZecBlock / Atmosphere Labs"
     }
@@ -97,20 +97,7 @@
       "name": "valuation"
     }
   ],
-  "security": [
-    {
-      "previewKey": []
-    }
-  ],
   "components": {
-    "securitySchemes": {
-      "previewKey": {
-        "type": "apiKey",
-        "in": "header",
-        "name": "X-API-Preview-Key",
-        "description": "Required while API_V1_LAUNCHED=false. Dropped once v1 is generally available."
-      }
-    },
     "schemas": {
       "Problem": {
         "type": "object",
@@ -432,7 +419,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -537,7 +524,7 @@
     "/v1/ask/chat": {
       "post": {
         "operationId": "post_ask_Chat",
-        "summary": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
+        "summary": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies carry a server-written turnScope that the client may send back, schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress lines before one result or problem line holding the usual body.",
         "tags": [
           "ask"
         ],
@@ -999,6 +986,179 @@
                     ],
                     "additionalProperties": false
                   },
+                  "turnScope": {
+                    "type": "object",
+                    "properties": {
+                      "version": {
+                        "type": "number",
+                        "const": 1
+                      },
+                      "kind": {
+                        "type": "string",
+                        "enum": [
+                          "sql",
+                          "chart",
+                          "block",
+                          "transaction"
+                        ]
+                      },
+                      "datasets": {
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "blocks",
+                            "transactions",
+                            "flows",
+                            "daily",
+                            "swaps",
+                            "addresses",
+                            "address_activity",
+                            "activity_daily",
+                            "address_daily",
+                            "flow_daily",
+                            "supply_daily",
+                            "issuance",
+                            "mining_daily",
+                            "software_daily",
+                            "block_timing",
+                            "issuance_daily",
+                            "reorgs",
+                            "orphaned_blocks",
+                            "utxo_daily",
+                            "value_pools_daily",
+                            "swap_daily",
+                            "labels"
+                          ]
+                        }
+                      },
+                      "measures": {
+                        "maxItems": 6,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "pattern": "^[a-z][a-z0-9_]{0,47}$"
+                        }
+                      },
+                      "pools": {
+                        "maxItems": 5,
+                        "type": "array",
+                        "items": {
+                          "type": "string",
+                          "enum": [
+                            "orchard",
+                            "ironwood",
+                            "sapling",
+                            "sprout",
+                            "transparent"
+                          ]
+                        }
+                      },
+                      "window": {
+                        "anyOf": [
+                          {
+                            "type": "object",
+                            "properties": {
+                              "start": {
+                                "type": "string",
+                                "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                              },
+                              "end": {
+                                "type": "string",
+                                "pattern": "^20\\d{2}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[12]\\d|3[01])$"
+                              }
+                            },
+                            "required": [
+                              "start",
+                              "end"
+                            ],
+                            "additionalProperties": false
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "period": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "30d",
+                              "90d",
+                              "1y"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "grain": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "day",
+                              "week",
+                              "month",
+                              "year"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "metric": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "enum": [
+                              "balances",
+                              "flows",
+                              "activity",
+                              "swap_volume",
+                              "swap_count",
+                              "transactions",
+                              "pulse",
+                              "migration_share",
+                              "chain_inflows",
+                              "chain_outflows"
+                            ]
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      },
+                      "subject": {
+                        "anyOf": [
+                          {
+                            "type": "string",
+                            "pattern": "^[a-z][a-z0-9_]{0,47}$"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    },
+                    "required": [
+                      "version",
+                      "kind",
+                      "datasets",
+                      "measures",
+                      "pools",
+                      "window",
+                      "period",
+                      "grain",
+                      "metric",
+                      "subject"
+                    ],
+                    "additionalProperties": false
+                  },
                   "challenge": {
                     "type": "string",
                     "maxLength": 2048
@@ -1022,7 +1182,7 @@
         "x-cipherscan-v1-status": "native",
         "responses": {
           "200": {
-            "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted.",
+            "description": "Contextual mainnet questions with reviewed public sources, supported languages and bounded history. Optional restricted replica analytics return dated count/pool rankings by day, week or month. Paid answers require bot verification and shared spend limits; analytics additionally require private-worker query quotas. Arbitrary SQL is never accepted. Replies carry a server-written turnScope that the client may send back, schema-checked, for follow-ups. With Accept: application/x-ndjson an agent reply may stream stage-only progress lines before one result or problem line holding the usual body.",
             "content": {
               "application/json": {
                 "schema": {
@@ -1062,7 +1222,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1323,7 +1483,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1509,7 +1669,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1702,7 +1862,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -1857,7 +2017,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2124,7 +2284,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2279,7 +2439,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2444,7 +2604,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2599,7 +2759,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2769,7 +2929,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -2934,7 +3094,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3099,7 +3259,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3254,7 +3414,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3642,7 +3802,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3816,7 +3976,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -3981,7 +4141,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4153,7 +4313,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4318,7 +4478,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4435,14 +4595,15 @@
             "schema": {
               "type": "string",
               "enum": [
+                "blocks",
                 "6h",
                 "24h",
                 "7d"
               ],
               "default": "24h",
-              "description": "Trailing block-header observation window."
+              "description": "Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling."
             },
-            "description": "Trailing block-header observation window."
+            "description": "Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling."
           }
         ],
         "x-cipherscan-legacy-path": "/api/network/block-time",
@@ -4491,7 +4652,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4646,7 +4807,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4801,7 +4962,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -4956,7 +5117,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5111,7 +5272,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5266,7 +5427,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5421,7 +5582,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5576,7 +5737,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5731,7 +5892,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -5886,7 +6047,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6052,7 +6213,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6207,7 +6368,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6363,7 +6524,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6530,7 +6691,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6685,7 +6846,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -6852,7 +7013,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7007,7 +7168,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7162,7 +7323,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7355,7 +7516,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7510,7 +7671,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7665,7 +7826,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7820,7 +7981,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -7975,7 +8136,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8130,7 +8291,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8305,7 +8466,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8410,7 +8571,7 @@
     "/v1/mining/orphan-rates": {
       "get": {
         "operationId": "get_mining_Orphan-rates",
-        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+        "summary": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
         "tags": [
           "mining"
         ],
@@ -8420,7 +8581,7 @@
         "x-cipherscan-v1-status": "adapter",
         "responses": {
           "200": {
-            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d.",
+            "description": "Observed orphan rates and pool breakdowns for 24h, 7d and 30d, plus before/since NU7 windows once activated.",
             "content": {
               "application/json": {
                 "schema": {
@@ -8460,7 +8621,328 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mining/orphan-rates/daily": {
+      "get": {
+        "operationId": "get_mining_Orphan-rates_Daily",
+        "summary": "Daily observed orphan rate for the last 7 to 90 UTC days, with dated coverage and NU7 events for charting.",
+        "tags": [
+          "mining"
+        ],
+        "parameters": [
+          {
+            "name": "days",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/mining/orphan-rates/daily",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Daily observed orphan rate for the last 7 to 90 UTC days, with dated coverage and NU7 events for charting.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Endpoint credential required or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mining/observation-lag": {
+      "get": {
+        "operationId": "get_mining_Observation-lag",
+        "summary": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
+        "tags": [
+          "mining"
+        ],
+        "x-cipherscan-legacy-path": "/api/mining/observation-lag",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Gap between miner header timestamps and first local-node observation, by pool, for 24h, 7d and 30d.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8650,7 +9132,162 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/mining/difficulty-stability": {
+      "get": {
+        "operationId": "get_mining_Difficulty-stability",
+        "summary": "Mainnet difficulty swings before and since NU7. Each block is compared with the median difficulty of the surrounding 24 hours in its own era.",
+        "tags": [
+          "mining"
+        ],
+        "x-cipherscan-legacy-path": "/api/network/difficulty-stability",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Mainnet difficulty swings before and since NU7. Each block is compared with the median difficulty of the surrounding 24 hours in its own era.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8825,7 +9462,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -8991,7 +9628,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9157,7 +9794,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9323,7 +9960,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9526,7 +10163,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -9880,7 +10517,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10075,7 +10712,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10265,7 +10902,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10606,7 +11243,180 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/crosschain/shielding": {
+      "get": {
+        "operationId": "get_crosschain_Shielding",
+        "summary": "Shielded rate of bridged ZEC: share delivered by successful NEAR 1Click inflows that reaches a shielded pool on arrival or on its first spend, with exact zatoshi breakdown and explicit coverage of swaps lacking a usable Zcash leg.",
+        "tags": [
+          "crosschain"
+        ],
+        "parameters": [
+          {
+            "name": "period",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "30d",
+                "90d",
+                "1y",
+                "all"
+              ],
+              "default": "90d"
+            },
+            "description": "Trailing UTC days by swap creation time, starting at the start of the UTC day; all covers every classified swap. Recent held ZEC may still be shielded later."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/crosschain/shielding",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Shielded rate of bridged ZEC: share delivered by successful NEAR 1Click inflows that reaches a shielded pool on arrival or on its first spend, with exact zatoshi breakdown and explicit coverage of swaps lacking a usable Zcash leg.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10761,7 +11571,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -10936,7 +11746,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11111,7 +11921,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11266,7 +12076,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11421,7 +12231,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11609,7 +12419,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11813,7 +12623,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -11984,7 +12794,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12149,7 +12959,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12304,7 +13114,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12459,7 +13269,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12614,7 +13424,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12793,7 +13603,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -12969,7 +13779,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13145,7 +13955,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13383,7 +14193,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13636,7 +14446,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -13879,7 +14689,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14122,7 +14932,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14287,7 +15097,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14452,7 +15262,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14645,7 +15455,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -14829,7 +15639,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15006,7 +15816,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15172,7 +15982,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15338,7 +16148,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15504,7 +16314,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15670,7 +16480,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -15836,7 +16646,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16002,7 +16812,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16170,7 +16980,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16338,7 +17148,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16493,7 +17303,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16686,7 +17496,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -16859,7 +17669,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17025,7 +17835,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17241,7 +18051,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17407,7 +18217,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17573,7 +18383,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17739,7 +18549,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -17905,7 +18715,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18071,7 +18881,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18237,7 +19047,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18392,7 +19202,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18547,7 +19357,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18702,7 +19512,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -18868,7 +19678,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19023,7 +19833,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19178,7 +19988,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19380,7 +20190,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19535,7 +20345,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19690,7 +20500,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -19845,7 +20655,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20020,7 +20830,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20195,7 +21005,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20370,7 +21180,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20563,7 +21373,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20718,7 +21528,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -20935,7 +21745,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21090,7 +21900,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21245,7 +22055,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21410,7 +22220,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21585,7 +22395,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21784,7 +22594,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -21949,7 +22759,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22115,7 +22925,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22289,7 +23099,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22455,7 +23265,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22621,7 +23431,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22786,7 +23596,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -22941,7 +23751,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23096,7 +23906,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23251,7 +24061,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23417,7 +24227,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23572,7 +24382,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23752,7 +24562,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -23917,7 +24727,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24150,7 +24960,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24324,7 +25134,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24499,7 +25309,182 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "402": {
+            "description": "Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the original challenge is also in problem.paymentRequired.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Origin or ownership authorization denied.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Resource not found.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "JSON body exceeds 1 MB.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limited (enforced by the legacy endpoint this proxies to).",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "502": {
+            "description": "Upstream (legacy API) error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "Source temporarily unavailable or still building.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "504": {
+            "description": "Upstream (legacy API) timeout.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/v1/uncles/observed": {
+      "get": {
+        "operationId": "get_uncles_Observed",
+        "summary": "Competing blocks the observer network saw lose the race without a reorg on the main node.",
+        "tags": [
+          "reorgs"
+        ],
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string"
+            },
+            "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+          }
+        ],
+        "x-cipherscan-legacy-path": "/api/uncles/observed",
+        "x-cipherscan-legacy-method": "GET",
+        "x-cipherscan-classification": "public",
+        "x-cipherscan-v1-status": "adapter",
+        "responses": {
+          "200": {
+            "description": "Competing blocks the observer network saw lose the race without a reorg on the main node.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data",
+                    "meta"
+                  ],
+                  "properties": {
+                    "data": {
+                      "oneOf": [
+                        {
+                          "type": "object"
+                        },
+                        {
+                          "type": "array",
+                          "items": {}
+                        }
+                      ]
+                    },
+                    "meta": {
+                      "$ref": "#/components/schemas/Meta"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation error.",
+            "content": {
+              "application/problem+json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Problem"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24674,7 +25659,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -24839,7 +25824,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25022,7 +26007,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25177,7 +26162,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25332,7 +26317,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25511,7 +26496,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25708,7 +26693,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -25941,7 +26926,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26130,7 +27115,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26305,7 +27290,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26460,7 +27445,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26625,7 +27610,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26790,7 +27775,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -26955,7 +27940,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27134,7 +28119,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27299,7 +28284,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27481,7 +28466,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {
@@ -27663,7 +28648,7 @@
             }
           },
           "401": {
-            "description": "Preview or endpoint authentication required.",
+            "description": "Endpoint credential required or invalid.",
             "content": {
               "application/problem+json": {
                 "schema": {

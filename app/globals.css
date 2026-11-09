@@ -932,63 +932,72 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
     display: inline-block;
   }
 
-  /* ===== FILTER GROUPS — Terminal Aesthetic ===== */
-  /* Segmented pill control — the one tab/filter pattern app-wide.
-     Matches the period selectors on /mining and the LIVE/PAUSED toggle
-     on /mempool. Active option = gold tint pill. */
+  /* ===== SEGMENTED CONTROLS — the one toggle/filter pattern app-wide ===== */
+  /* Every period selector, display-mode switch and list filter renders with
+     these classes (PeriodPillTags, SegmentedToggle, FilterGroup/FilterButton).
+     32px tall so they line up with <Select>; the active option is a raised
+     neutral chip. Gold stays reserved for links and primary actions. Active
+     weight matches inactive so switching never shifts the layout. */
   .filter-group {
     display: inline-flex;
-    gap: 0;
-    padding: 2px;
-    border-radius: var(--radius-md);
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    min-height: 32px;
+    max-width: 100%;
+    border-radius: var(--radius-lg);
     background: var(--glass-3);
   }
 
   .filter-btn {
-    padding: 4px 10px;
-    font-size: 0.75rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 26px;
+    padding: 0 10px;
+    font-size: var(--text-caption);
     font-family: var(--font-geist-mono), monospace;
     font-weight: 500;
-    letter-spacing: 0.03em;
+    letter-spacing: 0.04em;
     text-transform: uppercase;
     white-space: nowrap;
     background: transparent;
     color: var(--color-text-muted);
     border: none;
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: color var(--duration-fast) var(--ease-out-expo), background-color var(--duration-fast) var(--ease-out-expo), border-color var(--duration-fast) var(--ease-out-expo), box-shadow var(--duration-fast) var(--ease-out-expo);
+    transition: color var(--duration-fast) var(--ease-out-expo), background-color var(--duration-fast) var(--ease-out-expo), box-shadow var(--duration-fast) var(--ease-out-expo);
   }
 
-  .filter-btn:hover:not(.filter-btn-active):not(.filter-btn-danger):not(.filter-btn-warning) {
+  .filter-btn:hover:not(.filter-btn-active):not(.filter-btn-danger):not(.filter-btn-warning):not(:disabled) {
     color: var(--color-text-primary);
+  }
+
+  .filter-btn:focus-visible {
+    outline: 2px solid var(--color-cipher-gold);
+    outline-offset: 1px;
+  }
+
+  .filter-btn:disabled {
+    cursor: not-allowed;
+    opacity: 0.4;
   }
 
   .filter-btn-active {
     background: var(--color-cipher-bg);
     color: var(--color-text-primary);
-    font-weight: 600;
-    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15);
-    outline: 1px solid var(--glass-12);
+    box-shadow: 0 1px 2px rgb(0 0 0 / 0.15), inset 0 0 0 1px var(--glass-12);
   }
 
   .filter-btn-danger {
     background: var(--filter-danger-bg);
     color: var(--danger);
-    font-weight: 600;
   }
 
   .filter-btn-warning {
     background: var(--filter-warning-bg);
     color: var(--amber-strong);
-    font-weight: 600;
-  }
-
-  @media (min-width: 640px) {
-    .filter-btn {
-      padding: 5px 12px;
-      font-size: 12px;
-    }
   }
 
   /* ===== STATS BAR ===== */
@@ -2122,3 +2131,134 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
 /* Legal references use the same quiet link treatment as secondary navigation. */
 .legal-link { color: var(--color-text-primary); text-decoration: underline; text-decoration-color: var(--color-cipher-border); text-underline-offset: 4px; }
 .legal-link:hover { text-decoration-color: currentColor; }
+
+/* Daily speed bars grow from the baseline, left to right, when a view is shown. */
+.speed-bar {
+  transform-box: fill-box;
+  transform-origin: bottom;
+  --bar-index: 0;
+  animation: speed-bar-grow 560ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--bar-index) * 14ms);
+}
+@keyframes speed-bar-grow { from { transform: scaleY(0); } }
+
+/* Live block pulse: blocks drift left along a 20-minute axis; gaps are block intervals. */
+.block-pulse-track {
+  position: relative;
+  height: 3.5rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--glass-3);
+  overflow: hidden;
+}
+.block-pulse-tick {
+  position: absolute;
+  top: 0.75rem;
+  bottom: 0.75rem;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--color-text-muted);
+  transform: translateX(-50%);
+  transition: left 1s linear;
+}
+.block-pulse-tick-nu7 { background: var(--color-cipher-gold); }
+.block-pulse-tick-new::after {
+  content: '';
+  position: absolute;
+  inset: -0.5rem -0.4rem;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  color: var(--color-text-primary);
+  animation: block-pulse-ring 1.4s ease-out 2;
+  opacity: 0;
+}
+.block-pulse-tick-nu7.block-pulse-tick-new::after { color: var(--color-cipher-gold); }
+.block-pulse-marker {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  padding-left: 0.25rem;
+  border-left: 1px dashed var(--color-cipher-gold);
+  color: var(--color-cipher-gold);
+  font-family: var(--font-mono, monospace);
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  transition: left 1s linear;
+}
+@keyframes block-pulse-ring {
+  from { opacity: 0.9; transform: scale(0.6); }
+  to { opacity: 0; transform: scale(1.8); }
+}
+
+/* Block speed distribution: one 100% bar per window, fast buckets brightest. */
+.speed-spectrum {
+  position: relative;
+  display: flex;
+  gap: 2px;
+  height: 2.75rem;
+}
+.speed-spectrum-segment {
+  --segment-index: 0;
+  flex-basis: 0;
+  min-width: 3px;
+  border-radius: 2px;
+  background: var(--speed-bucket-color);
+  transform-origin: left;
+  animation: speed-spectrum-grow 700ms cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  animation-delay: calc(var(--segment-index) * 90ms);
+}
+.speed-spectrum-segment:first-child { border-radius: 0.5rem 2px 2px 0.5rem; }
+.speed-spectrum-segment[data-bucket='long-wait'] { border-radius: 2px 0.5rem 0.5rem 2px; }
+.speed-spectrum-expected {
+  position: absolute;
+  top: -0.375rem;
+  bottom: -0.375rem;
+  border-left: 1.5px dashed var(--color-text-primary);
+  opacity: 0.55;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+/* One ramp from gold (fastest) to the muted text tone (slowest), legible on both themes. */
+[data-bucket='super-fast'] {
+  --speed-bucket-color: rgb(var(--color-gold-rgb));
+}
+[data-bucket='fast'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 75%, var(--color-text-muted));
+}
+[data-bucket='slow'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 50%, var(--color-text-muted));
+}
+[data-bucket='very-slow'] {
+  --speed-bucket-color: color-mix(in oklab, rgb(var(--color-gold-rgb)) 25%, var(--color-text-muted));
+}
+[data-bucket='long-wait'] {
+  --speed-bucket-color: var(--color-text-muted);
+}
+.speed-bucket-swatch {
+  width: 0.625rem;
+  height: 0.625rem;
+  border-radius: 2px;
+  background: var(--speed-bucket-color);
+}
+.speed-buckets { display: grid; grid-template-columns: repeat(1, minmax(0, 1fr)); }
+.speed-bucket {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.75rem 0;
+  border-top: 1px solid var(--color-border);
+}
+.speed-bucket-value { display: flex; align-items: baseline; justify-content: space-between; gap: 0.75rem; }
+@media (min-width: 768px) {
+  .speed-buckets { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+  .speed-bucket { padding: 0.75rem 1rem; border-left: 1px solid var(--color-border); align-content: start; }
+  .speed-bucket:first-child { padding-left: 0; border-left: 0; }
+  .speed-bucket-value { display: grid; justify-content: start; gap: 0; }
+}
+@keyframes speed-spectrum-grow { from { transform: scaleX(0); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) {
+  .speed-spectrum-segment { animation: none; }
+}
+
+/* Countdown digits slide up when they change. */
+.countdown-digit { display: inline-block; animation: countdown-tick 320ms ease-out; }
+@keyframes countdown-tick { from { opacity: 0.2; transform: translateY(-0.25em); } }

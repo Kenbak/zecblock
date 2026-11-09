@@ -5,7 +5,9 @@ import { Card } from '@/components/ui/Card';
 import { DataTable, type DataTableColumn } from '@/components/ui/DataTable';
 import { PageSectionNav, type PageSection } from '@/components/PageSectionNav';
 import { BlockSpeedPanel } from '@/components/network/BlockSpeedPanel';
+import { BlockSpeedDistribution } from '@/components/network/BlockSpeedDistribution';
 import { BlockTimeChart } from '@/components/network/BlockTimeChart';
+import { BlockPulse } from '@/components/network/BlockPulse';
 import { buildPageMetadata, getBaseUrl, getNetwork } from '@/lib/seo';
 import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
@@ -14,10 +16,11 @@ import { CONFIRMATION_DEPTHS, NU7_TARGET_SECONDS, ZIP_315_URL, confirmationSecon
 export const revalidate = 300;
 
 const TITLE = 'Zcash Block Speed: 75-Second Blocks to 25 with NU7 | ZecBlock';
-const DESCRIPTION = 'Daily measured Zcash block times and NU7’s 25-second target: first confirmation, time until received funds are spendable and blocks per hour.';
+const DESCRIPTION = 'Daily measured Zcash block times and NU7’s 25-second target: how many blocks are fast or slow, first confirmation, time until received funds are spendable and blocks per hour.';
 
 const SECTIONS: readonly PageSection[] = [
   { id: 'daily', label: 'Confirmation chart' },
+  { id: 'distribution', label: 'Fast vs slow blocks' },
   { id: 'confirmations', label: 'Wallet guide' },
   { id: 'live', label: 'Live detail' },
   { id: 'method', label: 'Method' },
@@ -78,6 +81,7 @@ function MethodNotes({ story, observedAt }: { story: SpeedStory | null; observed
   return <div className="p-4 sm:p-6 text-sm text-secondary space-y-3 max-w-4xl leading-relaxed">
     <p>Intervals are differences between timestamps recorded in consecutive canonical block headers. They are not measurements of when this explorer received blocks. Header timestamps can move backwards; daily averages use the full time span, so such intervals cancel out.</p>
     <p>Each bar is one complete UTC day. Today and the day containing an activation block are left out. Comparison values use the last seven days and, after an upgrade, start no earlier than its activation.</p>
+    <p>The fast-versus-slow buckets count every interval in the seven-day comparison windows, using multiples of that window’s target spacing: under ¼, ¼ to 1, 1 to 2, 2 to 4, and 4 or more times the target. Intervals at or below zero, from backward header times, count as super fast. The random-arrival model assumes blocks arrive independently at exactly the target pace, which makes intervals exponentially distributed; it is a reference, not a prediction.</p>
     <p>Expected waits multiply the average interval by the number of confirmations. This assumes the next block includes the transaction and that blocks arrive at random. Congestion, fees and wallet sync can add time.</p>
     <p>ZIP 315 recommends 3 confirmations for a wallet’s own change and 10 for received funds, with no spending before 3. Wallets choose their own policy. The NU7 comparison assumes unchanged confirmation counts; ZIP 315 does not specify different counts for NU7. These thresholds are wallet policy, not a separate finality event.</p>
     {story?.network === 'mainnet' && story.phase === 'upcoming' && <p>Until NU7 is live on mainnet, days from today onward are drawn at the consensus target: {story.before?.targetSeconds != null ? `${story.before.targetSeconds} seconds` : 'the current target'} until activation, then {NU7_TARGET_SECONDS} seconds. The activation date comes from {story.activation?.status === 'announced' ? 'Zakura’s announcement' : 'the serving node’s schedule at the current target spacing'}. Once NU7 activates, measured days replace the projection.</p>}
@@ -114,6 +118,12 @@ export default async function BlockSpeedPage() {
       <BlockSpeedPanel story={story} variant="full" />
     </section>
 
+    <section id="distribution" className="network-section mb-10" aria-labelledby="distribution-heading">
+      <h2 id="distribution-heading" className="type-section text-primary mb-2">Fast vs slow blocks</h2>
+      <p className="text-sm text-muted mb-4 max-w-3xl">Every block interval in the window, grouped by how it compares with the target spacing.</p>
+      <BlockSpeedDistribution story={story} />
+    </section>
+
     {story && hasConfirmations && <section id="confirmations" className="network-section mb-10" aria-labelledby="confirmations-heading">
       <h2 id="confirmations-heading" className="type-section text-primary mb-2">Wallet confirmation guide</h2>
       <p className="text-sm text-muted mb-4 max-w-3xl"><a href={ZIP_315_URL} className="text-secondary underline underline-offset-4 hover:text-primary" target="_blank" rel="noopener noreferrer">ZIP 315</a> wallet policy: 3 confirmations for change, 10 for received funds.</p>
@@ -122,8 +132,13 @@ export default async function BlockSpeedPage() {
 
     <section id="live" className="network-section mb-10" aria-label="Live block interval detail">
       <SectionHeader label="LIVE_DETAIL" actions={<Link href="/network#network-activity" className="text-caption font-mono text-muted hover:text-primary">Network activity →</Link>} />
+      <Card className="card-static p-4 sm:p-6 mb-4">
+        <BlockPulse nu7Height={story?.activation?.height ?? null}
+          targetSeconds={story?.phase === 'active' ? NU7_TARGET_SECONDS : story?.before?.targetSeconds ?? null} />
+      </Card>
       <p className="text-sm text-muted mb-4 max-w-3xl">Rolling 120-block average · refreshed every 15s.</p>
       <BlockTimeChart />
+      <p className="text-caption text-muted mt-3 max-w-3xl">Faster blocks give competing blocks less time to propagate. <Link href={`/mining?orphans=${story?.phase === 'active' ? 'nu7' : '30d'}#orphans`} className="text-secondary underline underline-offset-4 hover:text-primary">Compare observed orphan rates before and since NU7 →</Link></p>
     </section>
 
     <Card className="network-detail-panel card-static">

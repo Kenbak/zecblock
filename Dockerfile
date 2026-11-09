@@ -13,7 +13,12 @@ WORKDIR /app
 ENV NEXT_TELEMETRY_DISABLED=1
 COPY package.json package-lock.json ./
 COPY vendor/braces ./vendor/braces
-RUN npm ci --no-audit --no-fund
+# One retry: native addons (canvas, used only by the bot) fetch prebuilt binaries
+# from GitHub and fall back to a source build this image cannot do. A transient
+# download miss must not fail the image; a real failure still fails twice.
+RUN npm ci --no-audit --no-fund \
+    || { echo "npm ci failed; retrying once after a transient download error" >&2; \
+         rm -rf node_modules && sleep 15 && npm ci --no-audit --no-fund; }
 
 # ---------------------------------------------------------------------------
 # builder: compile the Next.js standalone output

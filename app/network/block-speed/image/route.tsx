@@ -35,8 +35,9 @@ export async function GET() {
   const colors = getChartColors('dark');
   const points = story.points;
   const before = story.network === 'mainnet' ? story.before?.averageSeconds ?? null : null;
-  const title = 'Zcash confirmation times';
   const wait = (seconds: number | null) => formatWait(confirmationSeconds(seconds, SPENDABLE_CONFIRMATIONS));
+  // Lead with the one comparison people share; the chart and description carry the detail.
+  const title = before != null ? `With NU7, received funds spendable in ${wait(after)}, not ${wait(before)}` : `With NU7, received funds spendable in ${wait(after)}`;
   const peak = Math.max(...points.map(point => minutes(point.averageSeconds)), ...points.map(point => minutes(point.targetSeconds ?? 0)));
   const step = [1, 2, 5, 10, 15, 20].find(s => peak / s <= 4) ?? Math.ceil(peak / 40) * 10;
   const max = Math.ceil(peak * 1.08 / step) * step;
@@ -87,7 +88,7 @@ export async function GET() {
           const first = y(minutes(point.averageSeconds, 1));
           const total = y(minutes(point.averageSeconds));
           const x = i * slot + (slot - barWidth) / 2;
-          return <g key={point.key}>
+          return <g key={point.key} opacity={point.inProgress ? 0.5 : 1}>
             <rect x={x} y={first} width={barWidth} height={Math.max(0, y(0) - first)} {...barStyle(point, colors.gold)} />
             <rect x={x} y={total} width={barWidth} height={Math.max(0, first - total)} {...barStyle(point, MUTED)} />
           </g>;

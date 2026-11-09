@@ -1,13 +1,17 @@
 'use client';
 
+import { Fragment } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui';
 import { useUrlState } from '@/lib/use-url-state';
 import { SortableDataTable } from '@/components/ui/SortableDataTable';
+import { PoolLogo } from '@/components/PoolLogo';
+import { OrphanRateDailyChart } from './OrphanRateDailyChart';
 
-type Period = '24h' | '7d' | '30d';
+type Period = '24h' | '7d' | '30d' | 'pre-nu7' | 'nu7';
+const PERIOD_LABELS: Record<Period, string> = { '24h': '24h', '7d': '7d', '30d': '30d', 'pre-nu7': 'Before NU7', nu7: 'Since NU7' };
 interface PoolRate {
   name: string;
   canonicalBlocks: number;
@@ -24,13 +28,22 @@ interface RateWindow {
   unavailableReason: string | null;
   pools: PoolRate[];
 }
+/** Present only once the NU7 activation block is indexed. */
+interface Nu7Comparison { activationHeight: number | null; activationTimestamp: string; before: RateWindow; since: RateWindow }
 interface OrphanRates {
   method: string;
-  capture?: { startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string };
+  capture?: {
+    startedAt: string | null; heartbeatAt: string | null; observers: number; healthyObservers: number; status: string;
+    /** Public city per known observer; names, endpoints and IPs are never served. */
+    /** operator is null for ZecBlock's own observers, else the partner that runs the node. */
+    locations?: { city: string; operator?: string | null; collecting: boolean }[];
+    unlistedObservers?: number;
+  };
   asOf: string;
   indexedHeight: number | null;
   indexedTimestamp: string | null;
   periods: RateWindow[];
+  nu7?: Nu7Comparison | null;
 }
 
 function percent(rate: number | null) {
@@ -43,38 +56,60 @@ function utc(value: string) {
   return new Date(value).toLocaleString('en-GB', { timeZone: 'UTC', day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
 }
 
+// Partner operators credited with a link; anything else from the API renders as plain text.
+const PARTNER_LINKS: Record<string, string> = { 'zecminingpool.com': 'https://zecminingpool.com' };
+
+/** One line: "● 10 observer nodes via ZecBlock and zecminingpool.com"; partners link only from the allowlist. */
+function ObserverSummary({ capture }: { capture: NonNullable<OrphanRates['capture']> }) {
+  const locations = capture.locations ?? [];
+  const operators = [...new Set(locations.map(l => l.operator ?? 'ZecBlock'))];
+  const total = locations.length + (capture.unlistedObservers ?? 0);
+  const offline = locations.filter(l => !l.collecting).length;
+  const collecting = capture.status === 'collecting';
+  return (
+    <p className="mb-5 flex items-center gap-2 text-sm text-muted">
+      <span aria-hidden className={`h-2 w-2 shrink-0 rounded-full ${collecting ? 'bg-cipher-green' : 'bg-muted'}`} />
+      <span>
+        <span className="font-semibold text-primary">{total} observer nodes</span>
+        {' '}via{' '}
+        {operators.map((operator, i) => {
+          const href = PARTNER_LINKS[operator];
+          return <Fragment key={operator}>
+            {i > 0 && (i === operators.length - 1 ? ' and ' : ', ')}
+            {href ? <a href={href} target="_blank" rel="noopener" className="text-cipher-gold hover:underline">{operator}</a> : <span className="text-secondary">{operator}</span>}
+          </Fragment>;
+        })}
+        {!collecting ? ' · collector unavailable' : offline > 0 ? ` · ${offline} offline` : ''}
+      </span>
+    </p>
+  );
+}
+
 export function OrphanRateSection() {
-  const [period, setPeriod] = useUrlState<Period>('orphans', '30d', ['24h', '7d', '30d']);
+  const [period, setPeriod] = useUrlState<Period>('orphans', '30d', ['24h', '7d', '30d', 'pre-nu7', 'nu7']);
   const { data, loading, error } = useApiQuery<OrphanRates>('/v1/mining/orphan-rates', undefined, { refreshInterval: 60_000 });
   const supported = data?.method === 'observed-indexer-reorg-v1' || data?.method === 'observed-block-capture-v2';
-  const selected = supported ? data.periods.find(window => window.period === period) : null;
+  const nu7 = supported ? data.nu7 ?? null : null;
+  const windows = supported ? [...data.periods, ...(nu7 ? [nu7.before, nu7.since] : [])] : [];
+  // A shared NU7 link opened before activation falls back to the default window.
+  const selected = windows.find(window => window.period === period) ?? windows.find(window => window.period === '30d') ?? null;
 
   return (
     <section id="orphans" className="scroll-mt-36 mb-12">
       <Card><CardBody>
         <SectionHeader label="OBSERVED_ORPHAN_RATE" actions={<Link href="/reorgs" className="text-caption font-mono text-cipher-gold hover:underline">View forks &amp; orphaned blocks →</Link>} />
-        <p className="text-sm text-muted mb-4">
-          {data?.method === 'observed-block-capture-v2'
-            ? 'Observed blocks outside the current canonical chain, including captured competing blocks and blocks removed by reorgs, as a share of canonical blocks plus observed orphans.'
-            : 'Blocks observed by this explorer that left the canonical chain during a reorganization, as a share of canonical blocks plus observed orphans.'}
-        </p>
-        <p className="text-caption text-muted mb-5">
-          Competing blocks may be missed, and collection uptime is not verified. These observations do not establish the full network or any pool&apos;s true orphan rate.
-        </p>
-        {supported && data.capture && <p className="text-caption text-muted mb-5">
-          Competing-block collector: {data.capture.status === 'collecting' ? 'collecting' : 'currently unavailable'}.
-          {data.capture.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
-          {' '}Saved observations remain included during interruptions.
-        </p>}
+        <p className="text-sm text-muted mb-4">How often a block loses the race to a competing block, as seen by our observers.</p>
+        {supported && data.capture && (data.capture.locations?.length ? <ObserverSummary capture={data.capture} /> : <p className="mb-5 text-caption text-muted">{data.capture.status === 'collecting' ? 'Collecting' : 'Collector unavailable'}</p>)}
         {loading ? <p role="status" className="text-sm text-muted py-6">Loading observed orphan rates…</p> : !supported ? (
           <p role="status" className="text-sm text-muted py-6">Observed orphan rates are temporarily unavailable.</p>
         ) : <>
           {error && <p role="status" className="text-caption text-muted mb-3">Refresh failed. Showing the previous snapshot from {utc(data.asOf)} UTC.</p>}
-          <div className="grid sm:grid-cols-3 gap-3 mb-6">
-            {data.periods.map(window => (
-              <button key={window.period} type="button" aria-pressed={period === window.period} onClick={() => setPeriod(window.period)}
-                className={`card p-4 text-left transition ${period === window.period ? 'ring-1 ring-cipher-gold/40' : 'hover:bg-glass-3'}`}>
-                <span className="block text-caption font-mono text-muted uppercase mb-2">{window.period} observed rate</span>
+          <OrphanRateDailyChart />
+          <div className={`grid grid-cols-2 sm:grid-cols-3 ${nu7 ? 'lg:grid-cols-5' : ''} gap-3 mb-6`}>
+            {windows.map(window => (
+              <button key={window.period} type="button" aria-pressed={selected?.period === window.period} onClick={() => setPeriod(window.period)}
+                className={`card p-4 text-left transition ${selected?.period === window.period ? 'ring-1 ring-cipher-gold/40' : 'hover:bg-glass-3'} ${window.period === 'nu7' ? 'border-cipher-gold/30' : ''}`}>
+                <span className={`block text-caption font-mono uppercase mb-2 ${window.period === 'nu7' ? 'text-cipher-gold' : 'text-muted'}`}>{PERIOD_LABELS[window.period]} observed rate</span>
                 <span className="block text-xl font-mono font-semibold text-primary mb-2">{percent(window.rate)}</span>
                 <span className="block text-caption text-muted">{window.orphanedBlocks.toLocaleString()} observed orphans · {window.canonicalBlocks.toLocaleString()} canonical blocks</span>
               </button>
@@ -82,19 +117,43 @@ export function OrphanRateSection() {
           </div>
           {selected && <>
             <p className="text-caption text-muted mb-3">{utc(selected.windowStart)} – {utc(selected.windowEnd)} UTC · block-header timestamps</p>
-            {selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
-              <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${period}`} columns={[
-                { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="font-mono text-xs text-primary">{pool.name}</span> },
+            {selected.unavailableReason === 'capture-began-after-activation' ? <p className="text-sm text-muted py-4">Competing-block capture began after NU7 activated on this network, so there is no comparable before-NU7 window.</p>
+              : selected.unavailableReason ? <p className="text-sm text-muted py-4">Canonical block history is insufficient for this window. The observed counts above are retained; a rate is unavailable.</p> :
+              <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${PERIOD_LABELS[selected.period]}`} columns={[
+                { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="inline-flex items-center gap-2 font-mono text-xs text-primary"><PoolLogo name={pool.name} />{pool.name}</span> },
                 { id: 'canonical', header: 'Canonical blocks', align: 'right', sortValue: pool => pool.canonicalBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.canonicalBlocks.toLocaleString()}</span> },
                 { id: 'orphans', header: 'Observed orphans', align: 'right', sortValue: pool => pool.orphanedBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
                 { id: 'rate', header: 'Observed rate', align: 'right', sortValue: pool => pool.rate, cell: pool => <span className="font-mono text-xs tabular-nums">{percent(pool.rate)}</span> },
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
-            Observed orphans ÷ (canonical blocks + observed orphans). Pool labels use public coinbase data; Unknown remains included. Small samples can produce large percentages.{' '}
             Snapshot {utc(data.asOf)} UTC{data.indexedHeight != null && ` · indexed height ${data.indexedHeight.toLocaleString()}`}
-            {data.indexedTimestamp && ` · tip header ${utc(data.indexedTimestamp)} UTC`}.
+            {data.indexedTimestamp && ` · tip header ${utc(data.indexedTimestamp)} UTC`}
           </p>
+          <details className="mt-3 text-caption text-muted">
+            <summary className="cursor-pointer select-none text-secondary hover:text-primary">How this is measured</summary>
+            <div className="mt-2 space-y-2 max-w-3xl">
+              <p>
+                Rate = observed orphans ÷ (canonical blocks + observed orphans), by block-header time.
+                {data.method === 'observed-block-capture-v2'
+                  ? ' Orphans are competing blocks our observers received plus blocks removed by reorgs.'
+                  : ' Orphans are blocks this explorer saw leave the canonical chain in a reorganization.'}
+                {' '}A competing block counts if any observer received it. Pool labels use public coinbase data; Unknown remains included. Small samples can produce large percentages.
+              </p>
+              <p>
+                Competing blocks can still be missed and collection uptime is not verified, so this is not the whole network&apos;s or any pool&apos;s true orphan rate.
+                {data.capture?.startedAt && ` Capture began ${utc(data.capture.startedAt)} UTC; earlier periods have less coverage.`}
+                {' '}Saved observations stay included during interruptions.
+              </p>
+              <p>
+                {nu7 ? <>Before NU7 covers up to 30 days before activation{nu7.activationHeight != null && ` at block #${nu7.activationHeight.toLocaleString('en-US')}`}, from no earlier than competing-block capture; Since NU7 starts at its header time. With 25-second blocks, more blocks compete in the same time.</>
+                  : <>Before NU7 and Since NU7 windows appear once the activation block is indexed.</>}
+              </p>
+              <p>
+                Coverage changed on 5 Nov 2026: one observer in Helsinki until 19:55 UTC, four regional observers from then, and ten from 22:16 UTC when the zecminingpool.com nodes joined. This was shortly before NU7, so Before NU7 mostly reflects one observer and Since NU7 reflects ten; part of any increase is better observation, not more orphaning.
+              </p>
+            </div>
+          </details>
         </>}
       </CardBody></Card>
     </section>

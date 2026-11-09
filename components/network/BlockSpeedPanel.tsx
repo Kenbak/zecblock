@@ -2,24 +2,25 @@ import Link from 'next/link';
 import { Card, CardBody } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { ChartWatermark } from '@/components/ChartWatermark';
-import { BlockSpeedChart } from '@/components/network/BlockSpeedChart';
+import { BlockSpeedChartView } from '@/components/network/BlockSpeedChartView';
 import { BlockSpeedShareControl } from '@/components/network/BlockSpeedShareControl';
 import { ANNOUNCED_MAINNET_NU7 } from '@/lib/network-upgrades';
-import { formatSeconds, formatSpeedup, nu7Average, NU7_TARGET_SECONDS, SPENDABLE_CONFIRMATIONS, type SpeedStory } from '@/lib/block-speed';
+import { formatSeconds, formatSpeedup, nu7Average, NU7_TARGET_SECONDS, type SpeedStory } from '@/lib/block-speed';
 
 export function formatLongDate(date: string | null) {
   return date ? new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' }) : null;
 }
 
 function Stat({ label, before, value, hint, highlight = false }: { label: string; before?: string; value: string; hint: string; highlight?: boolean }) {
-  return <div className="min-w-0 border-b border-cipher-border py-3 first:pt-0 last:border-b-0 last:pb-0 sm:border-b-0 sm:border-l sm:first:border-l-0 sm:px-5 sm:first:pl-0 sm:last:pr-0 sm:py-0">
-    <dt className="type-label text-muted uppercase mb-2">{label}</dt>
-    <dd className="min-w-0">
-      <div className="type-metric type-metric-compact flex items-baseline gap-2 whitespace-nowrap">
+  // Phones: one compact row per stat (label and hint left, value right). Wider: three columns.
+  return <div className="min-w-0 grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-4 border-b border-cipher-border py-2.5 first:pt-0 last:border-b-0 last:pb-0 sm:block sm:border-b-0 sm:border-l sm:first:border-l-0 sm:px-5 sm:first:pl-0 sm:last:pr-0 sm:py-0">
+    <dt className="type-label text-muted uppercase sm:mb-2">{label}</dt>
+    <dd className="contents sm:block sm:min-w-0">
+      <div className="row-span-2 type-metric type-metric-compact flex items-baseline justify-end gap-2 whitespace-nowrap sm:justify-start">
         {before != null && <><span className="text-secondary">{before}</span><span aria-hidden="true" className="text-sm text-muted">→</span></>}
         <span className={highlight ? 'text-cipher-gold' : 'text-primary'}>{value}</span>
       </div>
-      <p className="text-caption text-muted mt-1">{hint}</p>
+      <p className="col-start-1 text-caption text-muted sm:mt-1">{hint}</p>
     </dd>
   </div>;
 }
@@ -58,12 +59,6 @@ function Stats({ story }: { story: SpeedStory }) {
   </>;
 }
 
-function Footnote({ story }: { story: SpeedStory }) {
-  return <>Daily averages. {story.phase === 'upcoming' && story.network === 'mainnet'
-    ? `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315). Outlined bars show targets.`
-    : story.network === 'testnet' ? `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315). Earlier testnet timing was irregular.` : `Total: ${SPENDABLE_CONFIRMATIONS} confirmations (ZIP 315).`}</>;
-}
-
 export function BlockSpeedPanel({ story, variant = 'compact' }: { story: SpeedStory | null; variant?: 'compact' | 'full' }) {
   const compact = variant === 'compact';
   return <Card className="card-static p-4 sm:p-6"><CardBody>
@@ -71,8 +66,7 @@ export function BlockSpeedPanel({ story, variant = 'compact' }: { story: SpeedSt
     {!story ? <p role="status" className="py-12 text-center text-sm text-muted">Block speed observations are unavailable.</p> : <>
       <p className="text-sm text-secondary mb-4 max-w-3xl"><Intro story={story} /></p>
       <dl className="grid grid-cols-1 sm:grid-cols-3 border-y border-cipher-border py-4 mb-4"><Stats story={story} /></dl>
-      <BlockSpeedChart points={story.points} activation={story.activation} height={compact ? 220 : 280} />
-      <p className="text-caption text-muted mt-3 max-w-3xl"><Footnote story={story} /></p>
+      <BlockSpeedChartView story={story} height={compact ? 220 : 280} />
     </>}
     <ChartWatermark />
   </CardBody></Card>;

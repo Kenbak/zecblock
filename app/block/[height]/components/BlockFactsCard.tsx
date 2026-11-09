@@ -8,6 +8,8 @@ import type { CoinbaseClientEmoji, CoinbaseClientInfo } from '@/lib/coinbase-cli
 import type { BlockData } from './types';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
 import { CopyButton } from '@/components/CopyButton';
+import { PoolLogo } from '@/components/PoolLogo';
+import { BlockSeenLine } from '@/components/BlockFirstSeen';
 
 interface RewardRecipient {
   address: string | null;
@@ -74,8 +76,10 @@ function BlockRewardBreakdown({
   return (
     <FactBox label="Coinbase Outputs" tooltip="The visible outputs created by this block's coinbase transaction. Deferred-development-lockbox accrual is part of the subsidy but is not a transaction output.">
       {minerPool && !data.minerAddress && (
-        <p className="mb-2 text-caption text-muted" title="Pool identified from the public coinbase tag; payout recipient remains shielded">
-          Pool · {minerPoolUrl ? <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{minerPool}</a> : minerPool}
+        <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted" title="Pool identified from the public coinbase tag; payout recipient remains shielded">
+          <span>Pool ·</span>
+          {!data.minerPoolIsFundingStream && <PoolLogo name={minerPool} />}
+          {minerPoolUrl ? <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{minerPool}</a> : minerPool}
           <span className="ml-1.5">(coinbase tag)</span>
         </p>
       )}
@@ -83,7 +87,7 @@ function BlockRewardBreakdown({
       <div className="mt-2 space-y-1">
         {recipients.map((r, i) => (
           <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-caption">
-            <div className="flex items-center gap-1.5 min-w-0 text-muted">
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0 text-muted">
               <span className="shrink-0">{r.label}</span>
               {r.address ? (
                 <CopyableHash value={r.address} href={`/address/${r.address}`} textSize="text-caption" colorClass="text-primary" />
@@ -91,11 +95,12 @@ function BlockRewardBreakdown({
                 <span className="font-mono text-cipher-yellow">Shielded Pool</span>
               )}
               {r.label === 'Miner' && r.address === data.minerAddress && minerPool && (
-                <span className="font-mono text-muted whitespace-nowrap">
-                  ({minerPoolUrl ? (
+                <span className="inline-flex items-center gap-1.5 font-mono text-muted whitespace-nowrap">
+                  <PoolLogo name={minerPool} />
+                  <span>({minerPoolUrl ? (
                     <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{minerPool}</a>
                   ) : minerPool}
-                  {minerPoolRegion && ` ${minerPoolRegion}`})
+                  {minerPoolRegion && ` ${minerPoolRegion}`})</span>
                 </span>
               )}
             </div>
@@ -167,7 +172,7 @@ export function BlockFactsCard({
           five short facts fill the same width five boxes would take instead
           of two. `order` resets to source order at sm+ via `sm:order-none`.
         */}
-        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-start">
+        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap sm:items-stretch">
           <FactBox fit className="order-1 sm:order-none fact-box-hash" label="Block Hash" tooltip="Unique cryptographic identifier for this block">
             <CopyableHash value={data.hash} colorClass="text-primary" />
           </FactBox>
@@ -182,11 +187,12 @@ export function BlockFactsCard({
             `sm:order-none` reverts *to* on desktop, which is what broke it
             last time.
           */}
-          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time; not the time ZecBlock first observed the block">
+          <FactBox fit className="order-3 col-span-2 sm:order-none sm:col-span-1 fact-box-timestamp" label="Timestamp" tooltip="Miner-provided block header time. When recorded, the second line is when ZecBlock first received this block from its node, with the gap from the header time; older blocks have no observation.">
             <span className="text-sm text-primary whitespace-nowrap">
               {formatRelativeTime(data.timestamp)}
               <span className="text-muted ml-1.5 text-xs">({formatDateUTC(data.timestamp)})</span>
             </span>
+            <BlockSeenLine firstSeenAt={data.firstSeenAt} headerTimestamp={data.timestamp} />
           </FactBox>
 
           <FactBox fit className="order-2 sm:order-none" label="Block Size" tooltip="The size of this block in kilobytes">
@@ -201,7 +207,9 @@ export function BlockFactsCard({
 
           {data.totalFees !== undefined && !data.isOrphaned && (
             <FactBox fit className="order-5 sm:order-none" label="Total Fees" tooltip="Total fees paid by all transactions in this block">
-              <BoldZec value={data.totalFees} />
+              {data.totalFees === null
+                ? <span className="text-sm text-muted">Unavailable</span>
+                : <BoldZec value={data.totalFees} />}
             </FactBox>
           )}
         </div>

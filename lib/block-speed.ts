@@ -1,9 +1,14 @@
 /** Block-speed story built from one serving-node network's canonical header timestamps. */
 import { ANNOUNCED_MAINNET_NU7 } from '@/lib/network-upgrades';
 
+export type SpeedBucketKey = 'super-fast' | 'fast' | 'slow' | 'very-slow' | 'long-wait';
+/** Intervals below `upToTarget` × the window's target (exclusive), above the previous bucket's bound. */
+export type SpeedBucket = { key: SpeedBucketKey; upToTarget: number | null; upToSeconds: number | null; blocks: number };
 export type SpeedSummary = {
   fromHeight: number; toHeight: number; fromTimestamp: number; toTimestamp: number; intervals: number;
   averageSeconds: number | null; medianSeconds: number | null; p90Seconds: number | null; targetSeconds: number | null;
+  /** Absent from older API responses; null when the window has no target spacing. */
+  distribution?: SpeedBucket[] | null;
 };
 export type SpeedDay = {
   date: string; start: number; nu7: boolean; targetSeconds: number | null; firstHeight: number; lastHeight: number;
@@ -33,10 +38,52 @@ export const ZIP_315_URL = 'https://zips.z.cash/zip-0315';
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
 const finiteOrNull = (value: unknown) => value === null || finite(value);
 
+export const SPEED_BUCKETS: readonly { key: SpeedBucketKey; label: string; upToTarget: number | null }[] = [
+  { key: 'super-fast', label: 'Super fast', upToTarget: 0.25 },
+  { key: 'fast', label: 'Fast', upToTarget: 1 },
+  { key: 'slow', label: 'Slow', upToTarget: 2 },
+  { key: 'very-slow', label: 'Very slow', upToTarget: 4 },
+  { key: 'long-wait', label: 'Long wait', upToTarget: null },
+];
+
+function isDistribution(value: unknown): value is SpeedBucket[] {
+  return Array.isArray(value) && value.length === SPEED_BUCKETS.length && value.every((bucket, index) => !!bucket && typeof bucket === 'object'
+    && bucket.key === SPEED_BUCKETS[index].key && bucket.upToTarget === SPEED_BUCKETS[index].upToTarget
+    && finiteOrNull(bucket.upToSeconds) && Number.isSafeInteger(bucket.blocks) && bucket.blocks >= 0);
+}
+
 function isSummary(value: unknown): value is SpeedSummary {
   const s = value as SpeedSummary;
   return !!s && typeof s === 'object' && [s.fromHeight, s.toHeight, s.fromTimestamp, s.toTimestamp, s.intervals].every(finite)
-    && [s.averageSeconds, s.medianSeconds, s.p90Seconds, s.targetSeconds].every(finiteOrNull);
+    && [s.averageSeconds, s.medianSeconds, s.p90Seconds, s.targetSeconds].every(finiteOrNull)
+    && (s.distribution == null || isDistribution(s.distribution));
+}
+
+/**
+ * Share of intervals expected in a bucket if blocks arrive at random (a Poisson
+ * process) at exactly the target pace: intervals are then exponential with the
+ * target as their mean.
+ */
+export function expectedBucketShare(index: number): number {
+  const lower = SPEED_BUCKETS[index - 1]?.upToTarget ?? 0;
+  const upper = SPEED_BUCKETS[index]?.upToTarget;
+  return Math.exp(-lower) - (upper == null ? 0 : Math.exp(-upper));
+}
+
+/**
+ * Half-open bucket range for display, e.g. `< 19s`, `19–75s`, `150s–5 min`, `≥ 5 min`.
+ * Header intervals are whole seconds, so fractional bounds round up.
+ */
+export function bucketRange(buckets: readonly SpeedBucket[], index: number): string {
+  const format = (value: number) => {
+    const seconds = Math.ceil(value);
+    return seconds >= 300 && seconds % 60 === 0 ? `${seconds / 60} min` : `${seconds}s`;
+  };
+  const lower = buckets[index - 1]?.upToSeconds; const upper = buckets[index]?.upToSeconds;
+  if (upper == null) return lower == null ? '—' : `≥ ${format(lower)}`;
+  if (lower == null) return `< ${format(upper)}`;
+  const [from, to] = [format(lower), format(upper)];
+  return from.endsWith('s') && to.endsWith('s') ? `${from.slice(0, -1)}–${to}` : `${from}–${to}`;
 }
 
 function isDay(value: unknown): value is SpeedDay {
@@ -66,6 +113,12 @@ export function readBlockSpeed(value: unknown, expected: 'main' | 'test'): Block
 export type SpeedPoint = {
   key: string; date: string; nu7: boolean; kind: 'measured' | 'projected' | 'irregular';
   averageSeconds: number; targetSeconds: number | null; lastHeight: number | null;
+  /** Blocks with header times in this UTC day; projected days use the target pace. */
+  blocks: number;
+  /** The current UTC day: still accumulating blocks. */
+  inProgress?: boolean;
+  /** Which side of NU7 this point covers when activation splits its UTC day. */
+  segment?: 'before-nu7' | 'nu7';
 };
 export type SpeedActivation = { height: number; date: string | null; status: 'active' | 'scheduled' | 'announced' };
 export type SpeedStory = {
@@ -82,9 +135,15 @@ export type SpeedStory = {
   points: SpeedPoint[];
   /** Measured NU7 average on the other network, as supporting evidence while mainnet is upcoming. */
   testnetNu7: SpeedSummary | null;
+  /** Highest indexed block when the story was built; places it relative to activation. */
+  tipHeight: number;
 };
 
 const HISTORY_POINTS = 21;
+/** Once NU7 is live, the daily chart always keeps this many days before it for comparison. */
+export const PRE_NU7_DAYS = 7;
+/** An unfinished day is drawn once it has this many intervals, so a few early blocks do not read as a trend. */
+const MIN_PARTIAL_INTERVALS = 60;
 const PROJECTED_NU7_DAYS = 7;
 const MAX_PROJECTED_DAYS = 30;
 const DAY = 86_400;
@@ -92,11 +151,29 @@ const DAY = 86_400;
 const isoDay = (seconds: number) => new Date(seconds * 1000).toISOString().slice(0, 10);
 const addDays = (date: string, days: number) => isoDay(Date.parse(`${date}T00:00:00Z`) / 1000 + days * DAY);
 
-function measuredPoints(days: SpeedDay[], network: SpeedStory['network'], limit: number): SpeedPoint[] {
-  return days.filter(day => day.complete && day.averageSeconds != null).slice(-limit).map(day => ({
+function measuredPoints(days: SpeedDay[], network: SpeedStory['network'], limit: number, withPartial = false): SpeedPoint[] {
+  const split = new Set(days.filter((day, index) => days.findIndex(other => other.date === day.date) !== index).map(day => day.date));
+  const last = days.at(-1);
+  // Split activation days and the current day are incomplete by definition but are the
+  // first NU7 evidence; earlier incomplete rows (a capped scan's first day) stay hidden.
+  const shown = days.filter(day => day.averageSeconds != null && (day.complete
+    || (withPartial && (split.has(day.date) || day === last) && day.intervals >= MIN_PARTIAL_INTERVALS)));
+  return shown.slice(-limit).map(day => ({
     key: `${day.date}-${day.nu7 ? 'nu7' : 'pre'}`, date: day.date, nu7: day.nu7, averageSeconds: day.averageSeconds!, targetSeconds: day.targetSeconds,
     kind: network === 'testnet' && !day.nu7 ? 'irregular' : 'measured', lastHeight: day.lastHeight,
+    blocks: day.lastHeight - day.firstHeight + 1,
+    // Only the newest row is still filling; the pre-NU7 side of an activation day is final.
+    ...(!day.complete && day === last ? { inProgress: true } : {}),
+    ...(split.has(day.date) ? { segment: day.nu7 ? 'nu7' : 'before-nu7' } as const : {}),
   }));
+}
+
+/** The latest days, always keeping PRE_NU7_DAYS before activation so the change stays visible. */
+function withBaseline(points: SpeedPoint[], limit: number): SpeedPoint[] {
+  const before = points.filter(point => !point.nu7);
+  const after = points.filter(point => point.nu7);
+  const keepBefore = Math.min(before.length, Math.max(PRE_NU7_DAYS, limit - after.length));
+  return [...before.slice(before.length - keepBefore), ...after.slice(Math.max(0, after.length - (limit - keepBefore)))];
 }
 
 /** Upcoming mainnet activation: the serving-node schedule wins over the editorial announcement. */
@@ -111,7 +188,7 @@ function upcomingActivation(host: BlockSpeedPayload, preTarget: number | null): 
 function projectedPoints(from: string, activationDate: string | null, preTarget: number | null): SpeedPoint[] {
   if (!activationDate) return [];
   const point = (date: string, nu7: boolean, target: number): SpeedPoint =>
-    ({ key: `${date}-projected`, date, nu7, kind: 'projected', averageSeconds: target, targetSeconds: target, lastHeight: null });
+    ({ key: `${date}-projected`, date, nu7, kind: 'projected', averageSeconds: target, targetSeconds: target, lastHeight: null, blocks: Math.round(DAY / target) });
   const points: SpeedPoint[] = [];
   if (preTarget != null) {
     for (let date = from; date < activationDate && points.length < MAX_PROJECTED_DAYS; date = addDays(date, 1)) points.push(point(date, false, preTarget));
@@ -132,8 +209,9 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
   const network = host.network === 'main' ? 'mainnet' : 'testnet';
   const measured = measuredPoints(host.days, network, network === 'testnet' ? host.days.length : HISTORY_POINTS);
   if (host.activation) {
+    const all = measuredPoints(host.days, network, host.days.length, true);
     return {
-      network, phase: 'active', points: measured, testnetNu7: null,
+      network, phase: 'active', points: network === 'mainnet' ? withBaseline(all, HISTORY_POINTS) : all, testnetNu7: null, tipHeight: host.indexedHeight,
       before: network === 'mainnet' ? host.windows.beforeUpgrade : null,
       after: host.windows.latest,
       irregular: network === 'testnet' ? host.windows.beforeUpgrade : null,
@@ -141,7 +219,7 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
     };
   }
   if (network === 'testnet') {
-    return { network, phase: 'upcoming', points: measured, before: null, after: null, irregular: host.windows.latest, activation: null, testnetNu7: null };
+    return { network, phase: 'upcoming', points: measured, before: null, after: null, irregular: host.windows.latest, activation: null, testnetNu7: null, tipHeight: host.indexedHeight };
   }
   const preTarget = host.windows.latest?.targetSeconds ?? measured.at(-1)?.targetSeconds ?? null;
   const activation = upcomingActivation(host, preTarget);
@@ -149,6 +227,7 @@ export function buildSpeedStory(host: BlockSpeedPayload | null, peer: BlockSpeed
     network, phase: 'upcoming', before: host.windows.latest, after: null, irregular: null, activation,
     points: [...measured, ...projectedPoints(isoDay(host.tipTimestamp), activation.date, preTarget)],
     testnetNu7: peer?.network === 'test' && peer.activation ? peer.windows.latest : null,
+    tipHeight: host.indexedHeight,
   };
 }
 
@@ -178,4 +257,58 @@ export function formatSpeedup(ratio: number | null): string {
 
 export function formatDay(date: string): string {
   return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
+}
+
+/** How the chart groups blocks: one bar per UTC day, or one bar per block. */
+export type SpeedZoom = 'days' | 'blocks';
+export const SPEED_ZOOMS: readonly SpeedZoom[] = ['days', 'blocks'];
+/** Per-block view leads from ~6 hours before activation at 75s blocks… */
+export const LIVE_BLOCKS_BEFORE_ACTIVATION = 288;
+/** …until ~3 days after it at 25s, when complete NU7 days start to fill the daily chart. */
+export const LIVE_BLOCKS_AFTER_ACTIVATION = 10_368;
+/** Blocks averaged by the per-block line; ZIP 315's depth for received funds. */
+export const ROLLING_BLOCKS = SPENDABLE_CONFIRMATIONS;
+
+/** Per-block around activation, when the switch itself is the news; daily otherwise. */
+export function defaultSpeedZoom(story: SpeedStory | null): SpeedZoom {
+  if (!story?.activation) return 'days';
+  const fromActivation = story.tipHeight - story.activation.height;
+  return fromActivation >= -LIVE_BLOCKS_BEFORE_ACTIVATION && fromActivation < LIVE_BLOCKS_AFTER_ACTIVATION ? 'blocks' : 'days';
+}
+
+/** One canonical block with its header-time gap from the previous block. */
+export type LiveBlock = {
+  height: number; timestamp: number; intervalSeconds: number | null; targetSeconds: number | null;
+  /** Average of the last ROLLING_BLOCKS gaps ending here; null without that many consecutive blocks. */
+  rollingSeconds: number | null;
+};
+
+const integer = (value: unknown): value is number => Number.isSafeInteger(value);
+
+/**
+ * Validates `/v1/network/block-time?period=blocks` points, keeps one consecutive
+ * run of heights ending at the newest block, and adds the rolling average.
+ * Header times can run backwards, so single gaps may be negative.
+ */
+export function readLiveBlocks(value: unknown): LiveBlock[] {
+  const points = (value as { period?: unknown; points?: unknown } | null)?.period === 'blocks'
+    ? (value as { points: unknown }).points : null;
+  if (!Array.isArray(points)) return [];
+  const valid = points.filter((point): point is { height: number; timestamp: number; intervalSeconds: number | null; targetSeconds: number | null } =>
+    point && typeof point === 'object' && integer(point.height) && point.height >= 0 && integer(point.timestamp) && point.timestamp > 0
+      && (point.intervalSeconds === null || integer(point.intervalSeconds))
+      && (point.targetSeconds === null || (typeof point.targetSeconds === 'number' && point.targetSeconds > 0)))
+    .sort((a, b) => a.height - b.height);
+  let start = valid.length - 1;
+  while (start > 0 && valid[start - 1].height === valid[start].height - 1) start--;
+  const run = valid.slice(Math.max(0, start));
+  return run.map((point, index) => {
+    // A block's own gap needs its predecessor in this run; the first block may carry one from the API.
+    const intervalSeconds = index > 0 ? point.timestamp - run[index - 1].timestamp : point.intervalSeconds;
+    const from = index - ROLLING_BLOCKS;
+    return {
+      height: point.height, timestamp: point.timestamp, intervalSeconds, targetSeconds: point.targetSeconds,
+      rollingSeconds: from >= 0 ? (point.timestamp - run[from].timestamp) / ROLLING_BLOCKS : null,
+    };
+  });
 }

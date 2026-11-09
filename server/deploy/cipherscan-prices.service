@@ -1,0 +1,19 @@
+[Unit]
+Description=Collect missing daily prices and catch up the shielded pool model
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/cipherscan
+Environment=NODE_PATH=/root/cipherscan/server/api/node_modules
+ExecStart=/usr/bin/node server/scripts/backfill-zec-prices.js --daily
+ExecStartPost=/usr/bin/node server/jobs/refresh-pool-realized-cap.js --apply
+ExecStartPost=/usr/bin/node server/signals/compute-mvrv.js --today-only
+TimeoutStartSec=900
+Nice=15
+IOSchedulingClass=idle
+CPUWeight=10
+IOWeight=10
+MemoryMax=512M
+UMask=0077

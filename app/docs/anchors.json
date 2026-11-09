@@ -42,6 +42,7 @@
   "GET /v1/mining/observation-lag": "get-v1-mining-observation-lag",
   "GET /v1/mining/metrics": "mining-metrics",
   "GET /v1/mining/hashrate-history": "network-hashrate-history",
+  "GET /v1/mining/difficulty-stability": "get-v1-mining-difficulty-stability",
   "GET /v1/shielded-pools/history": "pool-history",
   "GET /v1/network/emission": "emission",
   "GET /v1/network/chain-size-history": "get-network-chain-size-history",

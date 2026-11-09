@@ -2161,6 +2161,20 @@
   },
   {
     "method": "GET",
+    "path": "/v1/mining/difficulty-stability",
+    "description": "Mainnet difficulty swings before and since NU7. Each block is compared with the median difficulty of the surrounding 24 hours in its own era.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Percent deviations use canonical block difficulty and header timestamps. Blocks need 12 full hours of the same era on each side, so the latest 12 hours are not evaluated. The before window is the 14 days preceding activation; the since window is at most the latest 14 days and excludes the first 6 hours after activation while difficulty settles. available is false with a reason on non-mainnet networks, before activation, or with too little history; missingBlocks counts absent or non-positive difficulty rows in each era.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/shielded-pools/history",
     "description": "Daily shielded and transparent pool balances from chain state.",
     "category": "shielded-pools",

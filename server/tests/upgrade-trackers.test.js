@@ -118,7 +118,7 @@ test('major-change tools use existing routes and stable supporting sections', ()
     const changes = buildUpgradeHistory(null, network).flatMap(milestone => buildUpgradeChanges(milestone.id, network));
     const sectionSources = {
       '/network': ['app/network/NetworkClient.tsx', 'components/network/MiningIssuance.tsx', 'components/network/NetworkAccounting.tsx'],
-      '/mining': ['app/mining/page.tsx'],
+      '/mining': ['app/mining/page.tsx', 'components/network/DifficultyStabilityChart.tsx'],
       '/pools': ['app/pools/page.tsx'],
       '/ironwood': ['MigrationActivity', 'PrivacyScore', 'MigrationTiers', 'WalletReadiness', 'SupplyVerification'].map(name => `app/ironwood/components/${name}.tsx`),
     };

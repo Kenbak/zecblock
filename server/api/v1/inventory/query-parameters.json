@@ -87,6 +87,7 @@
     "period",
     "window"
   ],
+  "GET /v1/mining/difficulty-stability": [],
   "GET /v1/shielded-pools/history": [
     "format",
     "period"

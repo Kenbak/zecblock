@@ -20,6 +20,7 @@ const {
   isValidBase58CheckAddress,
   isValidSaplingAddress,
   isValidUnifiedAddress,
+  texToTransparentAddress,
 } = require('../lib/zcash-address');
 
 const disabledListCache = createListCache({ enabled: false });
@@ -34,6 +35,12 @@ function isCanonicalIntegerQuery(value) {
   if (value === undefined) return true;
   if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return false;
   return Number.isSafeInteger(Number.parseInt(value, 10));
+}
+
+// TEX addresses (ZIP 320) re-encode a P2PKH address with Bech32m, and payments
+// to them are ordinary P2PKH outputs, so they are looked up by that address.
+function isTexAddress(address) {
+  return address.startsWith('tex1') || address.startsWith('textest1');
 }
 
 function hasConsistentAddressSummary(summary) {
@@ -302,7 +309,11 @@ router.get('/api/rich-list', async (req, res) => {
  */
 router.get('/api/address/:address', validate('addressById'), async (req, res) => {
   try {
-    const { address } = req.params;
+    const texAddress = isTexAddress(req.params.address) ? req.params.address : null;
+    const address = texAddress ? texToTransparentAddress(texAddress) : req.params.address;
+    if (!address) {
+      return res.status(404).json({ error: 'Invalid TEX address' });
+    }
     const page = Number(req.query.page || 1);
     const limit = Number(req.query.limit || 25);
 
@@ -481,7 +492,7 @@ router.get('/api/address/:address', validate('addressById'), async (req, res) =>
         pagination,
       };
     });
-    res.json(payload);
+    res.json(texAddress ? { ...payload, address: texAddress, transparentAddress: address } : payload);
   } catch (error) {
     if (error instanceof AddressPaginationError) return res.status(error.status).json({ error: error.publicMessage, code: error.code });
     logSafeError('Error fetching address:', error);
@@ -503,7 +514,10 @@ router.get('/api/address/:address', validate('addressById'), async (req, res) =>
  */
 router.get('/api/address/:address/graph', validate('addressGraph'), async (req, res) => {
   try {
-    const { address } = req.params;
+    const address = isTexAddress(req.params.address) ? texToTransparentAddress(req.params.address) : req.params.address;
+    if (!address) {
+      return res.status(404).json({ success: false, error: 'Invalid TEX address' });
+    }
 
     // Graph analysis only applies to transparent addresses
     if (!/^t[13m]/.test(address)) {

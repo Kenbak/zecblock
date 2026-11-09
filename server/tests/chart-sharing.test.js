@@ -33,6 +33,14 @@ test('daily per-block charts honour the range in their share links',()=>{
  assert.equal(sharing.chartRangeRows(chart,rows,'30d').length,30);
  assert.equal(sharing.chartRangeRows(chart,rows,'7d').length,7);
 });
+test('daily per-block charts stop at 90 days while other charts keep every range',()=>{
+ const daily=CHART_CATALOG.find(c=>c.id==='tx-per-block'),other=CHART_CATALOG.find(c=>c.id==='supply');
+ assert.deepEqual([...sharing.chartRanges(daily)],['7d','30d','90d']);
+ assert.equal(sharing.normalizeChartRange('90d',daily),'90d');
+ for (const range of ['all','1y']) assert.equal(sharing.normalizeChartRange(range,daily),'30d');
+ assert.equal(sharing.normalizeChartRange('all',other),'all');
+ assert.ok(sharing.chartRanges(other).includes('all'));
+});
 test('shared charts default to 30 days while explicit all-history selections round-trip',()=>{
  for (const value of [undefined,null,'']) assert.equal(sharing.normalizeChartRange(value),'30d');
  assert.equal(sharing.chartSharePath('supply'),'/charts/supply?range=30d');

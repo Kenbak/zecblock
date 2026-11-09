@@ -10,6 +10,8 @@ export interface CatalogChart {
   endpoint: string; rows: string; x: string; window: string; unit: string;
   series: CatalogSeries[]; kind?: 'bar' | 'area' | 'line'; axis?: 'category' | 'height'; cadence?: 'daily';
   stack?: boolean; reference?: number; percent?: boolean; requireVerifiedPools?: boolean;
+  /** Date ranges this chart's source can serve; every range when omitted. */
+  ranges?: readonly ('7d' | '30d' | '90d' | '1y' | 'all')[];
 }
 const series = (key: string, label: string, color: ChartColor, scale?: number): CatalogSeries => ({key,label,color,scale});
 const flows = [series('shield','Shield in','shielding'),series('deshield','Deshield out','deshielding')];
@@ -18,7 +20,7 @@ const privacy = {category:'Privacy',endpoint:'/v1/privacy/stats?days=all',rows:'
 const pools = {category:'Supply & flows',endpoint:'/v1/shielded-pools/history?period=all',rows:'points',x:'date',cadence:'daily' as const,window:'All available history',href:'/pools#supply'};
 const valuation = {category:'Valuation',endpoint:'/v1/valuation/history?period=all',rows:'points',x:'date',cadence:'daily' as const,window:'All available history',href:'/valuation#price'};
 const metrics = {category:'Mining & network',endpoint:`/v1/mining/metrics?window=${MINING_METRICS_WINDOW}&limit=${MINING_METRICS_POINTS}`,rows:'points',x:'height',axis:'height' as const,window:`${MINING_METRICS_WINDOW}-block rolling averages · up to ${MINING_METRICS_POINTS} samples`,href:'/mining#economics'};
-const blockActivity = {category:'Mining & network',endpoint:'/v1/network/block-activity',rows:'points',x:'date',cadence:'daily' as const,window:'Latest 400 completed UTC days',href:'/mining#economics'};
+const blockActivity = {category:'Mining & network',endpoint:'/v1/network/block-activity',rows:'points',x:'date',cadence:'daily' as const,window:'Latest 90 completed UTC days',ranges:['7d','30d','90d'] as const,href:'/mining#economics'};
 const ages = {category:'Valuation',endpoint:'/v1/valuation/dormancy?period=all',rows:'points',x:'date',cadence:'daily' as const,window:'All available history',href:'/valuation#dormancy'};
 
 /** Every entry declares its actual source, denominator, unit and observation window. */

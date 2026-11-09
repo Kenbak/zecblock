@@ -242,7 +242,7 @@ router.get('/api/network/fee-distribution', async (req, res) => {
 // BLOCK ACTIVITY — per-block transaction and fee means by completed UTC day
 // ============================================================================
 
-const BLOCK_ACTIVITY_DAYS = 400;
+const BLOCK_ACTIVITY_DAYS = 90;
 const SECONDS_PER_DAY = 86400;
 
 router.get('/api/network/block-activity', async (req, res) => {

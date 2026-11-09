@@ -148,7 +148,7 @@
     "title": "Fees per block",
     "description": "Average fees per block each completed UTC day, excluding subsidy. Mainnet blocks became three times as frequent at NU7 on November 6, 2026.",
     "unit": "ZEC",
-    "window": "Latest 400 completed UTC days",
+    "window": "Latest 90 completed UTC days",
     "source": "/mining#economics"
   },
   {
@@ -156,7 +156,7 @@
     "title": "Transactions per block",
     "description": "Average transactions per block each completed UTC day, including coinbase. Mainnet blocks became three times as frequent at NU7 on November 6, 2026.",
     "unit": "Transactions / block",
-    "window": "Latest 400 completed UTC days",
+    "window": "Latest 90 completed UTC days",
     "source": "/mining#economics"
   },
   {

@@ -28,12 +28,12 @@ test('daily means use every block and keep the exact zatoshi sum', async () => {
   assert.deepEqual(body.points, [{ date: '2026-11-08', blocks: 4, transactions: 10, txPerBlock: 2.5, totalFeesZat: '132000', feesPerBlockZec: 0.00033 }]);
 });
 
-test('the query covers 400 whole UTC days and excludes the partial current day', async () => {
+test('the query covers 90 whole UTC days and excludes the partial current day', async () => {
   const { queries } = await request([]);
   const [from, until] = queries[0].params;
   assert.equal(until % 86400, 0);
   assert.equal(until, Math.floor(Date.now() / 86400000) * 86400);
-  assert.equal(until - from, 400 * 86400);
+  assert.equal(until - from, 90 * 86400);
   assert.match(queries[0].sql, /"timestamp" >= \$1 AND "timestamp" < \$2/);
 });
 

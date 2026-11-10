@@ -212,7 +212,7 @@ export default function NodesClient() {
           </div>)}
         </dl>
         <p className="border-t border-cipher-border px-5 py-3 text-caption text-muted">
-          {stats ? `${stats.totalNodes.toLocaleString()} historical candidate IPs · Last observation ${stats.lastUpdated ? formatRelativeTime(stats.lastUpdated) : 'unavailable'}` : 'Awaiting node observations.'}
+          {stats ? `${stats.totalNodes.toLocaleString()} historical candidate IPs · Last observation ${stats.lastUpdated ? formatRelativeTime(stats.lastUpdated) : 'unavailable'}.` : 'Awaiting node observations.'}
           {' '}Discovery coverage is not a census of the network.
           {stats?.chainQualifiedCrawlerNodes != null && stats.localPeerOnlyNodes != null && <> {stats.chainQualifiedCrawlerNodes.toLocaleString()} crawler-verified IPs and {stats.localPeerOnlyNodes.toLocaleString()} additional local-peer IPs.</>}
         </p>

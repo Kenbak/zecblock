@@ -420,7 +420,7 @@ function MethodologyAccordion() {
             </p>
             <p>
               <strong>Overlap handling:</strong> Wallets using librustzcash (ZODL, Edge, Unstoppable,
-              Vizor) share the same on-chain fingerprint (expiry +40, locktime 0, 2-action padding).
+              Vizor) share the same on-chain fingerprint (expiry +120 since NU7 and +40 before it, locktime 0, 2-action padding).
               They are grouped as a single &quot;librustzcash family&quot; bucket because they are
               indistinguishable from one another on-chain.
             </p>
@@ -444,7 +444,7 @@ function buildUsageEstimates(fingerprints: FingerprintData | null) {
   const find = (name: string) => fingerprints.wallets.find(w => w.name === name);
 
   const entries: { name: string; key: string; signal: 'expiry' | 'fee' | 'locktime' | 'actionPadding'; confidence: 'high' | 'medium' | 'low' }[] = [
-    { name: 'ZODL / Vizor (Ironwood sends)', key: 'ZODL / Vizor (Ironwood sends)', signal: 'expiry', confidence: 'high' },
+    { name: 'ZODL / Vizor (Ironwood sends)', key: 'ZODL / Vizor (Ironwood sends)', signal: 'expiry', confidence: 'medium' },
     { name: 'ZODL / Vizor (ZIP-318 migration)', key: 'ZODL / Vizor (ZIP-318 migration)', signal: 'expiry', confidence: 'high' },
     { name: 'SDK wallets (cross-pool)', key: 'SDK wallets (cross-pool)', signal: 'expiry', confidence: 'medium' },
     { name: 'SDK wallets (Orchard pool)', key: 'SDK wallets (Orchard pool)', signal: 'actionPadding', confidence: 'medium' },

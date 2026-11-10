@@ -135,7 +135,7 @@ test('shim card separates its configured hub address from the deployment at the 
     const shim = data.endpoints.find(e => e.id === 'zecrocks-mainnet');
     shim.latest = { checkedAt: new Date(now).toISOString(), reachable: true, evidence: 'verified', tlsBinding: 'matched', release: 'reproduced_match' };
     shim.pinnedHub = pinnedHub;
-    return renderToStaticMarkup(React.createElement(Client, {initialData:data, initialNow:now, network:'mainnet',apiUrl:'https://api.mainnet.cipherscan.app'})).replace(/<[^>]+>/g, '');
+    return renderToStaticMarkup(React.createElement(Client, {initialData:data, initialNow:now, network:'mainnet',apiUrl:'https://api.mainnet.cipherscan.app'})).split(/<[^>]+>/).join('');
   };
   const pinned = (listedHub, age = 0) => ({ address: '54.151.176.23:443', hostname: 'hub.zcash.caution.co', listedHub,
     latest: { checkedAt: new Date(now - age).toISOString(), reachable: true, evidence: 'verified', tlsBinding: 'matched', release: 'unconfirmed', certificateFingerprint: 'a'.repeat(64) } });

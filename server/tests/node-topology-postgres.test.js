@@ -250,7 +250,7 @@ test('the crawl API route serves qualified fresh receipts without touching legac
     assert.equal(body.topologyAvailable, true);
     assert.deepEqual(body.counts, { total: 3, reachable: 2, off: 1, edges: 1 });
     assert.equal(body.gossipProvenance, GOSSIP_PROVENANCE);
-    assert.equal(body.expiresAt, new Date(now - 2000 + 600000).toISOString());
+    assert.equal(body.expiresAt, new Date(now - 1000 + 600000).toISOString());
     assertPrivate(body);
     assert.equal(Number((await db.query('SELECT count(*) AS count FROM nodes')).rows[0].count), 2,
       'reading advertisements cannot promote targets into the active census');

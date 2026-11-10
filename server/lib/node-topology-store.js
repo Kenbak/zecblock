@@ -147,15 +147,15 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
   // A supported fresh zero-edge snapshot remains an available observation.
   const latest = metadata.rows.reduce((time, row) => Math.max(time, new Date(row.generated_at).getTime()), 0);
   const observedAt = new Date(latest).toISOString();
-  let earliestExpiry = Math.min(...metadata.rows.map(row => new Date(row.generated_at).getTime() + MAX_GOSSIP_AGE_MS));
+  // The snapshot is the unit of display. Individual receipts age out on read;
+  // letting the oldest one set this clock expired the whole graph within seconds.
+  const snapshotExpiresAt = new Date(Math.min(...metadata.rows.map(row => new Date(row.generated_at).getTime() + MAX_GOSSIP_AGE_MS))).toISOString();
   const sourceTruncated = metadata.rows.some(row => row.truncated === true);
   for (const node of nodes) node.degree = 0;
-  if (!qualifiedIps.size) return response(true, [], observedAt, sourceTruncated, new Date(earliestExpiry).toISOString());
+  if (!qualifiedIps.size) return response(true, [], observedAt, sourceTruncated, snapshotExpiresAt);
 
   const result = await pool.query(`
-    SELECT e.advertiser_ip, e.advertised_ip, MAX(e.observed_at) AS observed_at,
-      MIN(LEAST(s.generated_at + INTERVAL '10 minutes', e.observed_at + INTERVAL '10 minutes',
-        e.advertiser_handshake_at + INTERVAL '1 hour', e.advertiser_chain_verified_at + INTERVAL '1 hour')) AS expires_at
+    SELECT e.advertiser_ip, e.advertised_ip, MAX(e.observed_at) AS observed_at
     FROM topology_gossip_edges e
     JOIN topology_gossip_snapshots s ON s.collector_source = e.collector_source
       AND s.generated_at = e.source_generated_at
@@ -182,14 +182,11 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
   for (const row of result.rows) {
     const advertiser = canonicalIp(row.advertiser_ip);
     const advertised = canonicalIp(row.advertised_ip);
-    const expiresAt = new Date(row.expires_at).getTime();
-    if (!advertiser || !advertised || !qualifiedIps.has(advertiser) || advertiser === advertised
-      || !Number.isFinite(expiresAt)) continue;
+    if (!advertiser || !advertised || !qualifiedIps.has(advertiser) || advertiser === advertised) continue;
     const pair = `${advertiser}\n${advertised}`;
     if (seen.has(pair)) continue;
     seen.add(pair);
     if (edges.length >= MAX_GOSSIP_EDGES) { truncated = true; break; }
-    earliestExpiry = Math.min(earliestExpiry, expiresAt);
     const source = idByIp.get(advertiser);
     let target = idByIp.get(advertised);
     if (target === undefined) {
@@ -202,7 +199,7 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
     nodes[source].degree++;
     nodes[target].degree++;
   }
-  return response(true, edges, observedAt, truncated, new Date(earliestExpiry).toISOString());
+  return response(true, edges, observedAt, truncated, snapshotExpiresAt);
 }
 
 module.exports = { persistTopologySnapshot, readTopologySnapshot };

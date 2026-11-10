@@ -7,19 +7,17 @@ const path = require('node:path');
 const { OWN_HTTP_ORIGINS, PARTNER_HTTP_ORIGINS, allowedHttpOrigins } = require('../cors-origins');
 
 test('HTTP CORS allows our domains and the Shielded Labs NSM page', () => {
-  const origins = allowedHttpOrigins({});
+  const origins = new Set(allowedHttpOrigins({}));
   for (const origin of ['https://zecblock.com', 'https://www.zecblock.com', 'https://cipherscan.app', 'https://nsm.shieldedlabs.net']) {
-    assert.ok(origins.includes(origin), origin);
+    assert.equal(origins.has(origin), true, origin);
   }
-  assert.ok(!origins.includes('https://shieldedlabs.net'));
-  assert.ok(!origins.includes('https://evil.example'));
+  assert.equal(origins.has('https://shieldedlabs.net'), false);
+  assert.equal(origins.has('https://evil.example'), false);
 });
 
 test('CORS_ORIGINS adds trimmed extra origins and ignores empty entries', () => {
   const origins = allowedHttpOrigins({ CORS_ORIGINS: ' https://a.example, ,https://b.example ' });
-  assert.ok(origins.includes('https://a.example'));
-  assert.ok(origins.includes('https://b.example'));
-  assert.ok(!origins.includes(''));
+  assert.deepEqual(origins.slice(-2), ['https://a.example', 'https://b.example']);
   assert.equal(origins.length, OWN_HTTP_ORIGINS.length + PARTNER_HTTP_ORIGINS.length + 2);
 });
 

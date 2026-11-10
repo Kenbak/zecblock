@@ -5,6 +5,11 @@ const { catalogue } = require('./ask-query-plan');
 const { coreCatalogue } = require('./ask-core-catalogue');
 const {compileResearchSQL}=require('./ask-research-sql');
 const {researchResultSchema}=require('../../../../lib/ask/research-contract');
+const {resultNotes}=require('../../../../lib/ask/research-catalogue');
+// The worker is deployed separately and can run an older build. Coverage and
+// units notes describe the datasets, not the rows, so they are restated from
+// this build's catalogue instead of trusting the worker's wording.
+const withNotes=result=>({...result,...resultNotes(result.datasets)});
 const {jobTicketSchema,jobStatusSchema}=require('../../../../lib/ask/research-job-contract');
 const { askError } = require('./ask-errors');
 const { sqlQuotaSchema } = require('../../../../lib/ask/quota-contract');
@@ -53,7 +58,7 @@ function createAnalyticsClient(env, fetchImpl) {
     const value=JSON.parse(Buffer.concat(chunks).toString('utf8'));
     const parsed=(operation==='submit'?jobTicketSchema:jobStatusSchema).parse(value);
     if(operation!=='submit'&&parsed.id!==input.id)throw askError('source');
-    if(parsed.result){const verified=await compileResearchSQL(parsed.result.query,{extended:env.ASK_RESEARCH_EXTENDED==='true'});if(parsed.result.fingerprint!==verified.fingerprint||parsed.result.query.sql!==verified.request.sql||JSON.stringify(parsed.result.datasets)!==JSON.stringify(verified.datasets))throw askError('source');}
+    if(parsed.result){const verified=await compileResearchSQL(parsed.result.query,{extended:env.ASK_RESEARCH_EXTENDED==='true'});if(parsed.result.fingerprint!==verified.fingerprint||parsed.result.query.sql!==verified.request.sql||JSON.stringify(parsed.result.datasets)!==JSON.stringify(verified.datasets))throw askError('source');return {...parsed,result:withNotes(parsed.result)};}
     return parsed;
   }
   return {
@@ -92,7 +97,7 @@ function createAnalyticsClient(env, fetchImpl) {
       if(research){
         const result=researchResultSchema.parse(wire.research);
         if(result.query.sql!==compiled.request.sql||result.query.limit!==compiled.request.limit||result.fingerprint!==compiled.fingerprint||JSON.stringify(result.datasets)!==JSON.stringify(compiled.datasets))throw askError('source');
-        return {result};
+        return {result:withNotes(result)};
       }
       if (!Array.isArray(wire.rows) || typeof wire.retrievedAt !== 'string' || !Number.isFinite(Date.parse(wire.retrievedAt))) throw askError('source');
       if(env.ASK_ANALYTICS_STORE==='logical_public_core' && wire.consistency!=='verified-canonical-core')throw askError('source');

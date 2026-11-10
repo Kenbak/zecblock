@@ -123,11 +123,11 @@ async function runAgent(input, { step, run, render, analytics, signal, handoff, 
       return { feedback: workerFeedback(error.askKind || 'timeout', error.sqlFeedback) };
     }
     if (!evidence.result.rows.length) {
-      empty = { sql: normalized(sql), render: () => researchReply(evidence.result, input, run, locale) };
+      empty = { sql: normalized(sql), render: () => researchReply(evidence.result, input, run, locale, { captionOptional: true }) };
       return { feedback: { ok: true, rows: 0, columns: evidence.result.columns.map(column => column.label) } };
     }
     progress('explaining');
-    return { reply: await researchReply(evidence.result, input, run, locale) };
+    return { reply: await researchReply(evidence.result, input, run, locale, { captionOptional: true }) };
   }
 
   async function execute(name, args) {

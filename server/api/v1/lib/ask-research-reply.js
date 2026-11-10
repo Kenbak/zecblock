@@ -590,7 +590,12 @@ function chartChoice(result,evidence,raw){
 }
 
 const datasetKnowledge={blocks:'block',transactions:'transactions',flows:'pools',daily:'pools',swaps:'crosschain',addresses:'addresses',address_activity:'address',activity_daily:'transactions',address_daily:'address',flow_daily:'pools',supply_daily:'protocol',issuance:'protocol',mining_daily:'blocks',software_daily:'blocks',block_timing:'blocks',reorgs:'blocks',orphaned_blocks:'blocks',swap_daily:'crosschain',value_pools_daily:'pools',utxo_daily:'transactions',issuance_daily:'protocol'};
-async function researchReply(raw,input,run,locale){
+// captionOptional: the SQL has already run for a question, so a caption that
+// cannot be produced (provider error or timeout, busy AI slots, exhausted AI
+// allowance) falls back to the checked template instead of discarding the
+// rows. A cancelled request still propagates. An explicit Explain request
+// leaves it off: there the caption is the whole point, and its error is shown.
+async function researchReply(raw,input,run,locale,{captionOptional=false}={}){
  const result=researchResultSchema.parse(raw);
  const question=String(input.question||'');
  // A narrow output-scope sanity check: reject before a paid caption only when
@@ -613,7 +618,14 @@ async function researchReply(raw,input,run,locale){
  const applied=caveats.filter(caveat=>caveat.applies(result));
  const captionInput={question:input.question,history:input.history,locale,documents:records,evidence:{sql:result.query.sql,columns:evidence.columns,facts,notes:evidence.notes,caveats:applied.map(caveat=>caveat.text),truncated:result.truncated,coverage:result.coverage}};
  const task=captionTask(facts,evidence.columns);
- let generated=await run(captionInput,task);
+ const caption=async(...args)=>{
+  try{return await run(...args);}catch(error){
+   if(!captionOptional||error?.name==='AbortError')throw error;
+   console.warn(JSON.stringify({event:'ask_research_caption_unavailable',kind:error?.quota?'quota':error?.askKind||error?.name||'error'}));
+   return null;
+  }
+ };
+ let generated=await caption(captionInput,task);
  const vocabulary=new Set([question,...Object.values(facts),...result.columns.map(c=>c.label),...applied.map(c=>c.text)].join(' ').toLowerCase().split(/[^\p{L}]+/u).filter(Boolean));
  // Months named by the result, its windows or the question may be written out.
  const months=new Set([question,...Object.values(facts),...result.rows.flat().filter(Boolean).map(cell=>{const m=/^20\d{2}-(0[1-9]|1[0-2])/.exec(cell);return m?['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(m[1])-1]:'';})].flatMap(text=>[...String(text).matchAll(new RegExp(calendarWord.source,'g'))].map(([word])=>monthKey(word))));
@@ -625,14 +637,18 @@ async function researchReply(raw,input,run,locale){
  // reason and any unsupported figure, never other prose) and may try again.
  if(!accepted&&generated?.finding){
   console.warn(JSON.stringify({event:'ask_research_caption_restated',reason:rejected}));
-  const retry=await run({...captionInput,rejectedFinding:{text:generated.finding,reason:rejected,...(figure?{unsupportedFigure:figure}:{})}},{...task,instruction:task.instruction+' A previous finding was rejected: rejectedFinding gives its text, the failed check and any figure not found in the evidence. Write a corrected finding that uses only values present in evidence.facts or the result.'});
+  const retry=await caption({...captionInput,rejectedFinding:{text:generated.finding,reason:rejected,...(figure?{unsupportedFigure:figure}:{})}},{...task,instruction:task.instruction+' A previous finding was rejected: rejectedFinding gives its text, the failed check and any figure not found in the evidence. Write a corrected finding that uses only values present in evidence.facts or the result.'});
   const second=check(retry);
   if(second){accepted=second;generated=retry;}
  }
  const finding=tidyProse(accepted||researchTemplate(result,evidence));
  if(!accepted)console.warn(JSON.stringify({event:'ask_research_caption_fallback',reason:rejected}));
  const interpretation=checkedInterpretation(generated?.interpretation,{vocabulary,applied});
- return {...reply(interpretation?`${finding} ${interpretation}`:finding,chartChoice(result,evidence,generated?.chart)),...(accepted?{}:{template:true})};
+ // Facts are computed over the returned rows only. When the row limit cut the
+ // result, say so in fixed words: a change, peak or "latest" value would
+ // otherwise read as covering the whole question.
+ const cut=result.truncated&&!finding.includes('truncated at the query limit')?` Only the first ${exactNumber(String(result.rows.length))} rows fit the row limit, so this describes those rows and not the full result.`:'';
+ return {...reply((interpretation?`${finding} ${interpretation}`:finding)+cut,chartChoice(result,evidence,generated?.chart)),...(accepted?{}:{template:true})};
 }
 // Facts already carry "≈" and their unit: drop a doubled marker, an
 // "approximately" in front of one, a repeated unit and a doubled full stop.

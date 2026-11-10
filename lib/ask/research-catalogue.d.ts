@@ -6,3 +6,5 @@ export const coreGatedIds:readonly string[];
 export const publishedIds:readonly string[];
 export function isPublished(id:string,options?:{preview?:boolean}):boolean;
 export function catalogueFor(extended:boolean,options?:{preview?:boolean}):ResearchDataset[];
+export const canonicalIds:readonly string[];
+export function resultNotes(datasets:readonly string[]):{coverage:string;units:string};

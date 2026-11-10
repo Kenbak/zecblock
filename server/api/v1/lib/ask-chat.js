@@ -245,7 +245,7 @@ async function chat(input, run, internalClient, signal, analysisInstructions, ca
     let query;try{query=await compileResearchDraft(selection.sql,input,run,{extended:analytics.researchExtended===true});}catch(error){if(error?.quota)throw error;throw askError('answer');}
     if(analytics.jobsEnabled)return {answer:'',sources:[],spec:null,locale,job:await analytics.submit(query,{signal})};
     const evidence=await askStage('source',()=>analytics.execute(query,{signal}));
-    return researchReply(evidence.result,input,run,locale);
+    return researchReply(evidence.result,input,run,locale,{captionOptional:true});
   }
   if (selection.intent === 'analytics') {
     if (!analytics) throw new Error('Analytics unavailable');

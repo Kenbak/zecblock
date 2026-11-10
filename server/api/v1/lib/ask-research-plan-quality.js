@@ -27,6 +27,9 @@ const booleanFields=new Set('shielded orchard ironwood sapling is_input is_outpu
 const unit=value=>({unit:value});
 const unknown=()=>unit('unknown');
 const scalar=value=>({unit:'scalar',...(Number.isFinite(value)?{constant:value}:{})});
+const money=name=>['zatoshi','zec','usd'].includes(name);
+// 1000, 1e6, 0.001 and the like. 1e8 and 1e-8 are the zatoshi conversion and are handled before this is asked.
+const rescales=constant=>{if(!Number.isFinite(constant)||constant===0)return false;const magnitude=Math.log10(Math.abs(constant));return Math.abs(magnitude-Math.round(magnitude))<1e-9&&Math.abs(Math.round(magnitude))>=3;};
 function sameUnits(values){
  const known=values.filter(v=>v.unit!=='null'&&v.constant!==0);
  if(!known.length)return values[0]||unknown();
@@ -114,6 +117,11 @@ function unitsFromTree(tree,issues,{question}={}){
     if(op==='/'&&right.constant===100000000)return left.unit==='zatoshi'?unit('zec'):left.unit==='zec'?unknown():left;
     if(op==='/'&&right.constant===1e-8)return left.unit==='zec'?unit('zatoshi'):left;
     if(op==='/'&&left.unit===right.unit&&left.unit!=='unknown')return scalar();
+    // A power-of-ten rescale (thousands, millions) changes the denomination:
+    // sum(zec)/1e6 is millions of ZEC, not ZEC. Other constants (a 7-day
+    // average, doubling) keep the unit.
+    if(op==='/'&&rescales(right.constant)&&money(left.unit))return unknown();
+    if(op==='*'&&(rescales(right.constant)&&money(left.unit)||rescales(left.constant)&&money(right.unit)))return unknown();
     if(['scalar','count'].includes(right.unit))return left;
     if(op==='*'&&['scalar','count'].includes(left.unit))return right;
     return unknown();

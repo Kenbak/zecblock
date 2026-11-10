@@ -118,7 +118,15 @@ test('unit diagnostics preserve counts, USD asset labels and complete expression
   ['SELECT sqrt(avg(fees)) AS fee_zec FROM blocks',['unknown']],
   ['SELECT lag(fees::numeric/100000000,1,fees) OVER(ORDER BY height) AS fee_zec FROM blocks',['unknown']],
   ['SELECT lead(fees::numeric/100000000,1,0) OVER(ORDER BY height) AS fee_zec FROM blocks',['zec']],
-  ['SELECT fees AS fee_zec FROM blocks b JOIN transactions t ON t.height=b.height',['unknown']]
+  ['SELECT fees AS fee_zec FROM blocks b JOIN transactions t ON t.height=b.height',['unknown']],
+  // Thousands or millions of a currency are no longer that currency's unit; other constants keep it.
+  ['SELECT sum(fees)::numeric/100000000/1000000 AS fees_millions FROM blocks',['unknown']],
+  ['SELECT sum(fees)/1000 AS fees_thousands FROM blocks',['unknown']],
+  ['SELECT 0.001*sum(fees) AS fees_thousands FROM blocks',['unknown']],
+  ['SELECT sum(usd)/1000000 AS volume_millions FROM swaps',['unknown']],
+  ['SELECT sum(fees)::numeric/100000000/7 AS average_daily_fee FROM blocks',['zec']],
+  ['SELECT 2*sum(fees) AS doubled FROM blocks',['zatoshi']],
+  ['SELECT count(*)/1000 AS thousands_of_blocks FROM blocks',['count']]
  ];
  for(const [sql,expected]of cases){
   const compiled=await compileResearchSQL({version:3,sql,limit:100},{extended:true});

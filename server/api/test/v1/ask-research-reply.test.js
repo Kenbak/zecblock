@@ -352,3 +352,35 @@ test('free-written findings: every number is verified against the evidence after
  assert.equal(reply.answer,'The leader mined 285 blocks.');
  assert.deepEqual(seen[1],{text:'The leader mined 300 blocks.',reason:'unsupported_number',unsupportedFigure:'300'});
 });
+
+test('a caption that cannot be produced after SQL ran keeps the rows when the caption is optional',async()=>{
+ const {askError}=require('../../v1/lib/ask-errors');
+ const question={question:'Who received the most payouts in the last 1,000 blocks?'};
+ const busy=Object.assign(askError('quota'),{quota:true,quotaCode:'ask-ai-busy',retryAfter:1});
+ for(const failure of [askError('provider'),busy,Object.assign(new Error('timed out'),{name:'TimeoutError'})]){
+  let calls=0;
+  const reply=await researchReply(payout,question,async()=>{calls++;throw failure;},'en',{captionOptional:true});
+  assert.equal(calls,1);assert.equal(reply.template,true);
+  assert.deepEqual(reply.research,payout);assert.equal(reply.evidenceKey,payout.fingerprint);
+  assert.ok(reply.answer.length>0&&reply.chart);
+  // An explicit Explain request still reports the failure.
+  await assert.rejects(researchReply(payout,question,async()=>{throw failure;},'en'),error=>error===failure);
+ }
+ // A cancelled request is never turned into an answer.
+ const aborted=Object.assign(new Error('aborted'),{name:'AbortError'});
+ await assert.rejects(researchReply(payout,question,async()=>{throw aborted;},'en',{captionOptional:true}),error=>error===aborted);
+ // A failed restatement keeps the first attempt's fallback instead of throwing.
+ let n=0;
+ const second=await researchReply(payout,question,async()=>{if(n++)throw askError('provider');return {finding:'The leader found 999 blocks.'};},'en',{captionOptional:true});
+ assert.equal(n,2);assert.equal(second.template,true);
+});
+
+test('an answer built on a row-limited result says it covers only the returned rows',async()=>{
+ const rows=Array.from({length:100},(_,i)=>[`2025-${String(1+Math.floor(i/28)).padStart(2,'0')}-${String(1+i%28).padStart(2,'0')}`,String(1000+i)]);
+ const series=(extra={})=>research('SELECT date,transactions FROM activity_daily ORDER BY date',[['date','text'],['transactions','number']],rows,{datasets:['activity_daily'],...extra});
+ const notice=/Only the first 100 rows fit the row limit, so this describes those rows and not the full result\.$/;
+ // Model caption and template fallback both carry it; a complete result never does.
+ assert.match((await researchReply(series({truncated:true}),{question:'Daily transactions over the last year?'},caption('Transactions rose over the period.'),'en')).answer,notice);
+ assert.match((await researchReply(series({truncated:true}),{question:'Daily transactions over the last year?'},async()=>null,'en')).answer,notice);
+ assert.doesNotMatch((await researchReply(series(),{question:'Daily transactions?'},async()=>null,'en')).answer,/row limit/);
+});

@@ -7,7 +7,9 @@
 
 const express = require('express');
 const router = express.Router();
-const { isNonMainnet, mainnetOnly } = require('../lib/network-features');
+const { isNonMainnet, mainnetOnly, networkName } = require('../lib/network-features');
+const { networkSchedule } = require('../lib/network-schedule');
+const { SDK_EXPIRY_MATCH } = require('../lib/wallet-expiry-fingerprint');
 // These precomputed analytics have no producer on testnet. Preserve the
 // on-chain common-amount, fee-lane and wallet-fingerprint endpoints there.
 router.use([
@@ -786,12 +788,21 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
 
     const since = Math.floor(Date.now() / 1000) - days * 86400;
 
-    const cacheKey = `wallet-fingerprints:time-v2:${period}`;
+    const cacheKey = `wallet-fingerprints:time-v3:${period}`;
     if (redisClient) {
       try {
         const cached = await redisClient.get(cacheKey);
         if (cached) return res.json(JSON.parse(cached));
       } catch (_) {}
+    }
+
+    // Crosslink does not schedule NU7. Elsewhere the serving node decides which
+    // era each block is in; without that schedule the counts cannot be trusted.
+    let nu7Height = null;
+    if (networkName() !== 'crosslink-testnet') {
+      const schedule = networkSchedule(await req.app.locals.callZebraRPC('getblockchaininfo'));
+      if (!schedule) return res.status(503).json({ success: false, error: 'Network upgrade schedule unavailable' });
+      nu7Height = schedule.nu7Height;
     }
 
     // Expiry delta is measured as (expiry_height - mined block_height). Because a
@@ -818,34 +829,28 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
 
         COUNT(*) FILTER (
           WHERE expiry_height IS NOT NULL AND expiry_height > 0
-            AND (expiry_height - block_height) BETWEEN 36 AND 40
-            AND (has_orchard = true OR has_ironwood = true)
-        ) AS family_expiry40,
-
-        COUNT(*) FILTER (
-          WHERE expiry_height IS NOT NULL AND expiry_height > 0
-            AND (expiry_height - block_height) BETWEEN 36 AND 40
+            AND ${SDK_EXPIRY_MATCH}
             AND has_ironwood = true AND has_orchard = false AND has_sapling = false
             AND vin_count = 0 AND vout_count = 0
         ) AS family40_ironwood_only,
 
         COUNT(*) FILTER (
           WHERE expiry_height IS NOT NULL AND expiry_height > 0
-            AND (expiry_height - block_height) BETWEEN 36 AND 40
+            AND ${SDK_EXPIRY_MATCH}
             AND has_orchard = true AND has_ironwood = false
             AND vin_count = 0 AND vout_count = 0
         ) AS family40_orchard_shielded,
 
         COUNT(*) FILTER (
           WHERE expiry_height IS NOT NULL AND expiry_height > 0
-            AND (expiry_height - block_height) BETWEEN 36 AND 40
+            AND ${SDK_EXPIRY_MATCH}
             AND (has_orchard = true OR has_ironwood = true)
             AND (vin_count > 0 OR vout_count > 0)
         ) AS family40_mixed_transparent,
 
         COUNT(*) FILTER (
           WHERE expiry_height IS NOT NULL AND expiry_height > 0
-            AND (expiry_height - block_height) BETWEEN 36 AND 40
+            AND ${SDK_EXPIRY_MATCH}
             AND has_orchard = true AND has_ironwood = true
             AND vin_count = 0 AND vout_count = 0
         ) AS family40_cross_pool,
@@ -897,10 +902,9 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
       WHERE block_time >= $1
         AND is_coinbase = false
         AND fee > 0
-    `, [since]);
+    `, [since, nu7Height]);
 
     const r = result.rows[0];
-    const familyExpiry40 = parseInt(r.family_expiry40);
     const nozyCount = parseInt(r.nozy_expiry5_fee4x);
     const cakeCount = parseInt(r.cake_expiry60);
     const migrationCount = parseInt(r.migration_batches);
@@ -909,15 +913,20 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
     const mixedTransparentCount = parseInt(r.family40_mixed_transparent);
     const crossPoolCount = parseInt(r.family40_cross_pool);
 
+    const SDK_EXPIRY_LABEL = nu7Height === null ? '+40 blocks' : '+120 blocks (+40 before NU7)';
+    // The window moved on-chain at NU7. Which releases of each named wallet moved
+    // with it is not verified, so these signals are not rated high.
+    const SDK_EXPIRY_SOURCE = 'SDK default expiry: 40 blocks before NU7, 120 in Zakura Common 4. Adoption by each named wallet is inferred from on-chain deltas.';
+
     const wallets = [
       {
         name: 'ZODL / Vizor (Ironwood sends)',
-        description: 'Fully migrated SDK wallets now sending within the Ironwood pool. Expiry +40, standard fee, no transparent component. Primarily ZODL users (largest migrated user base).',
+        description: 'Fully migrated SDK wallets now sending within the Ironwood pool. Expiry +120 since NU7 (+40 before), standard fee, no transparent component. Primarily ZODL users (largest migrated user base).',
         familyMembers: ['ZODL (iOS)', 'ZODL (Android)', 'Vizor'],
         nym: 'none',
         signals: {
           fee: { value: '5000/action', confidence: 'high', source: 'librustzcash zip317 FeeRule' },
-          expiry: { value: '+40 blocks', matchCount: ironwoodOnlyCount, confidence: 'high', source: 'librustzcash DEFAULT_TX_EXPIRY_DELTA = 40. Ironwood-only pool sends.' },
+          expiry: { value: SDK_EXPIRY_LABEL, matchCount: ironwoodOnlyCount, confidence: 'medium', source: `${SDK_EXPIRY_SOURCE} Ironwood-only pool sends.` },
           locktime: { value: '0', confidence: 'high', source: 'librustzcash never sets nLockTime' },
           actionPadding: { value: '2 actions', confidence: 'high', source: 'Standard Ironwood BundleType padding' },
         },
@@ -937,11 +946,11 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
       },
       {
         name: 'SDK wallets (cross-pool)',
-        description: 'Transactions touching both Orchard and Ironwood pools without transparent components — smaller manual migrations, cross-pool consolidation, or wallet-initiated pool moves with standard +40 expiry.',
+        description: 'Transactions touching both Orchard and Ironwood pools without transparent components — smaller manual migrations, cross-pool consolidation, or wallet-initiated pool moves with the standard SDK expiry.',
         nym: 'none',
         signals: {
           fee: { value: '5000/action', confidence: 'high', source: 'librustzcash zip317 FeeRule' },
-          expiry: { value: '+40 blocks', matchCount: crossPoolCount, confidence: 'high', source: 'Standard SDK expiry. Shorter than automated ZIP-318 migration (>20k blocks).' },
+          expiry: { value: SDK_EXPIRY_LABEL, matchCount: crossPoolCount, confidence: 'medium', source: `${SDK_EXPIRY_SOURCE} Shorter than automated ZIP-318 migration (>20k blocks).` },
           locktime: { value: '0', confidence: 'high', source: 'librustzcash default' },
           actionPadding: { value: '2+ actions', confidence: 'high', source: 'Varies with amounts being moved' },
         },
@@ -955,7 +964,7 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
         nymNote: 'Zkool (within this group) ships Nym mixnet support since PR #1195. Other SDK wallets do not.',
         signals: {
           fee: { value: '5000/action', confidence: 'high', source: 'librustzcash zip317 FeeRule' },
-          expiry: { value: '+40 blocks', confidence: 'high', source: 'librustzcash DEFAULT_TX_EXPIRY_DELTA = 40. Orchard-only fully-shielded sends.' },
+          expiry: { value: SDK_EXPIRY_LABEL, confidence: 'medium', source: `${SDK_EXPIRY_SOURCE} Orchard-only fully-shielded sends.` },
           locktime: { value: '0', confidence: 'high', source: 'librustzcash never sets nLockTime' },
           actionPadding: { value: '2 actions', matchCount: orchardShieldedCount, confidence: 'high', source: 'librustzcash orchard BundleType pads to 2 actions' },
         },
@@ -963,11 +972,11 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
       },
       {
         name: 'SDK wallets (shielding/deshielding)',
-        description: 'SDK wallet transactions with transparent inputs or outputs — receiving from exchanges, auto-shielding, or transparent operations. Same +40 expiry as other SDK wallets.',
+        description: 'SDK wallet transactions with transparent inputs or outputs — receiving from exchanges, auto-shielding, or transparent operations. Same expiry as other SDK wallets.',
         nym: 'none',
         signals: {
           fee: { value: '5000/action', confidence: 'high', source: 'ZIP-317 fee includes transparent inputs in logical action count' },
-          expiry: { value: '+40 blocks', matchCount: mixedTransparentCount, confidence: 'high', source: 'librustzcash DEFAULT_TX_EXPIRY_DELTA = 40' },
+          expiry: { value: SDK_EXPIRY_LABEL, matchCount: mixedTransparentCount, confidence: 'medium', source: SDK_EXPIRY_SOURCE },
           locktime: { value: '0', confidence: 'high', source: 'librustzcash default' },
           actionPadding: { value: '2 actions', confidence: 'high', source: 'Standard padding' },
         },
@@ -979,7 +988,7 @@ router.get('/api/privacy/wallet-fingerprints', async (req, res) => {
         nym: 'none',
         signals: {
           fee: { value: '5000/action', confidence: 'high', source: 'Standard ZIP-317 fee (auto-shield txs have higher fees due to transparent inputs adding logical actions)' },
-          expiry: { value: '+60 blocks', matchCount: cakeCount, confidence: 'medium', source: 'Observed delta 46-60 (consistent with +60 setting). Distinct from librustzcash (+40) and Brave (+20).' },
+          expiry: { value: '+60 blocks', matchCount: cakeCount, confidence: 'medium', source: 'Observed delta 46-60 (consistent with +60 setting). Distinct from the SDK default and Brave (+20).' },
           locktime: { value: '0', confidence: 'high', source: 'zkool2 backend sets locktime=0' },
           actionPadding: { value: '2 actions', confidence: 'high', source: 'Standard Orchard builder padding' },
         },

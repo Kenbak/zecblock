@@ -7,6 +7,7 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const { allowedHttpOrigins } = require('./cors-origins');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const { dataHeaderNames } = require('./lib/data-headers');
@@ -273,20 +274,8 @@ app.set('trust proxy', 1);
 // Security middleware
 app.use(helmet());
 
-// CORS configuration (only allow your domains)
-const allowedOrigins = [
-  'https://testnet.cipherscan.app',
-  'https://testnet.zecblock.com',
-  'https://cipherscan.app',
-  'https://zecblock.com',
-  'https://www.zecblock.com',
-  'https://crosslink.cipherscan.app',
-  'https://crosslink.zecblock.com',
-  'http://localhost:3000',
-  'http://localhost:3001',
-  ...(process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',') : []),
-];
-
+// CORS configuration: our domains, listed partner pages and CORS_ORIGINS
+const allowedOrigins = allowedHttpOrigins();
 app.use(cors({
   origin: (origin, callback) => {
     // Allow requests with no origin (e.g., curl, server-to-server, mobile apps)

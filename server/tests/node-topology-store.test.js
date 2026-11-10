@@ -18,7 +18,6 @@ const edge = (extra = {}) => ({ collectorSource: 'direct', generatedAtMs: now - 
   chainBlockHash: CHAIN_BLOCK_HASH, chainProof: CHAIN_PROOF, ...extra });
 const metadata = (extra = {}) => ({ collector_source: 'direct', generated_at: new Date(now - 1000),
   provenance: GOSSIP_PROVENANCE, edge_count: 1, ...extra });
-const graphRows = rows => rows.map(row => ({ expires_at: new Date(now + 598000), ...row }));
 
 function queryMock(responses) {
   const calls = [];
@@ -177,7 +176,7 @@ test('public edges preserve direction, deduplicate IP pairs and require a curren
     { advertiser_ip: '8.8.8.8', advertised_ip: '8.8.8.8' },
     { advertiser_ip: '8.8.8.8', advertised_ip: 'invalid.example' },
   ];
-  const pool = queryMock([[schema], [metadata()], graphRows(rows)]);
+  const pool = queryMock([[schema], [metadata()], rows]);
   const result = await readTopologySnapshot(pool, [active('8.8.8.8'),
     active('1.1.1.1', true, { client_impl: 'Zakura', is_tor: true }), active('9.9.9.9', false)], now);
   assert.deepEqual(result.edges, [{ source: 0, target: 1 }, { source: 1, target: 0 }, { source: 0, target: 3 }]);
@@ -190,7 +189,7 @@ test('public edges preserve direction, deduplicate IP pairs and require a curren
   assert.equal(result.directed, true);
   assert.equal(result.edgeKind, 'advertised-address');
   assert.equal(result.truncated, false);
-  assert.equal(result.expiresAt, new Date(now + 598000).toISOString());
+  assert.equal(result.expiresAt, new Date(now + 599000).toISOString());
   const serialized = JSON.stringify(result);
   for (const secret of ['8.8.8.8', '1.1.1.1', '4.4.4.4', 'advertiser', 'advertised_ip', CHAIN_BLOCK_HASH, CHAIN_PROOF]) {
     assert.ok(!serialized.includes(secret), `private identity/evidence leaked: ${secret}`);
@@ -211,17 +210,16 @@ test('edge SQL binds fresh source metadata, proof identity, original receipt clo
   assert.match(sql, /e.advertiser_chain_verified_at > NOW\(\) - INTERVAL '1 hour'/);
   assert.match(sql, /e.advertiser_ip = ANY\(\$4::text\[\]\)/);
   assert.match(sql, /GROUP BY e.advertiser_ip, e.advertised_ip/);
-  assert.match(sql, /MIN\(LEAST\(s.generated_at \+ INTERVAL '10 minutes', e.observed_at \+ INTERVAL '10 minutes'/);
-  assert.match(sql, /e.advertiser_handshake_at \+ INTERVAL '1 hour', e.advertiser_chain_verified_at \+ INTERVAL '1 hour'\)\) AS expires_at/);
+  assert.doesNotMatch(sql, /expires_at/, 'receipt age filters rows and never sets the snapshot clock');
   assert.doesNotMatch(sql, /\btopology_nodes\b|\btopology_edges\b/);
   assert.deepEqual(values, [GOSSIP_PROVENANCE, CHAIN_BLOCK_HASH, CHAIN_PROOF, ['8.8.8.8'], MAX_GOSSIP_EDGES + 1]);
 });
 
 test('IPv6 textual aliases collapse to one active IP identity without exposing any address', async () => {
-  const pool = queryMock([[schema], [metadata()], graphRows([
+  const pool = queryMock([[schema], [metadata()], [
     { advertiser_ip: '2001:4860:0:0:0:0:0:8888', advertised_ip: '1.1.1.1' },
     { advertiser_ip: '2001:4860::8888', advertised_ip: '1.1.1.1' },
-  ])]);
+  ]]);
   const result = await readTopologySnapshot(pool, [active('2001:4860:0:0:0:0:0:8888'), active('2001:4860::8888')], now);
   assert.deepEqual(result.counts, { total: 2, reachable: 1, off: 1, edges: 1 });
   assert.deepEqual(result.edges, [{ source: 0, target: 1 }]);
@@ -229,9 +227,9 @@ test('IPv6 textual aliases collapse to one active IP identity without exposing a
 });
 
 test('zone-scoped IPv6 identifiers cannot throw or become public graph identities', async () => {
-  const pool = queryMock([[schema], [metadata()], graphRows([
+  const pool = queryMock([[schema], [metadata()], [
     { advertiser_ip: '8.8.8.8', advertised_ip: 'fe80::1%eth0' },
-  ])]);
+  ]]);
   const result = await readTopologySnapshot(pool, [active('fe80::1%eth0'), active('8.8.8.8')], now);
   assert.deepEqual(result.counts, { total: 1, reachable: 1, off: 0, edges: 0 });
   assert.ok(!JSON.stringify(result).includes('eth0'));
@@ -254,7 +252,7 @@ test('public graph stops at the directed edge cap and reports truncation without
   const rows = Array.from({ length: MAX_GOSSIP_EDGES + 1 }, (_, i) => ({
     advertiser_ip: '8.8.8.8', advertised_ip: `11.${Math.floor(i / 65536)}.${Math.floor(i / 256) % 256}.${i % 256}`,
   }));
-  const pool = queryMock([[schema], [metadata()], graphRows(rows)]);
+  const pool = queryMock([[schema], [metadata()], rows]);
   const result = await readTopologySnapshot(pool, [active('8.8.8.8')], now);
   assert.equal(result.edges.length, MAX_GOSSIP_EDGES);
   assert.equal(result.nodes.length, MAX_GOSSIP_EDGES + 1);
@@ -263,15 +261,16 @@ test('public graph stops at the directed edge cap and reports truncation without
   assert.equal(result.nodes[0].degree, MAX_GOSSIP_EDGES);
 });
 
-test('visible graph expires at the earliest supported source or admitted receipt boundary', async () => {
+test('visible graph expires with its earliest supported source snapshot, not its oldest receipt', async () => {
   const metadataRows = [metadata(), metadata({ collector_source: 'tor', generated_at: new Date(now - 3000) })];
   const empty = queryMock([[schema], metadataRows]);
   assert.equal((await readTopologySnapshot(empty, [], now)).expiresAt, new Date(now + 597000).toISOString());
-  const graph = queryMock([[schema], metadataRows, graphRows([
-    { advertiser_ip: '8.8.8.8', advertised_ip: '1.1.1.1', expires_at: new Date(now + 5000) },
-    { advertiser_ip: '9.9.9.9', advertised_ip: '4.4.4.4', expires_at: new Date(now + 1000) },
-  ])]);
+  const graph = queryMock([[schema], metadataRows, [
+    // A receipt close to its ten-minute limit must not shorten the snapshot.
+    { advertiser_ip: '8.8.8.8', advertised_ip: '1.1.1.1', observed_at: new Date(now - 599000) },
+    { advertiser_ip: '8.8.8.8', advertised_ip: '4.4.4.4', observed_at: new Date(now - 2000) },
+  ]]);
   const result = await readTopologySnapshot(graph, [active('8.8.8.8')], now);
-  assert.equal(result.expiresAt, new Date(now + 5000).toISOString());
-  assert.equal(result.edges.length, 1, 'only admitted receipt boundaries affect the visible graph');
+  assert.equal(result.expiresAt, new Date(now + 597000).toISOString());
+  assert.equal(result.edges.length, 2);
 });

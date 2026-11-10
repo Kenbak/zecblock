@@ -26,8 +26,6 @@ interface ApiNode {
   reachable: boolean;
   isTor: boolean;
   countryCode: string | null;
-  betweenness: number | null;
-  closeness: number | null;
   degree: number | null;
 }
 
@@ -52,6 +50,10 @@ export const MAX_LAYOUT_EDGES = 2000;
 const LAYOUT_TICKS = 120;
 const GOSSIP_PROVENANCE = 'zcash-mainnet-qualified-addr-v1';
 const MIN_EXPIRY_REFRESH_MS = 30_000;
+const SNAPSHOT_INTERVAL_MS = 300_000;
+// The five-minute ingest commits a few seconds after the collector snapshot.
+const SNAPSHOT_REFRESH_GRACE_MS = 30_000;
+const TOP_ADVERTISERS = 10;
 
 function subscribeVisibility(callback: () => void) {
   document.addEventListener('visibilitychange', callback);
@@ -68,6 +70,16 @@ export function topologyIsFresh(data: TopologyResponse | null, now: number): boo
   const expiresAt = typeof data.expiresAt === 'string' ? Date.parse(data.expiresAt) : NaN;
   return data.topologyAvailable === true && data.gossipProvenance === GOSSIP_PROVENANCE
     && Number.isFinite(expiresAt) && expiresAt > now;
+}
+
+/** Refreshes of one collector snapshot keep its layout; peer mode has no snapshot clock. */
+function layoutKey(data: TopologyResponse | null): unknown {
+  return data?.observedAt ?? data;
+}
+
+/** Year-first UTC reads the same everywhere, unlike 09/11/2026. */
+function formatUtc(value: string) {
+  return new Date(value).toISOString().slice(0, 19).replace('T', ' ');
 }
 
 /** Keep the layout bounded; full API counts are reported separately below. */
@@ -95,8 +107,6 @@ interface SimNode extends SimulationNode {
   reachable: boolean;
   isTor: boolean;
   countryCode: string | null;
-  betweenness: number | null;
-  closeness: number | null;
   degree: number | null;
 }
 
@@ -329,7 +339,7 @@ function Scene({
   );
 }
 
-export function TopologyGraph({ active = true }: { active?: boolean }) {
+export function TopologyGraph({ active = true, onShowGeography }: { active?: boolean; onShowGeography?: () => void }) {
   const { theme } = useTheme();
   const [rotating, setRotating] = useState(false);
   const [resetKey, setResetKey] = useState(0);
@@ -349,13 +359,17 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
   const [clock, setClock] = useState(() => Date.now());
   const topologyAvailable = topologyIsFresh(data, Math.max(clock, Date.now()));
   const selectedLayout = useMemo(() => data && topologyAvailable ? selectTopologyLayout(data) : null, [data, topologyAvailable]);
-  const [layout, setLayout] = useState<{ source: TopologyResponse | null; nodes: PositionedNode[]; pairs: [number, number][] }>({ source: null, nodes: [], pairs: [] });
-  const layoutReady = layout.source === data;
-  const nodes = layoutReady ? layout.nodes : EMPTY_NODES;
-  const edgePairs = layoutReady ? layout.pairs : EMPTY_PAIRS;
-  const counts = data?.counts;
-  const edgeCount = counts?.edges ?? data?.edges?.length ?? 0;
-  const loading = topology.loading || (topologyAvailable && !layoutReady);
+  const [layout, setLayout] = useState<{ key: unknown; data: TopologyResponse | null; subset: boolean; nodes: PositionedNode[]; pairs: [number, number][] }>({ key: null, data: null, subset: false, nodes: [], pairs: [] });
+  const dataKey = layoutKey(data);
+  const layoutReady = data !== null && layout.key === dataKey;
+  // A still-valid snapshot stays on screen while its replacement is laid out.
+  const showLayout = topologyAvailable && (layoutReady || topologyIsFresh(layout.data, Math.max(clock, Date.now())));
+  const nodes = showLayout ? layout.nodes : EMPTY_NODES;
+  const edgePairs = showLayout ? layout.pairs : EMPTY_PAIRS;
+  const shown = showLayout ? layout.data : data;
+  const counts = shown?.counts;
+  const edgeCount = counts?.edges ?? shown?.edges?.length ?? 0;
+  const loading = topology.loading || (topologyAvailable && !showLayout);
   const expiresAt = data?.expiresAt;
   const observedAt = data?.observedAt;
   const attemptedExpiry = useRef<string | null>(null);
@@ -385,6 +399,17 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
     else timer = setTimeout(expire, Math.min(deadline - Date.now() + 1, 2_147_483_647));
     return () => { if (timer !== undefined) clearTimeout(timer); };
   }, [expiresAt, observedAt, active, pageVisible, refetch, isRefreshing]);
+  // Fetch once just after the next ingest instead of polling faster for it.
+  useEffect(() => {
+    const observed = typeof observedAt === 'string' ? Date.parse(observedAt) : NaN;
+    if (!active || !pageVisible || !Number.isFinite(observed)) return;
+    const delay = observed + SNAPSHOT_INTERVAL_MS + SNAPSHOT_REFRESH_GRACE_MS - Date.now();
+    if (delay <= 0) return;
+    const timer = setTimeout(() => {
+      if (expiryEnabled.current && getPageVisible()) void refetch();
+    }, delay);
+    return () => clearTimeout(timer);
+  }, [observedAt, active, pageVisible, refetch]);
   const [hovered, setHovered] = useState<PositionedNode | null>(null);
   const [pinned, setPinned] = useState<PositionedNode | null>(null);
   const [query, setQuery] = useState('');
@@ -420,10 +445,15 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
     if (!data || !selectedLayout || !active || !pageVisible || layoutReady) return;
     let cancelled = false;
     let frame = 0;
-    setHovered(null);
-    setPinned(null);
+    const key = layoutKey(data);
+    const publish = (nodes: PositionedNode[], pairs: [number, number][]) => {
+      // Node IDs are per-snapshot, so a selection cannot carry over.
+      setHovered(null);
+      setPinned(null);
+      setLayout({ key, data, subset: selectedLayout.subset, nodes, pairs });
+    };
     if (!selectedLayout.nodes.length) {
-      setLayout({ source: data, nodes: [], pairs: [] });
+      publish([], []);
       return;
     }
     const simNodes: SimNode[] = selectedLayout.nodes.map(node => ({ ...node }));
@@ -457,7 +487,7 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
         typeof link.source === 'object' ? (link.source as SimNode).id : link.source,
         typeof link.target === 'object' ? (link.target as SimNode).id : link.target,
       ]);
-      if (!cancelled) setLayout({ source: data, nodes: positioned, pairs });
+      if (!cancelled) publish(positioned, pairs);
     }
     frame = requestAnimationFrame(step);
     return () => { cancelled = true; cancelAnimationFrame(frame); sim.stop(); };
@@ -467,13 +497,23 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
     outgoing: focus ? edgePairs.filter(([source]) => source === focus.id).length : 0,
     incoming: focus ? edgePairs.filter(([, target]) => target === focus.id).length : 0,
   }), [focus, edgePairs]);
-  const formatTime = (value: string) => new Date(value).toLocaleString('en-GB', { timeZone: 'UTC' });
+  const topAdvertisers = useMemo(() => {
+    const outgoing = new Map<number, number>();
+    const incoming = new Map<number, number>();
+    for (const [source, target] of edgePairs) {
+      outgoing.set(source, (outgoing.get(source) || 0) + 1);
+      incoming.set(target, (incoming.get(target) || 0) + 1);
+    }
+    return nodes.filter(node => outgoing.has(node.id) && !hidden.has(nodeCategory(node)))
+      .map(node => ({ node, outgoing: outgoing.get(node.id) || 0, incoming: incoming.get(node.id) || 0 }))
+      .sort((a, b) => b.outgoing - a.outgoing || a.node.id - b.node.id).slice(0, TOP_ADVERTISERS);
+  }, [nodes, edgePairs, hidden]);
 
   if (!loading && !topologyAvailable) {
     return <div className="border border-cipher-border rounded-lg px-5 py-6">
       <p className="text-sm text-secondary" role="status">Fresh verified gossip links are not available.</p>
-      <p className="text-caption text-muted mt-2">{counts ? `${counts.reachable} observed active IPs.` : 'Active IP counts are unavailable.'} Explore geography or the node directory for available observations.</p>
-      {expiresAt && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= Date.now() && <p className="text-caption text-muted mt-2">The previous snapshot expired at <time dateTime={expiresAt}>{formatTime(expiresAt)} UTC</time>.</p>}
+      <p className="text-caption text-muted mt-2">{counts ? `${counts.reachable} observed active IPs.` : 'Active IP counts are unavailable.'} {' '}Explore {onShowGeography ? <button type="button" onClick={onShowGeography} className="underline underline-offset-4 hover:text-primary">geography</button> : 'geography'} or the <a href="#node-directory" className="underline underline-offset-4 hover:text-primary">node directory</a> for available observations.</p>
+      {expiresAt && Number.isFinite(Date.parse(expiresAt)) && Date.parse(expiresAt) <= Date.now() && <p className="text-caption text-muted mt-2">The previous snapshot expired at <time dateTime={expiresAt}>{formatUtc(expiresAt)} UTC</time>.</p>}
     </div>;
   }
 
@@ -487,9 +527,9 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
             <button type="button" aria-pressed={rotating} disabled={!nodes.length} onClick={() => setRotating(value => !value)} className="px-3 py-2 rounded border border-cipher-border text-caption font-mono text-secondary hover:text-primary disabled:opacity-50">{rotating ? 'Pause rotation' : 'Rotate view'}</button>
           </div>
         </div>
-        {observedAt && Number.isFinite(Date.parse(observedAt)) && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Snapshot: <time dateTime={observedAt}>{formatTime(observedAt)} UTC</time>{expiresAt && Number.isFinite(Date.parse(expiresAt)) && <> · Expires: <time dateTime={expiresAt}>{formatTime(expiresAt)} UTC</time></>}</p>}
-        {data?.truncated && <p className="px-4 py-2 text-caption text-warning border-b border-cipher-border">This observation is partial. Additional advertisements are omitted.</p>}
-        {selectedLayout?.subset && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Showing {selectedLayout.nodes.length.toLocaleString()} of {(data?.nodes.length ?? 0).toLocaleString()} nodes and {selectedLayout.edges.length.toLocaleString()} of {edgeCount.toLocaleString()} links to keep this view responsive.</p>}
+        {shown?.observedAt && Number.isFinite(Date.parse(shown.observedAt)) && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Snapshot: <time dateTime={shown.observedAt}>{formatUtc(shown.observedAt)} UTC</time>{shown.expiresAt && Number.isFinite(Date.parse(shown.expiresAt)) && <> · Expires: <time dateTime={shown.expiresAt}>{formatUtc(shown.expiresAt)} UTC</time></>}</p>}
+        {shown?.truncated && <p className="px-4 py-2 text-caption text-warning border-b border-cipher-border">This observation is partial. Additional advertisements are omitted.</p>}
+        {showLayout && layout.subset && <p className="px-4 py-2 text-caption text-muted border-b border-cipher-border">Showing {nodes.length.toLocaleString()} of {(layout.data?.nodes.length ?? 0).toLocaleString()} nodes and {edgePairs.length.toLocaleString()} of {edgeCount.toLocaleString()} links to keep this view responsive.</p>}
         {topology.error && <p role="status" className="px-4 py-2 text-caption text-warning border-b border-cipher-border">Refresh failed. Showing the last received snapshot{expiresAt ? ' until it expires' : ''}.</p>}
         <div className="grid lg:grid-cols-[minmax(0,1fr)_260px]">
           <div className="relative min-w-0 h-[360px] sm:h-[500px] bg-cipher-bg" aria-label="Interactive 3D graph of observed peer advertisements">
@@ -520,8 +560,6 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
                 <Row label="Observed advertisements" value={focus.degree != null ? String(focus.degree) : '—'} />
                 <Row label="Shown outgoing" value={String(focusLinks.outgoing)} />
                 <Row label="Shown incoming" value={String(focusLinks.incoming)} />
-                <Row label="Betweenness" value={focus.betweenness != null ? focus.betweenness.toFixed(4) : '—'} />
-                <Row label="Closeness" value={focus.closeness != null ? focus.closeness.toFixed(4) : '—'} />
               </dl>
               <p className="text-caption text-muted mt-5">{pinned ? 'Highlighted lines are advertisements involving this node.' : 'Click the node to keep these details open.'}</p>
             </div> : <div className="mt-5">
@@ -570,6 +608,27 @@ export function TopologyGraph({ active = true }: { active?: boolean }) {
         </button>
 
       </div>
+      {topAdvertisers.length > 0 && <div className="mt-5 overflow-x-auto">
+        <table className="w-full text-caption">
+          <caption className="text-left type-label text-muted mb-2">Top advertisers · counts from the links shown</caption>
+          <thead><tr className="border-b border-cipher-border text-muted">
+            <th scope="col" className="text-left py-3 pr-3 font-normal">Node</th>
+            <th scope="col" className="text-left py-3 pr-3 font-normal">Client</th>
+            <th scope="col" className="text-left py-3 pr-3 font-normal">Country</th>
+            <th scope="col" className="text-right py-3 pr-3 font-normal">Addresses advertised</th>
+            <th scope="col" className="text-right py-3 font-normal">Advertised by</th>
+          </tr></thead>
+          <tbody className="divide-y divide-cipher-border">
+            {topAdvertisers.map(({ node, outgoing, incoming }) => <tr key={node.id}>
+              <th scope="row" className="text-left py-3 pr-3 font-normal"><button type="button" onClick={() => selectNode(node)} className="font-mono text-secondary underline underline-offset-4 hover:text-primary">#{node.id}</button></th>
+              <td className="py-3 pr-3 text-secondary"><span className="inline-flex items-center gap-2"><span className="h-2 w-2 shrink-0 rounded-full" style={{ backgroundColor: node.isTor ? palette.tor : nodeColor(node) }} aria-hidden="true" />{clientLabel(node.client, node.reachable)}</span></td>
+              <td className="py-3 pr-3 font-mono text-muted">{node.countryCode || 'Unknown'}</td>
+              <td className="py-3 pr-3 text-right font-mono tabular-nums text-primary">{outgoing.toLocaleString()}</td>
+              <td className="py-3 text-right font-mono tabular-nums text-muted">{incoming.toLocaleString()}</td>
+            </tr>)}
+          </tbody>
+        </table>
+      </div>}
       <p className="text-caption text-muted mt-3">Drag to orbit · scroll to zoom · select a node to inspect. Links run from a verified advertiser to an advertised address; they do not establish remote connections. Advertised-only addresses are shown smaller. Positions are topological, not geographic.</p>
     </div>
   );

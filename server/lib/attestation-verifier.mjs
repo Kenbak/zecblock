@@ -43,11 +43,21 @@ export function publicLookup(hostname, options, callback) {
   });
 }
 
-export function fetchAttestation(hostname, nonce) {
+// Dials one reviewed address while the hostname still drives SNI, certificate
+// validation and the attested TLS binding. Same public-address rule as DNS.
+export function pinnedLookup(address) {
+  return (_hostname, options, callback) => {
+    if (!isPublicAddress(address)) return callback(new ObservationError('private_address'));
+    if (options.all) callback(null, [{ address, family: 4 }]);
+    else callback(null, address, 4);
+  };
+}
+
+export function fetchAttestation(hostname, nonce, dialAddress = null) {
   return new Promise((resolve, reject) => {
     const request = https.request({
       hostname, port: 443, path: '/attestation', method: 'POST', agent: false,
-      lookup: publicLookup, family: 4, rejectUnauthorized: true,
+      lookup: dialAddress ? pinnedLookup(dialAddress) : publicLookup, family: 4, rejectUnauthorized: true,
       headers: { 'Content-Type': 'application/json', Accept: 'application/json', 'User-Agent': 'CipherScan-Attestation/1.0' },
     }, (response) => {
       // Redirects are never followed. A TLS cert belongs to this connection.
@@ -130,12 +140,12 @@ export function checkRelease(pcrs, baseline) {
     ? (baseline.authority === 'reproduced' ? 'reproduced_match' : 'published_match') : 'mismatch';
 }
 
-export async function observeEndpoint(endpoint) {
+export async function observeEndpoint(endpoint, { dialAddress = null } = {}) {
   const checkedAt = new Date().toISOString();
   let reachable = false;
   try {
     const nonce = randomBytes(32);
-    const { body, leafFingerprint } = await fetchAttestation(endpoint.hostname, nonce);
+    const { body, leafFingerprint } = await fetchAttestation(endpoint.hostname, nonce, dialAddress);
     reachable = true;
     if (typeof body?.document !== 'string' || body.document.length > MAX_RESPONSE_BYTES
       || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(body.document)

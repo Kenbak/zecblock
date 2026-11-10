@@ -8,7 +8,7 @@ import { tmpdir } from 'node:os';
 import { createRequire } from 'node:module';
 import { randomBytes, sign } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { checkEvidencePolicy, checkRelease, isPublicAddress, verifyCertificatePath, fetchAttestation, publicLookup, MAX_RESPONSE_BYTES, DEADLINE_MS, MAX_DOCUMENT_AGE_MS, CLOCK_SKEW_MS } from '../lib/attestation-verifier.mjs';
+import { checkEvidencePolicy, checkRelease, isPublicAddress, verifyCertificatePath, fetchAttestation, publicLookup, pinnedLookup, MAX_RESPONSE_BYTES, DEADLINE_MS, MAX_DOCUMENT_AGE_MS, CLOCK_SKEW_MS } from '../lib/attestation-verifier.mjs';
 import { encode } from '../vendor/tee-attestation-js/src/lib/cbor.js';
 import { verify } from '../vendor/tee-attestation-js/src/tee/nitro.js';
 import { X509Certificate } from 'node:crypto';
@@ -207,4 +207,46 @@ test('retired test endpoints are absent even from retained snapshots and return 
   try {
     for(const id of ['shieldedlabs-hub','shieldedlabs-shim']) assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/api/network/attestations/${id}`)).status,404);
   } finally {server.closeAllConnections();await new Promise(resolve=>server.close(resolve));}
+});
+
+test('pinned hub lookups dial only the reviewed public address', () => {
+  const answers = [];
+  pinnedLookup('54.151.176.23')('hub.zcash.caution.co', {}, (...args) => answers.push(args));
+  pinnedLookup('54.151.176.23')('hub.zcash.caution.co', { all: true }, (...args) => answers.push(args));
+  assert.deepEqual(answers, [[null, '54.151.176.23', 4], [null, [{ address: '54.151.176.23', family: 4 }]]]);
+  pinnedLookup('10.0.0.1')('hub.zcash.caution.co', {}, (error) => assert.equal(error.code, 'private_address'));
+});
+
+test('pinned hub targets only accept a literal IPv4 address on 443', () => {
+  const entry = (address) => ({ baseline: { hubConfiguration: { hostname: 'hub.example', address } } });
+  assert.deepEqual(store.pinnedHubTarget(entry('54.151.176.23:443')), { ip: '54.151.176.23', hostname: 'hub.example', address: '54.151.176.23:443' });
+  for (const address of ['54.151.176.23:8443', 'hub.example:443', undefined]) assert.equal(store.pinnedHubTarget(entry(address)), null);
+  assert.equal(store.pinnedHubTarget({ baseline: null }), null);
+});
+
+test('hub deployment comparison needs two bound answers and reports certificate or PCR differences', () => {
+  const pinned = success();
+  assert.equal(store.compareHubDeployments(pinned, success()), 'same');
+  assert.equal(store.compareHubDeployments(pinned, { ...success(), certificateFingerprint: 'c'.repeat(64) }), 'different');
+  assert.equal(store.compareHubDeployments(pinned, { ...success(), pcrs: { ...pinned.pcrs, PCR0: 'd'.repeat(96) } }), 'different');
+  for (const other of [undefined, { ...success(), tlsBinding: 'mismatch' }, { ...success(), evidence: 'failed' }]) assert.equal(store.compareHubDeployments(pinned, other), 'unknown');
+  assert.equal(store.compareHubDeployments({ ...pinned, evidence: 'not_checked' }, success()), 'unknown');
+});
+
+test('pinned hub observations are optional, validated and served only for configured shims', () => {
+  const entry = store.registry.find((item) => item.id === 'zecrocks-mainnet');
+  const observations = new Map(store.registry.map((item) => [item.id, success()]));
+  const next = store.nextSnapshot(null, observations, NOW, new Map([[entry.id, { ...success(), certificateFingerprint: 'c'.repeat(64) }]]));
+  assert.ok(store.validateSnapshot(next));
+  assert.equal(next.endpoints.find((item) => item.id === entry.id).pinnedHub.listedHub, 'different');
+  const exposed = store.publicSnapshot(next, 'mainnet', NOW).endpoints;
+  assert.equal(exposed.find((item) => item.id === entry.id).pinnedHub.address, entry.baseline.hubConfiguration.address);
+  assert.equal(exposed.find((item) => item.id === 'caution-hub').pinnedHub, null);
+  const older = store.nextSnapshot(null, observations, NOW);
+  assert.ok(store.validateSnapshot(older));
+  assert.equal(store.publicSnapshot(older, 'mainnet', NOW).endpoints.find((item) => item.id === entry.id).pinnedHub, null);
+  const corrupt = structuredClone(next);
+  corrupt.endpoints.find((item) => item.id === entry.id).pinnedHub.listedHub = 'yes';
+  assert.equal(store.validateSnapshot(corrupt), false);
+  assert.throws(() => store.nextSnapshot(null, observations, NOW, new Map([[entry.id, { checkedAt: 'bad' }]])));
 });

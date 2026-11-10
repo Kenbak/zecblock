@@ -47,6 +47,9 @@ function EndpointCard({ endpoint, endpoints, now, apiUrl }: { endpoint: Attestat
   const state = STATES[status] ?? STATES.unavailable;
   const current = !['stale', 'unavailable', 'not_checked'].includes(status);
   const hub = endpoints.find((item) => item.id === endpoint.hubId);
+  const pinned = endpoint.pinnedHub ?? null;
+  const pinnedStatus = pinned ? attestationStatus(pinned.latest, now) : null;
+  const hubDiffers = pinned?.listedHub === 'different' && !['stale', 'unavailable', 'not_checked', null].includes(pinnedStatus);
   const releaseLabels = { unconfirmed: 'Unconfirmed', published_match: 'Published measurements match', reproduced_match: 'Reproduced build matches', mismatch: 'Measurements differ' };
   return <article id={endpoint.id} className="card card-static @container p-0! overflow-hidden scroll-mt-36">
     <div className="p-5 sm:p-6">
@@ -98,8 +101,10 @@ function EndpointCard({ endpoint, endpoints, now, apiUrl }: { endpoint: Attestat
               <span className="font-mono break-all">{endpoint.hubConfiguration.hostname}</span>
               <span className={`block text-xs mt-2 ${buildMatches ? 'text-cipher-green' : 'text-cipher-yellow'}`}>{buildMatches ? 'Confirmed by reproduced build' : 'Reviewed configuration · current match unconfirmed'}</span>
             </> : hub ? <><span className="font-mono break-all">{hub.hostname}</span><span className="block text-xs text-muted mt-2">Published configuration · not build-confirmed</span></> : <span className="text-muted">Not confirmed</span>}
-            {hub ? <a href={`#${hub.id}`} className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs hover:underline"><span className="text-muted">Hub’s own check:</span><span className={STATES[attestationStatus(hub.latest, now)]?.color}>{STATES[attestationStatus(hub.latest, now)]?.label} <span aria-hidden="true">↓</span></span></a> : null}
-            <span className="block text-xs text-muted leading-relaxed mt-2">Configuration does not prove live routing or hub availability.</span>
+            {pinned && pinnedStatus ? <span className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs"><span className="text-muted">Configured address <span className="font-mono">{pinned.address}</span>:</span><span className={STATES[pinnedStatus]?.color}>{STATES[pinnedStatus]?.label}</span></span> : null}
+            {hub ? <a href={`#${hub.id}`} className={`${pinned ? 'mt-1' : 'mt-3'} flex flex-wrap items-center gap-x-2 gap-y-1 text-xs hover:underline`}><span className="text-muted">{pinned && pinned.listedHub !== 'same' ? 'Deployment at this hub’s DNS name:' : 'Hub’s own check:'}</span><span className={STATES[attestationStatus(hub.latest, now)]?.color}>{STATES[attestationStatus(hub.latest, now)]?.label} <span aria-hidden="true">↓</span></span></a> : null}
+            {hubDiffers ? <span className="block text-xs text-cipher-yellow leading-relaxed mt-2">A different hub deployment answers this name in DNS. The hub card describes that deployment, not this shim’s configured address.</span> : null}
+            <span className="block text-xs text-muted leading-relaxed mt-2">{pinned ? 'Evidence at the configured address does not prove live routing.' : 'Configuration does not prove live routing or hub availability.'}</span>
           </dd>
         </div> : null}
       </dl>
@@ -113,6 +118,7 @@ function EndpointCard({ endpoint, endpoints, now, apiUrl }: { endpoint: Attestat
         <dl className="space-y-3">
           {['PCR0', 'PCR1', 'PCR2'].map((key) => <div key={key}><dt className="text-muted mb-1">{key}</dt><dd className="text-secondary font-mono break-all">{check?.pcrs?.[key] ?? 'Not available'}</dd></div>)}
           <div><dt className="text-muted mb-1">TLS certificate SHA-256</dt><dd className="text-secondary font-mono break-all">{check?.certificateFingerprint ?? 'Not available'}</dd></div>
+          {pinned ? <div><dt className="text-muted mb-1">Configured hub address TLS certificate SHA-256</dt><dd className="text-secondary font-mono break-all">{pinned.latest.certificateFingerprint ?? 'Not available'}</dd></div> : null}
           <div><dt className="text-muted mb-1">Attestation document SHA-256</dt><dd className="text-secondary font-mono break-all">{check?.documentSha256 ?? 'Not available'}</dd></div>
           <div><dt className="text-muted mb-1">Claimed source commit · unverified metadata</dt><dd className="text-secondary font-mono break-all">{check?.claimedCommit ?? 'Not provided for the registered source'}</dd></div>
           <div><dt className="text-muted mb-1">Signed timestamp</dt><dd className="text-secondary">{timestamp(check?.attestedAt)}</dd></div>

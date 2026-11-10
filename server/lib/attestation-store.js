@@ -27,6 +27,23 @@ function validCheck(check) {
   return check.tlsBinding === 'not_checked' && check.release === 'unconfirmed';
 }
 
+// The registry address is `ip:port`; the observer only speaks HTTPS on 443.
+function pinnedHubTarget(endpoint) {
+  const configuration = endpoint.baseline?.hubConfiguration;
+  const ip = configuration?.address?.match(/^(\d{1,3}(?:\.\d{1,3}){3}):443$/)?.[1];
+  return ip ? { ip, hostname: configuration.hostname, address: configuration.address } : null;
+}
+
+// Compares two observations from one collector run. Anything short of two
+// bound, verified answers stays unknown rather than implying a split or a match.
+function compareHubDeployments(pinned, listed) {
+  const bound = (check) => check?.evidence === 'verified' && check.tlsBinding === 'matched';
+  if (!bound(pinned) || !bound(listed)) return 'unknown';
+  const same = pinned.certificateFingerprint === listed.certificateFingerprint
+    && ['PCR0', 'PCR1', 'PCR2'].every((key) => pinned.pcrs[key] === listed.pcrs[key]);
+  return same ? 'same' : 'different';
+}
+
 function validateSnapshot(snapshot) {
   if (!snapshot || snapshot.version !== SNAPSHOT_VERSION || !isoDate(snapshot.generatedAt)
     || !Array.isArray(snapshot.endpoints) || snapshot.endpoints.length > 100) return false;
@@ -38,6 +55,9 @@ function validateSnapshot(snapshot) {
       || entry.lastSuccessful.tlsBinding !== 'matched'
       || entry.lastSuccessful.release === 'mismatch'
       || Date.parse(entry.lastSuccessful.checkedAt) > Date.parse(entry.latest.checkedAt))) return false;
+    // Optional so snapshots written before this field remain readable.
+    if (entry.pinnedHub !== undefined && (!validCheck(entry.pinnedHub?.latest)
+      || !['same', 'different', 'unknown'].includes(entry.pinnedHub.listedHub))) return false;
     ids.add(entry.id);
     return true;
   });
@@ -64,13 +84,16 @@ async function saveSnapshot(snapshot, path = getSnapshotPath()) {
   } finally { await unlink(temporary).catch(() => {}); }
 }
 
-function nextSnapshot(previous, observations, now = Date.now()) {
+function nextSnapshot(previous, observations, now = Date.now(), pinnedHubs = new Map()) {
   const endpoints = registry.map((endpoint) => {
     const latest = observations.get(endpoint.id);
     if (!validCheck(latest)) throw new Error('Missing or invalid observation');
     const previousEntry = previous?.endpoints.find((entry) => entry.id === endpoint.id && entry.identity === identity(endpoint));
+    const pinned = pinnedHubs.get(endpoint.id);
+    if (pinned && !validCheck(pinned)) throw new Error('Missing or invalid observation');
     return { id: endpoint.id, identity: identity(endpoint), latest,
-      lastSuccessful: attestationStatus(latest, now) === 'verified' ? latest : previousEntry?.lastSuccessful ?? null };
+      lastSuccessful: attestationStatus(latest, now) === 'verified' ? latest : previousEntry?.lastSuccessful ?? null,
+      ...(pinned ? { pinnedHub: { latest: pinned, listedHub: compareHubDeployments(pinned, observations.get(endpoint.hubId)) } } : {}) };
   });
   return { version: SNAPSHOT_VERSION, generatedAt: new Date(now).toISOString(), endpoints };
 }
@@ -86,6 +109,7 @@ function publicSnapshot(snapshot, network, now = Date.now()) {
       hubId: endpoint.hubId, experimental: true, configurationAuthority: endpoint.baseline?.hubConfiguration ? 'Reproduced build configuration; current match required' : 'Published configuration; not reproduced',
       hubConfiguration: endpoint.baseline?.hubConfiguration ? { ...endpoint.baseline.hubConfiguration, authority: 'reproduced' } : null,
       baseline: endpoint.baseline ? { authority: endpoint.baseline.authority, commit: endpoint.baseline.commit, referenceUrl: endpoint.baseline.referenceUrl, tag: endpoint.baseline.tag ?? null, tagReferenceUrl: endpoint.baseline.tagReferenceUrl ?? null } : null,
+      pinnedHub: entry?.pinnedHub && pinnedHubTarget(endpoint) ? { address: pinnedHubTarget(endpoint).address, hostname: pinnedHubTarget(endpoint).hostname, ...entry.pinnedHub } : null,
       latest: entry?.latest ?? null, lastSuccessful: entry?.lastSuccessful ?? null,
       status: attestationStatus(entry?.latest, now) };
   });
@@ -94,4 +118,4 @@ function publicSnapshot(snapshot, network, now = Date.now()) {
     available: Boolean(usable), endpoints };
 }
 
-module.exports = { registry, identity, validCheck, validateSnapshot, readSnapshot, saveSnapshot, nextSnapshot, publicSnapshot, getSnapshotPath };
+module.exports = { registry, identity, pinnedHubTarget, compareHubDeployments, validCheck, validateSnapshot, readSnapshot, saveSnapshot, nextSnapshot, publicSnapshot, getSnapshotPath };

@@ -31,6 +31,15 @@ actual routing, traffic flow, or the hub's own software status. Testnet's hub re
 unknown: absence of a startup override is not proof of runtime default behavior.
 Caution hub's source/build version remains unconfirmed without a reviewed baseline.
 
+A shim's hub address is measured into its build, while a hub's public hostname can
+later resolve elsewhere. Each collector run therefore also challenges the address in
+`hubConfiguration` directly, keeping the reviewed hostname for SNI, certificate
+validation and attested TLS binding. The API publishes this as `pinnedHub`, with
+`listedHub` comparing it to the same run's DNS-based hub check: `same`, `different`
+(certificate or PCRs differ) or `unknown` (either side lacks bound evidence). It shows
+what answers at the configured address, not that the shim sent traffic there or that
+the deployment processes batches. The field is optional for older snapshots.
+
 Canary compatibility assessment: [CANARY-ASSESSMENT.md](CANARY-ASSESSMENT.md).
 
 ## Local preview with real data

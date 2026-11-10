@@ -56,7 +56,7 @@ export function CatalogCard({chart, initialData, initialFetchedAt, initialSnapsh
   const height=expanded?Math.max(340,category?rows.length*30:400):240;
   return <article ref={ref} id={chart.id} className={`min-w-0 scroll-mt-56 sm:scroll-mt-36 ${expanded?'xl:col-span-2':''}`}>
     <ShareableCard title={chart.title} shareText={`${chart.title} · ${chartDateRange(chart,rows)}`} sharePath={sharePath} exportData={exportData} expandedToolbar={expanded} fileName={`zecblock-${chart.id}.png`} branding="compact" compact className="h-full" exportDisabled={!hasData || loading} footerNote={latest&&!category?`Latest observation · ${label(latest.x)}`:windowLabel}>
-      <p className="text-xs text-muted leading-relaxed min-h-12 mb-3">{chart.description}</p>
+      {!standalone&&<p className="text-xs text-muted leading-relaxed min-h-12 mb-3">{chart.description}</p>}
       <div className="flex flex-wrap justify-between gap-2 text-caption font-mono text-muted mb-3"><span>{chart.unit}</span><span>{windowLabel}</span></div>
       {expanded&&!chart.axis&&<div className="mb-4 flex flex-wrap items-center gap-2"><span className="text-caption text-muted mr-2">Within available history</span><PeriodPillTags aria-label="Chart observation range" options={chartRanges(chart).map(value=>({key:value,label:value==='all'?'All':value.toUpperCase()}))} value={range} onChange={setRange}/></div>}
       {!visible||loading?<ChartSkeleton height={height}/>:!hasData?<div role="status" className="min-h-[240px] flex flex-col items-center justify-center gap-3 text-xs text-muted text-center"><span>{error?'Could not load this data.':'No verified observations available.'}</span><Link href={chart.href} className="underline underline-offset-4">View source analysis →</Link></div>:

@@ -1,4 +1,3 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/ui';
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
@@ -31,9 +30,9 @@ export default async function ChartPage({ params, searchParams }: Props) {
   const schema = { '@context': 'https://schema.org', '@type': 'WebPage', '@id': `${url}#webpage`, url, name: chartPublicTitle(chart), description: chart.description, isPartOf: { '@id': `${getBaseUrl()}/#website` }, publisher: { '@id': 'https://zecblock.com/#organization' } };
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }}/>
-    <Link href="/charts" className="text-caption text-muted hover:text-primary">← All charts</Link>
-    <PageHeader eyebrow="CHART_LIBRARY" title={chartPublicTitle(chart)} subtitle={chart.description}/>
-    <p className="mb-5 text-caption text-muted">Source: {chartSource(chart)} · {chart.unit} · {rows.length ? chartDateRange(chart, rows) : chart.window}. {rows.length ? `${rows.length.toLocaleString('en-US')} observations.` : 'Observations are currently unavailable; this page will retry.'}</p>
+    <PageHeader eyebrow="CHART_LIBRARY" eyebrowHref="/charts" title={chartPublicTitle(chart)} subtitle={chart.description}>
+      <p className="mt-3 text-caption text-muted">Source: {chartSource(chart)} · {chart.unit} · {rows.length ? chartDateRange(chart, rows) : chart.window}. {rows.length ? `${rows.length.toLocaleString('en-US')} observations.` : 'Observations are currently unavailable; this page will retry.'}</p>
+    </PageHeader>
     <CatalogCard chart={chart} initialData={snapshot?.payload} initialFetchedAt={snapshot?.fetchedAt} initialSnapshotNotice={delayedSnapshot} initialRange={range} initialSeries={selected.series.map(s => s.key)} standalone/>
   </div>;
 }

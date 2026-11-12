@@ -273,5 +273,5 @@ export async function proxy(request: NextRequest) {
 export const config = {
   // Canonical lowercase tx URLs and well-formed addresses bypass Proxy; only
   // uppercase aliases and malformed identifiers need it.
-  matcher: ['/:indexNowKey([a-zA-Z0-9-]{8,128}\\.txt)', '/name/:path*', '/api/:path*', '/tx/:txid((?=[a-fA-F0-9]{0,63}[A-F])[a-fA-F0-9]{64})', '/tx/:txid((?![a-fA-F0-9]{64}(?:/|$))[^/]+)', '/address/:address((?!(?:t[123m][1-9A-HJ-NP-Za-km-z]{33}|zs1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{75}|ztestsapling1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{75}|(?:u|utest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{13,507})(?:/|$))[^/]+)', '/block/:path*', '/blocks', '/governance/:path*', '/charts/:slug', '/network/block-speed/:path*', '/network/upgrades/:path*'],
+  matcher: ['/:indexNowKey([a-zA-Z0-9-]{8,128}\\.txt)', '/name/:path*', '/api/:path*', '/tx/:txid((?=[a-fA-F0-9]{0,63}[A-F])[a-fA-F0-9]{64})', '/tx/:txid((?![a-fA-F0-9]{64}(?:/|$))[^/]+)', '/address/:address((?!(?:t[123m][1-9A-HJ-NP-Za-km-z]{33}|zs1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{75}|ztestsapling1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{75}|(?:u|utest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{13,507}|(?:tex|textest)1[qpzry9x8gf2tvdw0s3jn54khce6mua7l]{38})(?:/|$))[^/]+)', '/block/:path*', '/blocks', '/governance/:path*', '/charts/:slug', '/network/block-speed/:path*', '/network/upgrades/:path*'],
 };

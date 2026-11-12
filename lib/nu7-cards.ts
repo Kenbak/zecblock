@@ -1,12 +1,12 @@
 /** Shareable NU7 fact cards. Pure models; the image route only draws them. */
-import { nu7Average, type SpeedStory } from './block-speed';
+import { NU7_TARGET_SECONDS, nu7Average, type SpeedStory } from './block-speed';
 import { estimateBlockArrival, estimateBlockArrivalDate, formatUpgradeDuration, type UpgradeSnapshot } from './network-upgrades';
 import { HISTORICAL_UPGRADES } from './upgrade-history-data';
 
 export const NU7_CARDS = ['countdown', 'blocks', 'nsm', 'readiness'] as const;
 export type Nu7CardId = typeof NU7_CARDS[number];
 export const NU7_CARD_LABELS: Record<Nu7CardId, string> = {
-  countdown: 'Countdown', blocks: 'Blocks per day', nsm: 'NSM reserve', readiness: 'Node readiness',
+  countdown: 'NU7 status', blocks: 'Blocks per day', nsm: 'NSM reserve', readiness: 'Node readiness',
 };
 
 export type CardBar = { value: number; nu7: boolean; projected: boolean };
@@ -26,13 +26,22 @@ type Network = 'mainnet' | 'testnet';
 const DAY = 86_400;
 const label = (network: Network) => network === 'mainnet' ? 'Zcash mainnet' : 'Zcash testnet';
 const count = (value: number) => Math.round(value).toLocaleString('en-US');
+/** Compact elapsed time for a card detail: "47 min", "5.2 h", "3.4 days". */
+const elapsed = (seconds: number) => seconds < 3_600 ? `${Math.max(1, Math.round(seconds / 60))} min`
+  : seconds < DAY ? `${(seconds / 3_600).toFixed(1)} h` : `${(seconds / DAY).toFixed(1)} days`;
 
-/** Exact decimal from integer zatoshi, trimmed to two places for a headline. */
+/**
+ * Exact decimal from integer zatoshi, truncated for a headline: two places from
+ * one coin up, four below it so early NSM growth is not flattened to 0.01.
+ */
 export function zatHeadline(zat: string, currency: string): string | null {
   if (!/^-?\d+$/.test(zat)) return null;
   const n = BigInt(zat); const negative = n < BigInt(0); const abs = negative ? -n : n;
-  const whole = abs / BigInt(100_000_000); const cents = (abs % BigInt(100_000_000)) / BigInt(1_000_000);
-  return `${negative ? '-' : ''}${whole.toLocaleString('en-US')}.${String(cents).padStart(2, '0')} ${currency}`;
+  const coin = BigInt(100_000_000);
+  const whole = abs / coin;
+  const places = whole === BigInt(0) ? 4 : 2;
+  const fraction = (abs % coin) / BigInt(10 ** (8 - places));
+  return `${negative ? '-' : ''}${whole.toLocaleString('en-US')}.${String(fraction).padStart(places, '0')} ${currency}`;
 }
 
 export function countdownCard(network: Network, snapshot: UpgradeSnapshot | null): Nu7Card | null {
@@ -44,7 +53,7 @@ export function countdownCard(network: Network, snapshot: UpgradeSnapshot | null
     return {
       eyebrow: `NU7 · ${label(network)}`, headline: 'NU7 is live',
       caption: `Active since block #${height.toLocaleString('en-US')}`,
-      detail: '25-second blocks and the Network Sustainability Mechanism.',
+      detail: `${count(snapshot.height - height + 1)} NU7 blocks so far · 25-second target spacing and the Network Sustainability Mechanism.`,
       visual: null, source: 'Serving-node upgrade schedule',
     };
   }
@@ -70,13 +79,23 @@ export function blocksCard(story: SpeedStory | null): Nu7Card | null {
   const bars = story.points.filter(point => point.kind !== 'irregular').slice(-28).map(point => ({ value: point.blocks, nu7: point.nu7, projected: point.kind === 'projected' }));
   const before = story.network === 'mainnet' ? story.before?.averageSeconds : null;
   const measured = story.phase === 'active';
+  const nu7 = measured ? story.after : null;
+  // The NU7 window runs from activation; it is not a 7-day average until a week has passed.
+  const early = nu7 != null && nu7.toTimestamp - nu7.fromTimestamp < 7 * DAY;
+  // Until the first full NU7 UTC day exists, the pace so far is drawn as an outlined bar.
+  if (nu7 && !bars.some(bar => bar.nu7)) bars.push({ value: Math.round(perDay(after)), nu7: true, projected: true });
+  const sinceNu7 = nu7 && early
+    ? `first ${count(nu7.intervals)} NU7 blocks (${elapsed(nu7.toTimestamp - nu7.fromTimestamp)}); target ${count(perDay(NU7_TARGET_SECONDS))} a day`
+    : null;
   return {
     eyebrow: `NU7 · ${label(story.network)}`,
     headline: before ? `${count(perDay(before))} → ${count(perDay(after))}` : count(perDay(after)),
-    caption: 'blocks per day',
-    detail: before
-      ? measured ? 'Measured 7-day averages before NU7 and with NU7.' : 'Measured 7-day average today → the 25-second NU7 target.'
-      : 'Measured 7-day average with NU7.',
+    caption: early ? 'blocks per day, NU7 pace so far' : 'blocks per day',
+    detail: sinceNu7
+      ? `${before ? '7-day average before NU7 → ' : 'Measured '}${sinceNu7}.`
+      : before
+        ? measured ? 'Measured 7-day averages before NU7 and with NU7.' : 'Measured 7-day average today → the 25-second NU7 target.'
+        : 'Measured 7-day average with NU7.',
     visual: { kind: 'bars', bars, unit: 'blocks per UTC day' },
     source: 'Canonical block-header timestamps',
   };

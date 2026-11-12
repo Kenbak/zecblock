@@ -158,13 +158,15 @@ function formatReorgAlert({ depth, forkHeight, canonicalTip }) {
 
 // ─── Chain Stall ─────────────────────────────────────────────────────────────
 
-function formatChainStall({ lastBlockTime, gapSeconds }) {
+// targetSeconds is the node-scheduled spacing at the tip (75 before NU7, 25
+// after); the line is omitted when it is unknown rather than guessed.
+function formatChainStall({ lastBlockTime, gapSeconds, targetSeconds = null }) {
   const minutes = Math.floor(gapSeconds / 60);
   const lines = [
     `⚠️ Block production gap: ${minutes} minutes`,
     ``,
     `Last block: ${new Date(lastBlockTime * 1000).toISOString()}`,
-    `Expected: ~75 seconds between blocks`,
+    ...(Number.isSafeInteger(targetSeconds) && targetSeconds > 0 ? [`Expected: ~${targetSeconds} seconds between blocks`] : []),
     ``,
     `Monitoring. Will update on recovery.`,
   ];

@@ -239,6 +239,62 @@ router.get('/api/network/fee-distribution', async (req, res) => {
 });
 
 // ============================================================================
+// BLOCK ACTIVITY — per-block transaction and fee means by completed UTC day
+// ============================================================================
+
+const BLOCK_ACTIVITY_DAYS = 90;
+const SECONDS_PER_DAY = 86400;
+
+router.get('/api/network/block-activity', async (req, res) => {
+  try {
+    const pool = req.app.locals.pool;
+    const redisClient = req.app.locals.redisClient;
+    const todayUtc = Math.floor(Date.now() / (SECONDS_PER_DAY * 1000));
+
+    // Keyed by day so a newly completed day never waits for the TTL.
+    const cacheKey = `analytics:block-activity:v1:${todayUtc}`;
+    const cached = await getCached(redisClient, cacheKey);
+    if (cached) return res.json(cached);
+
+    const { rows } = await pool.query(`
+      SELECT
+        "timestamp" / ${SECONDS_PER_DAY} AS day,
+        COUNT(*)::int AS blocks,
+        COUNT(transaction_count)::int AS tx_blocks,
+        SUM(transaction_count)::bigint AS transactions,
+        COUNT(total_fees)::int AS fee_blocks,
+        SUM(total_fees)::text AS total_fees
+      FROM blocks
+      WHERE "timestamp" >= $1 AND "timestamp" < $2
+      GROUP BY 1
+      ORDER BY 1
+    `, [(todayUtc - BLOCK_ACTIVITY_DAYS) * SECONDS_PER_DAY, todayUtc * SECONDS_PER_DAY]);
+
+    const points = rows.map((row) => {
+      const blocks = Number(row.blocks);
+      // An unknown value in a day leaves that day's mean as a gap, never a lower mean.
+      const txKnown = Number(row.tx_blocks) === blocks;
+      const feesKnown = Number(row.fee_blocks) === blocks;
+      return {
+        date: new Date(Number(row.day) * SECONDS_PER_DAY * 1000).toISOString().slice(0, 10),
+        blocks,
+        transactions: txKnown ? Number(row.transactions) : null,
+        txPerBlock: txKnown ? Number(row.transactions) / blocks : null,
+        totalFeesZat: feesKnown ? row.total_fees : null,
+        feesPerBlockZec: feesKnown ? Number(row.total_fees) / blocks / 1e8 : null,
+      };
+    });
+
+    const response = { days: BLOCK_ACTIVITY_DAYS, method: 'completed_utc_days', points };
+    if (points.length) await setCache(redisClient, cacheKey, response);
+    res.json(response);
+  } catch (error) {
+    logSafeError('Error fetching block activity:', error);
+    res.status(500).json({ error: 'Failed to fetch block activity' });
+  }
+});
+
+// ============================================================================
 // USAGE CLOCK — transaction counts by hour of day and day of week (UTC)
 // ============================================================================
 

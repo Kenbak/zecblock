@@ -105,7 +105,7 @@ test('running tag and hub confirmation require a fresh reproduced match, while h
     return renderToStaticMarkup(React.createElement(Client, {initialData:data, initialNow:now, network:'mainnet',apiUrl:'https://api.mainnet.cipherscan.app'}));
   };
   const fresh = render();
-  assert.match(fresh,/deploy-fdb613db-a606726/);
+  assert.match(fresh,/deploy-fdb613db-e0c834c/);
   assert.match(fresh,/Running build · reproduced match/);
   assert.match(fresh,/Confirmed by matching reproduced build/);
   assert.match(fresh.replace(/<[^>]+>/g, ''),/Hub’s own check:Not checked yet/);
@@ -126,4 +126,35 @@ test('Canary has its own expiry and ordinary-host trust wording in server HTML',
   assert.doesNotMatch(html, /Signed checks verified/);
   assert.match(html, /monitor itself is not enclave-attested/);
   assert.match(html, /Signed statement/);
+});
+
+test('shim card separates its configured hub address from the deployment at the hub name', () => {
+  const now = Date.now();
+  const render = (pinnedHub) => {
+    const data = store.publicSnapshot(null, 'mainnet'); data.available = true;
+    const shim = data.endpoints.find(e => e.id === 'zecrocks-mainnet');
+    shim.latest = { checkedAt: new Date(now).toISOString(), reachable: true, evidence: 'verified', tlsBinding: 'matched', release: 'reproduced_match' };
+    shim.pinnedHub = pinnedHub;
+    return renderToStaticMarkup(React.createElement(Client, {initialData:data, initialNow:now, network:'mainnet',apiUrl:'https://api.mainnet.cipherscan.app'})).split(/<[^>]+>/).join('');
+  };
+  const pinned = (listedHub, age = 0) => ({ address: '54.151.176.23:443', hostname: 'hub.zcash.caution.co', listedHub,
+    latest: { checkedAt: new Date(now - age).toISOString(), reachable: true, evidence: 'verified', tlsBinding: 'matched', release: 'unconfirmed', certificateFingerprint: 'a'.repeat(64) } });
+  const different = render(pinned('different'));
+  assert.match(different, /Configured address 54\.151\.176\.23:443:Evidence verified/);
+  assert.match(different, /A different hub deployment answers this name in DNS/);
+  assert.match(different, /Deployment at this hub’s DNS name:/);
+  assert.ok(!different.includes('Hub’s own check:'));
+  const same = render(pinned('same'));
+  assert.ok(same.includes('Hub’s own check:'));
+  assert.ok(!same.includes('A different hub deployment'));
+  const stale = render(pinned('different', 16 * 60_000));
+  assert.match(stale, /Configured address 54\.151\.176\.23:443:Stale observation/);
+  assert.ok(!stale.includes('A different hub deployment'));
+  const unknown = render(pinned('unknown'));
+  assert.match(unknown, /Deployment at this hub’s DNS name:/);
+  assert.ok(!unknown.includes('A different hub deployment'));
+  const absent = render(null);
+  assert.ok(!absent.includes('Configured address'));
+  assert.ok(absent.includes('Hub’s own check:'));
+  assert.match(absent, /Configuration does not prove live routing or hub availability/);
 });

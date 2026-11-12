@@ -77,7 +77,8 @@ test('activated reproduced baselines match preserved measurements and provenance
 
 test('reviewed hub configuration comes from the same preserved build as the active measurements', async () => {
   const entry = store.registry.find((item) => item.id === 'zecrocks-mainnet');
-  const manifest = JSON.parse(await readFile(new URL('../data/attestation-builds/zecrocks-mainnet-34327234175/built-manifest.json', import.meta.url)));
+  const evidenceDir = entry.baseline.referenceUrl.match(/\/attestation-builds\/([a-z0-9-]+)\/README\.md$/)[1];
+  const manifest = JSON.parse(await readFile(new URL(`../data/attestation-builds/${evidenceDir}/built-manifest.json`, import.meta.url)));
   assert.equal(manifest.app_source.commit, entry.baseline.commit);
   assert.ok(manifest.run_command.split('\n').includes(`export ZIS_HUB=${entry.baseline.hubConfiguration.address}`));
   assert.ok(manifest.run_command.split('\n').includes(`export ZIS_HUB_TLS=${entry.baseline.hubConfiguration.hostname}`));
@@ -85,7 +86,7 @@ test('reviewed hub configuration comes from the same preserved build as the acti
   assert.equal(entry.baseline.hubConfiguration.referenceUrl, entry.baseline.referenceUrl);
   for (const endpoint of store.registry.filter(item => item.baseline?.tag)) {
     assert.match(endpoint.baseline.tag, /^deploy-[a-z0-9-]+$/);
-    assert.equal(endpoint.baseline.tagReviewedAt, '2026-09-10');
+    assert.match(endpoint.baseline.tagReviewedAt, /^\d{4}-\d{2}-\d{2}$/);
     assert.equal(endpoint.baseline.tagReferenceUrl, `${endpoint.sourceUrl}/tree/${endpoint.baseline.commit}`);
   }
 });

@@ -1,0 +1,20 @@
+{
+  "format": 1,
+  "sourceRepository": "https://github.com/Kenbak/zecblock",
+  "rust": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+  "wasmBindgen": "wasm-bindgen 0.2.127",
+  "target": "wasm32-unknown-unknown",
+  "profile": "release",
+  "sources": {
+    "Cargo.toml": "02f4121a156ed7969e2ef9990a1aee4a9de83b5f5833e6e3f94fae5d5362044d",
+    "Cargo.lock": "6a3dd0c3aa195c83077416691d7e44432d75379715a7b4cf598ebf7dc1e8e1e7",
+    "rust-toolchain.toml": "18f07995f89768bda2f2187ad24116e8832e0d240ba3633a9cee7fc415af5ed2",
+    "src/lib.rs": "be0c0b4ee557ef76c43610a712904e77aeb3c57acab7553ed455128a8ee2a0b2"
+  },
+  "artifacts": {
+    "zcash_wasm.js": "49a1b8ee1b783eeaf9fea20dd7417fc5b1a9962439111db496d67e3c1d8ab9f1",
+    "zcash_wasm_bg.wasm": "f6a592a105e3bf8caebca254d982d65f733796b5a62e599e56145a92d4dbbb26",
+    "zcash_wasm.d.ts": "4a7c4685f488f165271768c84f1e4abf320f4ae8b1a158fc71b4a4000449dbb6",
+    "zcash_wasm_bg.wasm.d.ts": "e98e4d7ab7cc02a0bb5a8f9352f101ec5a5c9c5cd27e3916acf62949f78cf9e2"
+  }
+}

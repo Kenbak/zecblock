@@ -24,6 +24,61 @@ const VALID_SWAPS = `SELECT * FROM cross_chain_swaps WHERE status='SUCCESS'
   AND source_chain IS NOT NULL AND dest_chain IS NOT NULL AND source_chain<>dest_chain
   AND (source_chain='zec' OR dest_chain='zec') AND source_amount_usd>0`;
 
+// Indexed Maya/THORChain actions are separate venue observations (additive
+// tables, never merged into NEAR history or summed with it). Rank each venue
+// only against its own successful 30-day sample.
+const INDEXED_VENUES = ['maya', 'thorchain'];
+const VALID_VENUE_SWAPS = `SELECT * FROM crosschain_venue_actions WHERE venue=$2
+  AND action_type='swap' AND status='SUCCESS'
+  AND source_chain IS NOT NULL AND dest_chain IS NOT NULL AND source_chain<>dest_chain
+  AND (source_chain='zec' OR dest_chain='zec') AND payload->>'direction' IN ('inflow','outflow')
+  AND source_amount_usd>0`;
+
+async function venueSwapCandidates(db, now) {
+  const candidates = [], decisions = [];
+  const { rows: [table] } = await db.query(`SELECT to_regclass('crosschain_venue_actions') IS NOT NULL
+    AND to_regclass('crosschain_venue_sync') IS NOT NULL AS present`);
+  if (!table?.present) return { candidates, decisions: [{ key: 'crosschain-venues', reason: 'venue-index-unavailable' }] };
+  for (const venue of INDEXED_VENUES) {
+    const { rows: [sync] } = await db.query(`SELECT max(last_checked_at) AS checked,
+      coalesce(bool_or(mode='backfill' AND completed_at IS NOT NULL),false) AS baseline
+      FROM crosschain_venue_sync WHERE venue=$1`, [venue]);
+    const age = now - new Date(sync?.checked || 0);
+    if (!(age >= 0 && age <= 20 * 60000)) { decisions.push({ key: `crosschain:${venue}`, reason: 'venue-sync-unavailable-or-stale' }); continue; }
+    // A 30-day rank needs the retained provider history; a partial backfill is not a baseline.
+    if (!sync.baseline) { decisions.push({ key: `crosschain:${venue}`, reason: 'venue-baseline-incomplete' }); continue; }
+    // Streaming swaps settle after creation: select by when SUCCESS was first
+    // observed, bounded by creation time so backfilled history never qualifies.
+    const { rows } = await db.query(`WITH valid AS MATERIALIZED (
+      ${VALID_VENUE_SWAPS} AND swap_created_at >= $1::timestamptz-interval '31 days' AND swap_created_at < $1
+    ), candidates AS (
+      SELECT * FROM valid WHERE status_observed_at >= $1::timestamptz-interval '1 hour'
+        AND swap_created_at >= $1::timestamptz-interval '24 hours'
+        AND source_amount_usd>=$3::numeric ORDER BY source_amount_usd DESC,id LIMIT 20
+    ) SELECT c.id,c.venue,c.source_chain,c.dest_chain,c.source_asset,c.dest_asset,
+      c.source_amount::text AS source_amount,c.dest_amount::text AS dest_amount,
+      c.zec_amount_zat::text AS zec_amount_zat,c.source_amount_usd::text AS source_amount_usd,
+      c.swap_created_at,c.status_observed_at,c.canonical_identity,c.payload->>'direction' AS direction,
+      c.payload->'zecLegs' AS zec_legs,
+      EXISTS (SELECT 1 FROM jsonb_array_elements(COALESCE(c.payload->'outputs','[]'::jsonb)) o
+        CROSS JOIN LATERAL jsonb_array_elements(COALESCE(o->'coins','[]'::jsonb)) coin
+        WHERE COALESCE(o->>'affiliate','false')<>'true' AND coin->>'asset'=c.source_asset) AS partial_return,
+      s.* FROM candidates c CROSS JOIN LATERAL (
+        SELECT count(*) AS sample_count,
+          count(*) FILTER(WHERE h.source_amount_usd>c.source_amount_usd) AS greater_count,
+          count(*) FILTER(WHERE h.source_amount_usd=c.source_amount_usd) AS equal_count
+        FROM valid h WHERE h.swap_created_at<c.swap_created_at
+          AND h.swap_created_at>=c.swap_created_at-interval '30 days'
+      ) s`, [now.toISOString(), venue, policy.MIN_SWAP_USD[venue]]);
+    for (const row of rows) {
+      const story = policy.swapStory(row);
+      if (story) candidates.push(story);
+      else decisions.push({ key: `cross_chain:${venue}:${row.id}`, reason: 'venue-swap-baseline-identity-or-significance' });
+    }
+  }
+  return { candidates, decisions };
+}
+
 async function snapshot(pool, work) {
   const client = await pool.connect();
   try {
@@ -86,6 +141,17 @@ async function liveCandidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
       decisions.push(...swaps.filter(s => !candidates.some(c => c.key === `cross_chain:${s.id}`))
         .map(s => ({ key: `cross_chain:${s.id}`, reason: 'swap-baseline-or-significance' })));
     } else decisions.push({ key: 'crosschain', reason: 'sync-unavailable-or-stale' });
+
+    // A venue read failure must not discard this snapshot's other candidates.
+    await db.query('SAVEPOINT venue_swaps');
+    try {
+      const venues = await venueSwapCandidates(db, now);
+      candidates.push(...venues.candidates); decisions.push(...venues.decisions);
+      await db.query('RELEASE SAVEPOINT venue_swaps');
+    } catch (error) {
+      await db.query('ROLLBACK TO SAVEPOINT venue_swaps');
+      decisions.push({ key: 'crosschain-venues', reason: 'source-check-failed', detail: error.message });
+    }
 
     const { rows: migrations } = await db.query(`SELECT t.txid,t.block_time,abs(t.value_balance_ironwood)::text AS amount_zat
       FROM transactions t JOIN blocks b ON b.height=t.block_height AND b.timestamp=t.block_time
@@ -264,4 +330,4 @@ async function poolActivityCandidates(pool, now, options) {
   return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
 }
 
-module.exports = { VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };
+module.exports = { venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

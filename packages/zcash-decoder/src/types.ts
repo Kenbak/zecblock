@@ -24,6 +24,7 @@ export interface CompactBlock {
 export interface CompactTransaction {
   hash: string;
   actions?: CompactAction[];
+  /** Sapling outputs: ignored in mixed scans; unsupported on their own. */
   outputs?: CompactOutput[];
 }
 

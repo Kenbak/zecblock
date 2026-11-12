@@ -170,6 +170,55 @@ test('expiry hides qualified graphs and immediately refreshes, restoring fresh l
   assert.equal(graph.exports.topologyIsFresh(legacy, now), true, 'legacy peer mode retains its existing contract');
 });
 
+test('refreshing one collector snapshot keeps its layout, counts and selected node', () => {
+  const graph = harness(); graph.flush();
+  const ticks = graph.tickCount;
+  const scene = () => visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0];
+  scene().props.onPin(scene().props.nodes[0]); graph.render();
+  graph.completeRefresh(snapshot({ edges: [], counts: { total: 3, reachable: 2, off: 1, edges: 0 } }));
+  graph.flush();
+  assert.equal(graph.tickCount, ticks, 'no new force layout for the same observedAt');
+  assert.ok(text(graph.tree).includes('1 advertisement links'), 'counts stay with the graph on screen');
+  assert.equal(scene().props.pinned.id, 0);
+});
+
+test('a new snapshot replaces the old graph only once its layout is ready', () => {
+  const graph = harness(); graph.flush();
+  const previous = visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0].props.nodes;
+  graph.completeRefresh(snapshot({ observedAt: new Date(now + 300_000).toISOString() }));
+  const during = visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0];
+  assert.equal(during.props.nodes, previous, 'no empty or loading flash between valid snapshots');
+  graph.flush();
+  assert.notEqual(visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0].props.nodes, previous);
+});
+
+test('the next snapshot is fetched once just after ingest and only while visible', () => {
+  const graph = harness();
+  graph.advance(now + 328_998);
+  assert.equal(graph.refetchCalls, 0);
+  graph.advance(now + 329_000);
+  assert.equal(graph.refetchCalls, 1, 'observedAt + five minutes + grace');
+  const hidden = harness();
+  hidden.update({ visible: false });
+  hidden.advance(now + 330_000);
+  assert.equal(hidden.refetchCalls, 0);
+});
+
+test('hub table, unambiguous dates and working unavailable-state links', () => {
+  const graph = harness(); graph.flush();
+  const page = text(graph.tree);
+  assert.ok(page.includes('Top advertisers'));
+  assert.equal(visit(graph.tree, item => item.type === 'tbody')[0].props.children.length, 1, 'only nodes with outgoing links are advertisers');
+  assert.ok(page.includes('2026-10-22 23:59:59 UTC'));
+  assert.ok(!page.includes('22/10/2026'));
+  const scene = visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0];
+  scene.props.onPin(scene.props.nodes[0]); graph.render();
+  const labels = visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Row').map(row => row.props.label);
+  assert.ok(!labels.includes('Betweenness') && !labels.includes('Closeness'));
+  const unavailable = harness(snapshot({ topologyAvailable: false, gossipProvenance: null }));
+  assert.equal(visit(unavailable.tree, item => item.type === 'a')[0].props.href, '#node-directory');
+});
+
 test('the same expired payload, a failed request or an unavailable result cannot trigger a refresh loop', () => {
   const expired = snapshot({ expiresAt: new Date(now + 1000).toISOString() });
   const graph = harness(expired);

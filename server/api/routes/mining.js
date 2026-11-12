@@ -13,6 +13,7 @@ const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName } = require('..
 const { logSafeError } = require('../lib/safe-log');
 const { orphanRates } = require('../lib/orphan-rates');
 const { observationLag } = require('../lib/observation-lag');
+const { orphanRateDaily, parseDays } = require('../lib/orphan-rate-daily');
 const { networkSchedule } = require('../lib/network-schedule');
 const minerBehavior = require('../lib/miner-behavior');
 
@@ -92,6 +93,21 @@ router.get('/api/mining/orphan-rates', async (req, res) => {
   } catch (error) {
     logSafeError('Observed orphan rates failed:', error);
     res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Observed orphan rates unavailable' });
+  }
+});
+
+router.get('/api/mining/orphan-rates/daily', async (req, res) => {
+  const days = parseDays(req.query.days);
+  if (days === null) return res.status(400).json({ success: false, error: 'days must be an integer from 7 to 90' });
+  try {
+    const { pool, callZebraRPC } = req.app.locals;
+    const schedule = callZebraRPC ? await callZebraRPC('getblockchaininfo').then(networkSchedule, () => null) : null;
+    const data = await orphanRateDaily(pool, { days, nu7Height: schedule?.nu7Height ?? null });
+    res.set('Cache-Control', 'public, max-age=60');
+    res.json(data);
+  } catch (error) {
+    logSafeError('Daily orphan rates failed:', error);
+    res.status(503).set('Cache-Control', 'no-store').json({ success: false, error: 'Daily orphan rates unavailable' });
   }
 });
 

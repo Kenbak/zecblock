@@ -1,0 +1,25 @@
+From acb3f1c428d6aa294cfebf136e59890eb0c45790 Mon Sep 17 00:00:00 2001
+From: Antoine Serval <k6nb4k@gmail.com>
+Date: Tue, 10 Nov 2026 10:16:38 +0100
+Subject: [PATCH] Advertise NU7 peer protocol 170190
+
+---
+ src/protocol/message/constants.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/protocol/message/constants.rs b/src/protocol/message/constants.rs
+index 07d496a..5e02e21 100644
+--- a/src/protocol/message/constants.rs
++++ b/src/protocol/message/constants.rs
+@@ -12,7 +12,7 @@ pub const HEADER_LEN: usize = 24;
+ pub const MAX_MESSAGE_LEN: usize = 2 * 1024 * 1024;
+ 
+ /// The current network protocol version number.
+-pub const PROTOCOL_VERSION: u32 = 170_160;
++pub const PROTOCOL_VERSION: u32 = 170_190;
+ /// The current network version identifier.
+ pub const MAGIC_TESTNET: [u8; MAGIC_LEN] = [0xfa, 0x1a, 0xf9, 0xbf];
+ pub const MAGIC_MAINNET: [u8; MAGIC_LEN] = [0x24, 0xe9, 0x27, 0x64];
+-- 
+2.50.0
+

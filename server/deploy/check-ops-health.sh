@@ -42,17 +42,27 @@ API_GRPC_STATUS_URL="${API_GRPC_STATUS_URL:-http://127.0.0.1:3001/api/grpc-statu
 TELEGRAM_BOT_TOKEN="${TELEGRAM_BOT_TOKEN:-}"
 TELEGRAM_CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 TELEGRAM_API_BASE="${TELEGRAM_API_BASE:-https://api.telegram.org}"
+# "off" once the fleet monitor alerts from the metrics below (cipherscan-rust
+# deploy/monitoring, rules OpsCheckFailing/OpsCheckDegraded/OpsHealthCheckStale).
+TELEGRAM_ALERTS="${OPS_HEALTH_TELEGRAM_ALERTS:-on}"
+# node_exporter textfile collector directory; empty disables metrics.
+METRICS_DIR="${OPS_HEALTH_METRICS_DIR-/var/lib/prometheus/node-exporter}"
 HOST_LABEL="$(hostname -f 2>/dev/null || hostname)"
 
 mkdir -p "${STATE_DIR}"
 
-if [[ -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ]]; then
-  echo "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set" >&2
+if [[ "${TELEGRAM_ALERTS}" != "on" && "${TELEGRAM_ALERTS}" != "off" ]]; then
+  echo "OPS_HEALTH_TELEGRAM_ALERTS must be on or off" >&2
+  exit 2
+fi
+if [[ "${TELEGRAM_ALERTS}" == "on" && ( -z "${TELEGRAM_BOT_TOKEN}" || -z "${TELEGRAM_CHAT_ID}" ) ]]; then
+  echo "TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID must be set (or OPS_HEALTH_TELEGRAM_ALERTS=off)" >&2
   exit 2
 fi
 
 send_telegram() {
   local message="$1"
+  [[ "${TELEGRAM_ALERTS}" == "on" ]] || return 0
   curl -fsS -X POST \
     "${TELEGRAM_API_BASE}/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
@@ -322,32 +332,69 @@ for k in "${!check_results[@]}"; do
 done
 failing=$(( total_checks - passing ))
 
-build_check_line() {
-  local name="$1"
-  local passed="${check_results[$name]:-0}"
-  if [[ "${passed}" == "1" ]]; then
-    echo "✅ ${name}"
-  else
-    echo "❌ ${name}"
-  fi
+# Metrics for the fleet monitor: one 0/1 series per check that ran, with a
+# stable slug and a display name; no failure details (they change every run
+# and can include paths). Written atomically; never fatal.
+check_slug() {
+  case "$1" in
+    "Disk") echo "disk|Disk" ;;
+    "Backup") echo "backup|Backup" ;;
+    "WAL") echo "wal|WAL archiving" ;;
+    "Redis") echo "redis|Redis" ;;
+    "PG pool") echo "pg_pool|PostgreSQL pool" ;;
+    "Indexer") echo "indexer|Indexer" ;;
+    "Replication") echo "replication|Replication" ;;
+    "Replica") echo "replica|Replica" ;;
+    "Node sync") echo "node_sync|Node sync" ;;
+    "API realtime") echo "api_realtime|API real-time bridge" ;;
+    *) return 1 ;;
+  esac
+}
+write_metrics() {
+  [[ -n "${METRICS_DIR}" && -d "${METRICS_DIR}" ]] || return 0
+  local tmp="${METRICS_DIR}/.zecblock_ops_health.prom.$$" name slug label
+  {
+    echo "# HELP zecblock_ops_check_ok 1 if the check passed in the last ops health run."
+    echo "# TYPE zecblock_ops_check_ok gauge"
+    for name in "${!check_results[@]}"; do
+      label="$(check_slug "${name}")" || continue
+      slug="${label%%|*}"
+      printf 'zecblock_ops_check_ok{check="%s",name="%s"} %s\n' "${slug}" "${label#*|}" "${check_results[${name}]}"
+    done
+    echo "# HELP zecblock_ops_health_last_run_timestamp_seconds Unix time of the last ops health run."
+    echo "# TYPE zecblock_ops_health_last_run_timestamp_seconds gauge"
+    echo "zecblock_ops_health_last_run_timestamp_seconds ${now}"
+  } > "${tmp}" 2>/dev/null && mv -f "${tmp}" "${METRICS_DIR}/zecblock_ops_health.prom" || rm -f "${tmp}"
+}
+write_metrics
+
+# Plain-language meaning and next step for each failing check (reader may not be a sysadmin).
+explain_check() {
+  case "$1" in
+    "Disk") echo "Disk space is running low. If it fills up, the database stops writing. Free space today (old logs, old backups) or resize the disk." ;;
+    "Backup") echo "Database backups are missing or too old. The site still works, but data could be lost if the server died. Check with <code>pgbackrest info</code>." ;;
+    "WAL") echo "Continuous database backup (WAL archiving) is falling behind. Same risk as missing backups. Check <code>pgbackrest info</code> and free disk space." ;;
+    "Redis") echo "Redis (the API's fast cache) is not answering, so the API may be slow or failing. Usually fixed by <code>systemctl restart redis-server</code>." ;;
+    "PG pool") echo "The database has too many open connections and may start refusing requests. Restarting the API usually frees them." ;;
+    "Indexer") echo "The indexer is behind or stuck, so new blocks may not appear on the site. Look at <code>journalctl -u cipherscan-indexer -n 100</code>." ;;
+    "Replication") echo "The standby copy of the database is lagging or disconnected. The site works, but the backup copy is out of date." ;;
+    "Replica") echo "The standby database server cannot be reached. The site works, but we could not switch over if the main one failed." ;;
+    "Node sync") echo "The Zcash node is unreachable or far from our database's latest block, so new blocks may be late on the site. Check the node with <code>systemctl status zakurad</code>." ;;
+    "API realtime") echo "The live block feed to the website is disconnected, so pages may not update in real time. Restarting the API usually reconnects it." ;;
+    *) echo "See the details below." ;;
+  esac
 }
 
-CHECK_NAMES=("Disk" "Backup" "WAL" "Redis" "PG pool" "Indexer" "Replication" "Replica" "Node sync")
+html_escape() { sed -e 's/&/\&amp;/g' -e 's/</\&lt;/g' -e 's/>/\&gt;/g'; }
+
+CHECK_NAMES=("Disk" "Backup" "WAL" "Redis" "PG pool" "Indexer" "Replication" "Replica" "Node sync" "API realtime")
 
 if (( ${#failures[@]} == 0 )); then
   if [[ "${previous_status}" == "unhealthy" ]]; then
-    check_summary=""
-    for name in "${CHECK_NAMES[@]}"; do
-      [[ -n "${check_results[${name}]+x}" ]] && check_summary+="$(build_check_line "${name}")  "
-    done
     send_telegram "$(cat <<EOF
-🟢 <b>CipherScan Recovered</b>
-
-<b>Host:</b> ${HOST_LABEL}
-<b>Time:</b> ${timestamp}
-
-All ${total_checks} checks passing
-${check_summary}
+✅ <b>Fixed: server health checks</b>
+📍 ${HOST_LABEL}
+All ${total_checks} checks are passing again (${timestamp}). Nothing to do.
 EOF
 )"
   fi
@@ -373,25 +420,27 @@ elif (( now - previous_alert_at >= ALERT_COOLDOWN_SECONDS )); then
 fi
 
 if (( should_alert == 1 )); then
-  check_lines=""
+  explanations=""
   for name in "${CHECK_NAMES[@]}"; do
-    [[ -n "${check_results[${name}]+x}" ]] && check_lines+="$(build_check_line "${name}")"$'\n'
+    if [[ -n "${check_results[${name}]+x}" && "${check_results[${name}]}" != "1" ]]; then
+      explanations+="❌ <b>${name}</b>: $(explain_check "${name}")"$'\n'
+    fi
   done
 
   failure_details=""
   for f in "${failures[@]}"; do
-    failure_details+="  • ${f}"$'\n'
+    failure_details+="• $(printf '%s' "${f}" | html_escape)"$'\n'
   done
 
+  if (( failing == 1 )); then headline="1 health check failing"; else headline="${failing} health checks failing"; fi
   send_telegram "$(cat <<EOF
-🔴 <b>CipherScan Alert</b>
+🔴 <b>${headline}</b>
+📍 ${HOST_LABEL} · ${passing} of ${total_checks} checks OK
 
-<b>Host:</b> ${HOST_LABEL}
-<b>Time:</b> ${timestamp}
-
-${check_lines}
-${failing} of ${total_checks} checks failing:
+${explanations}
+Technical details:
 ${failure_details}
+<i>${timestamp} · repeats while it lasts</i>
 EOF
 )"
   persist_state "unhealthy" "${fingerprint}" "${now}"

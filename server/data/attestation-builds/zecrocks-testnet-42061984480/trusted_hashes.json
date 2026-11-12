@@ -1,0 +1,10 @@
+{
+  "pcr0": "aee11cafddbcab068ab10759bc9a3b9654c1a00e1f9eebc5b7ad85000a2767d0b1688170b51bc36a5ffe20a7be837021",
+  "pcr1": "aee11cafddbcab068ab10759bc9a3b9654c1a00e1f9eebc5b7ad85000a2767d0b1688170b51bc36a5ffe20a7be837021",
+  "pcr2": "21b9efbc184807662e966d34f390821309eeac6802309798826296bf3e8bec7c10edb30948c90ba67310f7b964fc500a",
+  "verified_at": "2026-11-05T16:33:08.835396638+00:00",
+  "tls": {
+    "domain": "tee.testnet.unsafe.zec.rocks",
+    "certfp": "ec6904cffd616aa389ac762038578bef2fb446c01f12a429fe114f54954ec860"
+  }
+}

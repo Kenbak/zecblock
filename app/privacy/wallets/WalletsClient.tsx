@@ -17,7 +17,9 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/SectionHeader';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { PageSectionNav } from '@/components/PageSectionNav';
+import { WalletImplementationLogo } from '@/components/WalletImplementationLogo';
 import { useUrlState } from '@/lib/use-url-state';
 
 const SECTIONS = [
@@ -115,18 +117,11 @@ export default function WalletsClient() {
         title="Zcash Wallet Signals"
         subtitle="Fee patterns, observable wallet signals and their limits. Matches describe transaction behavior, not identified users."
         actions={
-          <div className="filter-group">
-            {PERIODS.map(p => (
-              <button
-                key={p}
-                aria-pressed={period === p}
-                onClick={() => setPeriod(p)}
-                className={`filter-btn ${period === p ? 'filter-btn-active' : ''}`}
-              >
-                {p}
-              </button>
-            ))}
-          </div>
+          <PeriodPillTags
+            options={PERIODS.map(p => ({ key: p, label: p }))}
+            value={period}
+            onChange={setPeriod}
+          />
         }
       />
 
@@ -357,7 +352,10 @@ function WalletCard({ wallet }: { wallet: WalletFingerprint }) {
           <svg aria-hidden="true" className="w-4 h-4 mt-0.5 shrink-0 text-muted transition-transform group-open:rotate-90" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="m9 5 7 7-7 7" strokeWidth="1.5" /></svg>
           <div className="grid min-w-0 flex-1 gap-3 lg:grid-cols-[minmax(12rem,1.1fr)_2fr] lg:gap-6">
             <div>
-              <span className="text-sm font-medium text-primary">{wallet.name}</span>
+              <div className="flex items-center gap-2.5">
+                <WalletImplementationLogo name={wallet.name} />
+                <span className="min-w-0 text-sm font-medium text-primary">{wallet.name}</span>
+              </div>
               {wallet.nym && wallet.nym !== 'none' && <span className="block mt-1 text-caption text-muted">{wallet.nym === 'supported' ? 'Nym supported' : 'Nym · partial support'}</span>}
             </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-3">
@@ -422,7 +420,7 @@ function MethodologyAccordion() {
             </p>
             <p>
               <strong>Overlap handling:</strong> Wallets using librustzcash (ZODL, Edge, Unstoppable,
-              Vizor) share the same on-chain fingerprint (expiry +40, locktime 0, 2-action padding).
+              Vizor) share the same on-chain fingerprint (expiry +120 since NU7 and +40 before it, locktime 0, 2-action padding).
               They are grouped as a single &quot;librustzcash family&quot; bucket because they are
               indistinguishable from one another on-chain.
             </p>
@@ -446,7 +444,7 @@ function buildUsageEstimates(fingerprints: FingerprintData | null) {
   const find = (name: string) => fingerprints.wallets.find(w => w.name === name);
 
   const entries: { name: string; key: string; signal: 'expiry' | 'fee' | 'locktime' | 'actionPadding'; confidence: 'high' | 'medium' | 'low' }[] = [
-    { name: 'ZODL / Vizor (Ironwood sends)', key: 'ZODL / Vizor (Ironwood sends)', signal: 'expiry', confidence: 'high' },
+    { name: 'ZODL / Vizor (Ironwood sends)', key: 'ZODL / Vizor (Ironwood sends)', signal: 'expiry', confidence: 'medium' },
     { name: 'ZODL / Vizor (ZIP-318 migration)', key: 'ZODL / Vizor (ZIP-318 migration)', signal: 'expiry', confidence: 'high' },
     { name: 'SDK wallets (cross-pool)', key: 'SDK wallets (cross-pool)', signal: 'expiry', confidence: 'medium' },
     { name: 'SDK wallets (Orchard pool)', key: 'SDK wallets (Orchard pool)', signal: 'actionPadding', confidence: 'medium' },

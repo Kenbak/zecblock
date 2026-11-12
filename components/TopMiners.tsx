@@ -4,6 +4,7 @@ import { readApiData } from '@/lib/api-client';
 import { useCallback, useEffect, useRef, useState, memo, type ReactNode } from 'react';
 import { getApiUrl } from '@/lib/api-config';
 import { SkeletonTable } from '@/components/ui';
+import { PoolLogo } from '@/components/PoolLogo';
 
 interface PoolRankingEntry {
   rank: number;
@@ -94,18 +95,21 @@ export const TopMiners = memo(function TopMiners({ footer }: { footer?: ReactNod
                   <span className="font-mono text-xs text-muted tabular-nums">{pool.rank}</span>
                 </td>
                 <td className="px-4 sm:px-5 h-12 border-b border-cipher-border">
-                  {pool.url ? (
-                    <a
-                      href={pool.url}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="font-mono text-sm font-medium text-primary hover:underline transition-colors truncate"
-                    >
-                      {pool.name}
-                    </a>
-                  ) : (
-                    <span className="font-mono text-sm font-medium text-primary truncate">{pool.name}</span>
-                  )}
+                  <div className="flex items-center gap-2">
+                    <PoolLogo name={pool.name} />
+                    {pool.url ? (
+                      <a
+                        href={pool.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="min-w-0 font-mono text-sm font-medium text-primary hover:underline transition-colors truncate"
+                      >
+                        {pool.name}
+                      </a>
+                    ) : (
+                      <span className="min-w-0 font-mono text-sm font-medium text-primary truncate">{pool.name}</span>
+                    )}
+                  </div>
                 </td>
                 <td className="px-4 sm:px-5 h-12 border-b border-cipher-border text-right">
                   <span className="font-mono text-sm text-secondary tabular-nums">{pool.blocks.toLocaleString()}</span>

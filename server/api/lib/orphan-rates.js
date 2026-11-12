@@ -12,7 +12,10 @@ WITH clock AS (
 ), capture AS (
   SELECT min(collection_started_at) AS capture_start, max(heartbeat_at) AS capture_heartbeat,
     count(*) FILTER (WHERE stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)::integer AS healthy_observers,
-    count(*)::integer AS observers
+    count(*)::integer AS observers,
+    -- Private identifiers only; formatOrphanRates maps them to public city names.
+    coalesce(jsonb_agg(jsonb_build_object('network', network, 'observer', observer,
+      'healthy', stream_connected AND heartbeat_at > now() - interval '45 seconds' AND pending_records=0)), '[]'::jsonb) AS observer_rows
   FROM block_capture_observers
 ), activation AS (
   -- The canonical NU7 activation block's header time; absent until it is indexed.
@@ -67,6 +70,44 @@ SELECT w.*, capture.*, h.history_start, t.height AS indexed_height, t.hash AS in
 FROM windows w CROSS JOIN history h CROSS JOIN capture LEFT JOIN tip t ON true
 LEFT JOIN counts c ON c.period = w.period
 `;
+
+// Public location of each known observer, keyed by network and private observer
+// name. Names, endpoints and IPs are never returned; an observer missing here is
+// counted only as unlisted. Keep in sync with the wiki observer host table.
+// ZecBlock's own observers carry no operator; partner nodes name the operator
+// that runs them (with their permission). Never IPs or endpoints.
+const PARTNER_ZECMININGPOOL = 'zecminingpool.com';
+const OBSERVER_LOCATIONS = new Map([
+  ['mainnet:local-node', { city: 'Helsinki' }],
+  ['mainnet:do-nyc3', { city: 'New York' }],
+  ['mainnet:do-sgp1', { city: 'Singapore' }],
+  ['mainnet:do-syd1', { city: 'Sydney' }],
+  ['mainnet:ext-zcashpools-austin', { city: 'Austin', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-use1', { city: 'Northern Virginia', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-ogd', { city: 'Ogden', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-bhs', { city: 'Beauharnois', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-lim', { city: 'Limburg', operator: PARTNER_ZECMININGPOOL }],
+  ['mainnet:ext-zcashpools-sin', { city: 'Singapore', operator: PARTNER_ZECMININGPOOL }],
+]);
+
+function observerLocations(rows) {
+  const places = new Map();
+  let unlisted = 0;
+  for (const row of Array.isArray(rows) ? rows : []) {
+    const place = OBSERVER_LOCATIONS.get(`${row?.network}:${row?.observer}`);
+    if (!place) { unlisted += 1; continue; }
+    const operator = place.operator ?? null;
+    const key = `${operator ?? ''}|${place.city}`;
+    const prev = places.get(key);
+    places.set(key, { city: place.city, operator, collecting: (prev?.collecting ?? false) || row.healthy === true });
+  }
+  // Display order is OBSERVER_LOCATIONS order: ZecBlock's own first, then partners.
+  const order = [...OBSERVER_LOCATIONS.values()].map(v => `${v.operator ?? ''}|${v.city}`);
+  return {
+    locations: [...places.entries()].sort(([a], [b]) => order.indexOf(a) - order.indexOf(b)).map(([, v]) => v),
+    unlistedObservers: unlisted,
+  };
+}
 
 function count(value) {
   const n = Number(value);
@@ -135,6 +176,7 @@ function formatOrphanRates(rows, nu7Height = null) {
       observers: Number(first.observers ?? 0),
       healthyObservers: Number(first.healthy_observers ?? 0),
       status: Number(first.healthy_observers ?? 0) > 0 ? 'collecting' : 'unavailable',
+      ...observerLocations(first.observer_rows),
     },
     periods,
     nu7,
@@ -146,4 +188,4 @@ async function orphanRates(pool, { nu7Height = null } = {}) {
   return formatOrphanRates((await pool.query(ORPHAN_RATES_SQL, [height])).rows, height);
 }
 
-module.exports = { orphanRates, formatOrphanRates, ORPHAN_RATES_SQL };
+module.exports = { orphanRates, formatOrphanRates, observerLocations, ORPHAN_RATES_SQL };

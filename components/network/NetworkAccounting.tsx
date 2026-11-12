@@ -10,6 +10,7 @@ import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useUrlState } from '@/lib/use-url-state';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 type Accounting = { schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
   block: { height: number; feesPaidZat: number | string | null; feesToNsmZat: number | string | null; minerFeeAllocationZat: number | string | null;
@@ -130,10 +131,8 @@ export function NetworkAccounting() {
     <div className="border-t border-cipher-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="font-mono text-sm text-primary">Accounting history</h3>
-        <div className="flex flex-wrap gap-2" role="group" aria-label="Accounting history period">
-          {(Object.keys(periods) as Period[]).map(key => <button type="button" key={key} aria-pressed={period === key}
-            className={`filter-btn ${period === key ? 'filter-btn-active' : ''}`} onClick={() => setPeriod(key)}>{periods[key]}</button>)}
-        </div>
+        <PeriodPillTags aria-label="Accounting history period" value={period} onChange={setPeriod}
+          options={(Object.keys(periods) as Period[]).map(key => ({ key, label: periods[key] }))} />
       </div>
       <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 mb-5" aria-label="Selected period totals">
         {([['Fees paid', selected?.selected.feesPaidZat], ['Minimum removal', selected?.selected.feesToNsmZat],
@@ -142,10 +141,8 @@ export function NetworkAccounting() {
           <dd className="font-mono text-sm text-primary tabular-nums break-words">{zec(value)}</dd>
         </div>)}
       </dl>
-      <div className="flex flex-wrap gap-2 mb-4" role="group" aria-label="Accounting history metric">
-        {(Object.keys(metricLabels) as (keyof typeof metricLabels)[]).map(key => <button type="button" key={key} aria-pressed={metric === key}
-          className={`filter-btn ${metric === key ? 'filter-btn-active' : ''}`} onClick={() => setMetric(key)}>{metricLabels[key]}</button>)}
-      </div>
+      <PeriodPillTags className="mb-4" aria-label="Accounting history metric" value={metric} onChange={setMetric}
+        options={(Object.keys(metricLabels) as (keyof typeof metricLabels)[]).map(key => ({ key, label: metricLabels[key] }))} />
       {hasValues ? <ResponsiveContainer width="100%" height={280} initialDimension={{ width: 400, height: 280 }}>
         <ComposedChart data={points} margin={{ top: 12, right: 24, bottom: 12, left: 0 }} barCategoryGap="15%">
           <CartesianGrid vertical={false} stroke={colors.grid} />

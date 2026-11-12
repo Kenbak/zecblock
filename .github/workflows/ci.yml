@@ -10,7 +10,9 @@ on:
 # Cancel superseded runs on the same ref to save CI minutes.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # PR pushes supersede each other; every main/dev push must finish so each
+  # merge commit has a complete result.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -27,6 +29,7 @@ jobs:
   deployment-trust:
     name: Deployment trust
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - run: python3 -m unittest discover -s scripts -p 'test_deployment_trust.py'
@@ -37,6 +40,7 @@ jobs:
   frontend:
     name: Frontend (Next.js)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
@@ -68,6 +72,7 @@ jobs:
     # The isolated Ask fixture invokes the runner's PostgreSQL 16 binaries;
     # avoid changing its database major when ubuntu-latest advances.
     runs-on: ubuntu-24.04
+    timeout-minutes: 30
     env:
       TEST_REDIS_URL: redis://127.0.0.1:6379
       ADDRESS_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:5432/postgres
@@ -183,6 +188,7 @@ jobs:
   indexer:
     name: Indexer
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: server/indexer
@@ -202,6 +208,7 @@ jobs:
   zcash-decoder:
     name: Package (zcash-decoder)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: packages/zcash-decoder
@@ -221,6 +228,7 @@ jobs:
   wasm:
     name: WASM (Rust)
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     defaults:
       run:
         working-directory: wasm
@@ -249,6 +257,7 @@ jobs:
   python-environments:
     name: Python dependencies (${{ matrix.python }})
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -274,6 +283,7 @@ jobs:
     # Preserve the branch-protection check name while requiring both runtimes.
     name: Python jobs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: always()
     needs: python-environments
     steps:
@@ -286,6 +296,7 @@ jobs:
   shellcheck:
     name: Shellcheck
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
       - name: Install shellcheck

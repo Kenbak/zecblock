@@ -8,16 +8,20 @@ records are archived in `attestation-retired-endpoints.json`, and all historical
 rebuild evidence remains under `server/data/attestation-builds/`. Archived records
 are not polled or exposed through the active API.
 
-Zec.rocks mainnet/testnet baselines are independently reproduced. Their deployment
-tags were resolved with `git ls-remote --tags` on 2026-09-10 against the registered
-source repositories: `deploy-fdb613db-a606726` → `a6067268a04d14f9821edf6c83d3bdd94dab3776`,
-`deploy-a67b428a-da024a0` → `da024a0e3113810a4a10ffc085d43bb849f1a1a0`.
+Zec.rocks mainnet/testnet baselines are independently reproduced. Their current
+deployment tags were resolved with `git ls-remote --tags` on 2026-11-05 against the
+registered source repositories: `deploy-fdb613db-e0c834c` → `e0c834cc9f1554f04c489639ce377ea0408d417e`,
+`deploy-a67b428a-656c99f` → `656c99fcfb4168e6f1685e8239c918bcc20c07b2` (both the
+2026-10-08 gRPC-Web release from ShieldedLabs `zero@5d14c1d`, reproduced in runs
+42061912754 and 42061984480). The 2026-09-10 baselines (`deploy-fdb613db-a606726`,
+`deploy-a67b428a-da024a0`) are superseded; their evidence stays under `attestation-builds/`.
 These are deployment-source tags, not an inferred application semver. The manifest's
 `version: 1.0` is not used as the software release label. Tags are reviewed metadata;
 commits and independent measurements remain the identity anchor. New releases and
 tag movements require reviewed updates; polling never promotes a new baseline.
 
-The mainnet rebuilt manifest contains `ZIS_HUB=54.251.201.143:443` and
+The mainnet rebuilt manifest contains `ZIS_HUB=54.151.176.23:443` (previously
+`54.251.201.143:443` before the 2026-10-08 release) and
 `ZIS_HUB_TLS=hub.zcash.caution.co`. The API publishes this as reviewed
 `hubConfiguration`; the page calls it confirmed only when the latest fresh evidence,
 TLS and reproduced PCR match pass together. Missing, failed, mismatched and stale
@@ -26,6 +30,15 @@ This proves a configured destination in the matching build, not network reachabi
 actual routing, traffic flow, or the hub's own software status. Testnet's hub remains
 unknown: absence of a startup override is not proof of runtime default behavior.
 Caution hub's source/build version remains unconfirmed without a reviewed baseline.
+
+A shim's hub address is measured into its build, while a hub's public hostname can
+later resolve elsewhere. Each collector run therefore also challenges the address in
+`hubConfiguration` directly, keeping the reviewed hostname for SNI, certificate
+validation and attested TLS binding. The API publishes this as `pinnedHub`, with
+`listedHub` comparing it to the same run's DNS-based hub check: `same`, `different`
+(certificate or PCRs differ) or `unknown` (either side lacks bound evidence). It shows
+what answers at the configured address, not that the shim sent traffic there or that
+the deployment processes batches. The field is optional for older snapshots.
 
 Canary compatibility assessment: [CANARY-ASSESSMENT.md](CANARY-ASSESSMENT.md).
 

@@ -10,9 +10,10 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { ShareableCard } from '@/components/ShareableCard';
-import { chartSharePath, chartSnapshotLabel, chartDateRange, chartRangeRows, chartEndpoint, CHART_RANGES, type ChartRange } from '@/lib/chart-sharing';
+import { chartSharePath, chartSnapshotLabel, chartDateRange, chartRangeRows, chartEndpoint, chartRanges, type ChartRange } from '@/lib/chart-sharing';
 import { NETWORK } from '@/lib/api-config';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
+import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 
 const CATEGORIES=['All',...new Set(CHART_CATALOG.map(c=>c.category))];
 const TOOLS=[
@@ -55,9 +56,9 @@ export function CatalogCard({chart, initialData, initialFetchedAt, initialSnapsh
   const height=expanded?Math.max(340,category?rows.length*30:400):240;
   return <article ref={ref} id={chart.id} className={`min-w-0 scroll-mt-56 sm:scroll-mt-36 ${expanded?'xl:col-span-2':''}`}>
     <ShareableCard title={chart.title} shareText={`${chart.title} · ${chartDateRange(chart,rows)}`} sharePath={sharePath} exportData={exportData} expandedToolbar={expanded} fileName={`zecblock-${chart.id}.png`} branding="compact" compact className="h-full" exportDisabled={!hasData || loading} footerNote={latest&&!category?`Latest observation · ${label(latest.x)}`:windowLabel}>
-      <p className="text-xs text-muted leading-relaxed min-h-12 mb-3">{chart.description}</p>
+      {!standalone&&<p className="text-xs text-muted leading-relaxed min-h-12 mb-3">{chart.description}</p>}
       <div className="flex flex-wrap justify-between gap-2 text-caption font-mono text-muted mb-3"><span>{chart.unit}</span><span>{windowLabel}</span></div>
-      {expanded&&!chart.axis&&<div className="mb-4 flex flex-wrap items-center gap-2" aria-label="Chart observation range"><span className="text-caption text-muted mr-2">Within available history</span>{CHART_RANGES.map(value=><button key={value} type="button" className={`filter-btn ${range===value?'filter-btn-active':''}`} aria-pressed={range===value} onClick={()=>setRange(value)}>{value==='all'?'All':value.toUpperCase()}</button>)}</div>}
+      {expanded&&!chart.axis&&<div className="mb-4 flex flex-wrap items-center gap-2"><span className="text-caption text-muted mr-2">Within available history</span><PeriodPillTags aria-label="Chart observation range" options={chartRanges(chart).map(value=>({key:value,label:value==='all'?'All':value.toUpperCase()}))} value={range} onChange={setRange}/></div>}
       {!visible||loading?<ChartSkeleton height={height}/>:!hasData?<div role="status" className="min-h-[240px] flex flex-col items-center justify-center gap-3 text-xs text-muted text-center"><span>{error?'Could not load this data.':'No verified observations available.'}</span><Link href={chart.href} className="underline underline-offset-4">View source analysis →</Link></div>:
         <div role="img" aria-label={`${chart.title}. ${chart.description} Units: ${chart.unit}.`}>
           <ResponsiveContainer width="100%" height={height} initialDimension={{width:500,height}} onResize={w=>setWidth(w)}><ComposedChart data={rows} layout={category?'vertical':'horizontal'} margin={{top:12,right:12,left:0,bottom:8}}>

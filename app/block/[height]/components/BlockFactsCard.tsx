@@ -8,6 +8,7 @@ import type { CoinbaseClientEmoji, CoinbaseClientInfo } from '@/lib/coinbase-cli
 import type { BlockData } from './types';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
 import { CopyButton } from '@/components/CopyButton';
+import { PoolLogo } from '@/components/PoolLogo';
 import { BlockSeenLine } from '@/components/BlockFirstSeen';
 
 interface RewardRecipient {
@@ -75,8 +76,10 @@ function BlockRewardBreakdown({
   return (
     <FactBox label="Coinbase Outputs" tooltip="The visible outputs created by this block's coinbase transaction. Deferred-development-lockbox accrual is part of the subsidy but is not a transaction output.">
       {minerPool && !data.minerAddress && (
-        <p className="mb-2 text-caption text-muted" title="Pool identified from the public coinbase tag; payout recipient remains shielded">
-          Pool · {minerPoolUrl ? <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{minerPool}</a> : minerPool}
+        <p className="mb-2 flex flex-wrap items-center gap-1.5 text-caption text-muted" title="Pool identified from the public coinbase tag; payout recipient remains shielded">
+          <span>Pool ·</span>
+          {!data.minerPoolIsFundingStream && <PoolLogo name={minerPool} />}
+          {minerPoolUrl ? <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="text-primary hover:underline">{minerPool}</a> : minerPool}
           <span className="ml-1.5">(coinbase tag)</span>
         </p>
       )}
@@ -84,7 +87,7 @@ function BlockRewardBreakdown({
       <div className="mt-2 space-y-1">
         {recipients.map((r, i) => (
           <div key={i} className="flex flex-wrap items-center justify-between gap-2 text-caption">
-            <div className="flex items-center gap-1.5 min-w-0 text-muted">
+            <div className="flex flex-wrap items-center gap-1.5 min-w-0 text-muted">
               <span className="shrink-0">{r.label}</span>
               {r.address ? (
                 <CopyableHash value={r.address} href={`/address/${r.address}`} textSize="text-caption" colorClass="text-primary" />
@@ -92,11 +95,12 @@ function BlockRewardBreakdown({
                 <span className="font-mono text-cipher-yellow">Shielded Pool</span>
               )}
               {r.label === 'Miner' && r.address === data.minerAddress && minerPool && (
-                <span className="font-mono text-muted whitespace-nowrap">
-                  ({minerPoolUrl ? (
+                <span className="inline-flex items-center gap-1.5 font-mono text-muted whitespace-nowrap">
+                  <PoolLogo name={minerPool} />
+                  <span>({minerPoolUrl ? (
                     <a href={minerPoolUrl} target="_blank" rel="noopener noreferrer" className="hover:text-primary hover:underline">{minerPool}</a>
                   ) : minerPool}
-                  {minerPoolRegion && ` ${minerPoolRegion}`})
+                  {minerPoolRegion && ` ${minerPoolRegion}`})</span>
                 </span>
               )}
             </div>
@@ -205,7 +209,7 @@ export function BlockFactsCard({
             <FactBox fit className="order-5 sm:order-none" label="Total Fees" tooltip="Total fees paid by all transactions in this block">
               {data.totalFees === null
                 ? <span className="text-sm text-muted">Unavailable</span>
-                : <BoldZec value={data.totalFees} />}
+                : <BoldZec value={data.totalFees} exact />}
             </FactBox>
           )}
         </div>

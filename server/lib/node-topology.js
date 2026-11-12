@@ -3,6 +3,7 @@
 const { BlockList, isIP } = require('node:net');
 const { parsePeerAddress } = require('./peer-client');
 const { verifiedNodes } = require('./node-census');
+const { isCollectorSource } = require('./census-vantages');
 
 const GOSSIP_PROVENANCE = 'zcash-mainnet-qualified-addr-v1';
 const MAX_GOSSIP_AGE_MS = 10 * 60 * 1000;
@@ -55,7 +56,7 @@ function validateTopologySnapshots(inputs, now = Date.now()) {
   for (const input of inputs) {
     const source = input?.source;
     const metrics = input?.metrics;
-    if (!['direct', 'tor'].includes(source) || metrics?.gossip_provenance !== GOSSIP_PROVENANCE
+    if (!isCollectorSource(source) || metrics?.gossip_provenance !== GOSSIP_PROVENANCE
       || typeof metrics.gossip_truncated !== 'boolean'
       || !Array.isArray(metrics.gossip_edges) || metrics.gossip_edges.length > MAX_GOSSIP_EDGES
       || !Array.isArray(metrics.node_info) || metrics.node_info.length > MAX_GOSSIP_EDGES

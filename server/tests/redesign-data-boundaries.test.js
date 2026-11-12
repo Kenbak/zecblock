@@ -9,7 +9,7 @@ function load(file) {
   new Function('module', 'exports', 'require', code)(module, module.exports, id => load(id.startsWith('@/') ? `${id.slice(2)}.ts` : path.resolve(path.dirname(file), `${id}.ts`)));
   return module.exports;
 }
-const { parseSafeZatoshi, sumZatoshis } = load('lib/format-numbers.ts');
+const { parseSafeZatoshi, sumZatoshis, formatZecExact } = load('lib/format-numbers.ts');
 const { normalizeMigrationData, completedDayActivity } = load('app/ironwood/components/api-data.ts');
 const { nonCoinbaseActivity } = load('lib/transaction-list.ts');
 const { transformTransactions } = load('app/address/[address]/components/helpers.ts');
@@ -86,4 +86,27 @@ test('shielded list API parameters omit the page-only type selector', () => {
   const { shieldedListParams } = load('lib/transaction-list.ts');
   assert.deepEqual(shieldedListParams('all', 'all', 0), { flow_type: 'all', pool: 'all' });
   assert.deepEqual(shieldedListParams('shield', 'ironwood', 1), { flow_type: 'shield', pool: 'ironwood', min_zec: '1' });
+});
+test('chart exports get an opaque background: translucent cards are composited over the page', () => {
+  const { opaqueBackground } = load('lib/chart-export.ts');
+  const node = (backgroundColor, parentElement = null) => ({ backgroundColor, parentElement });
+  const previous = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = element => ({ backgroundColor: element.backgroundColor });
+  try {
+    const page = node('rgb(11, 12, 14)');
+    const glass = node('rgba(255, 255, 255, 0.1)', node('rgba(0, 0, 0, 0)', page));
+    assert.equal(opaqueBackground(glass), 'rgb(35, 36, 38)', '10% white over the page colour');
+    assert.equal(opaqueBackground(node('rgb(250, 250, 250)', page)), 'rgb(250, 250, 250)', 'an opaque card is kept');
+    assert.equal(opaqueBackground(node('transparent', node('rgb(255 255 255 / 50%)'))), 'rgb(133, 134, 135)', 'nothing opaque falls back to the dark page');
+  } finally { globalThis.getComputedStyle = previous; }
+});
+
+test('exact ZEC keeps every zatoshi and at least four decimals', () => {
+  assert.equal(formatZecExact(132000 / 1e8), '0.00132');
+  assert.equal(formatZecExact(234694 / 1e8), '0.00234694');
+  assert.equal(formatZecExact(100000 / 1e8), '0.0010');
+  assert.equal(formatZecExact(1 / 1e8), '0.00000001');
+  assert.equal(formatZecExact(0), '0.0000');
+  assert.equal(formatZecExact(12.5), '12.5000');
+  assert.equal(formatZecExact(Number.NaN), '—');
 });

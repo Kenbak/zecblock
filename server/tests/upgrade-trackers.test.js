@@ -118,7 +118,7 @@ test('major-change tools use existing routes and stable supporting sections', ()
     const changes = buildUpgradeHistory(null, network).flatMap(milestone => buildUpgradeChanges(milestone.id, network));
     const sectionSources = {
       '/network': ['app/network/NetworkClient.tsx', 'components/network/MiningIssuance.tsx', 'components/network/NetworkAccounting.tsx'],
-      '/mining': ['app/mining/page.tsx'],
+      '/mining': ['app/mining/page.tsx', 'components/network/DifficultyStabilityChart.tsx'],
       '/pools': ['app/pools/page.tsx'],
       '/ironwood': ['MigrationActivity', 'PrivacyScore', 'MigrationTiers', 'WalletReadiness', 'SupplyVerification'].map(name => `app/ironwood/components/${name}.tsx`),
     };
@@ -436,7 +436,7 @@ test('timeline hash selection replaces the single details panel and cleans up it
   }
 });
 
-test('tracker loading uses bounded five-minute observations and preserves the directory on unavailable or wrong-network data', async () => {
+test('tracker loading uses bounded one-minute observations (2–3 NU7 blocks) and preserves the directory on unavailable or wrong-network data', async () => {
   let response = stats('mainnet', mainActivation - 1, mainActivation);
   let fail = false;
   const calls = [];
@@ -452,7 +452,7 @@ test('tracker loading uses bounded five-minute observations and preserves the di
   const good = await loadUpgradeTrackers('mainnet');
   assert.equal(good.trackers[0].status, 'scheduled');
   assert.equal(calls[0].url, 'https://api.mainnet.test/v1/network/stats');
-  assert.equal(calls[0].init.next.revalidate, 300);
+  assert.equal(calls[0].init.next.revalidate, 60);
   const wrongNetwork = await loadUpgradeTrackers('testnet');
   assert.equal(wrongNetwork.snapshot, null);
   assert.equal(wrongNetwork.trackers[0].status, 'unavailable');

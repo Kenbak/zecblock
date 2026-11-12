@@ -17,6 +17,7 @@ import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
 import { Analytics, CHAINS, Unit, href, value } from "./model";
 import { objectRowsCsv } from "@/components/charts/PanelShareControl";
+import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
 
 export function ChainFlowOverview({
   flows,
@@ -91,43 +92,30 @@ export function ChainFlowOverview({
         share={{ title: group === "chains" ? "ZEC cross-chain flow by chain" : "ZEC cross-chain flow by token", fileName: `zecblock-crosschain-flow-by-${group === "chains" ? "chain" : "token"}`, csv: () => objectRowsCsv(visible) }}
         height={180}
         controls={
-          <div
-            className="filter-group"
-            role="group"
+          <PeriodPillTags
             aria-label="Chain flow metric"
-          >
-            {(["volume", "count"] as const).map((key) => (
-              <button
-                key={key}
-                aria-pressed={metric === key}
-                onClick={() => setMetric(key)}
-                className={`filter-btn ${metric === key ? "filter-btn-active" : ""}`}
-              >
-                {key === "volume" ? "Volume" : "Swaps"}
-              </button>
-            ))}
-          </div>
+            value={metric}
+            onChange={setMetric}
+            options={[
+              { key: "volume", label: "Volume" },
+              { key: "count", label: "Swaps" },
+            ]}
+          />
         }
       >
-        <div
-          className="filter-group mb-4"
-          role="group"
+        <PeriodPillTags
+          className="mb-4"
           aria-label="Flow grouping"
-        >
-          {(["chains", "tokens"] as const).map((key) => (
-            <button
-              key={key}
-              aria-pressed={group === key}
-              onClick={() => {
-                setGroup(key);
-                setShowAll(false);
-              }}
-              className={`filter-btn ${group === key ? "filter-btn-active" : ""}`}
-            >
-              {key === "chains" ? "Chains" : "Tokens"}
-            </button>
-          ))}
-        </div>
+          value={group}
+          onChange={(key) => {
+            setGroup(key);
+            setShowAll(false);
+          }}
+          options={[
+            { key: "chains", label: "Chains" },
+            { key: "tokens", label: "Tokens" },
+          ]}
+        />
         <p className="text-xs text-muted mb-5">
           Out of ZEC on the left. Into ZEC on the right. Hover for details.
         </p>

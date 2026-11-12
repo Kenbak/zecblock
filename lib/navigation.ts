@@ -26,6 +26,7 @@ const categories: NavigationCategory[] = [
     { href: '/network/block-speed', label: 'Block Speed', desc: 'Daily block times and confirmations', networks: standard },
     { href: '/network/nodes', label: 'Network Nodes', desc: 'Node map, peers and software' },
     { href: '/charts', label: 'Charts', desc: 'Browse and share charts' },
+    { href: '/cards', label: 'Data Cards', desc: 'Live images to post or embed', networks: standard },
     { href: '/mining', label: 'Mining', desc: 'Hashrate, pools and rewards', networks: standard },
     { href: '/rich-list', label: 'Top Addresses', desc: 'Transparent balance rankings', networks: standard },
     { href: '/chain', label: 'Chain View', desc: 'Blocks and finality', networks: crosslink },

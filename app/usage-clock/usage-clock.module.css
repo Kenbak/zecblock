@@ -24,10 +24,6 @@
   outline-offset: 4px;
 }
 .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 12px 20px; padding: 16px 0; border-block: 1px solid var(--color-border); margin-bottom: 24px; }
-.periods { display: flex; gap: 4px; }
-.period { padding: 8px 12px; border-radius: 5px; font: var(--text-caption) var(--font-geist-mono), monospace; color: var(--color-text-secondary); transition: background-color .15s, color .15s; }
-.period:hover { background: var(--color-surface); color: var(--color-text-primary); }
-.period[aria-pressed='true'] { background: rgb(var(--color-shielded-rgb) / 12%); color: var(--color-shielded-ink); }
 .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); margin: 0 0 24px; gap: 20px; }
 .stats dt { font-size: var(--text-caption); color: var(--color-text-muted); margin-bottom: 6px; }
 .stats dd { font: 500 20px var(--font-geist-mono), monospace; color: var(--color-text-primary); font-variant-numeric: tabular-nums; }

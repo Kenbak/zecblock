@@ -9,8 +9,27 @@ function load(file) {
   new Function('module', 'exports', 'require', code)(m, m.exports, name => load(path.resolve(path.dirname(file), name + '.ts')));
   return m.exports;
 }
-const { poolAmount, formatPoolAmount, poolDateAxis } = load('lib/pool-display.ts');
+const { poolAmount, formatPoolAmount, formatSupplySegmentAmount, poolDateAxis } = load('lib/pool-display.ts');
 const { supplyMilestoneMarkers } = load('lib/zcash-milestones.ts');
+const { buildTopLevelSegments, MAX_SUPPLY_ZAT } = load('components/pools/supply-treemap-layout.ts');
+test('supply map values only issued ZEC while preserving the cap partition', () => {
+  const segments = buildTopLevelSegments({
+    transparent: 12_060_000 * 1e8, shielded: 4_955_000 * 1e8,
+    chainSupply: 17_015_000 * 1e8,
+    colors: { transparent: '', shielded: '', unmined: '' },
+  });
+  const [publicSupply, shielded, unmined] = segments;
+  assert.equal(segments.reduce((sum, segment) => sum + segment.zat, 0), MAX_SUPPLY_ZAT);
+  assert.equal(publicSupply.zat + shielded.zat, 17_015_000 * 1e8);
+  assert.equal(formatSupplySegmentAmount(publicSupply, 'usd', 1317.10), '$15.88B');
+  assert.equal(formatSupplySegmentAmount(shielded, 'usd', 1317.10), '$6.53B');
+  for (const price of [1317.10, null, 0, NaN]) {
+    assert.equal(formatSupplySegmentAmount(unmined, 'usd', price), 'Not issued');
+  }
+  assert.equal(formatSupplySegmentAmount(unmined, 'zec', null), '3.98M ZEC');
+  assert.equal(formatSupplySegmentAmount(publicSupply, 'usd', null), '—');
+  assert.equal(formatSupplySegmentAmount({ key: 'sprout', zat: 0 }, 'usd', 1317.10), '$0');
+});
 test('USD uses the same current rate for any balance; unavailable quotes never become zero or ZEC', () => {
   assert.equal(poolAmount(100, 'usd', 25), 2500);
   assert.equal(poolAmount(100, 'usd', 30), 3000);

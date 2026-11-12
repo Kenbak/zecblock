@@ -32,7 +32,6 @@ export function HalvingPanel({ halving }: { halving: HalvingInfo | null }) {
     <Card>
       <CardBody>
         <div className="flex items-center gap-2 mb-5">
-          <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50">{'>'}</span>
           <h2 className="text-sm font-semibold font-mono text-secondary lowercase tracking-tight">NEXT_HALVING</h2>
         </div>
 

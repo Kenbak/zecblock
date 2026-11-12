@@ -12,15 +12,20 @@ set -euo pipefail
 
 cd /root/cipherscan/server/api
 
+# Allows a vetted analytics-only release to coexist with the public API
+# checkout. Remaining signal/paper-trade commands use the serving checkout.
+ANALYTICS_SOURCE="${CIPHERSCAN_ANALYTICS_SOURCE:-/root/cipherscan}"
+export NODE_PATH="${NODE_PATH:-/root/cipherscan/server/api/node_modules}"
+
 echo "[$(date)] Starting daily V3 pipeline..."
 
 # 1a. Update pool realized caps (shielded pools — required before MVRV)
 echo "  Building pool realized caps..."
-node ../signals/build-pool-realized-cap.js --today-only 2>&1 | tail -3
+node "${ANALYTICS_SOURCE}/server/signals/build-pool-realized-cap.js" --today-only 2>&1 | tail -3
 
 # 1b. Update today's MVRV
 echo "  Computing MVRV..."
-node ../signals/compute-mvrv.js --today-only 2>&1 | tail -3
+node "${ANALYTICS_SOURCE}/server/signals/compute-mvrv.js" --today-only 2>&1 | tail -3
 
 # 2. Compute V3 signal for today
 echo "  Computing V3 signal..."

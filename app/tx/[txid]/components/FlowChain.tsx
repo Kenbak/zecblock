@@ -7,6 +7,8 @@ import { useAddressLabel } from '@/lib/address-labels';
 import { Badge, type BadgeColor } from '@/components/ui/Badge';
 import { TokenChainIcon } from '@/components/TokenChainIcon';
 import { ShieldedIcon } from '@/components/icons/shield-flow';
+import { EntityLogo } from '@/components/EntityLogo';
+import { PoolLogo } from '@/components/PoolLogo';
 
 /**
  * A single endpoint in a transaction's flow. A transaction can have more
@@ -51,7 +53,12 @@ function FlowAddressNode({ address }: { address: string }) {
         className="badge-link"
         icon={labelInfo.isOfficial ? <CheckmarkIcon /> : undefined}
       >
-        {labelInfo.label}
+        <span className="inline-flex items-center gap-1.5">
+          {labelInfo.isOfficial && (labelInfo.category === 'mining'
+            ? <PoolLogo name={labelInfo.label} />
+            : <EntityLogo label={labelInfo.label} category={labelInfo.category} />)}
+          {labelInfo.label}
+        </span>
       </Badge>
     </Link>
   );

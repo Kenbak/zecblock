@@ -39,6 +39,7 @@ export const CORE_PATHS = [
   '/pools',
   '/mining',
   '/charts',
+  '/cards',
   // Stable chart pages only. Range and series variants canonicalize here.
   '/charts/pool-balances',
   '/charts/supply',

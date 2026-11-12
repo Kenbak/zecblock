@@ -50,7 +50,7 @@ export function NodeMapExplorer() {
           <Suspense fallback={
             <VisualizationSkeleton className="h-[360px] sm:h-[500px]" />
           }>
-            <TopologyGraph active={tab === 'topology'} />
+            <TopologyGraph active={tab === 'topology'} onShowGeography={() => setTab('client')} />
           </Suspense>
         </div>
       )}

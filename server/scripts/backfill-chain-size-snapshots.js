@@ -10,9 +10,9 @@ const fs = require('fs');
 require('dotenv').config({ path: path.join(__dirname, '../api/.env') });
 
 const { Pool } = require('pg');
+const { networkSchedule, heightBefore } = require('../api/lib/network-schedule');
 
 const DAYS = parseInt(process.argv.find((a) => a.startsWith('--days='))?.split('=')[1] || '400', 10);
-const BLOCKS_PER_DAY = 1152;
 const ZEBRA_RPC_URL = process.env.ZEBRA_RPC_URL || 'http://127.0.0.1:8232';
 const ZEBRA_COOKIE_FILE = process.env.ZEBRA_RPC_COOKIE_FILE || '/root/.cache/zebra/.cookie';
 
@@ -64,6 +64,8 @@ async function main() {
   }
 
   if (currentHeight <= 0 || currentSize <= 0) throw new Error('Invalid blockchain info from Zebra');
+  const schedule = networkSchedule(info);
+  if (!schedule) throw new Error('Could not read the network upgrade schedule from Zebra');
 
   const bytesPerBlock = currentSize / currentHeight;
   log(`Current: ${(currentSize / 1e9).toFixed(2)} GB at height ${currentHeight.toLocaleString()}`);
@@ -82,7 +84,7 @@ async function main() {
     if (existing.rows.length > 0) continue;
 
     const daysAgo = i;
-    const height = Math.max(1, currentHeight - daysAgo * BLOCKS_PER_DAY);
+    const height = Math.max(1, heightBefore(schedule, currentHeight, daysAgo * 86400));
     const sizeBytes = Math.round(bytesPerBlock * height);
     const supplyZat = Math.max(0, chainSupply - daysAgo * 1800 * 1e8);
 

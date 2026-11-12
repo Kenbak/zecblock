@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-// Zakura Common — optimized Zcash cryptography (1.5x faster trial decrypt)
+// Zakura Common note decryption; preserve Orchard and Ironwood domain separation.
 use zcash_note_encryption::{try_note_decryption, try_compact_note_decryption, batch, ShieldedOutput, EphemeralKeyBytes};
 use orchard::{
     keys::{FullViewingKey, Scope, PreparedIncomingViewingKey},
@@ -12,11 +12,13 @@ use zcash_address::unified::{Container, Encoding, Fvk, Ufvk, Address as UnifiedA
 use serde::{Serialize, Deserialize};
 
 // ---------------------------------------------------------------------------
-// Minimal ZIP-225 v5 transaction parser — extracts Orchard actions only.
-// Replaces zcash_primitives::Transaction to avoid the secp256k1 C dependency.
+// Bounded v5/v6 parsing via Zakura Common; extract Orchard and Ironwood outputs.
 // ---------------------------------------------------------------------------
 
 const ORCHARD_ENC_CIPHERTEXT_SIZE: usize = 580;
+const MAX_TX_BYTES: usize = 2_000_000;
+const MAX_COMPACT_OUTPUTS: usize = 4096;
+const MAX_COMPACT_JSON_BYTES: usize = 4_000_000;
 
 struct OrchardActionRaw {
     nullifier_bytes: [u8; 32],
@@ -38,128 +40,48 @@ impl ShieldedOutput<IronwoodDomain, ORCHARD_ENC_CIPHERTEXT_SIZE> for OrchardActi
     fn enc_ciphertext(&self) -> &[u8; ORCHARD_ENC_CIPHERTEXT_SIZE] { &self.enc_ciphertext }
 }
 
-fn read_compact_size(data: &[u8], pos: &mut usize) -> Result<usize, String> {
-    if *pos >= data.len() { return Err("unexpected end of tx data".into()); }
-    let first = data[*pos];
-    *pos += 1;
-    match first {
-        0..=252 => Ok(first as usize),
-        253 => {
-            if *pos + 2 > data.len() { return Err("unexpected end of tx data".into()); }
-            let v = u16::from_le_bytes([data[*pos], data[*pos + 1]]) as usize;
-            *pos += 2;
-            Ok(v)
-        }
-        254 => {
-            if *pos + 4 > data.len() { return Err("unexpected end of tx data".into()); }
-            let v = u32::from_le_bytes(data[*pos..*pos + 4].try_into().unwrap()) as usize;
-            *pos += 4;
-            Ok(v)
-        }
-        _ => {
-            if *pos + 8 > data.len() { return Err("unexpected end of tx data".into()); }
-            let v = u64::from_le_bytes(data[*pos..*pos + 8].try_into().unwrap()) as usize;
-            *pos += 8;
-            Ok(v)
-        }
-    }
-}
-
-fn skip(data: &[u8], pos: &mut usize, n: usize) -> Result<(), String> {
-    if *pos + n > data.len() { return Err("unexpected end of tx data".into()); }
-    *pos += n;
-    Ok(())
-}
-
-fn read_bytes<const N: usize>(data: &[u8], pos: &mut usize) -> Result<[u8; N], String> {
-    if *pos + N > data.len() { return Err("unexpected end of tx data".into()); }
-    let mut buf = [0u8; N];
-    buf.copy_from_slice(&data[*pos..*pos + N]);
-    *pos += N;
-    Ok(buf)
-}
-
-/// Read `count` Orchard-protocol actions (820 bytes each) into `out`.
-fn read_orchard_actions(data: &[u8], pos: &mut usize, count: usize, is_ironwood: bool, out: &mut Vec<OrchardActionRaw>) -> Result<(), String> {
-    for _ in 0..count {
-        skip(data, pos, 32)?; // cv
-        let nullifier_bytes = read_bytes::<32>(data, pos)?;
-        skip(data, pos, 32)?; // rk
-        let cmx_bytes = read_bytes::<32>(data, pos)?;
-        let epk_bytes = read_bytes::<32>(data, pos)?;
-        let enc_ciphertext = read_bytes::<ORCHARD_ENC_CIPHERTEXT_SIZE>(data, pos)?;
-        skip(data, pos, 80)?; // outCiphertext
-        out.push(OrchardActionRaw { nullifier_bytes, cmx_bytes, epk_bytes, enc_ciphertext, is_ironwood });
-    }
-    Ok(())
-}
-
-/// Skip the trailing authorizing data for an Orchard/Ironwood bundle.
-fn skip_bundle_auth(data: &[u8], pos: &mut usize, n_actions: usize) -> Result<(), String> {
-    if n_actions == 0 { return Ok(()); }
-    skip(data, pos, 1 + 8 + 32)?; // flags + valueBalance + anchor
-    let proof_len = read_compact_size(data, pos)?;
-    skip(data, pos, proof_len)?; // proofs
-    skip(data, pos, n_actions * 64)?; // spendAuthSigs
-    skip(data, pos, 64)?; // bindingSig
-    Ok(())
-}
-
-/// Parse a v5 (ZIP-225) or v6 (ZIP-229) transaction and extract Orchard-protocol
-/// actions from both the Orchard and Ironwood bundles. Ironwood actions use the
-/// same protocol, keys, and encryption as Orchard -- trial decryption is identical.
-///
-/// Returns `(actions, sapling_spend_count, sapling_output_count)`. The Sapling
-/// counts are not decrypted (this WASM build has no Sapling domain -- see
-/// Cargo.toml), but the caller uses them to tell a Sapling-only transaction
-/// apart from a fully transparent one when `actions` comes back empty.
+/// Parse exactly one complete transaction with the maintained Common parser.
+/// This checks the wire encoding, fields and bundle shapes, not proofs/signatures
+/// or chain membership. Never rewrite a consensus branch ID to bypass parsing.
 fn parse_orchard_actions(data: &[u8]) -> Result<(Vec<OrchardActionRaw>, usize, usize), String> {
-    if data.len() < 20 { return Err("transaction too short".into()); }
-
-    let version = u32::from_le_bytes(data[0..4].try_into().unwrap());
-    let is_v6 = version == 0x8000_0006;
-
-    let mut pos = 20usize; // skip header
-
-    // --- Transparent ---
-    let n_in = read_compact_size(data, &mut pos)?;
-    for _ in 0..n_in {
-        skip(data, &mut pos, 36)?;
-        let script_len = read_compact_size(data, &mut pos)?;
-        skip(data, &mut pos, script_len + 4)?;
+    use zcash_primitives::transaction::{Transaction, TxVersion};
+    use zcash_protocol::consensus::BranchId;
+    if data.len() > MAX_TX_BYTES { return Err("Transaction exceeds 2 MB limit".into()); }
+    if data.len() < 8 { return Err("Transaction too short".into()); }
+    let version = u32::from_le_bytes(data[..4].try_into().unwrap());
+    if version == 0x8000_0004 {
+        return Err("Sapling memo decryption is not supported by this decoder".into());
     }
-    let n_out = read_compact_size(data, &mut pos)?;
-    for _ in 0..n_out {
-        skip(data, &mut pos, 8)?;
-        let script_len = read_compact_size(data, &mut pos)?;
-        skip(data, &mut pos, script_len)?;
+    if version != 0x8000_0005 && version != 0x8000_0006 {
+        return Err("Unsupported transaction version (expected v5 or v6)".into());
     }
-
-    // --- Sapling ---
-    let n_spends = read_compact_size(data, &mut pos)?;
-    skip(data, &mut pos, n_spends * 96)?;
-    let n_outputs = read_compact_size(data, &mut pos)?;
-    skip(data, &mut pos, n_outputs * 756)?;
-    if n_spends > 0 || n_outputs > 0 { skip(data, &mut pos, 8)?; }
-    if n_spends > 0 { skip(data, &mut pos, 32)?; }
-    skip(data, &mut pos, n_spends * 192)?;
-    skip(data, &mut pos, n_spends * 64)?;
-    skip(data, &mut pos, n_outputs * 192)?;
-    if n_spends > 0 || n_outputs > 0 { skip(data, &mut pos, 64)?; }
-
-    // --- Orchard ---
-    let n_orchard = read_compact_size(data, &mut pos)?;
-    let mut actions = Vec::with_capacity(n_orchard + 4);
-    read_orchard_actions(data, &mut pos, n_orchard, false, &mut actions)?;
-
-    // --- Ironwood (v6 only, same action encoding, different note plaintext lead byte) ---
-    if is_v6 {
-        skip_bundle_auth(data, &mut pos, n_orchard)?;
-        let n_ironwood = read_compact_size(data, &mut pos)?;
-        read_orchard_actions(data, &mut pos, n_ironwood, true, &mut actions)?;
+    let mut remaining = data;
+    // v5/v6 carry their own branch ID; the argument applies only to older versions.
+    let tx = Transaction::read(&mut remaining, BranchId::Nu5)
+        .map_err(|e| format!("Invalid transaction encoding: {e}"))?;
+    if !remaining.is_empty() { return Err("Trailing transaction bytes".into()); }
+    if !matches!(tx.version(), TxVersion::V5 | TxVersion::V6)
+        || !tx.version().valid_in_branch(tx.consensus_branch_id()) {
+        return Err("Transaction version is invalid for its consensus branch".into());
     }
-
-    Ok((actions, n_spends, n_outputs))
+    let mut actions = Vec::new();
+    for (bundle, is_ironwood) in [(tx.orchard_bundle(), false), (tx.ironwood_bundle(), true)] {
+        if let Some(bundle) = bundle {
+            for action in bundle.actions().iter() {
+                let encrypted = action.encrypted_note();
+                actions.push(OrchardActionRaw {
+                    nullifier_bytes: action.nullifier().to_bytes(),
+                    cmx_bytes: action.cmx().to_bytes(),
+                    epk_bytes: encrypted.epk_bytes,
+                    enc_ciphertext: encrypted.enc_ciphertext,
+                    is_ironwood,
+                });
+            }
+        }
+    }
+    let (spends, outputs) = tx.sapling_bundle().map(|b|
+        (b.shielded_spends().len(), b.shielded_outputs().len())).unwrap_or((0, 0));
+    Ok((actions, spends, outputs))
 }
 
 #[derive(Serialize, Deserialize)]
@@ -190,18 +112,18 @@ pub fn test_wasm() -> String {
 
 #[wasm_bindgen]
 pub fn detect_key_type(viewing_key: &str) -> String {
-    if viewing_key.starts_with("uviewtest") {
-        "ufvk-testnet".to_string()
-    } else if viewing_key.starts_with("uview") {
-        "ufvk-mainnet".to_string()
-    } else {
-        "unknown".to_string()
-    }
+    if viewing_key.len() > 4096 { return "unknown".into(); }
+    match Ufvk::decode(viewing_key).map(|(network, _)| network) {
+        Ok(zcash_protocol::consensus::NetworkType::Main) => "ufvk-mainnet",
+        Ok(zcash_protocol::consensus::NetworkType::Test) => "ufvk-testnet",
+        _ => "unknown",
+    }.to_string()
 }
 
 /// Decode a unified address and return its component receivers
 #[wasm_bindgen]
 pub fn decode_unified_address(ua_string: &str) -> Result<String, String> {
+    if ua_string.len() > 4096 { return Err("Unified address exceeds size limit".into()); }
     // Decode the unified address
     let (_network, ua) = UnifiedAddress::decode(ua_string)
         .map_err(|e| format!("Failed to decode unified address: {:?}", e))?;
@@ -238,11 +160,10 @@ pub fn decode_unified_address(ua_string: &str) -> Result<String, String> {
                 addr_bytes.extend_from_slice(&data);
                 components.transparent_address = Some(bs58::encode(&addr_bytes).with_check().into_string());
             },
-            Receiver::Sapling(data) => {
+            Receiver::Sapling(_) => {
                 components.has_sapling = true;
-                // Encode as zs address using bech32
-                // For sapling, we just show the raw hex since bech32 encoding is complex
-                components.sapling_address = Some(format!("zs1...{}", hex::encode(&data[..4])));
+                // Encoding a standalone Sapling address is unsupported here.
+                // Keep the nullable field empty rather than fabricate an address.
             },
             Receiver::Orchard(_) => {
                 components.has_orchard = true;
@@ -277,6 +198,7 @@ struct MemoOutput {
 impl ScanSession {
     #[wasm_bindgen(constructor)]
     pub fn new(viewing_key: &str) -> Result<ScanSession, String> {
+        if viewing_key.len() > 4096 { return Err("Viewing key exceeds size limit".into()); }
         // Step 1: Parse UFVK
         let (_network, ufvk) = Ufvk::decode(viewing_key)
             .map_err(|e| format!("UFVK decode failed: {:?}", e))?;
@@ -314,6 +236,7 @@ impl ScanSession {
 impl ScanSession {
     fn memo_outputs(&self, tx_hex: &str) -> Result<Vec<MemoOutput>, String> {
         // Step 4: Parse Orchard/Ironwood actions from v5 (ZIP-225) or v6 (ZIP-229) tx
+        if tx_hex.len() > MAX_TX_BYTES * 2 { return Err("Transaction exceeds 2 MB limit".into()); }
         let tx_bytes = hex::decode(tx_hex)
             .map_err(|e| format!("Hex decode failed: {:?}", e))?;
 
@@ -382,6 +305,7 @@ impl ScanSession {
 
     fn filter_records(&self, bytes: &[u8]) -> Result<Vec<(usize, usize)>, String> {
         const RECORD_SIZE: usize = 149;
+        if bytes.len() > MAX_COMPACT_OUTPUTS * RECORD_SIZE { return Err("Too many compact outputs (maximum 4096 per call)".into()); }
         if !bytes.len().is_multiple_of(RECORD_SIZE) { return Err("Invalid compact record length".into()); }
         let mut orchard = Vec::new();
         let mut ironwood = Vec::new();
@@ -436,6 +360,10 @@ pub fn decrypt_compact_output(
     ciphertext_hex: &str,
     viewing_key: &str,
 ) -> Result<String, String> {
+    if viewing_key.len() > 4096 { return Err("Viewing key exceeds size limit".into()); }
+    for (field, bytes) in [(nullifier_hex, 32), (cmx_hex, 32), (ephemeral_key_hex, 32), (ciphertext_hex, 52)] {
+        if field.len() != bytes * 2 { return Err("Invalid compact field length".into()); }
+    }
     // Step 1: Parse UFVK
     let (_network, ufvk) = Ufvk::decode(viewing_key)
         .map_err(|e| format!("UFVK decode failed: {:?}", e))?;
@@ -538,9 +466,11 @@ pub fn batch_filter_compact_outputs(
         height: u64,
     }
 
+    if outputs_json.len() > MAX_COMPACT_JSON_BYTES { return Err("Compact JSON exceeds 4 MB limit".into()); }
     let outputs: Vec<CompactOutput> = serde_json::from_str(outputs_json)
         .map_err(|e| format!("Failed to parse outputs JSON: {:?}", e))?;
 
+    if outputs.len() > MAX_COMPACT_OUTPUTS { return Err("Too many compact outputs (maximum 4096 per call)".into()); }
     let session = ScanSession::new(viewing_key)?;
     let mut bytes = Vec::with_capacity(outputs.len() * 149);
     for output in &outputs {
@@ -549,6 +479,7 @@ pub fn batch_filter_compact_outputs(
             _ => return Err("Invalid compact pool".into()),
         });
         for (value, length) in [(&output.nullifier, 32), (&output.cmx, 32), (&output.ephemeral_key, 32), (&output.ciphertext, 52)] {
+            if value.len() != length * 2 { return Err("Invalid compact field length".into()); }
             let decoded = hex::decode(value).map_err(|e| e.to_string())?;
             if decoded.len() != length { return Err("Invalid compact field length".into()); }
             bytes.extend_from_slice(&decoded);
@@ -571,6 +502,12 @@ mod scan_tests {
     use zcash_note_encryption::Domain;
 
     fn fixture() -> (String, Vec<u8>, Vec<u8>) {
+        fixture_for(zcash_protocol::consensus::BranchId::Nu6_3, true)
+    }
+
+    // Public deterministic test-only keys; proof/signature bytes are placeholders.
+    // These are decryption/encoding fixtures, never consensus-valid transactions.
+    fn fixture_for(branch: zcash_protocol::consensus::BranchId, v6: bool) -> (String, Vec<u8>, Vec<u8>) {
         let sk = SpendingKey::from_bytes([7; 32]).unwrap();
         let fvk = FullViewingKey::from(&sk);
         let key = Ufvk::try_from_items(vec![Fvk::Orchard(fvk.to_bytes())]).unwrap()
@@ -596,7 +533,11 @@ mod scan_tests {
             records.extend_from_slice(&cmx);
             records.extend_from_slice(&epk);
             records.extend_from_slice(&ciphertext[..52]);
-            let mut raw = vec![0; 96]; // cv, nullifier, rk
+            let mut raw = vec![0; 64]; // cv, nullifier
+            use orchard::primitives::redpallas::{SigningKey, VerificationKey, SpendAuth};
+            let signing = SigningKey::<SpendAuth>::try_from([1; 32]).unwrap();
+            let rk: [u8; 32] = VerificationKey::from(&signing).into();
+            raw.extend_from_slice(&rk);
             raw.extend_from_slice(&cmx);
             raw.extend_from_slice(&epk);
             raw.extend_from_slice(&ciphertext);
@@ -604,14 +545,21 @@ mod scan_tests {
             raw_actions.push(raw);
         }
         let mut tx = vec![0; 20];
-        tx[..4].copy_from_slice(&0x8000_0006u32.to_le_bytes());
-        tx.extend_from_slice(&[0, 0, 0, 0, 1]); // transparent, Sapling, Orchard count
-        tx.extend_from_slice(&raw_actions[0]);
-        tx.extend_from_slice(&[0; 41]); // flags, balance, anchor
-        tx.push(0); // proof length
-        tx.extend_from_slice(&[0; 128]); // action and binding signatures
-        tx.push(1); // Ironwood count
-        tx.extend_from_slice(&raw_actions[1]);
+        tx[..4].copy_from_slice(&(if v6 { 0x8000_0006u32 } else { 0x8000_0005u32 }).to_le_bytes());
+        tx[4..8].copy_from_slice(&(if v6 { zcash_protocol::constants::V6_VERSION_GROUP_ID } else { zcash_protocol::constants::V5_VERSION_GROUP_ID }).to_le_bytes());
+        tx[8..12].copy_from_slice(&u32::from(branch).to_le_bytes());
+        tx.extend_from_slice(&[0, 0, 0, 0]); // transparent, Sapling
+        for raw in raw_actions.iter().take(if v6 { 2 } else { 1 }) {
+            tx.push(1); // action count
+            tx.extend_from_slice(raw);
+            tx.push(3); // enable spends/outputs, no cross-address flag
+            tx.extend_from_slice(&[0; 40]); // balance, anchor
+            let proof_size = orchard::Proof::expected_proof_size(1);
+            tx.push(253);
+            tx.extend_from_slice(&(proof_size as u16).to_le_bytes());
+            tx.extend(vec![0; proof_size]);
+            tx.extend_from_slice(&[0; 128]); // action and binding signatures
+        }
         (key, records, tx)
     }
 
@@ -657,10 +605,85 @@ mod scan_tests {
     }
 
     #[test]
+    fn parses_real_versions_and_keeps_consensus_branch() {
+        use zcash_protocol::consensus::BranchId;
+        for (branch, v6) in [(BranchId::Nu5, false), (BranchId::Nu6_2, false),
+            (BranchId::Nu6_3, false), (BranchId::Nu7, false),
+            (BranchId::Nu6_3, true), (BranchId::Nu7, true)] {
+            let (key, _, tx) = fixture_for(branch, v6);
+            assert_eq!(u32::from_le_bytes(tx[8..12].try_into().unwrap()), u32::from(branch));
+            let outputs = ScanSession::new(&key).unwrap().memo_outputs(&hex::encode(&tx)).unwrap();
+            assert_eq!(outputs.len(), if v6 { 2 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn public_zip244_vector_retains_expected_txid_and_complete_encoding() {
+        let fixture: serde_json::Value = serde_json::from_str(include_str!("../../packages/zcash-decoder/test/fixtures/zip244.json")).unwrap();
+        let bytes = hex::decode(fixture["tx"].as_str().unwrap()).unwrap();
+        assert!(parse_orchard_actions(&bytes).is_ok());
+        let tx = zcash_primitives::transaction::Transaction::read(&bytes[..], zcash_protocol::consensus::BranchId::Nu5).unwrap();
+        assert_eq!(hex::encode(tx.txid().as_ref()), fixture["txid_bytes"]);
+        let mut serialized = Vec::new(); tx.write(&mut serialized).unwrap();
+        assert_eq!(bytes, serialized);
+    }
+
+    #[test]
+    fn complete_sapling_only_transaction_reports_unsupported_pool() {
+        use zcash_primitives::transaction::{Transaction, TransactionData, TxVersion};
+        use zcash_protocol::consensus::BranchId;
+        let public: serde_json::Value = serde_json::from_str(include_str!("../../packages/zcash-decoder/test/fixtures/zip244.json")).unwrap();
+        let bytes = hex::decode(public["tx"].as_str().unwrap()).unwrap();
+        let tx = Transaction::read(&bytes[..], BranchId::Nu5).unwrap();
+        assert!(tx.sapling_bundle().is_some());
+        let only_sapling = TransactionData::from_parts(TxVersion::V5, BranchId::Nu5,
+            tx.lock_time(), tx.expiry_height(), tx.transparent_bundle().cloned(), None,
+            tx.sapling_bundle().cloned(), None).freeze().unwrap();
+        let mut encoded = Vec::new(); only_sapling.write(&mut encoded).unwrap();
+        assert!(parse_orchard_actions(&encoded).unwrap().0.is_empty());
+        let (key, _, _) = fixture();
+        let error = ScanSession::new(&key).unwrap().memo_outputs(&hex::encode(encoded)).err().unwrap();
+        assert!(error.contains("Sapling"));
+    }
+
+    #[test]
+    fn rejects_malformed_wire_data_without_panicking() {
+        let (_, _, tx) = fixture();
+        for length in (0..tx.len()).step_by(17).chain(0..25).chain(tx.len()-128..tx.len()) {
+            assert!(parse_orchard_actions(&tx[..length]).is_err(), "truncated at {length}");
+        }
+        let mut bad = tx.clone(); bad.push(0);
+        assert!(parse_orchard_actions(&bad).is_err());
+        for (offset, value) in [(0, 7), (4, 0), (8, 0xff)] {
+            let mut bad = tx.clone(); bad[offset] = value;
+            assert!(parse_orchard_actions(&bad).is_err());
+        }
+        for compact in [vec![253, 0, 0], vec![254, 0xff, 0xff, 0xff, 0xff], vec![255, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff]] {
+            let mut bad = tx[..20].to_vec(); bad.extend(compact);
+            assert!(parse_orchard_actions(&bad).is_err());
+        }
+        let mut bad = tx; bad[24] = 253; bad.insert(25, 1); bad.insert(26, 0);
+        assert!(parse_orchard_actions(&bad).is_err());
+        assert!(parse_orchard_actions(&vec![0; MAX_TX_BYTES+1]).is_err());
+    }
+
+    #[test]
+    fn sapling_receiver_has_no_fabricated_payment_address() {
+        for network in [zcash_protocol::consensus::NetworkType::Main, zcash_protocol::consensus::NetworkType::Test] {
+            let address = UnifiedAddress::try_from_items(vec![Receiver::Sapling([0; 43])]).unwrap().encode(&network);
+            let decoded: serde_json::Value = serde_json::from_str(&decode_unified_address(&address).unwrap()).unwrap();
+            assert_eq!(decoded["has_sapling"], true);
+            assert!(decoded["sapling_address"].is_null());
+        }
+    }
+
+    #[test]
     fn export_public_synthetic_fixture_when_requested() {
         if let Ok(path) = std::env::var("SCAN_FIXTURE_PATH") {
             let (key, records, tx) = fixture();
-            std::fs::write(path, serde_json::json!({ "key": key, "records": records, "tx": hex::encode(tx) }).to_string()).unwrap();
+            let (_, _, v5) = fixture_for(zcash_protocol::consensus::BranchId::Nu5, false);
+            let (_, _, nu7) = fixture_for(zcash_protocol::consensus::BranchId::Nu7, true);
+            std::fs::write(path, serde_json::json!({ "key": key, "records": records, "tx": hex::encode(tx), "tx_v5": hex::encode(v5), "tx_nu7": hex::encode(nu7) }).to_string()).unwrap();
         }
     }
 }

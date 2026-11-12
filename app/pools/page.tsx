@@ -5,22 +5,17 @@ import { PoolCurrencyProvider } from '@/components/pools/PoolCurrency';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PageHeader, SectionHeader } from '@/components/ui';
 import { HashLink } from '@/components/ui/HashLink';
-import { PoolDistributionChart } from '@/components/network/PoolDistributionChart';
 import { FlowVolumeChart } from '@/components/pools/FlowVolumeChart';
 import { PoolActivityChart } from '@/components/pools/PoolActivityChart';
 import { FlowLegend } from '@/components/pools/FlowLegend';
-import {
-  PoolOverviewHero,
-  PoolOverviewSkeleton,
-  type PoolOverviewData,
-} from '@/components/pools/PoolOverviewHero';
+import type { PoolOverviewData } from '@/components/pools/PoolOverviewHero';
+import { ShieldedSupplyHero, ShieldedSupplySkeleton } from '@/components/pools/ShieldedSupplyHero';
 import { Card, CardBody } from '@/components/ui/Card';
 import { DataTable } from '@/components/ui';
 import { ShieldFlowBadge } from '@/components/ShieldFlowBadge';
 
 const SECTIONS = [
   { id: 'overview', label: 'Overview' },
-  { id: 'supply', label: 'Supply history' },
   { id: 'activity', label: 'Transaction activity' },
   { id: 'flows', label: 'Public flows' },
   { id: 'recent-flows', label: 'Recent transactions' },
@@ -145,10 +140,12 @@ export default function PoolsPage() {
       </nav>
 
       <section id="overview" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
+        {/* Keeps older /pools#supply links landing on the supply chart. */}
+        <span id="supply" className="block scroll-mt-56 sm:scroll-mt-36" aria-hidden="true" />
         {overviewStatus === 'loading' ? (
-          <PoolOverviewSkeleton />
+          <ShieldedSupplySkeleton />
         ) : overviewStatus === 'ready' && overview ? (
-          <PoolOverviewHero data={overview} />
+          <ShieldedSupplyHero data={overview} />
         ) : (
           <Card variant="glass">
             <CardBody>
@@ -158,10 +155,6 @@ export default function PoolsPage() {
             </CardBody>
           </Card>
         )}
-      </section>
-
-      <section id="supply" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
-        <PoolDistributionChart />
       </section>
 
       <section id="activity" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
@@ -183,8 +176,8 @@ export default function PoolsPage() {
             <span className="text-muted group-open:rotate-90 transition-transform" aria-hidden="true">›</span>
           </summary>
           <div className="grid sm:grid-cols-2 gap-6 p-5 sm:p-6 border-t border-cipher-border text-xs leading-relaxed text-secondary">
-            <div><h3 className="font-mono text-primary mb-2">Supply &amp; percentages</h3><p>The overview uses the latest indexed pool statistics. The map compares balances with the 21 million ZEC cap; the summary compares shielded balances with issued chain supply. Each pool’s legend percentage uses total shielded supply.</p><p className="mt-3">On mainnet, the ZEC/USD controls convert pool balances at the current ZEC quote, including historical snapshots and the remaining issuance equivalent. They do not use historical exchange rates. Percentages and map proportions stay based on ZEC; public-flow charts and transaction amounts remain in ZEC. Quotes refresh every 30 seconds; USD is unavailable when the quote is missing or older than five minutes.</p><p className="mt-3">Public supply groups transparent balances with other issued value, including the separate deferred-development lockbox. Other issued is chain supply minus transparent and shielded balances; historical snapshots do not store a separate lockbox balance. Remaining issuance is the cap minus chain supply. The three map segments partition the 21 million ZEC cap.</p></div>
-            <div><h3 className="font-mono text-primary mb-2">History &amp; public flows</h3><p>The timeline uses recorded daily snapshots with a supply total and pool breakdown. Gaps are skipped; the latest snapshot is separate from daily history. Dates are shown in UTC. Mainnet activation markers jump to the first available daily snapshot on or after the activation block.</p><p className="mt-3">Shielding and deshielding show public value entering and leaving pools. Net flow is inflow minus outflow; it is not a count of users or a measure of individual privacy. Pool balance changes can also include issuance and migrations. Fully shielded transfer amounts remain hidden.</p></div>
+            <div><h3 className="font-mono text-primary mb-2">Supply &amp; percentages</h3><p>The overview uses the latest indexed pool statistics. The 21M bar compares balances with the 21 million ZEC cap; the shielded percentage compares shielded balances with issued chain supply. Each pool’s percentage uses total shielded supply.</p><p className="mt-3">On mainnet, the ZEC/USD controls convert pool balances at the current ZEC quote, including historical snapshots. Unmined ZEC is not issued and is never assigned a USD value. They do not use historical exchange rates. Percentages and map proportions stay based on ZEC; public-flow charts and transaction amounts remain in ZEC. Quotes refresh every 30 seconds; USD is unavailable when the quote is missing or older than five minutes.</p><p className="mt-3">Public supply groups transparent balances with other issued value, including the separate deferred-development lockbox. Other issued is chain supply minus transparent and shielded balances; historical snapshots do not store a separate lockbox balance. Remaining issuance is the cap minus chain supply. The three bar segments partition the 21 million ZEC cap.</p></div>
+            <div><h3 className="font-mono text-primary mb-2">History &amp; public flows</h3><p>The supply chart uses recorded daily snapshots. Hovering it shows that day’s totals; pool rows follow only when the snapshot has a verified pool breakdown, otherwise they keep the latest values. The 21M bar always uses the latest snapshot. Gaps are skipped and dates are shown in UTC.</p><p className="mt-3">Shielding and deshielding show public value entering and leaving pools. Net flow is inflow minus outflow; it is not a count of users or a measure of individual privacy. Pool balance changes can also include issuance and migrations. Fully shielded transfer amounts remain hidden.</p></div>
           </div>
         </details>
       </section>

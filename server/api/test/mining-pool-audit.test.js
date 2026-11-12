@@ -11,6 +11,10 @@ const fixtures = [
   ['t1Na7ykQ6vE4CbxBPuUDUQx5n6aEWXu1VQq', '', null],
   ['t1egMFNkP7EfkK25y8s4GeiMkEGnqcMnTb1', '', 'Binance Pool'],
   ['tmTwLU5Y855hfBZ25ZaWuTvcrqjrCMFAZR9', hex('Foundry Zcash Pool #PrivacyMatters'), 'Foundry USA'],
+  // Luxor payout rotation: blocks 3522962 (old) and 3544044 (new), same tag bytes.
+  ['t1XQZdZMnzXBcL8yx2PR27dSNrqctgwLgux', '04f09f8cb8102f4d696e6564206279204c75786f722f', 'Luxor'],
+  ['t1TVdjqU1APVQmCRRnzbqfjz6wR2qtBnnoc', '04f09f8cb8102f4d696e6564206279204c75786f722f', 'Luxor'],
+  [null, '04f09f8cb8102f4d696e6564206279204c75786f722f', 'Luxor'],
 ];
 
 test('node-checked October audit payouts and markers retain distinct identities', () => {
@@ -24,6 +28,7 @@ test('new markers require complete bytes and retain known-address precedence', (
     ['/molepool.com/', 'molepool', 'Molepool'],
     ['zecminingpool.com', 'zecminingpool', 'ZEC Mining Pool'],
     ['Foundry Zcash Pool #PrivacyMatters', 'foundry', 'Foundry USA'],
+    ['/Mined by Luxor/', 'luxor', 'Luxor'],
   ]) {
     const value = hex(marker);
     assert.equal(getPoolTag(`04${value.toUpperCase()}00`), tag);

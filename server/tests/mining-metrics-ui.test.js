@@ -18,6 +18,7 @@ function render(data, { active = 'solrate', loading = false, error = null, curre
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };
     if (name === '@/lib/chart-theme') return { getChartColors: () => ({ gold: '#d4a44a' }) };
     if (name === '@/lib/format-numbers') return { formatHashrate: String, formatDifficulty: String };
+    if (name === '@/lib/mining-metrics') return { MINING_METRICS_WINDOW: 100, MINING_METRICS_POINTS: 500 };
     if (name === '@/hooks/useApiQuery') return { useApiQuery: () => ({ data, loading, error }) };
     if (name === '@/lib/config') return { CURRENCY: currency };
     if (name === './ChartCard') return { ChartCard: 'ChartCard' };
@@ -83,8 +84,8 @@ test('empty, incomplete, failed and loading charts explain why no series is disp
   for (const [data, options, expected] of [
     [null, { loading: true }, /Loading mining metrics/],
     [null, { error: 'HTTP 503' }, /temporarily unavailable/],
-    [{ points: [] }, {}, /No complete 20-block window/],
-    [{ points: [{ height: 1, solrate: null }] }, {}, /No complete 20-block window/],
+    [{ points: [] }, {}, /No complete 100-block window/],
+    [{ points: [{ height: 1, solrate: null }] }, {}, /No complete 100-block window/],
   ]) {
     const tree = render(data, options);
     assert.equal(nodes(tree, 'LineChart').length, 0);

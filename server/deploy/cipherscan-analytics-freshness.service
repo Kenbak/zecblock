@@ -1,0 +1,13 @@
+[Unit]
+Description=Check analytics freshness and replay integrity independently of core API health
+After=postgresql.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/root/cipherscan
+Environment=NODE_PATH=/root/cipherscan/server/api/node_modules
+ExecStart=/usr/bin/node server/jobs/check-analytics-completeness.js
+TimeoutStartSec=90
+Nice=15
+MemoryMax=256M
+UMask=0077

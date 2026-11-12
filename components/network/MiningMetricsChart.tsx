@@ -8,6 +8,7 @@ import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { formatDifficulty, formatHashrate } from '@/lib/format-numbers';
+import { MINING_METRICS_POINTS, MINING_METRICS_WINDOW } from '@/lib/mining-metrics';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { CURRENCY } from '@/lib/config';
 import { ChartCard } from './ChartCard';
@@ -34,11 +35,11 @@ export function MiningMetricsChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const [active, setActive] = useState<MetricKey>('solrate');
-  const window = 20;
+  const window = MINING_METRICS_WINDOW;
 
   const { data, loading, error } = useApiQuery<MiningMetricsData>(
     '/v1/mining/metrics',
-    { window, limit: 120 },
+    { window, limit: MINING_METRICS_POINTS },
   );
   const points = data?.points ?? [];
   const latest = data?.latest ?? {};

@@ -3,6 +3,7 @@
 const { isIP } = require('node:net');
 const { CHAIN_BLOCK_HASH, CHAIN_PROOF, CENSUS_VERSION } = require('./node-census');
 const { GOSSIP_PROVENANCE, MAX_GOSSIP_EDGES, MAX_GOSSIP_AGE_MS } = require('./node-topology');
+const { PRIMARY_SOURCES, isCollectorSource, isPrimarySource } = require('./census-vantages');
 
 const UNAVAILABLE_REASON = 'Awaiting fresh chain-qualified gossip provenance';
 
@@ -14,16 +15,47 @@ async function hasTopologySchema(queryable) {
   return Boolean(result.rows[0]?.snapshots && result.rows[0]?.edges);
 }
 
-/** Called by the ingester inside its existing transaction, after validation. */
-async function persistTopologySnapshot(client, validated) {
+/**
+ * Called by the ingester inside its existing transaction, after validation.
+ * Each collector source is replaced independently: a source that was not
+ * admitted this run keeps its previous snapshot until the database clock
+ * expires it (readers already gate on the same ten-minute bound), while an
+ * unconfigured source is removed immediately. An older generation can never
+ * replace a newer one, so a delayed or replayed poll cannot rebind receipts.
+ */
+async function persistTopologySnapshot(client, validated, { configuredSources = PRIMARY_SOURCES } = {}) {
   if (!await hasTopologySchema(client)) return false;
 
   // A replay or duplicate input cannot bind old receipts to a newer generation.
+  // Before migration 043 the 039 CHECK admits only direct/tor; writing a
+  // regional row would abort the whole census transaction, so skip them.
+  const regionalAllowed = (await client.query(`
+    SELECT EXISTS (SELECT 1 FROM pg_constraint WHERE conrelid = 'topology_gossip_snapshots'::regclass
+      AND conname = 'topology_gossip_snapshots_collector_source_vantage') AS allowed
+  `)).rows[0]?.allowed === true;
   const snapshots = new Map();
   for (const snapshot of validated.snapshots) {
+    if (!isCollectorSource(snapshot.source) || (!regionalAllowed && !isPrimarySource(snapshot.source))) continue;
     const previous = snapshots.get(snapshot.source);
     if (!previous || snapshot.generatedAtMs > previous.generatedAtMs) snapshots.set(snapshot.source, snapshot);
   }
+  const configured = [...new Set([...configuredSources, ...snapshots.keys()])].filter(isCollectorSource);
+  await client.query(`
+    DELETE FROM topology_gossip_snapshots
+    WHERE NOT (collector_source = ANY($1::text[]))
+      OR generated_at <= NOW() - INTERVAL '10 minutes'
+  `, [configured]);
+
+  for (const snapshot of [...snapshots.values()]) {
+    const existing = await client.query(`
+      SELECT generated_at FROM topology_gossip_snapshots WHERE collector_source = $1 FOR UPDATE
+    `, [snapshot.source]);
+    const storedAt = existing.rows[0] ? new Date(existing.rows[0].generated_at).getTime() : null;
+    if (storedAt !== null && storedAt > snapshot.generatedAtMs) { snapshots.delete(snapshot.source); continue; }
+    // The foreign key deletes this source's prior receipts atomically.
+    await client.query('DELETE FROM topology_gossip_snapshots WHERE collector_source = $1', [snapshot.source]);
+  }
+
   const edges = new Map();
   for (const edge of validated.edges) {
     if (snapshots.get(edge.collectorSource)?.generatedAtMs !== edge.generatedAtMs) continue;
@@ -31,11 +63,10 @@ async function persistTopologySnapshot(client, validated) {
     const previous = edges.get(key);
     if (!previous || edge.observedAtMs > previous.observedAtMs) edges.set(key, edge);
   }
-
-  // The foreign key deletes prior receipts atomically with their snapshot.
-  await client.query('DELETE FROM topology_gossip_snapshots');
+  const edgeCounts = new Map();
+  for (const edge of edges.values()) edgeCounts.set(edge.collectorSource, (edgeCounts.get(edge.collectorSource) || 0) + 1);
   for (const snapshot of snapshots.values()) {
-    const edgeCount = [...edges.values()].filter(edge => edge.collectorSource === snapshot.source).length;
+    const edgeCount = edgeCounts.get(snapshot.source) || 0;
     await client.query(`
       INSERT INTO topology_gossip_snapshots (collector_source, generated_at, provenance, edge_count, truncated)
       VALUES ($1, $2, $3, $4, $5)
@@ -116,15 +147,15 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
   // A supported fresh zero-edge snapshot remains an available observation.
   const latest = metadata.rows.reduce((time, row) => Math.max(time, new Date(row.generated_at).getTime()), 0);
   const observedAt = new Date(latest).toISOString();
-  let earliestExpiry = Math.min(...metadata.rows.map(row => new Date(row.generated_at).getTime() + MAX_GOSSIP_AGE_MS));
+  // The snapshot is the unit of display. Individual receipts age out on read;
+  // letting the oldest one set this clock expired the whole graph within seconds.
+  const snapshotExpiresAt = new Date(Math.min(...metadata.rows.map(row => new Date(row.generated_at).getTime() + MAX_GOSSIP_AGE_MS))).toISOString();
   const sourceTruncated = metadata.rows.some(row => row.truncated === true);
   for (const node of nodes) node.degree = 0;
-  if (!qualifiedIps.size) return response(true, [], observedAt, sourceTruncated, new Date(earliestExpiry).toISOString());
+  if (!qualifiedIps.size) return response(true, [], observedAt, sourceTruncated, snapshotExpiresAt);
 
   const result = await pool.query(`
-    SELECT e.advertiser_ip, e.advertised_ip, MAX(e.observed_at) AS observed_at,
-      MIN(LEAST(s.generated_at + INTERVAL '10 minutes', e.observed_at + INTERVAL '10 minutes',
-        e.advertiser_handshake_at + INTERVAL '1 hour', e.advertiser_chain_verified_at + INTERVAL '1 hour')) AS expires_at
+    SELECT e.advertiser_ip, e.advertised_ip, MAX(e.observed_at) AS observed_at
     FROM topology_gossip_edges e
     JOIN topology_gossip_snapshots s ON s.collector_source = e.collector_source
       AND s.generated_at = e.source_generated_at
@@ -151,14 +182,11 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
   for (const row of result.rows) {
     const advertiser = canonicalIp(row.advertiser_ip);
     const advertised = canonicalIp(row.advertised_ip);
-    const expiresAt = new Date(row.expires_at).getTime();
-    if (!advertiser || !advertised || !qualifiedIps.has(advertiser) || advertiser === advertised
-      || !Number.isFinite(expiresAt)) continue;
+    if (!advertiser || !advertised || !qualifiedIps.has(advertiser) || advertiser === advertised) continue;
     const pair = `${advertiser}\n${advertised}`;
     if (seen.has(pair)) continue;
     seen.add(pair);
     if (edges.length >= MAX_GOSSIP_EDGES) { truncated = true; break; }
-    earliestExpiry = Math.min(earliestExpiry, expiresAt);
     const source = idByIp.get(advertiser);
     let target = idByIp.get(advertised);
     if (target === undefined) {
@@ -171,7 +199,7 @@ async function readTopologySnapshot(pool, activeRows, now = Date.now()) {
     nodes[source].degree++;
     nodes[target].degree++;
   }
-  return response(true, edges, observedAt, truncated, new Date(earliestExpiry).toISOString());
+  return response(true, edges, observedAt, truncated, snapshotExpiresAt);
 }
 
 module.exports = { persistTopologySnapshot, readTopologySnapshot };

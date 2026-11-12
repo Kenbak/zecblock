@@ -1595,14 +1595,15 @@
         "schema": {
           "type": "string",
           "enum": [
+            "blocks",
             "6h",
             "24h",
             "7d"
           ],
           "default": "24h",
-          "description": "Trailing block-header observation window."
+          "description": "Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling."
         },
-        "description": "Trailing block-header observation window."
+        "description": "Trailing block-header observation window; `blocks` returns the latest 250 canonical blocks without downsampling."
       }
     ],
     "requestBody": null
@@ -2061,10 +2062,36 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Observed unique non-canonical blocks from indexer reorg archives and node-validated competing-block capture / (current canonical blocks + observed losses), using shared half-open UTC block-header timestamp windows and one database snapshot. External reports, explicitly invalid archives, and hashes currently canonical are excluded. Hashes are deduplicated across both sources; capture at heights not yet indexed is excluded. Method observed-block-capture-v2 adds capture startedAt, heartbeatAt, observers, healthyObservers and status; these report observer availability, never network-wide completeness. Pool labels group public payout/tag attribution; Unknown remains included. Coverage is unverified, collectionStart is null, and uptimeVerified is false: this is not a complete network-wide or true per-pool orphan rate. Rates are fractions or null when canonical history is incomplete or there are no canonical blocks; observed zero stays zero. Includes asOf and indexed tip height/hash/header timestamp. Additive nu7 is null until the serving node reports an NU7 height and its activation block is indexed; then it has activationHeight, activationTimestamp and before/since windows in the same shape as periods. before covers up to 30 days before the activation header time and starts no earlier than competing-block capture; if capture began after activation its rate is null with unavailableReason capture-began-after-activation. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "note": "Observed unique non-canonical blocks from indexer reorg archives and node-validated competing-block capture / (current canonical blocks + observed losses), using shared half-open UTC block-header timestamp windows and one database snapshot. External reports, explicitly invalid archives, and hashes currently canonical are excluded. Hashes are deduplicated across both sources; capture at heights not yet indexed is excluded. Method observed-block-capture-v2 adds capture startedAt, heartbeatAt, observers, healthyObservers, status, locations (public city, operator: null for ZecBlock-run observers, otherwise the partner that runs the node such as zecminingpool.com; and collecting flag per known observer; own first, then by operator and city) and unlistedObservers; these report observer availability, never network-wide completeness. Observer names, endpoints and IPs are never served. Pool labels group public payout/tag attribution; Unknown remains included. Coverage is unverified, collectionStart is null, and uptimeVerified is false: this is not a complete network-wide or true per-pool orphan rate. Rates are fractions or null when canonical history is incomplete or there are no canonical blocks; observed zero stays zero. Includes asOf and indexed tip height/hash/header timestamp. Additive nu7 is null until the serving node reports an NU7 height and its activation block is indexed; then it has activationHeight, activationTimestamp and before/since windows in the same shape as periods. before covers up to 30 days before the activation header time and starts no earlier than competing-block capture; if capture began after activation its rate is null with unavailableReason capture-began-after-activation. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/mining/orphan-rates/daily",
+    "description": "Daily observed orphan rate for the last 7 to 90 UTC days, with dated coverage and NU7 events for charting.",
+    "category": "mining",
+    "query": [
+      "days"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Same orphan definition and snapshot rules as /v1/mining/orphan-rates, bucketed by UTC day of the block-header timestamp. Optional days is an integer from 7 to 90 (default 60); other values return 400. Each day has date, canonicalBlocks, orphanedBlocks, rate (fraction, or null when indexed history does not cover the day or it has no canonical blocks; observed zero stays zero) and partial (true for the current day). events lists capture (competing-block capture began), observers (dated public changes in observer coverage) and nu7 (activation header time, only once the serving node reports an NU7 height and that block is indexed), limited to the charted range. Coverage changes mean rates before and after an observers event are not directly comparable. HTTP cache lifetime is 60 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "days",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
     "requestBody": null
   },
   {
@@ -2130,6 +2157,20 @@
         "description": "Full trailing work-estimation window. Independent of chart range."
       }
     ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/mining/difficulty-stability",
+    "description": "Mainnet difficulty swings before and since NU7. Each block is compared with the median difficulty of the surrounding 24 hours in its own era.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Percent deviations use canonical block difficulty and header timestamps. Blocks need 12 full hours of the same era on each side, so the latest 12 hours are not evaluated. The before window is the 14 days preceding activation; the since window is at most the latest 14 days and excludes the first 6 hours after activation while difficulty settles. available is false with a reason on non-mainnet networks, before activation, or with too little history; missingBlocks counts absent or non-positive difficulty rows in each era.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
     "requestBody": null
   },
   {
@@ -2859,6 +2900,39 @@
           "maxLength": 64
         },
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/crosschain/shielding",
+    "description": "Shielded rate of bridged ZEC: share delivered by successful NEAR 1Click inflows that reaches a shielded pool on arrival or on its first spend, with exact zatoshi breakdown and explicit coverage of swaps lacking a usable Zcash leg.",
+    "category": "crosschain",
+    "query": [
+      "period"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": null,
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "period",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string",
+          "enum": [
+            "30d",
+            "90d",
+            "1y",
+            "all"
+          ],
+          "default": "90d"
+        },
+        "description": "Trailing UTC days by swap creation time, starting at the start of the UTC day; all covers every classified swap. Recent held ZEC may still be shielded later."
       }
     ],
     "requestBody": null
@@ -4056,6 +4130,20 @@
         "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
       }
     ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/network/block-activity",
+    "description": "Average transactions and fees per block for each completed UTC day.",
+    "category": "network",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Covers the latest 90 completed UTC days by block-header timestamp; the current partial day is excluded. Transaction counts include coinbase. totalFeesZat is an exact decimal-string zatoshi sum; feesPerBlockZec and txPerBlock are arithmetic means across every block of that day. A day containing a block with an unknown fee or transaction count returns null for that measure. Mainnet block spacing changed from 75 to 25 seconds at NU7, so per-block means before and after activation are not directly comparable.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
     "requestBody": null
   },
   {
@@ -5578,6 +5666,42 @@
   },
   {
     "method": "GET",
+    "path": "/v1/uncles/observed",
+    "description": "Competing blocks the observer network saw lose the race without a reorg on the main node.",
+    "category": "reorgs",
+    "query": [
+      "limit",
+      "offset"
+    ],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Node-validated captured blocks at an indexed height whose canonical block differs, excluding hashes that are canonical now and hashes already in /v1/uncles (reorg archives and external reports), so the two lists never overlap. Together with indexer reorg archives these make up the orphans counted by /v1/mining/orphan-rates, which uses 24h/7d/30d header-time windows. Each item has height, hash, header timestamp, firstSeenAt (earliest capture receipt), observerCount (observer nodes that received it), minerAddress, minerPool, minerPoolUrl and canonicalBlock (hash, header timestamp, miner, firstSeenAt). Observer names and endpoints are never served. Ordered by height descending; limit 1–200 (default 50) and offset up to 50,000. Coverage depends on observer availability and is not network-complete. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [
+      {
+        "name": "limit",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      },
+      {
+        "name": "offset",
+        "in": "query",
+        "required": false,
+        "schema": {
+          "type": "string"
+        },
+        "description": "Endpoint-specific filter or range; accepted values follow this endpoint’s data source."
+      }
+    ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/uncles/forks",
     "description": "Detected chain forks.",
     "category": "reorgs",
@@ -5677,7 +5801,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "totalOrphanedBlocks counts every row in /v1/uncles since indexing began (reorgs on the main node and external reports, including hashes later restored). Additive observerOnlyOrphanedBlocks counts /v1/uncles/observed and observerCaptureStartedAt is when competing-block capture began; both are null when capture data is unavailable. These are all-time counts, unlike the windowed /v1/mining/orphan-rates.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

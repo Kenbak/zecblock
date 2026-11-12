@@ -56,7 +56,10 @@ const CHAINS = {
   op: 'Optimism', pol: 'Polygon', bsc: 'BNB Chain', avax: 'Avalanche', tron: 'Tron', trx: 'Tron', doge: 'Dogecoin',
   ltc: 'Litecoin', bch: 'Bitcoin Cash', xrp: 'XRP Ledger', ton: 'TON', sui: 'Sui', aptos: 'Aptos', cardano: 'Cardano',
   stellar: 'Stellar', starknet: 'Starknet', gnosis: 'Gnosis', bera: 'Berachain',
+  dash: 'Dash', kuji: 'Kujira', gaia: 'Cosmos Hub', xrd: 'Radix', maya: 'MAYAChain', thor: 'THORChain',
 };
+// Venues are the protocols that executed a swap, distinct from the chains it crossed.
+const VENUES = { near: 'NEAR Intents', maya: 'Maya', thorchain: 'THORChain' };
 const chainName = code => CHAINS[code.toLowerCase()] || code.toUpperCase();
 
 const POOLS = { sapling: 'Sapling', orchard: 'Orchard', ironwood: 'Ironwood' };
@@ -66,4 +69,4 @@ const shortTxid = txid => `${txid.slice(0, 8)}…${txid.slice(-4)}`;
 const signedPct = pct => `${pct >= 0 ? '+' : '−'}${Math.abs(pct).toFixed(1)}%`;
 
 module.exports = { number, floorTo, zecText, zecShort, levelText, usdShort, tailText, dayText, dayYear, rangeText, timeText,
-  chainName, POOLS, ORDINALS, WORDS, shortTxid, signedPct };
+  chainName, VENUES, POOLS, ORDINALS, WORDS, shortTxid, signedPct };

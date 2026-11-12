@@ -251,7 +251,7 @@ test('the initial delayed-snapshot notice clears after a successful browser refr
     '@/contexts/ThemeContext': { useTheme: () => ({ theme: 'dark' }) },
     '@/hooks/useApiQuery': { useApiQuery: () => ({ data, error, loading: false }) },
     '@/components/charts/ChartTooltip': {}, '@/components/ShareableCard': {},
-    '@/lib/api-config': { NETWORK: 'mainnet' }, '@/components/ui/Skeleton': {},
+    '@/lib/api-config': { NETWORK: 'mainnet' }, '@/components/ui/Skeleton': {}, '@/components/ui/PeriodPillTags': {},
   });
   const props = { chart: catalog.CHART_CATALOG.find(chart => chart.id === 'network-hashrate'), initialData: snapshot, initialSnapshotNotice: 'API snapshot delayed', standalone: true };
   const text = element => {

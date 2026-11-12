@@ -1,319 +1,104 @@
 # @cipherscan/zcash-decoder
 
-**Client-side decoder for Zcash shielded transactions and memos.**
+Local WebAssembly trial decryption for Zcash Orchard and Ironwood transaction
+memos, and compact-output filtering with an Orchard Unified Full Viewing Key
+(UFVK). The TypeScript API works in browsers, Web Workers and Node.js.
 
-100% privacy-preserving — your viewing key **never leaves the browser**.
-
----
-
-## ✨ Features
-
-- 🔐 **Client-side memo decryption** — Viewing keys stay in the browser
-- ⚡ **Batch compact block filtering** — 13x faster than sequential processing
-- 🧵 **Web Worker compatible** — Zero UI freeze during scans
-- 📦 **TypeScript native** — Full type safety
-- 🎯 **Production-ready** — Battle-tested on [CipherScan](https://cipherscan.app)
-
----
-
-## 📦 Installation
-
-```bash
+```sh
 npm install @cipherscan/zcash-decoder
 ```
 
----
-
-## 🚀 Quick Start
-
-### 1. Decrypt a Transaction Memo
-
-```typescript
+```ts
 import { ZcashWASM } from '@cipherscan/zcash-decoder';
 
-// Initialize WASM module
-const wasm = await ZcashWASM.init();
-
-// Decrypt a memo from a raw transaction hex
-const txHex = '0400008085202f89...'; // Full transaction hex
-const viewingKey = 'uviewtest1...'; // Your UFVK
-
-const result = await wasm.decryptMemo(txHex, viewingKey);
-
-console.log('Memo:', result.memo);
-console.log('Amount:', result.amount, 'ZEC');
+const decoder = await ZcashWASM.init();
+const result = await decoder.decryptMemo(rawTransactionHex, orchardUfvk);
+// result: { memo: string, amount: number } — amount is in ZEC.
 ```
 
-**Output:**
-```
-Memo: Thanks for using testnet.ZecFaucet.com
-Amount: 0.3 ZEC
-```
+`init()` loads the adjacent packaged WASM artifact. Browsers fetch that static
+asset; Node reads it from the local package. Explicit `ArrayBuffer` or `Uint8Array` bytes can be supplied as `ZcashWASM.init(wasmBytes)` for custom
+asset loading. The decoder does not transmit viewing keys, transaction bytes or
+decrypted data, and does not log them. Applications control their own transport,
+logging and rendering. The examples that fetch public transactions reveal the
+queried transaction ID to the selected API, and keep the viewing key local.
 
----
+## Supported data
 
-### 2. Filter Compact Blocks (Birthday Scan)
+- Raw v5 (ZIP 225) and v6 (ZIP 229) transactions, including known NU6.3 and NU7
+  consensus branch IDs. Raw bytes are parsed unchanged using Zakura Common 4.0.0.
+- Orchard and Ironwood note decryption with both external and internal scopes.
+- UTF-8 text memos through `decryptMemo`; it returns the first readable nonempty
+  memo. The existing `amount` field is a floating point ZEC display value.
+- Orchard/Ironwood compact-output filtering. `pool: 'orchard' | 'ironwood'` tags
+  select the domain; omitted tags retain the legacy dual-domain behavior.
+- Sapling memo decryption and Sapling compact-output filtering are unsupported.
+  Sapling-only raw transactions and scans containing only Sapling compact outputs
+  return explicit errors. Mixed raw transactions and mixed compact blocks process
+  their supported Orchard/Ironwood outputs; Sapling outputs are ignored. Matches
+  therefore cover only Orchard/Ironwood, not all pools. Previous documentation incorrectly claimed Sapling
+  domain support; the published 1.0.6 artifact did not implement it.
 
-```typescript
-import { ZcashWASM } from '@cipherscan/zcash-decoder';
+The low-level WASM `decode_unified_address` helper reports receiver presence.
+Its `sapling_address` field is `null` even when `has_sapling` is `true`, because
+standalone Sapling address encoding is unsupported. It never fabricates a
+payment address. This helper is not exposed by the main TypeScript wrapper.
 
-// Fetch compact blocks from Lightwalletd
-const response = await fetch('/api/lightwalletd/scan', {
-  method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
-  body: JSON.stringify({
-    startHeight: 3121131,
-    endHeight: 3685893,
-  }),
+This is a decoder, not a consensus verifier: successful parsing/decryption does
+not validate proofs, signatures, fees, chain membership or activation height.
+Unknown branch IDs, invalid encodings, trailing bytes and incomplete transactions
+are rejected. Raw transaction input is limited to 2,000,000 bytes; UFVK input is limited to 4,096 characters. Compact WASM
+calls are limited to 4,096 outputs and 4,000,000 JSON bytes; the TypeScript wrapper
+splits larger scans into bounded calls.
+
+## Compact blocks
+
+```ts
+const matches = await decoder.filterCompactBlocks(blocks, orchardUfvk, progress => {
+  // { blocksProcessed, totalBlocks, matchesFound }
 });
-
-const { blocks } = await response.json();
-
-// Initialize WASM
-const wasm = await ZcashWASM.init();
-
-// Filter blocks to find matching transactions
-const matches = await wasm.filterCompactBlocks(
-  blocks,
-  'uviewtest1...', // Your UFVK
-  (progress) => {
-    console.log(
-      `Processed ${progress.blocksProcessed}/${progress.totalBlocks} blocks, ` +
-      `found ${progress.matchesFound} matches`
-    );
-  }
-);
-
-console.log(`Found ${matches.length} transactions:`);
-matches.forEach((tx) => {
-  console.log(`- TXID: ${tx.txid}, Block: ${tx.height}`);
-});
+// matches: Array<{ txid: string, height: number, timestamp: number }>
 ```
 
----
+Blocks have `height` (decimal string), `time` (integer seconds) and `vtx`.
+Each transaction has `hash` and optional `actions`; each action has `pool`
+(optional), `nullifier`, `cmx`, `ephemeralKey` and `ciphertext` as hex strings.
+The first three fields are 32 bytes; the compact ciphertext is 52 bytes.
+Matches are deduplicated by transaction ID. Use a Web Worker for large browser
+scans so synchronous WASM work does not block the interface.
 
-### 3. Use in a Web Worker (Recommended for UI Performance)
+`decoder.detectKeyType(key)` validates the UFVK encoding and returns
+`'ufvk-mainnet'`, `'ufvk-testnet'` or `'unknown'`. It does not prove that a key has
+a readable note in any transaction.
 
-**worker.ts:**
-```typescript
-import { ZcashWASM } from '@cipherscan/zcash-decoder';
+## Development and verification
 
-let wasm: ZcashWASM | null = null;
+From this repository's `packages/zcash-decoder` directory:
 
-self.onmessage = async (e) => {
-  const { type, blocks, viewingKey } = e.data;
-
-  if (type === 'filter') {
-    // Initialize WASM (once)
-    if (!wasm) {
-      wasm = await ZcashWASM.init();
-    }
-
-    // Filter blocks
-    const matches = await wasm.filterCompactBlocks(blocks, viewingKey);
-
-    // Send results back
-    self.postMessage({ type: 'results', matches });
-  }
-};
+```sh
+npm ci --ignore-scripts
+npm test
+npm run build:wasm
 ```
 
-**Main thread:**
-```typescript
-const worker = new Worker(new URL('./worker.ts', import.meta.url), {
-  type: 'module',
-});
+The WASM build uses the pinned Rust toolchain in `../../wasm/rust-toolchain.toml`,
+`../../wasm/Cargo.lock`, and wasm-bindgen-cli **0.2.127**. Install that exact
+CLI (`cargo install wasm-bindgen-cli --version 0.2.127 --locked`) and the toolchain's
+`wasm32-unknown-unknown` target before rebuilding. `build:wasm` remaps absolute
+source paths and writes the generated JS, type declarations and binary into
+`wasm/`. It does not download or execute install hooks in this package.
 
-worker.postMessage({
-  type: 'filter',
-  blocks: compactBlocks,
-  viewingKey: 'uviewtest1...',
-});
+Run Rust parser/decryption regressions with:
 
-worker.onmessage = (e) => {
-  if (e.data.type === 'results') {
-    console.log('Matches:', e.data.matches);
-  }
-};
+```sh
+cargo test --manifest-path ../../wasm/Cargo.toml --lib --locked
+cargo audit --file ../../wasm/Cargo.lock
 ```
 
----
+Fixtures contain only public deterministic test keys and a public ZIP 244 vector.
+Synthetic transactions have placeholder proofs/signatures and test encoding and
+note decryption only. They are not valid transactions to broadcast. Real NU7
+activation, full consensus verification and funded wallet compatibility are
+separate qualification work.
 
-## 📚 API Reference
-
-### `ZcashWASM.init()`
-
-Initialize the WASM module.
-
-```typescript
-const wasm = await ZcashWASM.init();
-```
-
----
-
-### `wasm.decryptMemo(txHex, viewingKey)`
-
-Decrypt a shielded transaction memo.
-
-**Parameters:**
-- `txHex` (string): Raw transaction hex
-- `viewingKey` (string): Unified Full Viewing Key (UFVK)
-
-**Returns:** `Promise<DecryptedOutput>`
-```typescript
-interface DecryptedOutput {
-  memo: string;   // Decrypted memo text
-  amount: number; // Amount in ZEC
-}
-```
-
----
-
-### `wasm.filterCompactBlocks(blocks, viewingKey, onProgress?)`
-
-Filter compact blocks to find transactions matching the viewing key.
-
-**Parameters:**
-- `blocks` (CompactBlock[]): Array of compact blocks
-- `viewingKey` (string): Unified Full Viewing Key (UFVK)
-- `onProgress` (optional): Progress callback
-
-**Returns:** `Promise<MatchingTransaction[]>`
-```typescript
-interface MatchingTransaction {
-  txid: string;
-  height: number;
-  timestamp: number;
-}
-```
-
----
-
-### `wasm.detectKeyType(viewingKey)`
-
-Detect the type of viewing key.
-
-**Parameters:**
-- `viewingKey` (string): Viewing key to detect
-
-**Returns:** `ViewingKeyType`
-```typescript
-type ViewingKeyType = 'ufvk-mainnet' | 'ufvk-testnet' | 'unknown';
-```
-
----
-
-## 🔒 Security
-
-- **Client-side only**: Viewing keys are processed entirely in the browser's WASM sandbox
-- **No server communication**: Sensitive data never leaves the client
-- **Web Worker isolation**: Run decryption in a separate thread for additional isolation
-- **Auditable**: Open-source Rust implementation compiled to WASM
-
----
-
-## 🏗️ Architecture
-
-This library is a thin TypeScript wrapper around Rust WASM code:
-
-```
-┌─────────────────────────────────────┐
-│   TypeScript API (@cipherscan/...)  │
-│   - ZcashWASM.init()                │
-│   - decryptMemo()                   │
-│   - filterCompactBlocks()           │
-└──────────────┬──────────────────────┘
-               │
-               ▼
-┌─────────────────────────────────────┐
-│   WASM Module (Rust → WASM)         │
-│   - librustzcash                    │
-│   - zcash_note_encryption::batch    │
-│   - orchard/sapling domains         │
-└─────────────────────────────────────┘
-```
-
-**Rust crates used:**
-- `zcash_primitives` — Core Zcash primitives
-- `zcash_note_encryption` — Batch decryption
-- `orchard` — Orchard shielded pool
-- `wasm-bindgen` — Rust ↔ JavaScript bridge
-
----
-
-## 🧪 Try It Out
-
-After installing, run the interactive example:
-
-```bash
-node node_modules/@cipherscan/zcash-decoder/examples/decrypt-memo.mjs
-```
-
-This will prompt you for:
-1. Your viewing key (UFVK)
-2. A transaction ID
-
-And decrypt the memo for you.
-
----
-
-## 🛠️ Development
-
-### Build the WASM module
-
-```bash
-cd wasm/
-wasm-pack build --target web
-```
-
-### Build the TypeScript SDK
-
-```bash
-npm run build
-```
-
----
-
-## 📄 License
-
-MIT OR Apache-2.0
-
-You may choose either license at your option.
-
----
-
-## 🙏 Acknowledgments
-
-Built with:
-- [librustzcash](https://github.com/zcash/librustzcash) — Official Zcash Rust library
-- [wasm-pack](https://rustwasm.github.io/wasm-pack/) — Rust → WASM compiler
-
-Funded by the **Gemini Hackathon 2025** bounty for privacy-preserving Zcash tooling.
-
----
-
-## 💝 Support This Project
-
-If you find this library useful, consider supporting development with ZEC:
-
-```
-u1fh3kwyl9hq9q907rx9j8mdy2r7gz4xh0y4yt63dxykk2856gr0238vxsegemyfu8s5a77ycq72tcnzkxa75ykjtcn6wp2w9rtuu3ssdzpe2fyghl8wlk3vh6f67304xe4lrxtvywtudy5t434zc07u6mh27ekufx7ssr55l8875z7f4k76c3tk23s3jzf8rxdlkequlta8lwsv09gxm
-```
-
-All donations go towards:
-- 🔧 Maintaining and improving the decoder
-- 📚 Better documentation and examples
-- 🚀 New privacy-preserving features
-- ☕ Keeping the developers caffeinated
-
----
-
-## 🔗 Links
-
-- **CipherScan Explorer**: https://cipherscan.app
-- **GitHub**: https://github.com/Kenbak/cipherscan
-- **Bounty**: Gemini Hackathon 2025 — Zcash Data & Analytics
-
----
-
-**Made with 🔐 for the Zcash community**
+MIT OR Apache-2.0.

@@ -37,7 +37,8 @@ current liveness, honest operation, or a remote peer connection.
 
 ## Admission, storage and public output
 
-The ingester validates direct and Tor collector snapshots independently before
+The ingester validates direct, Tor and (since migration 043) regional
+`direct-<region>` collector snapshots independently before
 merging or collapsing endpoints by IP. It requires a snapshot no older than
 three minutes, exact source endpoint membership with fresh same-snapshot proof,
 and `handshake <= proof <= receipt <= generation <= ingestion`. Handshake and
@@ -50,8 +51,12 @@ contracts fail closed. Collection via SOCKS does not classify an address as Tor.
 Migration **039** creates private `topology_gossip_snapshots` and
 `topology_gossip_edges`, owned by `zcash_user` with no PUBLIC privileges. The
 identical SQL mirror belongs in the Rust schema repository; this additive
-migration does not require an indexer restart. Ingestion replaces metadata and
-receipts atomically inside the existing advisory-locked census transaction.
+migration does not require an indexer restart. Ingestion replaces each
+source's metadata and receipts atomically inside the existing advisory-locked
+census transaction. Since the multi-vantage change, a source absent from a run
+keeps its last snapshot until its own ten-minute database-clock expiry, an older
+generation never replaces a newer one, and unconfigured sources are pruned; see
+`REGIONAL-CENSUS-VANTAGES.md`.
 Every timestamp is the original evidence time, never database insertion time.
 
 Mainnet crawl topology bypasses Redis and sends `Cache-Control: no-store`.
@@ -77,6 +82,16 @@ The browser defaults to geography, polls topology only while active, expires
 its graph using `expiresAt`, and bounds force layout separately with explicit
 displayed-subset counts. No new public route, URL variant or indexation policy
 is introduced. The network routes retain their existing SSR/SEO policy.
+
+## NU7 peer protocol
+
+`crawler-nu7-protocol.patch` applies on top of `crawler-qualified-gossip.patch`
+(source tree `a919348640c49ba1221ab14dc4d799993382b30a`) and sets the advertised
+peer protocol to 170190, the NU7 mainnet value. Upgraded peers reject lower
+versions after activation at block 3,543,405. The result is source
+`acb3f1c428d6aa294cfebf136e59890eb0c45790`, tree
+`f1f17699afb71075d61dcc66c911be0ba246c2f1`. The locked Linux build has SHA-256
+`1e8bd482754ebac53605ab3f20bb0e4bc94566ac19a256ac465b525b8c1f00a4`.
 
 ## Release gates and rollback
 

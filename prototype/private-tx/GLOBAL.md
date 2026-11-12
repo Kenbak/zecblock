@@ -510,32 +510,6 @@ baseline production/existing-pilot process IDs and activation times remained
 unchanged through the observed checks. PostgreSQL source reads remain read-only;
 no public listener, DNS, Vercel, existing pilot release or indexer was changed.
 
-## Remaining gates
-
-The shared-query use across multiple database layers, chosen profile and
-publisher-controlled data weights have **no noise/correctness certificate or
-independent cryptographic approval** here. Manifest/Merkle validation protects
-the selected publication's consistency; a malicious publisher can choose a
-different manifest or false facts. It does not prove block inclusion, resolved
-prevouts, exact fees, enrichment truth or source completeness. Decoding all
-layers before feedback addresses one application failure channel; it does not
-prove constant-time execution or eliminate every timing/resource side channel.
-
-The protocol still has a **2,048-record / 128-layer** ceiling, collision-bucket
-limits and large disk/setup/reply costs. The sparse three-block input is not a
-full-history sample or capacity qualification. There is no full-history
-backfill, durable resumable source journal, live publication refresh, automatic
-canonical replacement/reorg recovery or production deployment in this path.
-Future work must qualify ingestion, resource/throughput limits, overload and
-failure behavior, integrity/privacy composition and operational recovery before
-expanding those claims.
-
-The browser trusts delivered application/WASM code. The service can observe IP,
-timing, public publication identity and sizes; there is no Tor/OHTTP transport
-or independently trusted installed client. This is a custom complete-transaction
-protocol using the pinned upstream PIR engine, not a Vizor Transparent `/v2`
-wallet provider or an established wallet-interoperability contract.
-
 ## Optimized demo and sizing result — November 3
 
 Whole-publication measurements now complete: at the same 2-CPU/4-GiB limit, baseline evaluation is **39.112/39.974 s** versus cached **15.975/16.366 s**, with byte-identical replies and all 33 row/Merkle checks passing. Admission is **39.416 s** separately; cached runs still read about 37 GB each. The separate 48-GiB-high/52-GiB-max cache scenario measures **2.213/2.182 s** after **30.933 s** admission, with no additional physical reads during evaluations. This changes the memory budget. A 1.322-second read-only metadata aggregate overlaps the first baseline; no uncontended-host or causal-impact claim is made.

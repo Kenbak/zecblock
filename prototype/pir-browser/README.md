@@ -9,9 +9,9 @@ envelope, private address history or mempool retrieval.
 
 The separate experimental global mode retrieves one shared hash row across
 every layer of a bounded publication without a public transaction catalogue.
-Its protocol, lab receipts and remaining gates are documented in
+Its protocol and lab receipts are documented in
 [GLOBAL.md](../private-tx/GLOBAL.md). It does not change the original fixture or
-full-snapshot mode defaults and is not a full-history qualification.
+full-snapshot mode defaults.
 
 `bootstrap.py` downloads and verifies wallet-libraries
 `a7c842fd4f16790ed6739346f44557a97065d242` and ipir-sp

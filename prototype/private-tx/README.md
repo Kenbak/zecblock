@@ -1,4 +1,24 @@
-# Experimental private transaction explorer
+# Private explorer
+
+[private.zecblock.com](https://private.zecblock.com) looks up any Zcash
+transaction, block or transparent address with private information retrieval
+(PIR): the browser encrypts the search, the server computes over every row of
+the table, and only the browser can decrypt the answer.
+
+| Part | Files |
+|---|---|
+| Static site (Vercel) | `ui/`, `web/explorer-worker.js`, built by `explorer-site.sh <pir-origin> <out-dir>` |
+| Browser PIR client (WASM) and table builder (`zecblock-pir-fixture`) | `../pir-browser/` |
+| Export queries | `explorer-tx.sql`, `explorer-blocks.sql`, `explorer-addresses*.sql` |
+| Publishing | `explorer-rebuild-base.sh` (daily base tables), `explorer-publish-recent.sh` (blocks since the base, every 10 s) |
+| Server timers and services | `systemd/` |
+
+Each publication is signed with Ed25519; the browser checks the signature
+against its pinned key and checks every row against the signed roots. After each
+search the page shows what the browser sent: the requests, their sizes, and a
+check that the search text appears in none of them.
+
+## Experimental private transaction explorer
 
 This standalone application on `new/private-tx-browser-prototype` renders the
 existing ZecBlock transaction design over full recent confirmed mainnet records

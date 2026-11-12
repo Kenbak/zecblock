@@ -41,5 +41,7 @@ export default defineConfig([
     'packages/zcash-decoder/dist/**',
     'packages/zcash-decoder/wasm/**',
     'server/api/openapi/**',
+    // Standalone apps with their own build (private explorer).
+    'prototype/**',
   ]),
 ]);

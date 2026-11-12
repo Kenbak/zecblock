@@ -1,0 +1,241 @@
+# Isolated few-block Linux PIR pilot
+
+This is a controlled experiment on mainnet primary `zcash-mainnet`, not a public
+private explorer release. The existing production API/node/indexer/database units
+are not edited or restarted. No production checkout, schema, DNS, reverse proxy,
+firewall rule, wallet endpoint or public listener is changed. The sample database
+contains public plaintext chain records; PIR encrypts the selected lookup and
+response. It does not hide the operator's IP or qualify every active attack.
+
+## Cumulative live mode
+
+`upgrade-live.py` migrates an existing rolling pilot into a separate cumulative
+state directory. It preserves the old release and `/var/lib/zecblock-pir-pilot`
+for rollback. The new query state is `/var/lib/zecblock-pir-live`; only the pilot
+query service gets a state-path/source-path environment drop-in. The old timer
+stays stopped on success. None of the existing production services is restarted.
+
+Two new pilot-only services share the existing two-CPU/4-GiB slice:
+
+- `zecblock-pir-pilot-source.service` runs fixed bounded SQL through existing Unix
+  peer authentication as `postgres`. Every capture uses `REPEATABLE READ READ ONLY`,
+  a three-second statement timeout and a 200-ms lock timeout. The process has no
+  TCP access, secrets or request listener, and cannot read the PostgreSQL data or
+  configuration directories. This is a trusted fixed-code local collector using
+  a powerful existing peer identity, not a qualified least-privilege public
+  service design. No database role, grant, slot or source schema is changed.
+- `zecblock-pir-pilot-live-publish.service` runs as the unprivileged pilot user.
+  It reads only the collector's public-data spool and fetches raw bytes through
+  fixed loopback API GETs. It receives no database credential. Old raw observations
+  are cached by transaction and canonical block identity; indexed facts are
+  refreshed together in each primary snapshot. Optional price, bridge and ZIP318
+  enrichments are explicitly unavailable in this mode.
+
+The collector checks committed data every second after its previous read finishes.
+This is bounded polling, not WAL CDC or atomic commit-to-PIR visibility. It imposes
+no extra confirmation-depth wait or three-minute publication timer. Publication
+starts when facts change, recaptures the entire retained cohort, prepares the same
+PIR format and requires a fresh matching facts fingerprint before activation.
+Reported latency is observation-to-ready, not measured SQL-commit-to-ready latency.
+
+The fixed floor comes from the final old publication at cutover and is saved in
+root-owned `/etc/zecblock-pir-pilot/live.json`. It never slides. New bounds are
+128 blocks/2048 records, plus the stricter actual native table capacity:
+`sum(ceil(each encoded record / 8064)) + 1 <= 2048`, with at most 64 chunks per record.
+Compact publications bind `packing: compact-v1` and `coverRow: 2047` into their
+identity. Each record occupies only its actual chunk count. Every lookup still
+sends the publication's largest chunk count; shorter records privately query the
+shared zero cover row for the remaining slots and validate those decrypted zeros.
+All queries are generated and dispatched before any reply is decoded. Legacy
+padded publications remain readable; their identities and crypto profile do not change.
+The table remains exactly 16,777,216 bytes. Capacity exhaustion rejects the entire
+new candidate and keeps the previous complete publication; no old/large record is
+silently omitted. The source continues fresh canonical checks of the admitted
+cohort even if extension capture exceeds its bound. This is bounded accumulation,
+not full-history backfill or a release-scale archive layout.
+
+The query service checks a fresh local source guard for every served generation.
+Reorged generations, unavailable source guards and guards older than ten seconds
+fail closed. This protects canonical serving state; historical facts in an old
+pinned publication remain explicitly as-of that publication. It is not an
+independent chain proof. The existing fixed browser batch/manual-refresh behavior
+is unchanged. Reload the page explicitly to see a later publication.
+
+The 5-GiB live-state budget/1-GiB preparation reserve and 128-MiB file limits remain.
+Native preparation and the collectors share the pilot slice, but PostgreSQL
+backends and existing API/node RPC work are outside that cgroup; fixed read bounds
+and timeouts limit source work. Source spool has only the latest bounded snapshot,
+guard and atomic-write candidates, with a 1-GiB free-disk reserve. No boot
+enablement, public domain/proxy, firewall or ordinary explorer endpoint changes.
+
+Use `upgrade-live.py <archive> <sha256> <new-commit> <old-commit> --verify-only`
+first. Actual migration checks closed immutable inventories, unchanged existing
+pilot units and absent overrides, freezes the old publisher, seeds separate live
+state, starts only the two new units and switches the pilot query release. It
+requires a fresh complete depth-zero publication plus HTTP health within a finite
+deadline. Failure removes only its owned units/config/drop-in, restores the prior
+query release/timer and preserves failed new state for inspection. Never run the
+old rolling publisher against the new cumulative state.
+
+For an already-live pilot, `upgrade-live-release.py` changes only its immutable
+release pointer and restarts the pilot query/publisher. The primary source stays
+running. It verifies all six unit files, the exact query drop-in and persisted
+floor config, then load-checks the new native binary against the paused old
+publication in a bounded shared-slice transient unit. It pins a root-owned copy
+of that publication for rollback. Readiness requires a different compact
+publication and matching served frontend/WASM hashes. A failed update restores
+the prior legacy view before restarting the old query binary; restoring only the
+old executable after a compact pointer switch would be incompatible.
+
+## Legacy rolling layout and limits
+
+- Root-owned immutable release: `/opt/zecblock-pir-pilot/releases/<commit>`;
+  `/opt/zecblock-pir-pilot/current` selects it.
+- State: `/var/lib/zecblock-pir-pilot`, owned by the dedicated nologin account
+  `zecblock-pir-pilot`. The query service mounts it read-only; only publication
+  can write it. No production credentials are supplied.
+- `zecblock-pir-pilot.service` binds **127.0.0.1:4319** only and forbids outbound
+  `connect` syscalls. HTTP has no request/access logger. Native stderr is discarded;
+  journal output is generic startup/publication status, without query bodies.
+- Query/publisher/native descendants share `zecblock-pir-pilot.slice`: aggregate
+  **200% CPU quota, 4 GiB MemoryMax, 3 GiB MemoryHigh, zero pilot swap allowance**,
+  low CPU/IO weight and 128-task maximum. Two Rayon threads per native child do
+  not substitute for the shared quota.
+- Serialized one-shot publisher reads four complete confirmed blocks ending two
+  blocks behind the observed indexed tip, capped at 64 transactions. It uses
+  existing unauthenticated public API GETs and prepares a 16 MiB table, independent
+  of browser searches. The optional timer runs 180 seconds after prior completion.
+  Disk keeps four publications; the query service keeps three loaded evaluators.
+- The browser pins its publication until an explicit page refresh. It prepares
+  all queries first, dispatches the complete batch, and waits for all replies
+  before decoding. Admission is capped at 64 chunks with one 30-second batch
+  deadline and exact 10,240-byte replies. The native bridge has a bounded 64-request
+  FIFO; native evaluation itself remains serialized. There is no automatic
+  metadata polling, failure retry or public fallback.
+- A 5 GiB state budget reserves 1 GiB for preparation. Each source/artifact file
+  is limited to 128 MiB by the publisher unit; only five known candidate files
+  are written. Abandoned candidate directories from a killed serialized invocation
+  are removed on its next run; symlinks in state are rejected. This is an
+  application budget with per-file limits, not a filesystem/project quota.
+- Units have no boot enablement. Publisher failures retain the previous pointer
+  and report unavailable status; the browser also warns on snapshot age.
+
+## Build and install
+
+Build native Rust in a pinned Linux/amd64 environment with Rust 1.97.1, Cargo.lock
+and the existing verified upstream pins. Use baseline x86-64, not `target-cpu=native`
+from a different host. Run native tests and retain image digest, toolchain, ABI,
+CPU requirements, source commit and executable SHA-256. Build the UI/WASM locally
+and run the prototype tests before packaging. No compiler/dependency installation
+on the production host is necessary; the runtime uses its existing Node 22.
+
+After committing reviewed source on the same feature branch:
+
+```sh
+node prototype/private-tx/pilot/bundle.mjs /absolute/path/to/Linux-native-binary /absolute/path/to/build-receipt.json
+```
+
+The bundle records the exact feature commit and every served/executed file hash.
+Transfer it into the pilot's own incoming directory. Inspect current production
+PIDs, unit-file hashes and health; verify the pilot port/path/account are unused.
+Run the reviewed `install.py` as root with archive path, SHA-256 and source commit.
+It checks the archive, files and unit syntax and installs only the new pilot
+account, directories and units. It refuses existing differing units/releases.
+It does **not** start or enable services. Start a one-shot publication, then the
+query service, and verify real encrypted answers before starting the timer.
+
+The installer does run `systemctl daemon-reload` to register the new units; it
+does not restart existing services. Record all resulting artifact and process
+identities separately from production main, node and indexer artifacts.
+
+For an existing pilot, `upgrade.py` requires the exact previous and new commits
+and archive hash. It verifies immutable content and unchanged unit definitions,
+pauses only the pilot timer, waits through an activating one-shot publisher,
+revalidates the active publication, atomically switches the pilot symlink and
+restarts only `zecblock-pir-pilot.service`. A startup failure restores its previous
+release; the previous immutable directory is retained. Existing production units
+are never restarted. Reload an already-open browser page to receive the new client.
+
+## Access and verify
+
+Use the same local and remote port because Host/Origin checks are strict:
+
+```sh
+ssh -N -o ExitOnForwardFailure=yes -L 127.0.0.1:4319:127.0.0.1:4319 zcash-mainnet
+```
+
+Open `http://127.0.0.1:4319/`; the existing local prototype on4318 is separate.
+Copy the active publication's `source.json` through SSH into a local test directory
+as an independent public-data oracle; it is never HTTP-served. Keep the publication
+fixed while running the acceptance audit, then verify an explicit refresh/handover.
+
+```sh
+PRIVATE_TX_TEST_ORIGIN=http://127.0.0.1:4319 \
+PRIVATE_TX_TEST_SOURCE=/absolute/path/to/copied/source.json \
+node prototype/private-tx/test/tunnel-browser.mjs
+```
+
+The browser audit verifies complete detail/raw/price/source parity, reviewed
+JS/CSS/WASM hashes, fixed successful chunk shapes/counts, repeated ciphertext
+randomness, no selector in URL/header/text/raw/reversed request bytes, no external
+traffic/storage or ordinary lookup fallback, and source/database HTTP rejection.
+Browser-only fault injection is reported separately from real server answers.
+Use host evidence for actual loopback listener, journal output, runtime user,
+shared cgroup limits/peak use, no OOM/paging and unchanged production PIDs/unit
+hashes/health. A successful `/health` alone does not verify native readiness.
+
+## What remains observable
+
+The server knows publication identity and its complete public catalogue, record
+locations/sizes/digests, request/response sizes, counts, timing and completion.
+Application dispatch uses the same full query plan for successful and bad-content
+lookups within an accepted publication. All slots settle before decoding and no
+automatic outcome-dependent traffic follows. This is not a constant-time guarantee:
+browser queues, network stalls/deadlines and user-driven actions remain observable.
+It sees a loopback HTTP peer through this tunnel, while SSH/network
+operators still observe the operator's source IP and connection timing. Browser
+code delivery remains trusted. The selective-reply regression covers a fixed
+accepted publication; it does not qualify malicious frontend delivery or
+publication equivocation/completeness.
+Publisher correctness, full history, mempool, concurrency/availability and
+independent IP-hiding transport remain separate qualification work.
+
+## Stop / recover
+
+```sh
+sudo systemctl stop zecblock-pir-pilot-publish.timer
+sudo systemctl stop zecblock-pir-pilot-publish.service zecblock-pir-pilot.service
+```
+
+Stop only the SSH forwarding process to close local access. Pilot data and
+immutable release remain available for inspection/restart. A host reboot does
+not start this experiment automatically. Never enable or restart production or
+standby writers as part of this pilot. For failed refresh, retain the previous
+publication and use the browser's explicit age/unavailable warning.
+# Archive/live release path
+
+`upgrade-archive.py` upgrades only the three owned pilot services, with a short
+explicit query outage and verified rollback. It preserves the six original
+unit files, existing `live.conf`/`live.json`, old state directories and the stopped
+rolling timer. New `zz-archive.conf` drop-ins select archive source/publisher/query
+paths. The source identity remains the trusted existing `postgres` Unix peer
+inside fixed bounded read-only queries; no role, grant, schema or WAL slot is
+created. This is not a qualified least-privilege public service identity.
+
+New state is `/var/lib/zecblock-pir-archive` (`pilot:pilot`, mode `0750`), source spool is
+`/var/lib/zecblock-pir-archive-source` (`postgres:pilot`, mode `0750`), and the root-owned
+configuration is `/etc/zecblock-pir-pilot/archive.json`. Only the shared request
+and collection head are group-readable (`0640`); table artifacts remain `0600`. Explicit
+fchmod preserves those controls under the publisher's restrictive umask.
+
+Before the query service starts, the helper checks exact closed release hashes,
+the Linux constructor, fresh canonical membership/observation anchors, retention
+of the original 393 IDs, and a live range reaching the sampled indexed tip.
+It then checks HTTP health and served assets. Production services and boot
+enablement are outside the helper's operation allowlist. Browser encrypted
+lookup acceptance is a separate required post-install check.
+
+The collection’s 8-segment / 64-query admission and global full-history routing
+gate remain explicit. The initial config has no `backfillFrom`; a historical
+coverage gap must never be described as complete or silently looked up through
+the ordinary explorer API. Read the collection manifest for actual coverage.

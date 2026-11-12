@@ -1,0 +1,46 @@
+[Unit]
+Description=Bounded primary read-only snapshot source for isolated PIR pilot
+After=postgresql@16-main.service
+
+[Service]
+Type=simple
+User=postgres
+Group=zecblock-pir-pilot
+Slice=zecblock-pir-pilot.slice
+WorkingDirectory=/opt/zecblock-pir-pilot/current/prototype/private-tx
+Environment=PRIVATE_TX_SOURCE_DIR=/var/lib/zecblock-pir-source
+Environment=UV_THREADPOOL_SIZE=2
+ExecStart=/usr/bin/node pilot/source-watch.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=15
+LimitFSIZE=128M
+OOMPolicy=stop
+UMask=0027
+Nice=15
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zecblock-pir-source
+InaccessiblePaths=/var/lib/postgresql /etc/postgresql
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectProc=invisible
+ProcSubset=pid
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+RestrictNamespaces=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX
+IPAddressDeny=any
+StandardOutput=journal
+StandardError=journal
+
+# No source credentials, network listener, DB grants or enabled boot target.
+# Fixed SQL uses existing Unix peer identity and READ ONLY transaction settings.

@@ -1,0 +1,10 @@
+[Unit]
+Description=Refresh the private explorer recent table
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=10s
+AccuracySec=1s
+
+[Install]
+WantedBy=timers.target

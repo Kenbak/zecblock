@@ -1,0 +1,20 @@
+[Unit]
+Description=Rebuild the private explorer base tables (transactions with addresses, then blocks)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/zecblock-pir-explorer/explorer.env
+ExecStart=/opt/zecblock-pir-explorer/current/explorer-rebuild-base.sh tx
+ExecStart=/opt/zecblock-pir-explorer/current/explorer-rebuild-base.sh block
+Nice=19
+IOWeight=10
+CPUWeight=10
+CPUQuota=400%
+MemoryHigh=24G
+MemoryMax=32G
+MemorySwapMax=0
+TimeoutStartSec=6h
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zecblock-pir-explorer/v3
+PrivateTmp=yes

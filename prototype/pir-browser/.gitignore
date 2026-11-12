@@ -1,0 +1,6 @@
+/.upstream/
+/target/
+/pkg/
+/fixtures/
+/.cargo-home/
+/__pycache__/

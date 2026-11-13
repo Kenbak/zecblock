@@ -279,6 +279,25 @@ jobs:
       - name: Compile sources in memory
         run: python3 -c "import pathlib; [compile(path.read_text(), str(path), 'exec') for path in pathlib.Path('.').rglob('*.py')]"
 
+  open-data:
+    name: Open data export
+    # Pinned like the Ask job: this image ships PostgreSQL 16 binaries.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          pip install -r server/open-data/requirements.txt
+          pip check
+      - name: Test the exporter against disposable PostgreSQL 16
+        env:
+          OPEN_DATA_PG_BIN: /usr/lib/postgresql/16/bin
+        run: python3 -m unittest discover -s server/open-data
+
   python-jobs:
     # Preserve the branch-protection check name while requiring both runtimes.
     name: Python jobs

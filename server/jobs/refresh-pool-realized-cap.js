@@ -1,7 +1,12 @@
 #!/usr/bin/env node
 'use strict';
 const { setTimeout: delay } = require('node:timers/promises');
-const { average, applyFlow } = require('../lib/pool-basis');
+const { average, applyTransaction } = require('../lib/pool-basis');
+// Every canonical transaction (coinbase included) that changes a shielded pool.
+// Value balances are signed zatoshis; NULL means unknown and fails the run.
+const POOL_TX_COLUMNS = 'block_time,value_balance_sprout,value_balance_sapling,value_balance_orchard,value_balance_ironwood';
+const POOL_TX_FILTER = `(value_balance_sprout IS DISTINCT FROM 0 OR value_balance_sapling IS DISTINCT FROM 0
+      OR value_balance_orchard IS DISTINCT FROM 0 OR value_balance_ironwood IS DISTINCT FROM 0)`;
 const DAY = 86400000;
 const addDays = (date, days) => new Date(Date.parse(date) + days * DAY).toISOString().slice(0, 10);
 function range(last, yesterday, refresh = false) {
@@ -12,7 +17,7 @@ function range(last, yesterday, refresh = false) {
 async function rebuild(writer, reader, yesterday, apply, health, log = () => {}) {
   const prices = new Map((await writer.query('SELECT date::text date,price_usd FROM zec_price_daily WHERE date<=$1', [yesterday])).rows.map(row => [row.date, Number(row.price_usd)]));
   const pools = Object.create(null), snapshots = [];
-  let date = null, tip, processed = 0;
+  let date = null, tip, processed = 0, shortfall = 0;
   const snapshot = day => {
     for (const [name, state] of Object.entries(pools)) snapshots.push({ date: day, pool: name, ...state, avg_acquisition_price: average(state) });
   };
@@ -21,29 +26,33 @@ async function rebuild(writer, reader, yesterday, apply, health, log = () => {})
     await reader.query("SET LOCAL statement_timeout='20s'; SET LOCAL work_mem='16MB'; SET LOCAL max_parallel_workers_per_gather=0; SET LOCAL TIME ZONE 'UTC'");
     tip = (await reader.query('SELECT height,hash,timestamp FROM blocks ORDER BY height DESC LIMIT 1')).rows[0];
     if (!tip || Number(tip.timestamp) < Date.parse(addDays(yesterday, 1)) / 1000) throw new Error('Source has not reached completed UTC day');
-    // Cursor avoids OFFSET rescans and keeps all flow reads in one snapshot.
-    await reader.query(`DECLARE pool_flows NO SCROLL CURSOR FOR
-      SELECT block_time,flow_type,pool,amount_zat,is_pool_migration,migration_from_pool,migration_to_pool
-      FROM shielded_flows WHERE block_time IS NOT NULL AND block_time < ${Date.parse(addDays(yesterday, 1)) / 1000}
-      ORDER BY block_time,txid,id`);
+    // Cursor avoids OFFSET rescans and keeps all reads in one snapshot. Chain
+    // order (height, index) keeps spends after the value they spend. Block
+    // timestamps may step back across midnight; such a block stays on the
+    // day already reached, so each completed day is written once.
+    await reader.query(`DECLARE pool_txs NO SCROLL CURSOR FOR
+      SELECT ${POOL_TX_COLUMNS} FROM transactions
+      WHERE block_time IS NOT NULL AND block_time < ${Date.parse(addDays(yesterday, 1)) / 1000} AND ${POOL_TX_FILTER}
+      ORDER BY block_height,tx_index`);
     while (true) {
-      const { rows } = await reader.query('FETCH FORWARD 10000 FROM pool_flows');
+      const { rows } = await reader.query('FETCH FORWARD 10000 FROM pool_txs');
       if (!rows.length) break;
       for (const row of rows) {
-        const day = new Date(Number(row.block_time) * 1000).toISOString().slice(0, 10);
+        const stamp = new Date(Number(row.block_time) * 1000).toISOString().slice(0, 10);
+        const day = date && stamp < date ? date : stamp;
         if (date && day !== date) {
           for (let completed = date; completed < day; completed = addDays(completed, 1)) snapshot(completed);
         }
         date = day;
-        applyFlow(pools, row, prices.get(day));
+        shortfall += applyTransaction(pools, row, prices.get(day));
       }
       processed += rows.length;
-      if (processed > 5000000) throw new Error('Full pool model safety limit exceeded');
+      if (processed > 50000000) throw new Error('Full pool model safety limit exceeded');
       await health(writer, reader);
-      if (processed % 100000 === 0) log(JSON.stringify({ modelRebuildFlows: processed, date }));
+      if (processed % 1000000 === 0) log(JSON.stringify({ modelRebuildTransactions: processed, date }));
       await delay(100);
     }
-    if (!date) throw new Error('No shielded model source flows');
+    if (!date) throw new Error('No shielded model source transactions');
     for (let completed = date; completed <= yesterday; completed = addDays(completed, 1)) snapshot(completed);
     await reader.query('COMMIT');
   } catch (error) { await reader.query('ROLLBACK'); throw error; }
@@ -53,6 +62,8 @@ async function rebuild(writer, reader, yesterday, apply, health, log = () => {})
     try {
       await writer.query("SET LOCAL statement_timeout='5s'; SET LOCAL lock_timeout='1s'");
       if (!(await writer.query('SELECT 1 FROM blocks WHERE height=$1 AND hash=$2', [tip.height, tip.hash])).rowCount) throw new Error('Source chain changed before pool model rebuild write');
+      // A rebuild replaces the whole model, including rows for retired pseudo-pools.
+      await writer.query('DELETE FROM pool_realized_cap_daily');
       await writer.query(`INSERT INTO pool_realized_cap_daily(date,pool,balance_zat,realized_cap_usd,avg_acquisition_price)
         SELECT date,pool,balance_zat,realized_cap_usd,avg_acquisition_price FROM jsonb_to_recordset($1::jsonb)
         AS r(date date,pool text,balance_zat bigint,realized_cap_usd numeric,avg_acquisition_price numeric)
@@ -61,13 +72,13 @@ async function rebuild(writer, reader, yesterday, apply, health, log = () => {})
       await writer.query('COMMIT');
     } catch (error) { await writer.query('ROLLBACK'); throw error; }
   }
-  return { applied: apply, modelRebuildFlows: processed, first: snapshots[0].date, through: yesterday, rows: snapshots.length, pools };
+  return { applied: apply, modelRebuildTransactions: processed, shortfallZat: shortfall, first: snapshots[0].date, through: yesterday, rows: snapshots.length, pools };
 }
 async function refreshDay(writer, reader, date, pools, apply, health) {
   const start = Date.parse(date) / 1000;
   const price = Number((await writer.query('SELECT price_usd FROM zec_price_daily WHERE date=$1', [date])).rows[0]?.price_usd);
   if (!Number.isFinite(price) || price <= 0) throw new Error(`Missing or invalid daily price: ${date}`);
-  let anchor, tip, flows;
+  let anchor, tip, txs;
   await reader.query('BEGIN ISOLATION LEVEL REPEATABLE READ READ ONLY');
   try {
     await reader.query("SET LOCAL statement_timeout='20s'; SET LOCAL work_mem='16MB'; SET LOCAL max_parallel_workers_per_gather=0; SET LOCAL TIME ZONE 'UTC'");
@@ -79,14 +90,15 @@ async function refreshDay(writer, reader, date, pools, apply, health) {
     if (counts.expected !== counts.observed) throw new Error('Incomplete daily transaction coverage');
     anchor = (await reader.query('SELECT height,hash FROM blocks WHERE timestamp >= $1 AND timestamp < $2 ORDER BY height DESC LIMIT 1', [start, start + 86400])).rows[0];
     if (!anchor) throw new Error('No canonical daily anchor');
-    flows = (await reader.query(`SELECT flow_type,pool,amount_zat,is_pool_migration,migration_from_pool,migration_to_pool
-      FROM shielded_flows WHERE block_time >= $1 AND block_time < $2
-      ORDER BY block_time,txid,id LIMIT 50001`, [start, start + 86400])).rows;
-    if (flows.length > 50000) throw new Error('Daily flow safety limit exceeded');
+    txs = (await reader.query(`SELECT ${POOL_TX_COLUMNS} FROM transactions
+      WHERE block_time >= $1 AND block_time < $2 AND ${POOL_TX_FILTER}
+      ORDER BY block_height,tx_index LIMIT 500001`, [start, start + 86400])).rows;
+    if (txs.length > 500000) throw new Error('Daily transaction safety limit exceeded');
     await reader.query('COMMIT');
   } catch (error) { await reader.query('ROLLBACK'); throw error; }
   const next = structuredClone(pools);
-  for (const flow of flows) applyFlow(next, flow, price);
+  let shortfall = 0;
+  for (const row of txs) shortfall += applyTransaction(next, row, price);
   const stats = await health(writer, reader);
   if (apply) {
     await writer.query('BEGIN');
@@ -104,10 +116,10 @@ async function refreshDay(writer, reader, date, pools, apply, health) {
       await writer.query('COMMIT');
     } catch (error) { await writer.query('ROLLBACK'); throw error; }
   }
-  return { pools: next, summary: { date, applied: apply, flows: flows.length, pools: Object.keys(next).length, ...stats } };
+  return { pools: next, summary: { date, applied: apply, transactions: txs.length, shortfallZat: shortfall, pools: Object.keys(next).length, ...stats } };
 }
 async function run(args = process.argv.slice(2)) {
-  if (args.some(arg => !['--apply', '--refresh', '--rebuild'].includes(arg)) || (args.includes('--refresh') && args.includes('--rebuild'))) throw new Error('Use --apply and optionally --refresh (seven complete days) or --rebuild (all historical model flows)');
+  if (args.some(arg => !['--apply', '--refresh', '--rebuild'].includes(arg)) || (args.includes('--refresh') && args.includes('--rebuild'))) throw new Error('Use --apply and optionally --refresh (seven complete days) or --rebuild (all historical pool transactions)');
   const { loadEnv, log } = require('../lib/job-utils');
   loadEnv(__dirname);
   const { getPool, getReadPool, hasReadReplica } = require('../lib/db-pool');

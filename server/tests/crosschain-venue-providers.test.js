@@ -8,6 +8,7 @@ const thorchain = require("./fixtures/crosschain-venues/thorchain-actions.json")
 const thorchainRefunds = require("./fixtures/crosschain-venues/thorchain-refunds.json");
 const securedAction = require("./fixtures/crosschain-venues/thorchain-secured-asset.json");
 const provenance = require("./fixtures/crosschain-venues/provenance.json");
+const solanaSwaps = require("./fixtures/crosschain-venues/thorchain-solana-swap.json");
 const clone = (value) => structuredClone(value);
 const response = (body, init) => new Response(JSON.stringify(body), init);
 const errorCode = (code) => (err) => err.code === code;
@@ -297,4 +298,29 @@ test("transfer lookup validates input and only returns an action containing the 
   const result = await client.readTransfer(action.in[0].txID.toLowerCase());
   assert.equal(result.transfer.id, normalizeMidgardAction("maya", action).id);
   await assert.rejects(client.readTransfer("bad"), (err) => err.status === 400);
+});
+
+test("THORChain Solana legs keep verbatim base58 signatures; other chains still require hex", async () => {
+  const [solIn, solOut] = solanaSwaps.actions;
+  const entry = normalizeMidgardAction("thorchain", solIn);
+  const signature = solIn.in[0].txID;
+  assert.ok(signature.length > 64);
+  assert.ok(entry.inputs.some((tx) => tx.txid === signature && tx.coins.every((c) => c.chain === "sol")));
+  const exit = normalizeMidgardAction("thorchain", solOut);
+  const outSignature = solOut.out.find((tx) => tx.txID.length > 64).txID;
+  assert.ok(exit.outputs.some((tx) => tx.txid === outSignature));
+  for (const mutate of [
+    (a) => { a.in[0].coins[0].asset = "BTC.BTC"; },          // base58 on a non-Solana leg
+    (a) => { a.in[0].txID = a.in[0].txID.slice(0, -1) + "0"; }, // not base58
+    (a) => { a.in[0].txID = "x".repeat(89); },
+  ]) {
+    const action = clone(solIn); mutate(action);
+    assert.throws(() => normalizeMidgardAction("thorchain", action), (err) => err.status === 503);
+  }
+  const client = createVenueClient({ venue: "thorchain", fetchImpl: async (url) => {
+    assert.equal(new URL(url).searchParams.get("txid"), signature);
+    return response({ actions: [solIn], count: "1" });
+  } });
+  const result = await client.readTransfer(signature);
+  assert.equal(result.transfer.id, entry.id);
 });

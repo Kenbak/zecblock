@@ -198,6 +198,20 @@ class ExportTest(unittest.TestCase):
         with self.assertRaisesRegex(open_data.ExportError, 'daily: duplicate'):
             self.export()
 
+    def test_windowed_reads_include_every_row_exactly_once(self):
+        ds = BY_ID['swap_daily']
+        edges = (dt.date(2024, 6, 1), dt.date(2025, 3, 31), dt.date(2025, 4, 1))
+        self.many(ds, [tuple(day if name == 'date' else generic_value(code, name, 100 + i)
+                             for name, code, _ in ds.columns) for i, day in enumerate(edges)])
+        windows = open_data.build_windows(ds, {'through_date': '2026-01-05', 'delayed_through_date': '2026-01-03'})
+        self.assertGreater(len(windows), 4)
+        self.export()
+        dates = self.read('swap_daily')['date']
+        self.assertEqual(len(dates), len(set(dates)))
+        for day in edges + (dt.date(2026, 1, 5),):
+            self.assertIn(day, dates)
+        self.assertNotIn(dt.date(2026, 1, 6), dates)
+
     def test_fractional_zatoshis_are_refused_not_rounded(self):
         with self.assertRaisesRegex(open_data.ExportError, 'non-integer'):
             open_data.coerce(decimal.Decimal('1.5'), 'i64', 'x')

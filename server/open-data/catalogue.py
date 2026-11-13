@@ -1,7 +1,8 @@
 """Published open-data tables, read from the reviewed analytics_public views.
 
 Row-level address tables, venue-level swap records, reviewed labels and privacy
-linkage output are deliberately absent. Add a table here only after deciding it
+linkage output are deliberately absent. value_pools_daily is absent until its
+view can be read within the reader role's temporary-file limit. Add a table here only after deciding it
 should be downloadable in bulk.
 
 Bump a table's `version` whenever its definition or column meaning changes; that
@@ -35,6 +36,10 @@ class Dataset:
     coverage: Optional[str] = None
     # Upper bound for single-file tables, and whether it uses the delayed cutoff.
     date_column: Optional[str] = None
+    # Read in disjoint date windows from this start (rows before it in one more
+    # window), for views that exceed the reader's temporary-file limit whole.
+    date_window_start: Optional[str] = None
+    date_window_days: Optional[int] = None
     time_column: Optional[str] = None
     delayed: bool = False
     # Every height in range must have exactly one row.
@@ -123,14 +128,6 @@ DATASETS = (
              ('avg_dormancy_days', 'dec:4', 'days'), ('realized_cap_usd', 'dec:2', 'USD'),
              ('avg_cost_basis_usd', 'dec:4', 'USD')),
             ('date',), coverage='utxo_daily', date_column='date'),
-    Dataset('value_pools_daily', 'value_pools_daily_query', 'Daily node value pools',
-            'Node-reported value-pool balances at the highest observed canonical block of each date. Balances are '
-            'stocks. A pool the node did not monitor is NULL, and dates without an observation are absent.',
-            (('date', 'date', DAY), ('height', 'i64', 'block'), ('hash', 'str', HASH), ('observed_blocks', 'i64', COUNT),
-             ('day_blocks', 'i64', COUNT), ('transparent', 'i64', ZAT), ('sprout', 'i64', ZAT), ('sapling', 'i64', ZAT),
-             ('orchard', 'i64', ZAT), ('ironwood', 'i64', ZAT), ('lockbox', 'i64', ZAT), ('nsm', 'i64', ZAT),
-             ('chain_supply', 'i64', ZAT)),
-            ('date',), coverage='value_pools_daily', date_column='date'),
     Dataset('swap_daily', 'swap_daily_query', 'Daily cross-chain swaps',
             'Successful ZEC swaps per completed UTC date, venue, direction and counterparty, from tracked venues only. '
             'Groups under 5 swaps are folded into other. zec and usd are rounded sums, NULL when under 5 swaps carry '
@@ -138,7 +135,8 @@ DATASETS = (
             (('date', 'date', DAY), ('venue', 'str', 'enum'), ('direction', 'str', 'enum'), ('chain', 'str', 'label'),
              ('token', 'str', 'label'), ('swaps', 'i64', COUNT), ('zec', 'i64', 'whole ZEC'), ('usd', 'i64', 'whole USD'),
              ('missing_zec', 'i64', COUNT), ('missing_usd', 'i64', COUNT)),
-            ('date', 'venue', 'direction', 'chain', 'token'), coverage='swap_daily', date_column='date'),
+            ('date', 'venue', 'direction', 'chain', 'token'), coverage='swap_daily', date_column='date',
+            date_window_start='2025-01-01', date_window_days=90),
     Dataset('block_timing', 'block_timing_query', 'Block first-seen timing',
             'Earliest ZecBlock receipt of each canonical block its collectors received. lag_seconds is first_seen minus '
             'the miner-written header time, so it mixes miner clock offset with propagation to ZecBlock. Blocks neither '

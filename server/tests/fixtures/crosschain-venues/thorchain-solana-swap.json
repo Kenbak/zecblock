@@ -1,0 +1,148 @@
+{
+  "source": "https://gateway.liquify.com/chain/thorchain_midgard/v2/actions?asset=ZEC.ZEC&type=swap,refund&limit=50",
+  "checkedDate": "2026-11-13",
+  "actions": [
+    {
+      "date": "1794560773000027789",
+      "height": "28652215",
+      "in": [
+        {
+          "address": "HbY4XL87HGHgmAcXrLfR3WXMAqBZdudZHLVRsnjdeUNF",
+          "coins": [
+            {
+              "amount": "91541019",
+              "asset": "SOL.SOL"
+            }
+          ],
+          "txID": "WBde9dGb2PNw66ipGTq3w7i3qCpRFjNHUZpHe6w2i6iNFqr2Z2sdwEcoS3cc7uxcEV134sU7dfvLu447LvTb4Sf"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "",
+          "affiliateFee": "0",
+          "inPriceUSD": "80.88832669474156",
+          "isStreamingSwap": true,
+          "liquidityFee": "26691251",
+          "memo": "=:z:t1dBiwZXEszVpgxwBgGbm7yrM1Zu5cG11Q7:7445507",
+          "networkFees": [
+            {
+              "amount": "42584",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "outPriceUSD": "957.2871068140907",
+          "streamingSwapMeta": {
+            "count": "2",
+            "depositedCoin": {
+              "amount": "91541019",
+              "asset": "SOL.SOL"
+            },
+            "inCoin": {
+              "amount": "91541019",
+              "asset": "SOL.SOL"
+            },
+            "interval": "0",
+            "lastHeight": "28652216",
+            "outCoin": {
+              "amount": "7729780",
+              "asset": "ZEC.ZEC"
+            },
+            "outEstimation": "7734686",
+            "quantity": "2"
+          },
+          "swapSlip": "20",
+          "swapTarget": "3722754",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "t1dBiwZXEszVpgxwBgGbm7yrM1Zu5cG11Q7",
+          "coins": [
+            {
+              "amount": "7687196",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "height": "28652221",
+          "txID": "F89DCC09358914DD0414500F7FC454083B3C42B79E3030B15541D8573FAD8917"
+        }
+      ],
+      "pools": [
+        "SOL.SOL",
+        "ZEC.ZEC"
+      ],
+      "status": "success",
+      "type": "swap"
+    },
+    {
+      "date": "1794543743706255898",
+      "height": "28649421",
+      "in": [
+        {
+          "address": "t1ct43mHLyDJb3sGAJ2mrbnZ7mu8bmoETXj",
+          "coins": [
+            {
+              "amount": "80293",
+              "asset": "ZEC.ZEC"
+            }
+          ],
+          "txID": "1AD387C22A33ECC71B582DFC0334DA450289DF73C547D9E4619DB3C66F24505B"
+        }
+      ],
+      "metadata": {
+        "swap": {
+          "affiliateAddress": "-_/t1",
+          "affiliateFee": "0",
+          "inPriceUSD": "944.6679444176409",
+          "isStreamingSwap": true,
+          "liquidityFee": "267850",
+          "memo": "=:o:D29UWwEyuYGVGjbiXn9dUvzT9uzuCPCUWiBA7KMKpn2H:609638/3/0:-_/t1:0/80",
+          "networkFees": [
+            {
+              "amount": "317750",
+              "asset": "SOL.SOL"
+            }
+          ],
+          "outPriceUSD": "79.69522496090622",
+          "swapSlip": "20",
+          "swapTarget": "609638",
+          "txType": "swap"
+        }
+      },
+      "out": [
+        {
+          "address": "thor1dl7un46w7l7f3ewrnrm6nq58nerjtp0dradjtd",
+          "affiliate": true,
+          "coins": [
+            {
+              "amount": "1064867",
+              "asset": "THOR.RUNE"
+            }
+          ],
+          "height": "28649421",
+          "txID": ""
+        },
+        {
+          "address": "D29UWwEyuYGVGjbiXn9dUvzT9uzuCPCUWiBA7KMKpn2H",
+          "coins": [
+            {
+              "amount": "624398",
+              "asset": "SOL.SOL"
+            }
+          ],
+          "height": "28649426",
+          "txID": "5mYFhAAsAomxq4M88wRQJxWeQkJEpwuQrLB2JGb77Rw6c7HGNmkbiLCkzPcwoiwDD9A4Wq3MWeXNKFCEPRUTxYep"
+        }
+      ],
+      "pools": [
+        "ZEC.ZEC",
+        "SOL.SOL"
+      ],
+      "status": "success",
+      "type": "swap"
+    }
+  ],
+  "count": "2"
+}

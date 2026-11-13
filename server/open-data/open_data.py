@@ -254,7 +254,7 @@ def validate_table(table, ds, windows, conn, span):
             raise Inconsistent(f'{ds.id}: {table.num_rows} rows do not reconcile with block totals '
                                f'for heights {span[0]}-{span[1]}')
     for name in ds.key:
-        if ds.unique and table.column(name).null_count:
+        if ds.unique and name not in ds.nullable_keys and table.column(name).null_count:
             raise ExportError(f'{ds.id}: NULL in key column {name}')
     if ds.unique and table.num_rows:
         if table.group_by(list(ds.key)).aggregate([]).num_rows != table.num_rows:

@@ -1,0 +1,9 @@
+[Unit]
+Description=Export ZecBlock open data daily
+[Timer]
+OnCalendar=*-*-* 03:30:00 UTC
+RandomizedDelaySec=10m
+Persistent=true
+Unit=zecblock-open-data-export.service
+[Install]
+WantedBy=timers.target

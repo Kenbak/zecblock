@@ -1,0 +1,23 @@
+[Unit]
+Description=Publish ZecBlock open data to Hugging Face
+After=network-online.target
+Wants=network-online.target
+[Service]
+Type=oneshot
+DynamicUser=yes
+WorkingDirectory=/opt/zecblock-open-data/server/open-data
+LoadCredential=hf_token:/etc/zecblock/open-data-hf-token
+CacheDirectory=zecblock-open-data
+Environment=HF_HOME=/var/cache/zecblock-open-data
+ExecStart=/opt/zecblock-open-data/venv/bin/python open_data.py publish --bundle /srv/analytics/open-data/current --repo zecblock/zcash-mainnet
+TimeoutStartSec=3h
+NoNewPrivileges=yes
+ProtectSystem=strict
+ProtectHome=yes
+ReadOnlyPaths=/srv/analytics/open-data
+InaccessiblePaths=-/run/ask-public-db
+PrivateTmp=yes
+PrivateDevices=yes
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+MemoryMax=4G
+TasksMax=64

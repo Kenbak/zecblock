@@ -1,0 +1,4 @@
+# Pin the complete direct set so scheduled exports never upgrade dependencies.
+huggingface_hub==2.4.0
+psycopg2-binary==2.9.13
+pyarrow==26.0.1

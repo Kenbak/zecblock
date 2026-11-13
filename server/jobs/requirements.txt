@@ -7,4 +7,4 @@ numpy==2.5.4
 psycopg2-binary==2.9.13
 scikit-learn==1.9.1
 scipy==1.18.1
-threadpoolctl==3.7.0
+threadpoolctl==3.8.0

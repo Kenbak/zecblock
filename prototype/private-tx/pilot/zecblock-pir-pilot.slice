@@ -1,0 +1,14 @@
+[Unit]
+Description=Isolated few-block ZecBlock PIR pilot resource budget
+
+[Slice]
+CPUAccounting=yes
+CPUQuota=200%
+CPUWeight=10
+MemoryAccounting=yes
+MemoryHigh=3G
+MemoryMax=4G
+MemorySwapMax=0
+IOAccounting=yes
+IOWeight=10
+TasksMax=128

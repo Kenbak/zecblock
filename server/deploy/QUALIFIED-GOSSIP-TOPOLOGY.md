@@ -83,6 +83,16 @@ its graph using `expiresAt`, and bounds force layout separately with explicit
 displayed-subset counts. No new public route, URL variant or indexation policy
 is introduced. The network routes retain their existing SSR/SEO policy.
 
+## NU7 peer protocol
+
+`crawler-nu7-protocol.patch` applies on top of `crawler-qualified-gossip.patch`
+(source tree `a919348640c49ba1221ab14dc4d799993382b30a`) and sets the advertised
+peer protocol to 170190, the NU7 mainnet value. Upgraded peers reject lower
+versions after activation at block 3,543,405. The result is source
+`acb3f1c428d6aa294cfebf136e59890eb0c45790`, tree
+`f1f17699afb71075d61dcc66c911be0ba246c2f1`. The locked Linux build has SHA-256
+`1e8bd482754ebac53605ab3f20bb0e4bc94566ac19a256ac465b525b8c1f00a4`.
+
 ## Release gates and rollback
 
 1. Reconcile exact main/explorer commit, serving API and source configuration,

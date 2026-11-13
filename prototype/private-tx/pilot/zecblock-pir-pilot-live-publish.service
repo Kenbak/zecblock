@@ -1,0 +1,47 @@
+[Unit]
+Description=Cumulative bounded live publisher for isolated PIR pilot
+After=zecblock-pir-pilot-source.service
+Requires=zecblock-pir-pilot-source.service
+
+[Service]
+Type=simple
+User=zecblock-pir-pilot
+Group=zecblock-pir-pilot
+Slice=zecblock-pir-pilot.slice
+WorkingDirectory=/opt/zecblock-pir-pilot/current/prototype/private-tx
+Environment=PRIVATE_TX_LOCAL_DIR=/var/lib/zecblock-pir-live
+Environment=PRIVATE_TX_SOURCE_DIR=/var/lib/zecblock-pir-source
+Environment=PRIVATE_TX_EVALUATOR=/opt/zecblock-pir-pilot/current/prototype/pir-browser/target/release/zecblock-pir-fixture
+Environment=RAYON_NUM_THREADS=2
+Environment=UV_THREADPOOL_SIZE=2
+ExecStart=/usr/bin/node pilot/publish-live.mjs
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+LimitFSIZE=128M
+OOMPolicy=stop
+UMask=0077
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zecblock-pir-live
+ReadOnlyPaths=/var/lib/zecblock-pir-source
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+StandardOutput=journal
+StandardError=journal
+
+# Independent of browser requests; no boot enablement or public listener.

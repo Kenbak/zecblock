@@ -1,0 +1,28 @@
+{
+  "name": "zecblock-private-tx-local-prototype",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "bash ../pir-browser/build.sh && node ui/build.mjs",
+    "build:ui": "node ui/build.mjs",
+    "typecheck": "tsc -p ui/tsconfig.json",
+    "export": "node export-recent.mjs",
+    "publish": "node publish-recent.mjs",
+    "publish:watch": "node publish-recent.mjs --watch",
+    "start": "node server.mjs",
+    "test": "node --test test/*.test.mjs",
+    "test:browser": "node test/browser.mjs"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.7",
+    "esbuild": "^0.28.2",
+    "geist": "1.7.2",
+    "playwright": "1.62.1",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.3",
+    "typescript": "5.9.3"
+  }
+}

@@ -20,6 +20,9 @@ const VENUES = Object.freeze({
 });
 const MAX_BYTES = 2 * 1024 * 1024;
 const HASH = /^(?:0x)?[a-fA-F0-9]{64}$/;
+// Solana transaction IDs are base58 64-byte signatures (case-sensitive), which
+// THORChain reports verbatim for SOL legs. Accept them only on Solana legs.
+const SOLANA_SIGNATURE = /^[1-9A-HJ-NP-Za-km-z]{64,88}$/;
 const UINT = /^(?:0|[1-9]\d{0,39})$/;
 
 function unavailable(message, code = "VENUE_UPSTREAM_INVALID") {
@@ -60,11 +63,17 @@ function uint(value, label) {
     throw unavailable(`Invalid Midgard ${label}`);
   return value;
 }
-function txHash(value) {
+function txHash(value, chain = null) {
   if (value === "" || value == null || /^0+$/.test(value)) return null;
-  if (typeof value !== "string" || !HASH.test(value))
-    throw unavailable("Invalid Midgard transaction hash");
-  return value.replace(/^0x/i, "").toLowerCase();
+  if (typeof value === "string" && HASH.test(value)) return value.replace(/^0x/i, "").toLowerCase();
+  if (chain === "sol" && typeof value === "string" && SOLANA_SIGNATURE.test(value)) return value;
+  throw unavailable("Invalid Midgard transaction hash");
+}
+// Lookup keys: hex hashes are normalized, Solana signatures stay verbatim.
+function lookupTxid(value) {
+  if (typeof value !== "string") return null;
+  if (HASH.test(value)) return value.replace(/^0x/i, "");
+  return SOLANA_SIGNATURE.test(value) ? value : null;
 }
 function amountDecimal(value, decimals = 8) {
   if (![4, 8, 10].includes(decimals)) throw unavailable("Unsupported Midgard amount scale");
@@ -110,17 +119,19 @@ function transaction(raw, venue, side) {
       !Array.isArray(raw.coins) || raw.coins.length < 1 || raw.coins.length > 16 ||
       (raw.affiliate != null && typeof raw.affiliate !== "boolean"))
     throw unavailable("Invalid Midgard transaction");
+  const coins = raw.coins.map((coin) => {
+    const amountBaseUnits = uint(coin?.amount, "coin amount");
+    const details = assetDetails(coin?.asset, venue);
+    return { ...details, amountBaseUnits, amount: amountDecimal(amountBaseUnits, details.decimals) };
+  });
+  const chains = new Set(coins.map((coin) => coin.chain));
   return {
     side,
-    txid: txHash(raw.txID),
+    txid: txHash(raw.txID, chains.size === 1 ? [...chains][0] : null),
     address: raw.address || null,
     affiliate: raw.affiliate === true,
     protocolHeight: raw.height == null ? null : uint(raw.height, "transaction height"),
-    coins: raw.coins.map((coin) => {
-      const amountBaseUnits = uint(coin?.amount, "coin amount");
-      const details = assetDetails(coin?.asset, venue);
-      return { ...details, amountBaseUnits, amount: amountDecimal(amountBaseUnits, details.decimals) };
-    }),
+    coins,
   };
 }
 function coinsByAsset(transactions) {
@@ -333,11 +344,11 @@ function createVenueClient({ venue, fetchImpl = fetch, timeoutMs = 8000, maxByte
     if (!Number.isInteger(limit) || limit < 1 || limit > 50)
       throw invalid("Venue page limit must be 1..50");
     const token = decodeCursor(venue, cursor);
-    if (txid != null && (typeof txid !== "string" || !HASH.test(txid)))
-      throw invalid("Invalid venue transaction hash");
+    const lookup = txid == null ? null : lookupTxid(txid);
+    if (txid != null && lookup == null) throw invalid("Invalid venue transaction hash");
     const { body, endpoint, observedAt } = await request({
       asset: "ZEC.ZEC", type: "swap,refund", limit: String(limit),
-      nextPageToken: token, txid: txid?.replace(/^0x/i, "").toUpperCase(),
+      nextPageToken: token, txid: lookup == null ? null : HASH.test(lookup) ? lookup.toUpperCase() : lookup,
     });
     if (!body || !Array.isArray(body.actions) || body.actions.length > limit ||
         (body.count != null && body.count !== "-1" && (typeof body.count !== "string" || !UINT.test(body.count))))
@@ -373,7 +384,8 @@ function createVenueClient({ venue, fetchImpl = fetch, timeoutMs = 8000, maxByte
     readPage: page,
     async readTransfer(txid) {
       const result = await page({ txid, limit: 50 });
-      const wanted = txid.replace(/^0x/i, "").toLowerCase();
+      const key = lookupTxid(txid);
+      const wanted = HASH.test(key) ? key.toLowerCase() : key;
       const matches = result.transfers.filter((transfer) =>
         [...transfer.inputs, ...transfer.outputs].some((tx) => tx.txid === wanted));
       if (matches.length > 1) throw unavailable("Midgard transaction identifies multiple actions");

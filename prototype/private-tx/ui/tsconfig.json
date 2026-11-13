@@ -1,0 +1,37 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "jsx": "react-jsx",
+    "strict": true,
+    "noEmit": true,
+    "skipLibCheck": true,
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "baseUrl": "../../..",
+    "types": ["react", "react-dom"],
+    "typeRoots": ["../node_modules/@types"],
+    "paths": {
+      "react": ["prototype/private-tx/node_modules/@types/react/index.d.ts"],
+      "react/*": ["prototype/private-tx/node_modules/@types/react/*"],
+      "react-dom": ["prototype/private-tx/node_modules/@types/react-dom/index.d.ts"],
+      "react-dom/*": ["prototype/private-tx/node_modules/@types/react-dom/*"],
+      "next/link": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/AddressWithLabel": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/AddressLabel": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "next/image": ["prototype/private-tx/ui/adapters/image.tsx"],
+      "@/components/PrivacyRiskInline": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/TokenChainIcon": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/Tooltip": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/components/ui/FactBox": ["prototype/private-tx/ui/adapters/fact-box.tsx"],
+      "@/components/ExportButton": ["prototype/private-tx/ui/adapters/export-button.tsx"],
+      "@/lib/address-labels": ["prototype/private-tx/ui/adapters/local-only.tsx"],
+      "@/lib/config": ["prototype/private-tx/ui/adapters/config.ts"],
+      "@/lib/network": ["prototype/private-tx/ui/adapters/config.ts"],
+      "@/*": ["*"]
+    }
+  },
+  "include": ["./**/*.ts", "./**/*.tsx"]
+}

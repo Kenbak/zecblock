@@ -1,0 +1,19 @@
+[Unit]
+Description=Publish the private explorer recent tables (transactions, addresses, blocks)
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/zecblock-pir-explorer/explorer.env
+ExecStart=/opt/zecblock-pir-explorer/current/explorer-publish-recent.sh tx
+ExecStart=/opt/zecblock-pir-explorer/current/explorer-publish-recent.sh block
+Nice=19
+IOWeight=10
+CPUWeight=10
+CPUQuota=200%
+MemoryMax=4G
+MemorySwapMax=0
+TimeoutStartSec=15min
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zecblock-pir-explorer/v3
+PrivateTmp=yes

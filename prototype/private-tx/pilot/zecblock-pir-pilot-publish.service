@@ -1,0 +1,43 @@
+[Unit]
+Description=Read-only recent-block publication for isolated PIR pilot
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=zecblock-pir-pilot
+Group=zecblock-pir-pilot
+Slice=zecblock-pir-pilot.slice
+WorkingDirectory=/opt/zecblock-pir-pilot/current/prototype/private-tx
+Environment=PRIVATE_TX_LOCAL_DIR=/var/lib/zecblock-pir-pilot
+Environment=PRIVATE_TX_EVALUATOR=/opt/zecblock-pir-pilot/current/prototype/pir-browser/target/release/zecblock-pir-fixture
+Environment=PRIVATE_TX_BLOCKS=4
+Environment=PRIVATE_TX_DEPTH=2
+Environment=RAYON_NUM_THREADS=2
+Environment=UV_THREADPOOL_SIZE=2
+ExecStart=/usr/bin/node pilot/publish-once.mjs
+TimeoutStartSec=120
+# Bound individual source/artifact files as well as the state-directory budget.
+LimitFSIZE=128M
+OOMPolicy=stop
+UMask=0077
+Nice=10
+NoNewPrivileges=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/zecblock-pir-pilot
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+RestrictRealtime=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+StandardOutput=journal
+StandardError=journal
+
+# Timer refresh is independent of browser searches; source is public GET-only.

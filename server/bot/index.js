@@ -6,6 +6,7 @@
  * Entry point for the bot service. Manages cron scheduling:
  *  - Every 5 minutes: ranked flows, swaps, migrations and reorgs
  *  - Daily after 06:00 UTC: completed-day analysis and historical records
+ *  - Sundays from 21:00 UTC: one animated replay (needs ffmpeg on the host)
  *
  * Configuration via environment variables:
  *  - DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
@@ -17,6 +18,7 @@
 const { getPool, getReadPool } = require('../lib/db-pool');
 const { XClient } = require('./lib/x-client');
 const editorial = require('./jobs/editorial');
+const replay = require('./jobs/replay');
 const { renderEditorial } = require('./lib/zecblock-cards');
 
 const pool = getPool({ max: 5, idleTimeoutMillis: 60000, connectionTimeoutMillis: 5000 });
@@ -52,6 +54,13 @@ async function tick() {
     logger.info(`[Tick] Editorial run: ${result.results?.length || 0} selected posts`);
   } catch (err) {
     logger.error(`[Tick] Unhandled error: ${err.message}`);
+  }
+  // The weekly video is independent of the editorial run: neither blocks the other.
+  try {
+    const result = await replay.run(pool, xClient, { logger });
+    if (result.skipped !== 'outside-window') logger.info(`[Tick] Replay: ${JSON.stringify(result)}`);
+  } catch (err) {
+    logger.error(`[Tick] Replay error: ${err.message}`);
   } finally {
     running = false;
   }

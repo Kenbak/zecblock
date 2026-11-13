@@ -5,12 +5,12 @@ import { factCardsFor } from '@/lib/fact-cards';
 import { buildPageMetadata, getBaseUrl, getNetwork } from '@/lib/seo';
 
 const TITLE = 'Live Zcash Data Cards to Share | ZecBlock';
-const DESCRIPTION = 'Branded, always-current images of Zcash privacy, supply, network, mining and cross-chain swap data. Search by topic, then post, download or embed.';
+const DESCRIPTION = 'Branded, always-current images of Zcash privacy, supply, valuation, network, mining and cross-chain swap data. Search by topic, then post, download or embed.';
 
 export const metadata = buildPageMetadata({
   title: TITLE,
   description: DESCRIPTION,
-  keywords: ['zcash infographics', 'zcash stats images', 'zcash shielded supply', 'zcash halving countdown', 'ZEC swap volume', 'zcash media kit'],
+  keywords: ['zcash infographics', 'zcash stats images', 'zcash shielded supply', 'zcash halving countdown', 'zcash mvrv', 'ZEC swap volume', 'zcash media kit'],
   path: '/cards',
   networks: ['mainnet'],
 });

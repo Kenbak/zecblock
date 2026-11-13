@@ -2,8 +2,9 @@ import 'server-only';
 import { getApiUrlForNetwork } from '@/lib/api-config';
 import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 import {
-  chainHeightCard, feesCard, findFactCard, halvingCard, hashrateCard, issuedSupplyCard, miningPoolsCard, nodesCard,
-  shieldedSupplyCard, shieldedTransactionsCard, SWAP_VENUES, swapVenuesCard, venueCard,
+  chainHeightCard, chainSizeCard, dailyTransactionsCard, dormantSupplyCard, feesCard, findFactCard, halvingCard, hashrateCard,
+  issuedSupplyCard, miningPoolsCard, miningSoftwareCard, mvrvCard, netShieldingCard, nodesCard, orphanRateCard, shieldedByPoolCard,
+  shieldedSupplyCard, shieldedTransactionsCard, SWAP_VENUES, swapSourcesCard, swapVenuesCard, venueCard,
   type CardNetwork, type FactCard, type SwapVenue,
 } from '@/lib/fact-cards';
 import { blocksCard, countdownCard, nsmCard, readinessCard, type Nu7Card } from '@/lib/nu7-cards';
@@ -57,6 +58,15 @@ export async function loadFactCard(id: string, network: CardNetwork): Promise<Fa
     }
     case 'hashrate': return hashrateCard(network, await api(network, '/v1/mining/hashrate-history?period=30d'));
     case 'mining-pools': return miningPoolsCard(network, await api(network, '/v1/mining/pool-distribution?period=7d'));
+    case 'net-shielding': return netShieldingCard(network, await api(network, '/v1/shielded-pools/flows?period=30d'));
+    case 'shielded-by-pool': return shieldedByPoolCard(network, await api(network, '/v1/shielded-pools/activity?period=30d'));
+    case 'daily-transactions': return dailyTransactionsCard(network, await api(network, '/v1/shielded-pools/activity?period=30d'));
+    case 'dormant-supply': return dormantSupplyCard(await api(network, '/v1/valuation/hodl-waves?period=30d'));
+    case 'mvrv': return mvrvCard(await api(network, '/v1/valuation/snapshot'));
+    case 'chain-size': return chainSizeCard(network, await api(network, '/v1/network/chain-size-history?period=30d'));
+    case 'mining-software': return miningSoftwareCard(network, await api(network, '/v1/mining/software?period=7d'));
+    case 'orphan-rate': return orphanRateCard(network, await api(network, '/v1/mining/orphan-rates/daily'));
+    case 'swap-sources': return swapSourcesCard(await api(network, SWAP_VENUES['near-intents'].path, SWAP_TIMEOUT_MS));
     case 'swap-venues': return swapVenuesCard(await venues(network));
     case 'near-intents': case 'maya': case 'thorchain':
       return venueCard(id, await api(network, SWAP_VENUES[id].path, SWAP_TIMEOUT_MS));

@@ -193,41 +193,56 @@ def compute_snapshot(conn, coverage, options):
     }
 
 
-def build_where(ds, snapshot):
-    """Return (sql, params) bounding a single-file table to the snapshot."""
+def build_windows(ds, snapshot):
+    """Return [(sql, params)] read windows bounding a single-file table to the snapshot.
+
+    Tables with date_window_days are read in disjoint date ranges, because their
+    views would otherwise exceed the reader role's temporary-file limit.
+    """
     if ds.time_column:
         if not ds.delayed:
             raise ExportError(f'{ds.id}: time bound requires the delayed cutoff')
-        return f'"{ds.time_column}"<%s', (snapshot['delayed_through_time_exclusive'],)
-    day = snapshot['delayed_through_date'] if ds.delayed else snapshot['through_date']
-    return f'"{ds.date_column}"<=%s', (day,)
+        return [(f'"{ds.time_column}"<%s', (snapshot['delayed_through_time_exclusive'],))]
+    column = ds.date_column
+    day = dt.date.fromisoformat(snapshot['delayed_through_date'] if ds.delayed else snapshot['through_date'])
+    if not ds.date_window_days:
+        return [(f'"{column}"<=%s', (day,))]
+    start = dt.date.fromisoformat(ds.date_window_start)
+    windows = [(f'"{column}"<%s', (start,))]
+    while start <= day:
+        end = start + dt.timedelta(days=ds.date_window_days)
+        windows.append((f'"{column}">=%s AND "{column}"<%s AND "{column}"<=%s', (start, end, day)))
+        start = end
+    return windows
 
 
-def fetch_table(conn, ds, where, params):
+def fetch_table(conn, ds, windows):
     columns = ','.join(f'"{name}"' for name in ds.names)
-    sql = f'SELECT {columns} FROM analytics_public.{ds.view} WHERE {where}'
     values = [[] for _ in ds.columns]
     codes = [(code, f'{ds.id}.{name}') for name, code, _ in ds.columns]
-    try:
-        with conn.cursor(name='open_data_export') as cur:
-            cur.itersize = FETCH_SIZE
-            cur.execute(sql, params)
-            for row in cur:
-                for index, cell in enumerate(row):
-                    code, label = codes[index]
-                    values[index].append(coerce(cell, code, label))
-    finally:
-        conn.rollback()
+    for where, params in windows:
+        sql = f'SELECT {columns} FROM analytics_public.{ds.view} WHERE {where}'
+        try:
+            with conn.cursor(name='open_data_export') as cur:
+                cur.itersize = FETCH_SIZE
+                cur.execute(sql, params)
+                for row in cur:
+                    for index, cell in enumerate(row):
+                        code, label = codes[index]
+                        values[index].append(coerce(cell, code, label))
+        finally:
+            conn.rollback()
     schema = schema_for(ds)
     return pa.table([pa.array(column, type=schema.field(i).type) for i, column in enumerate(values)], schema=schema)
 
 
-def count_rows(conn, ds, where, params):
-    return one(conn, f'SELECT count(*) FROM analytics_public.{ds.view} WHERE {where}', params)[0]
+def count_rows(conn, ds, windows):
+    return sum(one(conn, f'SELECT count(*) FROM analytics_public.{ds.view} WHERE {where}', params)[0]
+               for where, params in windows)
 
 
-def validate_table(table, ds, where, params, conn, span):
-    expected = count_rows(conn, ds, where, params)
+def validate_table(table, ds, windows, conn, span):
+    expected = count_rows(conn, ds, windows)
     if table.num_rows != expected:
         raise Inconsistent(f'{ds.id}: read {table.num_rows} rows, count says {expected}')
     if span and ds.one_per_height and table.num_rows != span[1] - span[0] + 1:
@@ -252,16 +267,16 @@ def write_parquet(table, path):
                    row_group_size=100_000, write_statistics=True)
 
 
-def export_part(conn, ds, where, params, path, span, options):
+def export_part(conn, ds, windows, path, span, options):
     """Read, validate and write one file. Returns its row count."""
     last_error = None
     for attempt in range(options.attempts):
         if attempt:
             time.sleep(options.retry_seconds)
         wait_ready(conn, ds.coverage, options)
-        table = fetch_table(conn, ds, where, params)
+        table = fetch_table(conn, ds, windows)
         try:
-            validate_table(table, ds, where, params, conn, span)
+            validate_table(table, ds, windows, conn, span)
         except Inconsistent as error:
             last_error = error
             continue
@@ -305,28 +320,28 @@ def export_dataset(conn, ds, staging, current_dir, prior, snapshot, options):
     files = []
     if ds.bucket:
         for start, end, full_end, relative in bucket_paths(ds, height_bounds(ds, snapshot), options):
-            where, params = 'height BETWEEN %s AND %s', (start, end)
+            windows = [('height BETWEEN %s AND %s', (start, end))]
             path = staging / relative
             entry = reusable(prior, ds, relative, full_end, current_dir, options)
             # A changed row count means history was repaired; rebuild that bucket.
-            if entry and count_rows(conn, ds, where, params) == entry['rows'] \
+            if entry and count_rows(conn, ds, windows) == entry['rows'] \
                     and sha256_file(current_dir / relative) == entry['sha256']:
                 path.parent.mkdir(parents=True, exist_ok=True)
                 os.link(current_dir / relative, path)
                 files.append(entry)
                 continue
-            rows = export_part(conn, ds, where, params, path, (start, end), options)
+            rows = export_part(conn, ds, windows, path, (start, end), options)
             if rows:
                 files.append(file_entry(staging, path, rows, end))
     else:
-        where, params = build_where(ds, snapshot)
         path = staging / f'data/{ds.id}/{ds.id}.parquet'
-        rows = export_part(conn, ds, where, params, path, None, options)
+        rows = export_part(conn, ds, build_windows(ds, snapshot), path, None, options)
         if not rows:
             raise ExportError(f'{ds.id}: no rows in the snapshot')
         files.append(file_entry(staging, path, rows, None))
     if not is_ready(conn, ds.coverage):
         raise ExportError(f'coverage changed during export: {ds.id}')
+    print(f'{ds.id}: {sum(item["rows"] for item in files)} rows in {len(files)} files', file=sys.stderr, flush=True)
     return {'version': ds.version, 'title': ds.title, 'rows': sum(item['rows'] for item in files), 'files': files}
 
 

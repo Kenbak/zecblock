@@ -103,7 +103,16 @@ and canceled on its creation date. Negative timestamp ages are clamped to zero;
 SOPR still uses the actual creation-date price. These are header-date snapshots,
 not a claim that timestamps define monotonic chain order. Repairs propagate
 forward when a prior checkpoint is newer. No transaction identifiers or private wallet data are added.
-MVRV retains a separately named shielded-flow model. Pre-model dates expose daily
+MVRV retains a separately named shielded-flow model (`pool_realized_cap_daily`,
+`server/lib/pool-basis.js`). It replays every canonical transaction that changes
+a shielded pool, including shielded coinbase, in height/index order from the
+per-pool value balances (Sprout, Sapling, Orchard, Ironwood). Value leaving a pool
+takes that pool's average modeled cost; value entering a pool is funded first by
+value leaving other pools in the same transaction (pool-to-pool migrations keep
+their cost) and otherwise costs the UTC-day price. Unknown (NULL) value balances
+fail the run. `shortfallZat` in the job log counts value that left a pool beyond
+its modeled balance; it should be 0 with complete source data. A `--rebuild`
+replaces every row, including retired pseudo-pool rows such as `mixed`. Pre-model dates expose daily
 prices and reconstructed transparent data without manufacturing a shielded basis.
 The old current-transparent-balance scaling job has been replaced; `--today-only`
 now refreshes the last seven *completed* days and `--all` consumes available

@@ -1,11 +1,11 @@
 'use strict';
 
-// Weekly replay: one animated card a week, the rest of the feed stays as it is.
+// Animated replays: a video goes out only when its data has a story.
 //
-// The rule is deliberately small. Each Sunday from 21:00 UTC the bot posts the
-// animation it has gone longest without posting. One post per week at most, and
-// a week with no usable source or no working renderer posts nothing: a missed
-// week is never made up later.
+// Each evening from 21:00 UTC the bot asks every animation whether something
+// just happened in its data (a new leader, a record, a round level crossed).
+// If one says yes, that video is posted. An ordinary day posts nothing. At
+// most one video a week, and the same video at most once in 30 days.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -18,20 +18,24 @@ const BASE = 'https://zecblock.com';
 const MARK = '🟨';
 const API = 'https://api.zecblock.com';
 const POST_TYPE = 'replay';
-// First rotation order; afterwards the least recently posted animation goes next.
+// When several videos have a story on the same day, the least recently posted goes first; ties follow this order.
 const ORDER = ['software', 'swaps', 'pools', 'pool-race', 'shielded-share', 'hashrate', 'supply'];
 const WINDOW_START_HOUR = 21;
 const PACING_MS = 20 * 60_000;
+const DAY_MS = 86_400_000;
+const WEEKLY_CAP_MS = 7 * DAY_MS;
+const SAME_VIDEO_MS = 30 * DAY_MS;
 // A failing renderer or upload must not retry on every five-minute tick.
 const MAX_ATTEMPTS = 3;
 const HELD = ['posted', 'posting', 'uncertain'];
 
-/** The Sunday slot `now` falls in, or null outside Sunday 21:00–24:00 UTC. */
+/** The evening `now` falls in (21:00–24:00 UTC), or null. Data for the last closed UTC day is settled by then. */
 function replaySlot(now) {
-  if (now.getUTCDay() !== 0 || now.getUTCHours() < WINDOW_START_HOUR) return null;
-  const date = now.toISOString().slice(0, 10);
-  return { date, key: `replay:v1:${date}` };
+  if (now.getUTCHours() < WINDOW_START_HOUR) return null;
+  return { date: now.toISOString().slice(0, 10) };
 }
+
+const heldReplays = history => history.filter(row => row.post_type === POST_TYPE && HELD.includes(row.status) && Number.isFinite(Date.parse(row.created_at)));
 
 /** Animations in the order they should be tried: never posted first, then oldest post first. */
 function rotation(history) {
@@ -66,13 +70,15 @@ async function run(pool, xClient, {
 } = {}) {
   const slot = replaySlot(now);
   if (!slot) return { skipped: 'outside-window' };
+  // A day with no story is decided once, not on every five-minute tick.
+  if (tries.get(slot.date) === 'settled') return { skipped: 'no-story-today' };
   const { rows: history } = await pool.query(`SELECT post_type,dedup_key,status,created_at,metadata
     FROM social_post_outbox WHERE post_type=$1 OR created_at >= $2::timestamptz-interval '20 minutes'`, [POST_TYPE, now.toISOString()]);
-  if (history.some(row => row.dedup_key === slot.key)) return { skipped: 'already-claimed' };
+  const replays = heldReplays(history);
+  if (replays.some(row => now - new Date(row.created_at) < WEEKLY_CAP_MS)) return { skipped: 'weekly-cap' };
   // Stay clear of a post that has just gone out; the next tick tries again.
   if (history.some(row => row.post_type !== 'source_reply' && HELD.includes(row.status) && now - new Date(row.created_at) < PACING_MS)) return { skipped: 'paced' };
-  if ((tries.get(slot.key) || 0) >= MAX_ATTEMPTS) return { skipped: 'attempts-exhausted' };
-  tries.set(slot.key, (tries.get(slot.key) || 0) + 1);
+  if ((tries.get(slot.date) || 0) >= MAX_ATTEMPTS) return { skipped: 'attempts-exhausted' };
 
   const lock = await pool.connect();
   let locked = false, file;
@@ -82,48 +88,61 @@ async function run(pool, xClient, {
     if (!locked) return { skipped: 'another-run-active' };
     await assertFresh(pool, now);
 
-    let chosen;
+    let chosen, failed = false;
     for (const id of rotation(history)) {
+      const decide = reason => logger.info(`[Replay decision] ${JSON.stringify({ date: slot.date, animation: id, reason })}`);
+      if (replays.some(p => p.metadata?.animation === id && now - new Date(p.created_at) < SAME_VIDEO_MS)) { decide('posted-within-30-days'); continue; }
       try {
         const model = ANIMATIONS[id].build(await load(`${api}${ANIMATIONS[id].path}`), { network: 'mainnet' }, now);
-        if (model) { chosen = { id, model }; break; }
-        logger.info(`[Replay decision] ${JSON.stringify({ key: slot.key, animation: id, reason: 'source-incomplete' })}`);
+        if (!model) { decide('source-incomplete'); continue; }
+        const event = model.event();
+        if (!event) { decide('no-story'); continue; }
+        const key = `replay:v2:${id}:${event}`;
+        if (history.some(p => p.dedup_key === key)) { decide('already-posted'); continue; }
+        chosen = { id, model, event, key };
+        break;
       } catch (error) {
+        // An unreachable source may have a story; look again on the next tick.
+        failed = true;
         logger.warn(`[Replay] ${id} skipped: ${error.message}`);
       }
     }
-    if (!chosen) return { skipped: 'no-usable-source' };
-    const { id, model } = chosen;
+    if (!chosen) {
+      if (!failed) tries.set(slot.date, 'settled');
+      return { skipped: failed ? 'source-unavailable' : 'no-story-today' };
+    }
+    tries.set(slot.date, (tries.get(slot.date) || 0) + 1);
+    const { id, model, event, key } = chosen;
     const content = replayCopy(id, model);
-    const metadata = { animation: id, from: model.dates[0], to: model.dates.at(-1), points: model.dates.length,
+    const metadata = { animation: id, event, from: model.dates[0], to: model.dates.at(-1), points: model.dates.length,
       source: ANIMATIONS[id].path, editorialVersion: 1, editorial: { topic: `replay:${id}` } };
 
     file = path.join(os.tmpdir(), `zecblock-replay-${id}-${process.pid}-${now.getTime()}.mp4`);
     await render(model, file);
     if (xClient.dryRun) {
-      logger.info(`[Replay preview] ${slot.key} ${id}\n${content}`);
-      return { key: slot.key, status: 'preview', animation: id, content };
+      logger.info(`[Replay preview] ${key} ${id}\n${content}`);
+      return { key: key, status: 'preview', animation: id, content };
     }
 
     // Upload before claiming: a failed upload has posted nothing and may be retried.
     const mediaId = await xClient.uploadVideo(file);
     const { rows: [claim] } = await pool.query(`INSERT INTO social_post_outbox
       (post_type,dedup_key,content,metadata,status) VALUES ($1,$2,$3,$4::jsonb,'posting')
-      ON CONFLICT(dedup_key) DO NOTHING RETURNING id`, [POST_TYPE, slot.key, content, JSON.stringify(metadata)]);
-    if (!claim) return { key: slot.key, status: 'duplicate' };
+      ON CONFLICT(dedup_key) DO NOTHING RETURNING id`, [POST_TYPE, key, content, JSON.stringify(metadata)]);
+    if (!claim) return { key: key, status: 'duplicate' };
     try {
       const result = await xClient.postUploaded(content, mediaId);
       if (!result?.id || String(result.id).startsWith('dry_run')) throw new Error('Missing real X post ID');
-      logger.info(`[Replay] X accepted ${slot.key} (${id}): ${result.id}`);
+      logger.info(`[Replay] X accepted ${key} (${id}): ${result.id}`);
       await pool.query(`UPDATE social_post_outbox SET status='posted',x_post_id=$2,
         posted_at=NOW(),attempts=attempts+1,updated_at=NOW() WHERE id=$1`, [claim.id, result.id]);
-      return { key: slot.key, status: 'posted', animation: id, id: result.id };
+      return { key: key, status: 'posted', animation: id, id: result.id };
     } catch (error) {
       // As with editorial posts: X may have accepted it, so never retry blindly.
       await pool.query(`UPDATE social_post_outbox SET status='uncertain',error_message=$2,
         attempts=attempts+1,updated_at=NOW() WHERE id=$1`, [claim.id, String(error.message).slice(0, 500)]);
-      logger.error(`[Replay] Delivery needs reconciliation: ${slot.key}: ${error.message}`);
-      return { key: slot.key, status: 'uncertain', animation: id };
+      logger.error(`[Replay] Delivery needs reconciliation: ${key}: ${error.message}`);
+      return { key: key, status: 'uncertain', animation: id };
     }
   } finally {
     if (file) try { fs.unlinkSync(file); } catch { /* temporary artifact */ }

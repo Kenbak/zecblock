@@ -7,11 +7,12 @@ const {coreViews}=require('../../v1/lib/ask-core-catalogue');
 const {displaySQL}=require('../../../../lib/ask/sql-display');
 const {sqlExamples}=require('../../../../lib/ask/sql-examples');
 const deploy=name=>fs.readFileSync(path.join(__dirname,'../../../deploy/ask-analytics',name),'utf8');
-const migration=deploy('value-pools-v1.sql'),fix=deploy('value-pools-v2.sql'),rollback=deploy('value-pools-v1-rollback.sql'),grant=deploy('value-pools-grant-v1.sql');
+const migration=deploy('value-pools-v1.sql'),fix=deploy('value-pools-v2.sql'),fix3=deploy('value-pools-v3.sql'),rollback=deploy('value-pools-v1-rollback.sql'),grant=deploy('value-pools-grant-v1.sql');
 const source=deploy('value-pools-source-v1.sql'),sourceRollback=deploy('value-pools-source-v1-rollback.sql');
 const id='value_pools_daily';
 const view=/CREATE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(migration)[0];
 const view2=/CREATE OR REPLACE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(fix)[0];
+const view3=/CREATE OR REPLACE VIEW analytics_public\.value_pools_daily_query[\s\S]*?;\n/.exec(fix3)[0];
 const published='hash,height,observed_at,chain,nsm_balance_zat,circulating_supply_zat,pool_balances_zat';
 // Output column names of the outermost SELECT list: the alias, or the bare column name.
 function viewColumns(sql){
@@ -45,6 +46,7 @@ test('catalogue columns are exactly the view columns and semantics are stated',(
  const entry=researchCatalogue.find(d=>d.id===id);
  assert.deepEqual(viewColumns(view),entry.columns.split(', '));
  assert.deepEqual(viewColumns(view2),entry.columns.split(', '));
+ assert.deepEqual(viewColumns(view3),entry.columns.split(', '));
  assert.ok(coreViews.includes('value_pools_daily_query'));
  for(const re of [/from 2026-09-28/,/getblockchaininfo/,/including the lockbox/,/equal to supply_daily\.chain_supply/,/zero before NU7 activation/,/zatoshis and are stocks: never sum/,/absent, not zero/,/did not monitor is NULL/])assert.match(entry.description,re);
  // The node's circulating_supply_zat includes the lockbox; supply_daily.circulating_supply does not.
@@ -72,8 +74,19 @@ test('v2 keeps the view inside the reader temp_file_limit without changing colum
  assert.match(fix,/SET LOCAL ROLE ask_public_view_owner;/);
 });
 
+test('v3 dates observations by primary-key lookup so the plan cannot batch every block through temp files',()=>{
+ // 2026-11-13: with ~69k observations v2's (height, hash) hash join streamed all blocks through temp files.
+ const ctes=/WITH ([\s\S]*?)\n SELECT p\.date/.exec(view3)[1];
+ assert.match(ctes,/CROSS JOIN LATERAL\(SELECT b\.timestamp FROM public\.blocks b WHERE b\.height=o\.height AND b\.hash=o\.hash OFFSET 0\) b/);
+ assert.doesNotMatch(ctes,/pool_balances_zat/);
+ assert.equal(view3.replace(/ WITH per AS\([\s\S]*?\n days AS/,''),view2.replace(/ WITH per AS\([\s\S]*?\n days AS/,''));
+ assert.doesNotMatch(fix3,/GRANT|REVOKE|DROP|ask_public_reader/);
+ assert.match(fix3,/SET LOCAL ROLE ask_public_view_owner;/);
+ assert.match(fix3,/Rollback: re-run value-pools-v2\.sql/);
+});
+
 test('migrations are guarded, keep private columns private and order destination before source',()=>{
- for(const sql of [migration,fix,rollback,grant,source,sourceRollback]){assert.match(sql,/^\\set ON_ERROR_STOP on\n/);assert.match(sql,/COMMIT;\n$/);assert.equal(sql.match(/BEGIN;/g).length,1);}
+ for(const sql of [migration,fix,fix3,rollback,grant,source,sourceRollback]){assert.match(sql,/^\\set ON_ERROR_STOP on\n/);assert.match(sql,/COMMIT;\n$/);assert.equal(sql.match(/BEGIN;/g).length,1);}
  assert.match(migration,/current_database\(\)<>'ask_analytics' OR pg_is_in_recovery\(\)/);
  assert.match(migration,/to_regclass\('analytics_public\.swap_daily_query'\) IS NULL/);
  assert.doesNotMatch(migration,/\bDROP\b|\bDELETE FROM\b|\bTRUNCATE\b|\bUPDATE\b|\bALTER\b/);
@@ -125,12 +138,29 @@ test('value_pools_daily view: canonical day-end snapshots, coverage counts and g
   [pools(1000,300),pools(990,300),pools(1,1),pools(980,null),pools(970,300),pools(5,5)]);
  await client.query(view);await client.query(view2);
  const rows=async()=>(await client.query('SELECT date::text,height::int,hash,observed_blocks::int,day_blocks::int,transparent::text,ironwood::text,lockbox::text,nsm::text,chain_supply::text FROM analytics_public.value_pools_daily_query ORDER BY date')).rows;
- assert.deepEqual(await rows(),[
+ const expected=[
   {date:'2026-10-30',height:101,hash:'h101',observed_blocks:2,day_blocks:3,transparent:'990',ironwood:'300',lockbox:'50',nsm:'-5',chain_supply:'1640'},
-  {date:'2026-10-31',height:103,hash:'h103',observed_blocks:1,day_blocks:1,transparent:'980',ironwood:null,lockbox:'50',nsm:'7',chain_supply:'1630'}]);
+  {date:'2026-10-31',height:103,hash:'h103',observed_blocks:1,day_blocks:1,transparent:'980',ironwood:null,lockbox:'50',nsm:'7',chain_supply:'1630'}];
+ assert.deepEqual(await rows(),expected);
+ // v3 returns exactly the same rows.
+ await client.query(view3);
+ assert.deepEqual(await rows(),expected);
  // Snapshots above the admitted coverage are hidden; so is everything while the dataset is unready.
  await client.query('UPDATE analytics_public.coverage SET covered_through=102');
  assert.deepEqual((await rows()).map(r=>r.date),['2026-10-30']);
  await client.query("UPDATE analytics_public.dataset_coverage SET ready=false");
  assert.equal((await client.query('SELECT count(*)::int AS n FROM analytics_public.value_pools_daily_query')).rows[0].n,0);
+ // At production scale and the reader's limits v3 still reads balances (v2 failed here on 2026-11-13).
+ await client.query(`UPDATE analytics_public.dataset_coverage SET ready=true;UPDATE analytics_public.coverage SET covered_through=2000000;
+  INSERT INTO public.blocks SELECT n,'h'||n,1577836800+n*75 FROM generate_series(1000,1000999) n;
+  INSERT INTO public.node_accounting_observations SELECT 'h'||n,n,now(),'main',0,1,'${pools(1,1)}' FROM generate_series(900000,999999) n;
+  ANALYZE public.blocks;ANALYZE public.node_accounting_observations;`);
+ const atReaderLimits=async()=>{
+  await client.query("BEGIN;SET LOCAL work_mem='1MB';SET LOCAL temp_file_limit='16MB';SET LOCAL max_parallel_workers_per_gather=0");
+  try{return (await client.query("SELECT count(*)::int AS n,sum(transparent)::text AS t FROM analytics_public.value_pools_daily_query WHERE date>=DATE '2021-10-01' AND date<DATE '2026-01-01'")).rows[0];}
+  finally{await client.query('ROLLBACK');}
+ };
+ const scale=await atReaderLimits();
+ assert.ok(scale.n>50,`expected many observed dates, got ${scale.n}`);
+ assert.equal(scale.t,String(scale.n));
 });

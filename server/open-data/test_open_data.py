@@ -212,6 +212,22 @@ class ExportTest(unittest.TestCase):
             self.assertIn(day, dates)
         self.assertNotIn(dt.date(2026, 1, 6), dates)
 
+    def test_internal_swaps_keep_null_counterparty(self):
+        ds = BY_ID['swap_daily']
+        row = {name: generic_value(code, name, 200) for name, code, _ in ds.columns}
+        row.update(date=dt.date(2026, 1, 2), direction='internal', chain=None, token=None)
+        self.many(ds, [tuple(row[name] for name in ds.names)])
+        self.export()
+        swaps = self.read('swap_daily')
+        index = swaps['direction'].index('internal')
+        self.assertIsNone(swaps['chain'][index])
+        self.assertIsNone(swaps['token'][index])
+
+    def test_null_in_a_required_key_is_refused(self):
+        self.sql("UPDATE analytics_public.mining_daily_query SET pool=NULL WHERE date='2026-01-02'")
+        with self.assertRaisesRegex(open_data.ExportError, 'mining_daily: NULL in key column pool'):
+            self.export()
+
     def test_fractional_zatoshis_are_refused_not_rounded(self):
         with self.assertRaisesRegex(open_data.ExportError, 'non-integer'):
             open_data.coerce(decimal.Decimal('1.5'), 'i64', 'x')

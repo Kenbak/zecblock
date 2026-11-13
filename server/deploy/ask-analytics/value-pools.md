@@ -17,6 +17,17 @@ ships `published:false` in `lib/ask/research-catalogue.js` until step 10.
 
 No existing dataset reads the new table. `test/v1/ask-logical-sync.test.js` (PG16, CI) exercises the copy, the reviewed column list, admission readiness, the reader grant, an orphan observation never appearing, the refused early destination rollback and the full rollback order.
 
+## 2026-11-13 temp-limit fix (`value-pools-v3.sql`)
+
+Every query that read `value_pools_daily` failed again with "temporary file size exceeds temp_file_limit", in Zift and in MCP `sql_query`.
+
+- **Cause:** at about 69,000 observations, v2's `(height, hash)` join to `blocks` became a batched hash join. It streamed all ~3.57M block rows through temporary files and failed even with a 256 MB limit.
+- **Fix:** v3 looks up each observation's block by primary key through an `OFFSET 0` lateral subquery, which the planner cannot flatten back into that join. Columns, types and results are unchanged, so the reader grant is kept.
+- **Rehearsal:** on the store, in a rolled-back transaction, as `ask_public_reader` with `work_mem=1MB` and `temp_file_limit=16MB`. v3 ran in 0.38 s with no temporary files, and returned the same 46 rows as v2, with no difference in either direction.
+- **Applied:** 2026-11-13. A reader query and a public `sql_query` read of balances both succeed.
+- **Regression test:** `ask-research-value-pools.test.js` reads balances over one million blocks and 100,000 observations at the reader's limits. With v2 the test fails with the production error.
+- **Rollback:** re-run `value-pools-v2.sql`.
+
 ## 2026-11-02 temp-limit fix (`value-pools-v2.sql`)
 
 After publishing, any query that read a balance failed with "temporary file size exceeds temp_file_limit". The reader runs with `work_mem=1MB` and `temp_file_limit=16MB`. v1 materialized every observation's `pool_balances_zat` jsonb in a CTE that it read three times.

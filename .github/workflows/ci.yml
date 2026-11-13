@@ -281,7 +281,8 @@ jobs:
 
   open-data:
     name: Open data export
-    runs-on: ubuntu-latest
+    # Pinned like the Ask job: this image ships PostgreSQL 16 binaries.
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v7

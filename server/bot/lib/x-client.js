@@ -11,6 +11,8 @@ const https = require('https');
 const fs = require('fs');
 const crypto = require('crypto');
 
+const MEDIA_CHUNK_BYTES = 4 * 1024 * 1024;
+
 class XClient {
   constructor({ accessToken, refreshToken, clientId, clientSecret, tokenFile, dryRun = false, logger = console }) {
     this.accessToken = accessToken;
@@ -76,19 +78,19 @@ class XClient {
   }
 
   /**
-   * Upload an image to X and return the media_id string.
-   * Uses the v1.1 media/upload endpoint (simple upload, < 5MB).
+   * Upload an image or MP4 video to X and return the media ID.
+   * v2 chunked upload: initialize, append, finalize. A video is then
+   * processed by X and is attachable only once that reports "succeeded".
    */
-  async uploadMedia(imagePath) {
-    const imageData = fs.readFileSync(imagePath);
-    const mediaType = imagePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
-    const totalBytes = imageData.length;
+  async uploadMedia(filePath) {
+    const data = fs.readFileSync(filePath);
+    const video = filePath.endsWith('.mp4');
+    const mediaType = video ? 'video/mp4' : filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
 
-    // Step 1: INIT
     const initBody = JSON.stringify({
       media_type: mediaType,
-      media_category: 'tweet_image',
-      total_bytes: totalBytes,
+      media_category: video ? 'tweet_video' : 'tweet_image',
+      total_bytes: data.length,
     });
 
     const mediaId = await this._apiRequest('api.x.com', '/2/media/upload/initialize', 'POST', initBody, {
@@ -101,22 +103,40 @@ class XClient {
 
     this.logger.info(`[XClient] Media init: ${mediaId}`);
 
-    // Step 2: APPEND (single chunk for images <5MB)
+    // X accepts segments up to 5 MB; images and short cards fit in one.
+    for (let index = 0, offset = 0; offset < data.length; index++, offset += MEDIA_CHUNK_BYTES) {
+      await this._appendChunk(mediaId, index, data.subarray(offset, offset + MEDIA_CHUNK_BYTES), mediaType, video ? 'video.mp4' : 'image.png');
+    }
+
+    this.logger.info(`[XClient] Media appended`);
+
+    const finalRes = await this._apiRequest('api.x.com', `/2/media/upload/${mediaId}/finalize`, 'POST', '{}', {
+      'Content-Type': 'application/json',
+    });
+
+    const finalId = finalRes.data?.id || finalRes.id || mediaId;
+    const processing = finalRes.data?.processing_info || finalRes.processing_info;
+    if (video || processing) await this._waitForProcessing(finalId, processing);
+    this.logger.info(`[XClient] Media finalized: ${finalId}`);
+    return finalId;
+  }
+
+  _appendChunk(mediaId, index, chunk, mediaType, filename) {
     const boundary = `----CipherScan${crypto.randomBytes(8).toString('hex')}`;
     const segIndexPart = Buffer.from(
       `--${boundary}\r\n` +
       `Content-Disposition: form-data; name="segment_index"\r\n\r\n` +
-      `0\r\n`
+      `${index}\r\n`
     );
     const mediaPart = Buffer.from(
       `--${boundary}\r\n` +
-      `Content-Disposition: form-data; name="media"; filename="image.png"\r\n` +
+      `Content-Disposition: form-data; name="media"; filename="${filename}"\r\n` +
       `Content-Type: ${mediaType}\r\n\r\n`
     );
     const suffix = Buffer.from(`\r\n--${boundary}--\r\n`);
-    const payload = Buffer.concat([segIndexPart, mediaPart, imageData, suffix]);
+    const payload = Buffer.concat([segIndexPart, mediaPart, chunk, suffix]);
 
-    await new Promise((resolve, reject) => {
+    return new Promise((resolve, reject) => {
       const req = https.request({
         hostname: 'api.x.com',
         path: `/2/media/upload/${mediaId}/append`,
@@ -142,17 +162,25 @@ class XClient {
       req.write(payload);
       req.end();
     });
+  }
 
-    this.logger.info(`[XClient] Media appended`);
-
-    // Step 3: FINALIZE
-    const finalRes = await this._apiRequest('api.x.com', `/2/media/upload/${mediaId}/finalize`, 'POST', '{}', {
-      'Content-Type': 'application/json',
-    });
-
-    const finalId = finalRes.data?.id || finalRes.id || mediaId;
-    this.logger.info(`[XClient] Media finalized: ${finalId}`);
-    return finalId;
+  /**
+   * Poll X until an uploaded video is processed. A video that is still
+   * pending after the deadline is not attached: the caller posts nothing.
+   */
+  async _waitForProcessing(mediaId, info, { deadlineMs = 120000, sleep = ms => new Promise(resolve => setTimeout(resolve, ms)) } = {}) {
+    const started = Date.now();
+    let state = info;
+    for (;;) {
+      if (!state || state.state === 'succeeded') return;
+      if (state.state === 'failed') throw new Error(`Media processing failed: ${JSON.stringify(state.error || {}).slice(0, 200)}`);
+      if (!['pending', 'in_progress'].includes(state.state)) throw new Error(`Unexpected media processing state: ${String(state.state).slice(0, 40)}`);
+      if (Date.now() - started > deadlineMs) throw new Error('Media processing timed out');
+      const wait = Number.isFinite(state.check_after_secs) ? Math.min(Math.max(state.check_after_secs, 1), 30) : 5;
+      await sleep(wait * 1000);
+      const res = await this._apiRequest('api.x.com', `/2/media/upload?command=STATUS&media_id=${encodeURIComponent(mediaId)}`, 'GET');
+      state = res.data?.processing_info || res.processing_info;
+    }
   }
 
   _apiRequest(hostname, path, method, body, extraHeaders = {}) {
@@ -277,6 +305,23 @@ class XClient {
     return this._withAutoRefresh(() => this._postTweet(text));
   }
 
+  /** Upload a video with token refresh. Nothing is posted by this call. */
+  async uploadVideo(videoPath) {
+    if (this.dryRun) return `dry_run_${Date.now()}`;
+    return this._withAutoRefresh(() => this.uploadMedia(videoPath));
+  }
+
+  /**
+   * Post with media that is already uploaded. Unlike postWithMedia there is
+   * no text-only fallback: a replay without its video is not worth posting.
+   */
+  async postUploaded(text, mediaId) {
+    if (!/^\d+$/.test(String(mediaId))) throw new Error('Invalid media ID');
+    if (!text || text.length > 280) throw new Error('Invalid post copy');
+    if (this.dryRun) return { id: `dry_run_${Date.now()}`, text };
+    return this._withAutoRefresh(() => this._postTweet(text, undefined, [String(mediaId)]));
+  }
+
   /** Reply only to a known parent. Source delivery persists its claim first. */
   async reply(text, parentId) {
     if (!/^\d+$/.test(String(parentId))) throw new Error('Invalid reply parent ID');
@@ -285,9 +330,10 @@ class XClient {
     return this._withAutoRefresh(() => this._postTweet(text, String(parentId)));
   }
 
-  async _postTweet(text, parentId) {
+  async _postTweet(text, parentId, mediaIds) {
     const payload = { text };
     if (parentId) payload.reply = { in_reply_to_tweet_id: parentId };
+    if (mediaIds?.length) payload.media = { media_ids: mediaIds };
     const body = JSON.stringify(payload);
 
     return new Promise((resolve, reject) => {

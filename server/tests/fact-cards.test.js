@@ -196,7 +196,7 @@ test('mining software names a tagged leader and keeps untagged blocks in the tot
   const categories = [{ software: 'unknown', label: 'No software tag', blocks: 500 }, { software: 'zakura', label: 'Zakura', blocks: 400 }, { software: 'zebra', label: 'Zebra', blocks: 100 }, { software: 'other', label: 'zcashd', blocks: 0 }];
   const card = cards.miningSoftwareCard('mainnet', { data: { totalBlocks: 1000, from: '2026-10-29', to: '2026-11-04', categories } });
   assert.equal(card.headline, '40.0%');
-  assert.match(card.caption, /ran Zakura$/);
+  assert.match(card.caption, /were tagged Zakura$/);
   assert.deepEqual(card.visual.rows.map(r => [r.label, r.color]), [['No tag', 'muted'], ['Zakura', 'gold'], ['Zebra', 'gold']]);
   assert.equal(card.detail, '1,000 blocks · Oct 29 – Nov 4 UTC · self-reported tags');
   assert.equal(cards.miningSoftwareCard('mainnet', { data: { totalBlocks: 1000, categories: [...categories, { software: 'missing', label: 'Tag data unavailable', blocks: 3 }] } }), null);

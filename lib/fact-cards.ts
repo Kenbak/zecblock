@@ -679,7 +679,7 @@ export function miningSoftwareCard(network: CardNetwork, payload: unknown): Fact
   return {
     eyebrow: `Mining · ${chainLabel(network)}`,
     headline: percentOf(leader.blocks, total),
-    caption: `of blocks over 7 days ran ${leader.label}`,
+    caption: `of blocks over 7 days were tagged ${leader.label}`,
     detail: `${count(total)} blocks${range} · self-reported tags`,
     visual: { kind: 'ranking', rows: categories.slice(0, 4).map(row => ({ label: row.software === 'unknown' ? 'No tag' : row.label, value: row.blocks, display: percentOf(row.blocks, total), color: UNTAGGED_SOFTWARE.has(row.software) ? 'muted' as const : 'gold' as const, logo: SOFTWARE_LOGOS[row.software] })) },
     source: 'Software tags in block coinbase data',

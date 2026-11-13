@@ -32,12 +32,28 @@ const PIR = (() => {
 const at = path => PIR + path;
 const options = signal => ({ credentials: 'omit', redirect: 'error', cache: 'no-store', mode: PIR ? 'cors' : 'same-origin', referrerPolicy: 'no-referrer', signal });
 class Gone extends Error {}
+// One retry, with the same bytes, when a request fails before the server
+// could answer it: the connection dropped or the service was briefly
+// unavailable (502/503/504, e.g. while it restarts). These failures happen
+// before any table is read, so they cannot depend on what was searched.
+// Answers that fail verification are never retried.
+const RETRYABLE = new Set([502, 503, 504]);
+async function send(url, init) {
+  for (let attempt = 0; ; attempt++) {
+    let response = null;
+    try { response = await fetch(url, init); } catch (error) {
+      if (attempt > 0 || error?.name === 'TimeoutError' || error?.name === 'AbortError') throw error;
+    }
+    if (response && (attempt > 0 || !RETRYABLE.has(response.status))) return response;
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+}
 // Requests made during the current search, for the privacy receipt: where
 // each went, its method and sizes, and (kept only until the search ends) the
 // uploaded bytes, so they can be scanned for the search text.
 let wire = null;
 async function bytes(path, init = {}) {
-  const response = await fetch(at(path), { ...options(AbortSignal.timeout(300_000)), ...init });
+  const response = await send(at(path), { ...options(AbortSignal.timeout(300_000)), ...init });
   if (response.status === 410) throw new Gone();
   if (!response.ok) throw new Error('transport');
   const body = new Uint8Array(await response.arrayBuffer());
@@ -81,7 +97,7 @@ const publicationId = async manifest => (await sha256(manifest)).slice(0, 24);
 // signature is from the pinned ZecBlock key; rows are then checked against
 // its roots on every decode. Returns null when the server has none.
 async function open(set, manifestPath) {
-  const response = await fetch(at(manifestPath), options(AbortSignal.timeout(30_000)));
+  const response = await send(at(manifestPath), options(AbortSignal.timeout(30_000)));
   if (response.status === 404) return null;
   if (!response.ok) throw new Error('transport');
   const manifest = new Uint8Array(await response.arrayBuffer());
@@ -122,7 +138,7 @@ async function loadFeed() {
 
 async function refreshPair(pair) {
   if (!pair.base) return;
-  const response = await fetch(at(`/${pair.recentSet}/manifest`), options(AbortSignal.timeout(30_000)));
+  const response = await send(at(`/${pair.recentSet}/manifest`), options(AbortSignal.timeout(30_000)));
   if (response.status === 404) { pair.recent = null; return; }
   if (!response.ok) throw new Error('transport');
   const manifest = new Uint8Array(await response.arrayBuffer());
@@ -335,7 +351,7 @@ async function loadMore({ requestId }) {
     lastAddress = { ...lastAddress, loadedPages: page, transactions: [...lastAddress.transactions, ...result.transactions] };
     self.postMessage({ type: 'address', requestId, address: lastAddress, measurements: { totalMs: performance.now() - started } });
   } catch {
-    self.postMessage({ type: 'error', requestId, message: 'More history could not be retrieved. No retry or public lookup was made.' });
+    self.postMessage({ type: 'error', requestId, message: 'More history could not be retrieved. No public lookup was made.' });
   } finally { busy = false; }
 }
 
@@ -385,7 +401,7 @@ async function lookup({ requestId, txid, query }) {
       self.postMessage({ type: 'notfound', requestId, snapshotHeight: tip(), kind: isHeight ? 'block' : 'any' });
     }
   } catch {
-    self.postMessage({ type: 'error', requestId, message: 'The private lookup could not complete. No retry or public lookup was made.' });
+    self.postMessage({ type: 'error', requestId, message: 'The private lookup could not complete. No public lookup was made.' });
   } finally {
     busy = false;
     wire = null;
@@ -437,7 +453,7 @@ async function loadFull({ requestId }) {
     if (pair === tx) self.postMessage({ type: 'result', requestId, result: toRecord(markSpent(full, spent)), partial: null, measurements });
     else self.postMessage({ type: 'block', requestId, block: { ...full, confirmations: tip() - full.height + 1 }, partial: null, measurements });
   } catch {
-    self.postMessage({ type: 'error', requestId, message: 'The full record could not be retrieved. No retry or public lookup was made.' });
+    self.postMessage({ type: 'error', requestId, message: 'The full record could not be retrieved. No public lookup was made.' });
   } finally { busy = false; }
 }
 

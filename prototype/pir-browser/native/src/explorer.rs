@@ -726,30 +726,35 @@ impl Publication {
 
 type PublicationSet = Arc<RwLock<Vec<Arc<Publication>>>>;
 
-/// Follows `<root>/current` for the base and the recent table. A new base is
-/// loaded beside the old one and replaces it; clients of the old one get 410
-/// and reload. The newest eight recent tables stay loaded so lookups started
-/// just before a swap, or while a new base is still loading, can finish.
-fn watch(roots: Vec<(PathBuf, PublicationSet, usize)>, pool: rayon::ThreadPool) {
+/// Follows `<root>/current` for one publication set. Each set has its own
+/// watcher thread, so a slow base load (minutes) never holds back the small
+/// recent tables. A new base is loaded beside the old one and replaces it;
+/// clients of the old one get 410 and reload. The newest `keep` recent tables
+/// stay loaded so lookups started just before a swap can finish, and the
+/// newest table built on the base currently served is always kept, even when
+/// tables for a base that is still loading arrive first.
+fn watch(root: PathBuf, set: PublicationSet, keep: usize, parent: Option<PublicationSet>, pool: Arc<rayon::ThreadPool>) {
     loop {
-        for (root, set, keep) in &roots {
-            let Ok(target) = fs::canonicalize(root.join("current")) else { continue };
-            if set.read().unwrap().iter().any(|p| p.target == target) {
-                continue;
-            }
+        if let Ok(target) = fs::canonicalize(root.join("current"))
+            && !set.read().unwrap().iter().any(|p| p.target == target)
+        {
             let start = Instant::now();
             match Publication::load(&target, &pool) {
                 Ok(publication) => {
                     eprintln!("{}", json!({"loaded":target.display().to_string(),"id":publication.id,"tip":publication.tip,"seconds":start.elapsed().as_secs_f64()}));
                     let mut set = set.write().unwrap();
                     set.push(Arc::new(publication));
-                    let excess = set.len().saturating_sub(*keep);
-                    set.drain(..excess);
+                    let served = parent.as_ref().and_then(|parent| parent.read().unwrap().last().map(|base| base.tip));
+                    while set.len() > keep {
+                        let protected = served.and_then(|tip| set.iter().rposition(|p| p.base_tip == Some(tip)));
+                        let Some(oldest) = (0..set.len()).find(|&i| Some(i) != protected) else { break };
+                        set.remove(oldest);
+                    }
                 }
                 Err(error) => eprintln!("{}", json!({"loadError":error,"target":target.display().to_string()})),
             }
         }
-        std::thread::sleep(std::time::Duration::from_secs(5));
+        std::thread::sleep(std::time::Duration::from_secs(2));
     }
 }
 
@@ -963,15 +968,22 @@ const MAX_CONNECTIONS: usize = 256;
 /// without a restart.
 pub(super) fn serve(root: &Path, port: u16, threads: usize, web: Option<&Path>) -> Result<(), String> {
     let pool = rayon::ThreadPoolBuilder::new().num_threads(threads).build().map_err(io_err)?;
-    let loader = rayon::ThreadPoolBuilder::new().num_threads(threads.min(4)).build().map_err(io_err)?;
+    let loader = Arc::new(rayon::ThreadPoolBuilder::new().num_threads(threads.min(4)).build().map_err(io_err)?);
     let sets: Vec<_> = SETS.iter().map(|&(name, parent, _)| (name, parent, PublicationSet::default())).collect();
     // The first base loads with every thread before the listener opens.
     let first = fs::canonicalize(root.join("base/current")).map_err(|_| "no base publication under root".to_string())?;
     let start = Instant::now();
     sets[0].2.write().unwrap().push(Arc::new(Publication::load(&first, &pool)?));
     eprintln!("{}", json!({"loaded":first.display().to_string(),"seconds":start.elapsed().as_secs_f64(),"threads":threads,"maxBatch":MAX_BATCH}));
-    let roots = SETS.iter().zip(&sets).map(|(&(name, _, keep), (_, _, set))| (root.join(name), set.clone(), keep)).collect();
-    std::thread::spawn(move || watch(roots, loader));
+    // Base sets load on one pool and the small recent tables on another, so
+    // a recent table is never queued behind a multi-gigabyte base load.
+    let recent_loader = Arc::new(rayon::ThreadPoolBuilder::new().num_threads(2).build().map_err(io_err)?);
+    for (&(name, parent, keep), (_, _, set)) in SETS.iter().zip(&sets) {
+        let parent = parent.and_then(|parent| sets.iter().find(|(n, _, _)| *n == parent)).map(|(_, _, set)| set.clone());
+        let pool = if parent.is_some() { recent_loader.clone() } else { loader.clone() };
+        let (root, set) = (root.join(name), set.clone());
+        std::thread::spawn(move || watch(root, set, keep, parent, pool));
+    }
     let (sender, jobs) = mpsc::channel();
     std::thread::spawn(move || schedule(jobs, pool));
     let shared = Arc::new(Shared { sets, web: web.map(Path::to_owned), jobs: Mutex::new(sender) });
@@ -982,6 +994,7 @@ pub(super) fn serve(root: &Path, port: u16, threads: usize, web: Option<&Path>) 
         let Ok(mut stream) = stream else { continue };
         if active.fetch_add(1, std::sync::atomic::Ordering::SeqCst) >= MAX_CONNECTIONS {
             active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+            eprintln!("{}", json!({"requestError":"busy","status":503}));
             let _ = respond(&mut stream, "503 Service Unavailable", "text/plain", "Retry-After: 1\r\n", b"busy");
             continue;
         }
@@ -989,6 +1002,8 @@ pub(super) fn serve(root: &Path, port: u16, threads: usize, web: Option<&Path>) 
         std::thread::spawn(move || {
             let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(30)));
             if let Err(error) = shared.handle(&mut stream) {
+                // Failed requests are logged by reason only: no address, body or timing.
+                eprintln!("{}", json!({"requestError":error,"status":400}));
                 let _ = respond(&mut stream, "400 Bad Request", "text/plain", "", error.as_bytes());
             }
             active.fetch_sub(1, std::sync::atomic::Ordering::SeqCst);

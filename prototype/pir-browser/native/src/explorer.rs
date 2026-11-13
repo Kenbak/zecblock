@@ -975,12 +975,15 @@ pub(super) fn serve(root: &Path, port: u16, threads: usize, web: Option<&Path>) 
     let start = Instant::now();
     sets[0].2.write().unwrap().push(Arc::new(Publication::load(&first, &pool)?));
     eprintln!("{}", json!({"loaded":first.display().to_string(),"seconds":start.elapsed().as_secs_f64(),"threads":threads,"maxBatch":MAX_BATCH}));
-    // Base sets load on one pool and the small recent tables on another, so
-    // a recent table is never queued behind a multi-gigabyte base load.
-    let recent_loader = Arc::new(rayon::ThreadPoolBuilder::new().num_threads(2).build().map_err(io_err)?);
+    // Base sets share one loading pool; each small recent table has its own,
+    // so it is never queued behind a multi-gigabyte base load or another
+    // recent table and loads as fast as it did when loads ran one at a time.
     for (&(name, parent, keep), (_, _, set)) in SETS.iter().zip(&sets) {
         let parent = parent.and_then(|parent| sets.iter().find(|(n, _, _)| *n == parent)).map(|(_, _, set)| set.clone());
-        let pool = if parent.is_some() { recent_loader.clone() } else { loader.clone() };
+        let pool = match parent {
+            Some(_) => Arc::new(rayon::ThreadPoolBuilder::new().num_threads(threads.min(4)).build().map_err(io_err)?),
+            None => loader.clone(),
+        };
         let (root, set) = (root.join(name), set.clone());
         std::thread::spawn(move || watch(root, set, keep, parent, pool));
     }

@@ -32,7 +32,8 @@ repository.
 Run as root, from a checkout of the release commit:
 
 ```bash
-install -d -o ask_query -g ask_db_socket -m 0755 /srv/analytics/open-data
+NEEDRESTART_MODE=l apt-get install -y python3.12-venv
+install -d -o ask_query -g ask_db_socket -m 0755 /srv/open-data
 install -d -m 0755 /opt/zecblock-open-data/server
 cp -R server/open-data /opt/zecblock-open-data/server/
 python3 -m venv /opt/zecblock-open-data/venv
@@ -45,7 +46,7 @@ Store a fine-grained Hugging Face token with write access to the
 `zecblock/zcash-mainnet` dataset in `/etc/zecblock/open-data-hf-token`, owned by
 root with mode 0600. The dataset repository must already exist.
 
-Run the first export by hand, inspect `/srv/analytics/open-data/current`, then
+Run the first export by hand, inspect `/srv/open-data/current`, then
 enable the daily timer:
 
 ```bash

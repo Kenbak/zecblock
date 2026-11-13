@@ -9,14 +9,14 @@ Group=ask_db_socket
 UMask=0022
 WorkingDirectory=/opt/zecblock-open-data/server/open-data
 Environment="OPEN_DATA_DATABASE_URL=host=/run/ask-public-db dbname=ask_analytics user=ask_public_reader"
-ExecStart=/opt/zecblock-open-data/venv/bin/python open_data.py export --out /srv/analytics/open-data
+ExecStart=/opt/zecblock-open-data/venv/bin/python open_data.py export --out /srv/open-data
 TimeoutStartSec=6h
 Nice=15
 IOSchedulingClass=idle
 NoNewPrivileges=yes
 ProtectSystem=strict
 ProtectHome=yes
-ReadWritePaths=/srv/analytics/open-data
+ReadWritePaths=/srv/open-data
 PrivateTmp=yes
 PrivateDevices=yes
 RestrictAddressFamilies=AF_UNIX

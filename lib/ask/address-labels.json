@@ -1,6 +1,6 @@
 {
  "source": "https://api.zecblock.com/v1/labels",
- "retrieved": "2026-10-29",
+ "retrieved": "2026-11-14",
  "labels": [
   {
    "address": "t1aEbXVxdZasZjcXqYnKJD2N7s12y6Dqp3Z",
@@ -50,6 +50,11 @@
   {
    "address": "t1cKRdxdeqRFzLGiyHB2KnScMnPTMLBMpx2",
    "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1cLXeZt4mWKohk51N3Vhy7cWJtfz6fgANF",
+   "label": "Binance Cold Wallet",
    "category": "exchange"
   },
   {
@@ -103,6 +108,11 @@
    "category": "exchange"
   },
   {
+   "address": "t1gsBrGZGMyDGZw2icGnMpVBuEGVWip5kH8",
+   "label": "Binance Cold Wallet",
+   "category": "exchange"
+  },
+  {
    "address": "t1gw1BUJoLS2SqTHAbE6ghj3dKeb8sEJPea",
    "label": "Coinbase Cold Wallet",
    "category": "exchange"
@@ -130,6 +140,11 @@
   {
    "address": "t1L3mP83QYtcVc5r48sB4tYaPiA31z78WPw",
    "label": "Coinbase Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1M1j1rPwUFGz8GDFrgi8rs9R3c7XtCH4Gv",
+   "label": "Binance Cold Wallet",
    "category": "exchange"
   },
   {
@@ -173,8 +188,18 @@
    "category": "exchange"
   },
   {
+   "address": "t1Rmpqyu1jTXrjU8SEw6GmdRXdxCdPbmj6k",
+   "label": "Binance Cold Wallet",
+   "category": "exchange"
+  },
+  {
    "address": "t1RyCw14wRXrh3mp21uxgr9ynjem7cNUkMH",
    "label": "Binance Cold Wallet",
+   "category": "exchange"
+  },
+  {
+   "address": "t1SzbuFRuPa5upV6c9ZgKb9V7fxn2b8NAKg",
+   "label": "Binance Hot Wallet",
    "category": "exchange"
   },
   {
@@ -185,6 +210,11 @@
   {
    "address": "t1TocTvTDv6dX8CsCPL7JvxDC8PYChF6Vco",
    "label": "Coinbase Prime Custody",
+   "category": "exchange"
+  },
+  {
+   "address": "t1VscjxQX2pvPjXCyUAFZxXMAU4BtKr9KGv",
+   "label": "Binance Cold Wallet",
    "category": "exchange"
   },
   {

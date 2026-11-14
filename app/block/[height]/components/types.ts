@@ -50,6 +50,9 @@ export interface BlockData {
   finality?: string | null;
   isOrphaned?: boolean;
   orphanSource?: string | null;
+  /** 'observer' when transactions come from the observer_orphan_* archive. */
+  orphanArchive?: 'observer' | null;
+  unresolvedInputCount?: number | null;
   observerCount?: number | null;
   orphanDetectedAt?: string | null;
   canonicalBlock?: CanonicalBlockSummary | null;

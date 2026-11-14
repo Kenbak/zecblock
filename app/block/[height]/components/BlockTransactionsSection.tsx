@@ -237,7 +237,14 @@ export const BlockTransactionsSection = forwardRef<HTMLDivElement, { data: Block
           <h2 className="text-sm font-semibold text-secondary lowercase tracking-tight">Transactions</h2>
           <Badge color="muted">{data.transactionCount ?? '?'}</Badge>
         </div>
-        {data.orphanSource === 'observers' && (
+        {data.orphanSource === 'observers' && data.orphanArchive === 'observer' && (
+          <p className="text-xs text-muted mb-3">
+            Parsed from the raw block our observer nodes received; our node never indexed it.
+            {data.unresolvedInputCount ? ` ${data.unresolvedInputCount} transparent input value${data.unresolvedInputCount === 1 ? ' is' : 's are'} unknown, so affected fees are not shown.` : ''}
+            {' '}Linked hashes open the transaction’s current canonical record; unlinked hashes are retained here only.
+          </p>
+        )}
+        {data.orphanSource === 'observers' && data.orphanArchive !== 'observer' && (
           <p className="text-xs text-muted mb-3">
             Only our observer nodes received this block, so its transactions were never indexed.
             {data.transactionCount != null ? ` It contained ${data.transactionCount} transaction${data.transactionCount === 1 ? '' : 's'}.` : ' Its transaction count is unknown.'}

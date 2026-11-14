@@ -21,7 +21,9 @@ export function OrphanedBlockBanner({ data }: { data: BlockData }) {
           </p>
           <p className="text-xs text-muted font-mono">
             {data.orphanSource === 'observers'
-              ? `Received by ${data.observerCount ?? 'our'} observer node${data.observerCount === 1 ? '' : 's'}. Header facts only; its transactions were not archived.`
+              ? `Received by ${data.observerCount ?? 'our'} observer node${data.observerCount === 1 ? '' : 's'}. ${data.orphanArchive === 'observer'
+                ? 'Transactions below were parsed from the block they received. They do not imply confirmation on the current chain.'
+                : 'Header facts only; its transactions were not archived.'}`
               : 'Archived transactions below describe this orphaned block. They do not imply confirmation on the current chain.'}
             {data.orphanSource && data.orphanSource !== 'observers' && (
               <span className="ml-2 text-secondary">Source: {data.orphanSource}</span>

@@ -103,6 +103,8 @@ export function transformExpressBlockData(blockData: any): BlockData {
     firstSeenAt: blockData.firstSeenAt || null,
     orphanSource: blockData.orphanSource || null,
     observerCount: blockData.observerCount ?? null,
+    orphanArchive: blockData.orphanArchive === 'observer' ? 'observer' : null,
+    unresolvedInputCount: blockData.unresolvedInputCount ?? null,
     orphanDetectedAt: blockData.orphanDetectedAt || null,
     canonicalBlock,
     coinbaseHex: blockData.coinbase_hex ?? null,

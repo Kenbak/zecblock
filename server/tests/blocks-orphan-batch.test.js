@@ -166,6 +166,7 @@ function observerPool({ captured, canonicalAtHeight = true }) {
     async query(sql, params) {
       if (sql.includes('FROM blocks') && sql.includes('WHERE hash = $1')) return { rows: [] };
       if (sql.includes('FROM orphaned_blocks WHERE hash = $1')) return { rows: [] };
+      if (sql.includes('FROM observer_orphan_blocks a')) return { rows: [] };
       if (sql.includes('FROM captured_blocks c')) {
         assert.equal(params[0], ORPHAN_HASH);
         return { rows: captured ? [captured] : [] };
@@ -222,4 +223,83 @@ test('raw block transaction count parser handles short and multi-byte counts', (
   assert.equal(rawBlockTransactionCount(null), null);
   const wide = Buffer.concat([Buffer.alloc(140), Buffer.from([0xfd, 0x40, 0x05]), Buffer.alloc(1344), Buffer.from([0xfd, 0x2c, 0x01])]);
   assert.equal(rawBlockTransactionCount(wide), 300);
+});
+
+function archivedObserverPool({ missingTable = false } = {}) {
+  const seen = [];
+  return {
+    seen,
+    async query(sql, params) {
+      seen.push(sql);
+      if (sql.includes('FROM blocks') && sql.includes('WHERE hash = $1')) return { rows: [] };
+      if (sql.includes('FROM orphaned_blocks WHERE hash = $1')) return { rows: [] };
+      if (sql.includes('FROM observer_orphan_blocks a')) {
+        if (missingTable) throw Object.assign(new Error('relation does not exist'), { code: '42P01' });
+        // The observer-only rule is re-checked in SQL, not trusted from the archive.
+        assert.match(sql, /NOT EXISTS \(SELECT 1 FROM blocks canonical WHERE canonical\.hash = a\.hash\)/);
+        assert.match(sql, /NOT EXISTS \(SELECT 1 FROM orphaned_blocks ob WHERE ob\.hash = a\.hash\)/);
+        return { rows: [{
+          height: 100, hash: params[0], timestamp: 1700000000, transaction_count: 2, size: 1629,
+          difficulty: '1', miner_address: 't1Loser', previous_block_hash: 'b'.repeat(64), source: 'observer',
+          detected_at: '2026-11-14T00:00:00.000Z', coinbase_hex: null, final_sapling_root: null,
+          final_orchard_root: null, final_ironwood_root: null, first_indexed_at: '2026-11-14T00:00:00.000Z',
+          block_metadata: { version: 4, merkle_root: 'c'.repeat(64), total_fees: null, final_sapling_root: null },
+          unresolved_inputs: 1, raw_block_available: true, first_seen_at: '2026-11-13T14:24:08.181Z', observer_count: 9,
+        }] };
+      }
+      if (sql.includes('FROM blocks WHERE height = $1')) {
+        return { rows: [{ height: 100, hash: 'e'.repeat(64), timestamp: 1700000000, transaction_count: 3, size: 5000, miner_address: 't1Winner', coinbase_hex: null, first_seen_at: null }] };
+      }
+      if (sql.includes('FROM observer_orphan_transactions archived_tx')) {
+        return { rows: [
+          { txid: 'cb', block_height: 100, tx_index: 0, version: 5, size: 100, fee: null, is_coinbase: true,
+            vin_count: 1, vout_count: 1, total_input: 0, total_output: 312500000, timestamp: 1700000000 },
+          { txid: 'tx', block_height: 100, tx_index: 1, version: 5, size: 300, fee: null, is_coinbase: false,
+            vin_count: 1, vout_count: 1, total_input: null, total_output: 90000, timestamp: 1700000000,
+            canonical_available: true },
+        ] };
+      }
+      if (sql.includes('FROM observer_orphan_transaction_inputs')) {
+        return { rows: [{ txid: 'tx', vout_index: 0, prev_txid: 'p', prev_vout: 1, address: null, value: null, coinbase: null }] };
+      }
+      if (sql.includes('FROM observer_orphan_transaction_outputs')) {
+        return { rows: [
+          { txid: 'cb', vout_index: 0, value: '312500000', address: 't1Loser', script_type: 'pubkeyhash' },
+          { txid: 'tx', vout_index: 0, value: 90000, address: 't1Dest', script_type: 'pubkeyhash' },
+        ] };
+      }
+      if (sql.includes('FROM captured_blocks c')) return { rows: [] };
+      throw new Error(`Unexpected SQL in test: ${sql}`);
+    },
+  };
+}
+
+test('archived observer orphan returns parsed transactions, labelled observers, unknowns kept null', async () => {
+  const pool = archivedObserverPool();
+  const result = await requestOrphanBlock(pool);
+  assert.equal(result.status, 200);
+  assert.equal(result.body.isOrphaned, true);
+  assert.equal(result.body.orphanSource, 'observers');
+  assert.equal(result.body.orphanArchive, 'observer');
+  assert.equal(result.body.observerCount, 9);
+  assert.equal(result.body.unresolvedInputCount, 1);
+  assert.equal(result.body.transactionCount, 2);
+  assert.equal(result.body.transactionArchiveComplete, true);
+  assert.equal(result.body.total_fees, null);
+  assert.equal(result.body.canonicalBlock.hash, 'e'.repeat(64));
+  const tx = result.body.transactions.find((t) => t.txid === 'tx');
+  assert.equal(tx.fee, null);
+  assert.equal(tx.total_input, null, 'unknown total input is not zero');
+  assert.equal(tx.vin[0].value, null, 'unknown input value is not zero');
+  assert.equal(result.body.transactions[0].vout[0].value, 312500000);
+  // Never reads node-reorg transaction tables for an observer block.
+  assert.ok(!pool.seen.some((sql) => /FROM orphaned_transaction/.test(sql)));
+  assert.ok(!pool.seen.some((sql) => sql.includes('FROM captured_blocks c')), 'archive wins over header-only capture');
+});
+
+test('before migration 045 the header-only observer capture still answers', async () => {
+  const pool = archivedObserverPool({ missingTable: true });
+  const result = await requestOrphanBlock(pool);
+  assert.equal(result.status, 404, 'no capture row in this fake pool, so the fallback ran and found nothing');
+  assert.ok(pool.seen.some((sql) => sql.includes('FROM captured_blocks c')));
 });

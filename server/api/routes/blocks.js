@@ -485,7 +485,25 @@ async function fetchCanonicalBlockSummary(blockHeight) {
   };
 }
 
-async function buildOrphanedBlockResponse(orphanRow) {
+// Archive tables for a given orphan source. Table names are constants, never
+// request input. observer_orphan_* (migration 045) holds blocks parsed from
+// observer captures and stays separate from node-reorg orphaned_* tables.
+const ORPHAN_ARCHIVES = Object.freeze({
+  node: Object.freeze({
+    transactions: 'orphaned_transactions',
+    inputs: 'orphaned_transaction_inputs',
+    outputs: 'orphaned_transaction_outputs',
+  }),
+  observer: Object.freeze({
+    transactions: 'observer_orphan_transactions',
+    inputs: 'observer_orphan_transaction_inputs',
+    outputs: 'observer_orphan_transaction_outputs',
+  }),
+});
+
+const zatOrNull = (value) => (value == null ? null : parseInt(value));
+
+async function buildOrphanedBlockResponse(orphanRow, archive = ORPHAN_ARCHIVES.node) {
   const blockHeight = parseInt(orphanRow.height);
   const blockHash = orphanRow.hash;
   const canonicalBlock = await fetchCanonicalBlockSummary(blockHeight);
@@ -504,8 +522,8 @@ async function buildOrphanedBlockResponse(orphanRow) {
               EXISTS (SELECT 1 FROM transactions current_tx
                       JOIN blocks current_block ON current_block.height = current_tx.block_height
                         AND current_block.hash = current_tx.block_hash
-                      WHERE current_tx.txid = orphaned_transactions.txid) as canonical_available
-       FROM orphaned_transactions
+                      WHERE current_tx.txid = archived_tx.txid) as canonical_available
+       FROM ${archive.transactions} archived_tx
        WHERE block_hash = $1
        ORDER BY tx_index ASC`,
       [blockHash]
@@ -519,13 +537,13 @@ async function buildOrphanedBlockResponse(orphanRow) {
       ? await Promise.all([
           pool.query(
             `SELECT txid, vout_index, prev_txid, prev_vout, address, value, coinbase
-             FROM orphaned_transaction_inputs WHERE block_hash = $1 AND txid = ANY($2::text[])
+             FROM ${archive.inputs} WHERE block_hash = $1 AND txid = ANY($2::text[])
              ORDER BY txid, vout_index ASC`,
             [blockHash, txids]
           ),
           pool.query(
             `SELECT txid, vout_index, value, address, script_type
-             FROM orphaned_transaction_outputs WHERE block_hash = $1 AND txid = ANY($2::text[])
+             FROM ${archive.outputs} WHERE block_hash = $1 AND txid = ANY($2::text[])
              ORDER BY txid, vout_index ASC`,
             [blockHash, txids]
           ),
@@ -554,7 +572,8 @@ async function buildOrphanedBlockResponse(orphanRow) {
       expiry_height: tx.expiry_height,
       vin_count: tx.vin_count || 0,
       vout_count: tx.vout_count || 0,
-      total_input: tx.total_input ? parseInt(tx.total_input) : 0,
+      // NULL total_input means an input value is unknown (observer archives).
+      total_input: tx.total_input == null ? null : parseInt(tx.total_input),
       total_output: tx.total_output ? parseInt(tx.total_output) : 0,
       has_sapling: tx.has_sapling,
       has_orchard: tx.has_orchard,
@@ -577,7 +596,7 @@ async function buildOrphanedBlockResponse(orphanRow) {
         prev_txid: i.prev_txid,
         prev_vout: i.prev_vout,
         address: i.address,
-        value: i.value ? parseInt(i.value) : 0,
+        value: zatOrNull(i.value),
         coinbase: i.coinbase,
       })),
       vout: (outputsByTxid[tx.txid] || []).map(o => ({
@@ -702,6 +721,48 @@ async function findObserverOrphan(hash) {
   };
 }
 
+// Observer-only orphan parsed by the indexer's archive job (migration 045):
+// full transactions, inputs and outputs, same response shape as node-reorg
+// orphans, but still labelled orphanSource 'observers'. Re-checks the
+// observer-only rule so a block that later became canonical or was reorged by
+// our node never shows a stale observer copy. Before 045 is applied the table
+// is missing and the header-only capture fallback answers instead.
+async function findArchivedObserverOrphan(hash) {
+  let result;
+  try {
+    result = await pool.query(
+      `SELECT a.height, a.hash, a."timestamp", a.transaction_count, a.size, a.difficulty,
+              a.miner_address, a.previous_block_hash, a.source, a.detected_at,
+              a.coinbase_hex, a.final_sapling_root, a.final_orchard_root, a.final_ironwood_root,
+              a.first_indexed_at, a.block_metadata, a.unresolved_inputs,
+              (c.raw_block IS NOT NULL) AS raw_block_available,
+              c.first_seen_at,
+              (SELECT count(*) FROM block_capture_receipts br WHERE br.hash = a.hash)::integer AS observer_count
+       FROM observer_orphan_blocks a
+       JOIN captured_blocks c ON c.hash = a.hash
+       WHERE a.hash = $1
+         AND NOT EXISTS (SELECT 1 FROM blocks canonical WHERE canonical.hash = a.hash)
+         AND NOT EXISTS (SELECT 1 FROM orphaned_blocks ob WHERE ob.hash = a.hash)
+         AND EXISTS (SELECT 1 FROM blocks r WHERE r.height = a.height AND r.hash <> a.hash)`,
+      [hash]
+    );
+  } catch (error) {
+    if (error && error.code === '42P01') return null; // undefined_table: 045 not applied yet
+    throw error;
+  }
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const response = await buildOrphanedBlockResponse(row, ORPHAN_ARCHIVES.observer);
+  return {
+    ...response,
+    coinbase_text: decodeCoinbaseText(response.coinbase_hex),
+    orphanSource: 'observers',
+    orphanArchive: 'observer',
+    observerCount: row.observer_count ?? null,
+    unresolvedInputCount: row.unresolved_inputs == null ? null : Number(row.unresolved_inputs),
+  };
+}
+
 // Get block by height or hash
 router.get('/api/block/:heightOrHash', async (req, res) => {
   try {
@@ -755,6 +816,11 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
       );
 
       if (orphanResult.rows.length === 0) {
+        const archivedObserverOrphan = await findArchivedObserverOrphan(identifier.value);
+        if (archivedObserverOrphan) {
+          res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+          return res.json(archivedObserverOrphan);
+        }
         const observerOrphan = await findObserverOrphan(identifier.value);
         if (!observerOrphan) {
           return res.status(404).json({ error: 'Block not found' });

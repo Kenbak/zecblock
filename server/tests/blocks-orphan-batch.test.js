@@ -160,3 +160,66 @@ test('orphan metadata and archive coverage are explicit; query failures are not 
   };
   assert.equal((await requestOrphanBlock(pool)).status, 500);
 });
+
+function observerPool({ captured, canonicalAtHeight = true }) {
+  return {
+    async query(sql, params) {
+      if (sql.includes('FROM blocks') && sql.includes('WHERE hash = $1')) return { rows: [] };
+      if (sql.includes('FROM orphaned_blocks WHERE hash = $1')) return { rows: [] };
+      if (sql.includes('FROM captured_blocks c')) {
+        assert.equal(params[0], ORPHAN_HASH);
+        return { rows: captured ? [captured] : [] };
+      }
+      if (sql.includes('FROM blocks WHERE height = $1')) {
+        return { rows: canonicalAtHeight ? [{ height: 100, hash: 'e'.repeat(64), timestamp: 1700000000, transaction_count: 3, size: 5000, miner_address: 't1Winner', coinbase_hex: null, first_seen_at: null }] : [] };
+      }
+      throw new Error(`Unexpected SQL in test: ${sql}`);
+    },
+  };
+}
+
+function rawPrefix(txCount) {
+  // 140-byte header, CompactSize(1344) solution, then CompactSize tx count.
+  return Buffer.concat([Buffer.alloc(140), Buffer.from([0xfd, 0x40, 0x05]), Buffer.alloc(1344), Buffer.from([txCount])]);
+}
+
+test('observer-only orphan resolves by hash with header facts and an explicit source', async () => {
+  const result = await requestOrphanBlock(observerPool({ captured: {
+    height: 100, hash: ORPHAN_HASH, timestamp: 1700000000, first_seen_at: '2026-11-13T14:24:08.181Z',
+    miner_address: 't1Loser', coinbase_hex: null, previous_block_hash: 'b'.repeat(64),
+    raw_size: 1629, raw_prefix: rawPrefix(1), observer_count: 9,
+  } }));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.isOrphaned, true);
+  assert.equal(result.body.orphanSource, 'observers');
+  assert.equal(result.body.observerCount, 9);
+  assert.equal(result.body.transactionCount, 1);
+  assert.equal(result.body.size, 1629);
+  assert.equal(result.body.canonicalBlock.hash, 'e'.repeat(64));
+  assert.deepEqual(result.body.transactions, []);
+});
+
+test('observer-only orphan with a pruned raw block reports unknown count and size, not zero', async () => {
+  const result = await requestOrphanBlock(observerPool({ captured: {
+    height: 100, hash: ORPHAN_HASH, timestamp: 1700000000, first_seen_at: null,
+    miner_address: null, coinbase_hex: null, previous_block_hash: 'b'.repeat(64),
+    raw_size: null, raw_prefix: null, observer_count: 2,
+  } }));
+  assert.equal(result.status, 200);
+  assert.equal(result.body.transactionCount, null);
+  assert.equal(result.body.size, null);
+});
+
+test('hash absent from blocks, orphans and observer captures is still 404', async () => {
+  const result = await requestOrphanBlock(observerPool({ captured: null }));
+  assert.equal(result.status, 404);
+});
+
+test('raw block transaction count parser handles short and multi-byte counts', () => {
+  const { rawBlockTransactionCount } = blocksRouter;
+  assert.equal(rawBlockTransactionCount(rawPrefix(4)), 4);
+  assert.equal(rawBlockTransactionCount(Buffer.alloc(100)), null);
+  assert.equal(rawBlockTransactionCount(null), null);
+  const wide = Buffer.concat([Buffer.alloc(140), Buffer.from([0xfd, 0x40, 0x05]), Buffer.alloc(1344), Buffer.from([0xfd, 0x2c, 0x01])]);
+  assert.equal(rawBlockTransactionCount(wide), 300);
+});

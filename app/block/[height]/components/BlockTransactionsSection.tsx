@@ -235,9 +235,15 @@ export const BlockTransactionsSection = forwardRef<HTMLDivElement, { data: Block
       <div ref={ref}>
         <div className="flex items-center gap-2 mb-3">
           <h2 className="text-sm font-semibold text-secondary lowercase tracking-tight">Transactions</h2>
-          <Badge color="muted">{data.transactionCount}</Badge>
+          <Badge color="muted">{data.transactionCount ?? '?'}</Badge>
         </div>
-        {data.isOrphaned && (
+        {data.orphanSource === 'observers' && (
+          <p className="text-xs text-muted mb-3">
+            Only our observer nodes received this block, so its transactions were never indexed.
+            {data.transactionCount != null ? ` It contained ${data.transactionCount} transaction${data.transactionCount === 1 ? '' : 's'}.` : ' Its transaction count is unknown.'}
+          </p>
+        )}
+        {data.isOrphaned && data.orphanSource !== 'observers' && data.transactionCount != null && (
           <p className="text-xs text-muted mb-3">
             {data.transactions.length} of {data.transactionCount} transactions archived.
             {data.transactions.length < data.transactionCount ? ' The remaining transaction details are not available in this archive.' : ''}

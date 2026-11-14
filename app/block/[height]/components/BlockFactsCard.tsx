@@ -196,12 +196,12 @@ export function BlockFactsCard({
           </FactBox>
 
           <FactBox fit className="order-2 sm:order-none" label="Block Size" tooltip="The size of this block in kilobytes">
-            <span className="text-sm text-primary font-mono tabular-nums whitespace-nowrap">{(data.size / 1024).toFixed(2)} KB</span>
+            <span className="text-sm text-primary font-mono tabular-nums whitespace-nowrap">{data.size == null ? '—' : `${(data.size / 1024).toFixed(2)} KB`}</span>
           </FactBox>
 
           <FactBox fit className="order-4 sm:order-none" label="Transactions" tooltip="Click to jump to the transaction list">
             <button onClick={onScrollToTransactions} className="text-sm text-primary font-semibold hover:underline transition-colors whitespace-nowrap">
-              {data.transactionCount} transaction{data.transactionCount !== 1 ? 's' : ''}
+              {data.transactionCount == null ? 'Unknown' : `${data.transactionCount} transaction${data.transactionCount !== 1 ? 's' : ''}`}
             </button>
           </FactBox>
 

@@ -25,6 +25,9 @@ function blockDescription(block: BlockRecord, height: number, hash: string): str
   );
   const count = Number.isFinite(transactionCount) ? transactionCount : 0;
   const status = block.isOrphaned === true ? 'orphaned' : 'canonical';
+  if (block.orphanSource === 'observers' && (block.transactionCount ?? block.transaction_count) == null) {
+    return `Zcash block ${height.toLocaleString('en-US')} is ${status} and has hash ${hash}. Our observer nodes received it; its transaction count is unknown.`;
+  }
 
   return `Zcash block ${height.toLocaleString('en-US')} is ${status}, has hash ${hash}, and records ${count.toLocaleString('en-US')} transaction${count === 1 ? '' : 's'}.`;
 }

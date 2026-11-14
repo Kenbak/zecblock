@@ -76,8 +76,10 @@ export function transformExpressBlockData(blockData: any): BlockData {
     hash: blockData.hash,
     timestamp: blockData.timestamp ? parseInt(blockData.timestamp) : 0,
     transactions: transformedTransactions,
-    transactionCount: blockData.transactionCount ?? blockData.transaction_count ?? transformedTransactions.length,
-    size: parseInt(blockData.size || 0),
+    transactionCount: blockData.orphanSource === 'observers'
+      ? (blockData.transactionCount ?? null)
+      : blockData.transactionCount ?? blockData.transaction_count ?? transformedTransactions.length,
+    size: blockData.size == null && blockData.orphanSource === 'observers' ? null : parseInt(blockData.size || 0),
     difficulty: blockData.difficulty ? parseFloat(blockData.difficulty) : 0,
     confirmations: parseInt(blockData.confirmations || 0),
     previousBlockHash: blockData.previous_block_hash || blockData.previousBlockHash,
@@ -100,6 +102,7 @@ export function transformExpressBlockData(blockData: any): BlockData {
     isOrphaned: Boolean(blockData.isOrphaned),
     firstSeenAt: blockData.firstSeenAt || null,
     orphanSource: blockData.orphanSource || null,
+    observerCount: blockData.observerCount ?? null,
     orphanDetectedAt: blockData.orphanDetectedAt || null,
     canonicalBlock,
     coinbaseHex: blockData.coinbase_hex ?? null,

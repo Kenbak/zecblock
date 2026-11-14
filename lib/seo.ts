@@ -188,6 +188,7 @@ export interface BlockRecord {
   transactions?: unknown[];
   size?: number | string | null;
   isOrphaned?: boolean;
+  orphanSource?: string | null;
   canonicalBlock?: {
     hash?: string | null;
   } | null;

@@ -18,8 +18,9 @@ export interface BlockData {
   firstSeenAt?: string | null;
   timestamp: number;
   transactions: any[];
-  transactionCount: number;
-  size: number;
+  /** null when unknown (observer-only orphans whose raw block was pruned). */
+  transactionCount: number | null;
+  size: number | null;
   difficulty: number;
   confirmations: number;
   previousBlockHash?: string;
@@ -49,6 +50,7 @@ export interface BlockData {
   finality?: string | null;
   isOrphaned?: boolean;
   orphanSource?: string | null;
+  observerCount?: number | null;
   orphanDetectedAt?: string | null;
   canonicalBlock?: CanonicalBlockSummary | null;
   coinbaseHex?: string | null;

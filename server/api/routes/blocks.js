@@ -631,6 +631,77 @@ async function buildOrphanedBlockResponse(orphanRow) {
   };
 }
 
+// Zcash block header: 140 fixed bytes, then a CompactSize Equihash solution,
+// then a CompactSize transaction count. Returns null when the bytes are short.
+function readCompactSize(buf, offset) {
+  if (offset >= buf.length) return null;
+  const first = buf[offset];
+  if (first < 0xfd) return { value: first, next: offset + 1 };
+  const width = first === 0xfd ? 2 : first === 0xfe ? 4 : 8;
+  if (offset + 1 + width > buf.length) return null;
+  let value = 0;
+  for (let i = width - 1; i >= 0; i--) value = value * 256 + buf[offset + 1 + i];
+  return Number.isSafeInteger(value) ? { value, next: offset + 1 + width } : null;
+}
+
+function rawBlockTransactionCount(prefix) {
+  if (!Buffer.isBuffer(prefix)) return null;
+  const solution = readCompactSize(prefix, 140);
+  if (!solution) return null;
+  const count = readCompactSize(prefix, solution.next + solution.value);
+  return count ? count.value : null;
+}
+
+// Observer-only orphan: a competing block our observer nodes received but our
+// indexer never adopted. Only header facts are stored; transaction count and
+// size come from the raw block while it is retained and are otherwise unknown.
+async function findObserverOrphan(hash) {
+  const result = await pool.query(
+    `SELECT c.height, c.hash, c.timestamp, c.first_seen_at, c.miner_address, c.coinbase_hex,
+            c.previous_block_hash,
+            octet_length(c.raw_block) AS raw_size,
+            substring(c.raw_block FROM 1 FOR 1600) AS raw_prefix,
+            (SELECT count(*) FROM block_capture_receipts br WHERE br.hash = c.hash)::integer AS observer_count
+     FROM captured_blocks c
+     WHERE c.hash = $1
+       AND NOT EXISTS (SELECT 1 FROM blocks canonical WHERE canonical.hash = c.hash)
+       AND EXISTS (SELECT 1 FROM blocks r WHERE r.height = c.height AND r.hash <> c.hash)`,
+    [hash]
+  );
+  if (result.rows.length === 0) return null;
+  const row = result.rows[0];
+  const blockHeight = parseInt(row.height);
+  const poolInfo = getPoolInfo(row.miner_address, row.coinbase_hex);
+  const transactionCount = rawBlockTransactionCount(row.raw_prefix);
+  const size = row.raw_size == null ? null : Number(row.raw_size);
+  return {
+    height: blockHeight,
+    hash: row.hash,
+    timestamp: row.timestamp != null ? parseInt(row.timestamp) : null,
+    transaction_count: transactionCount,
+    transactionCount,
+    size,
+    previous_block_hash: row.previous_block_hash,
+    miner_address: row.miner_address,
+    coinbase_hex: row.coinbase_hex ?? null,
+    coinbase_text: decodeCoinbaseText(row.coinbase_hex),
+    firstSeenAt: row.first_seen_at || null,
+    rawBlockAvailable: size != null,
+    archivedTransactionCount: 0,
+    transactionArchiveComplete: false,
+    isOrphaned: true,
+    orphanSource: 'observers',
+    observerCount: row.observer_count ?? null,
+    canonicalBlock: await fetchCanonicalBlockSummary(blockHeight),
+    transactions: [],
+    confirmations: 0,
+    miner_pool: poolInfo?.name || null,
+    miner_pool_url: poolInfo?.url || null,
+    miner_pool_region: poolInfo?.region || null,
+    miner_pool_is_funding_stream: poolInfo?.isFundingStream || false,
+  };
+}
+
 // Get block by height or hash
 router.get('/api/block/:heightOrHash', async (req, res) => {
   try {
@@ -684,7 +755,12 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
       );
 
       if (orphanResult.rows.length === 0) {
-        return res.status(404).json({ error: 'Block not found' });
+        const observerOrphan = await findObserverOrphan(identifier.value);
+        if (!observerOrphan) {
+          return res.status(404).json({ error: 'Block not found' });
+        }
+        res.set('Cache-Control', 'public, s-maxage=300, stale-while-revalidate=3600');
+        return res.json(observerOrphan);
       }
 
       // Orphaned blocks are a permanent historical record once detected, but
@@ -1004,3 +1080,4 @@ router.get('/api/block-archive/:hashOrHeight', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.rawBlockTransactionCount = rawBlockTransactionCount;

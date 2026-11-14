@@ -102,8 +102,8 @@ export default function BlockPageClient({
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 md:py-8 animate-fade-in">
-      <OrphanedBlockBanner data={data} />
       <BlockPageHeader data={data} />
+      <OrphanedBlockBanner data={data} />
       <NetworkUpgradeBanner data={data} />
       <BlockFactsCard
         data={data}

@@ -237,30 +237,30 @@ export const BlockTransactionsSection = forwardRef<HTMLDivElement, { data: Block
           <h2 className="text-sm font-semibold text-secondary lowercase tracking-tight">Transactions</h2>
           <Badge color="muted">{data.transactionCount ?? '?'}</Badge>
         </div>
-        {data.orphanSource === 'observers' && data.orphanArchive === 'observer' && (
+        {data.isOrphaned && (
           <p className="text-xs text-muted mb-3">
-            Parsed from the raw block our observer nodes received; our node never indexed it.
+            {data.orphanSource === 'observers'
+              ? data.orphanArchive === 'observer'
+                ? 'Parsed from the raw block our observer nodes received.'
+                : `Only our observer nodes received this block, so its transactions were not archived.${data.transactionCount != null ? ` It contained ${data.transactionCount} transaction${data.transactionCount === 1 ? '' : 's'}.` : ''}`
+              : data.transactionCount != null
+                ? `${data.transactions.length} of ${data.transactionCount} transactions archived.`
+                : 'Archived from this orphaned block.'}
             {data.unresolvedInputCount ? ` ${data.unresolvedInputCount} transparent input value${data.unresolvedInputCount === 1 ? ' is' : 's are'} unknown, so affected fees are not shown.` : ''}
-            {' '}Linked hashes open the transaction’s current canonical record; unlinked hashes are retained here only.
-          </p>
-        )}
-        {data.orphanSource === 'observers' && data.orphanArchive !== 'observer' && (
-          <p className="text-xs text-muted mb-3">
-            Only our observer nodes received this block, so its transactions were never indexed.
-            {data.transactionCount != null ? ` It contained ${data.transactionCount} transaction${data.transactionCount === 1 ? '' : 's'}.` : ' Its transaction count is unknown.'}
-          </p>
-        )}
-        {data.isOrphaned && data.orphanSource !== 'observers' && data.transactionCount != null && (
-          <p className="text-xs text-muted mb-3">
-            {data.transactions.length} of {data.transactionCount} transactions archived.
-            {data.transactions.length < data.transactionCount ? ' The remaining transaction details are not available in this archive.' : ''}
-            {' '}Linked hashes open the transaction’s current canonical record; unlinked hashes are retained here only.
+            {(data.orphanSource !== 'observers' || data.orphanArchive === 'observer') && ' “On chain” means the same transaction is also confirmed on the current chain.'}
           </p>
         )}
         <DataTable
           columns={data.isOrphaned ? columns.map(column => column.id === 'hash' ? {
             ...column,
-            cell: (tx: any) => <HashLink value={tx.txid} href={tx.canonical_available ? `/tx/${tx.txid}` : undefined} lead={10} tail={6} responsive />,
+            cell: (tx: any) => (
+              <span className="inline-flex items-center gap-2 min-w-0">
+                <HashLink value={tx.txid} href={tx.canonical_available ? `/tx/${tx.txid}` : undefined} lead={10} tail={6} responsive />
+                {tx.canonical_available
+                  ? <Badge color="green" variant="subtle" icon={<span aria-hidden className="w-1.5 h-1.5 rounded-full bg-current" />} className="shrink-0">on chain</Badge>
+                  : <Badge color="orange" variant="subtle" icon={<span aria-hidden className="w-1.5 h-1.5 rounded-full bg-current" />} className="shrink-0">orphan only</Badge>}
+              </span>
+            ),
           } : column) : columns}
           rows={data.transactions || []}
           rowKey={(tx, i) => tx.txid || i}

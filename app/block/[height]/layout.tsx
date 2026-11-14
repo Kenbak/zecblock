@@ -126,13 +126,18 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
 
   // Block hashes share long runs of leading zeros; the tail is what tells them apart.
   const hashTail = (hash: string) => `…${hash.slice(-12)}`;
+  // Observer-only orphans may have no retained raw block, so their count can be unknown.
+  const isObserverOrphan = block.orphanSource === 'observers';
+  const countKnown = !isObserverOrphan || (block.transactionCount ?? block.transaction_count) != null;
   const txLabel = `${formatNumber(transactionCount)} transaction${transactionCount !== 1 ? 's' : ''}`;
   let description: string;
   if (isOrphaned) {
     const replacement = replacementHash
       ? ` Canonical replacement: ${hashTail(replacementHash)}.`
       : '';
-    description = `Orphaned Zcash block #${blockLabel} (hash ${hashTail(canonicalHash)}) recorded ${txLabel} before it was replaced in a chain reorganization.${replacement}`;
+    description = isObserverOrphan
+      ? `Orphaned Zcash block #${blockLabel} (hash ${hashTail(canonicalHash)})${countKnown ? ` with ${txLabel}` : ''} competed for this height and lost; our observer nodes received it.${replacement}`
+      : `Orphaned Zcash block #${blockLabel} (hash ${hashTail(canonicalHash)}) recorded ${txLabel} before it was replaced in a chain reorganization.${replacement}`;
   } else {
     const validTimestamp = Number.isFinite(timestamp) && timestamp > 0;
     const datePart = validTimestamp
@@ -148,7 +153,8 @@ export async function generateMetadata({ params }: Props): Promise<Metadata> {
     title,
     description,
     path: `/block/${encodeURIComponent(canonicalIdentifier)}`,
-    index: true,
+    // Observer-only orphans carry header facts only; keep these thin pages out of the index.
+    index: !isObserverOrphan,
     imageAlt: title,
   });
 }

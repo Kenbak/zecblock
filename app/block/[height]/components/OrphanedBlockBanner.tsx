@@ -15,11 +15,15 @@ export function OrphanedBlockBanner({ data }: { data: BlockData }) {
         <div className="flex flex-col gap-3">
           <Badge color="orange" className="self-start text-caption font-semibold tracking-wider">ORPHANED BLOCK</Badge>
           <p className="text-sm text-secondary">
-            This block was replaced during a chain reorganization and is no longer part of the canonical chain.
+            {data.orphanSource === 'observers'
+              ? 'This block competed for this height but lost: another block was accepted instead, and our own node never switched to it.'
+              : 'This block was replaced during a chain reorganization and is no longer part of the canonical chain.'}
           </p>
           <p className="text-xs text-muted font-mono">
-            Archived transactions below describe this orphaned block. They do not imply confirmation on the current chain.
-            {data.orphanSource && (
+            {data.orphanSource === 'observers'
+              ? `Received by ${data.observerCount ?? 'our'} observer node${data.observerCount === 1 ? '' : 's'}. Header facts only; its transactions were not archived.`
+              : 'Archived transactions below describe this orphaned block. They do not imply confirmation on the current chain.'}
+            {data.orphanSource && data.orphanSource !== 'observers' && (
               <span className="ml-2 text-secondary">Source: {data.orphanSource}</span>
             )}
           </p>
@@ -48,7 +52,7 @@ export function OrphanedBlockBanner({ data }: { data: BlockData }) {
                 )}
               </div>
               <div className="flex gap-3 text-xs font-mono text-muted">
-                <span>{data.transactionCount} txs</span>
+                {data.transactionCount != null && <span>{data.transactionCount} txs</span>}
                 <span>{data.timestamp ? formatRelativeTime(data.timestamp) : '—'}</span>
               </div>
             </div>

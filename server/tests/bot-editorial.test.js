@@ -125,16 +125,15 @@ test('hashrate records require continuous same-method windows and qualified ATH 
   h=hashes();h.points.at(-1).date='2026-09-28T00:00:00.000Z';assert.equal(p.hashStory(h,{target,genesisComplete:true}),null);
 });
 
-test('combined flow allowance preserves exceptional swap capacity without four daily flow posts',()=>{
+test('flows and swaps are not limited per day or per half-day slot',()=>{
   const history=[1,2].map(i=>({dedup_key:`old${i}`,post_type:'flow_deshield',status:'posted',created_at:now,metadata:{}}));
   history.push({dedup_key:'oldswap',post_type:'swap',status:'posted',created_at:now,metadata:{slot:'am'}});
   const cs=[['flow_shield','s',{}],['flow_deshield','d',{}],['swap','ordinary',{}],['swap','exceptional',{exceptional:true}]]
     .map(([type,key,evidence])=>({type,key,evidence,score:1}));
   const result=p.select(cs,history,now);
-  assert.deepEqual(result.selected.map(c=>c.key),['exceptional']);
-  assert.equal(result.skipped.length,3);
-  assert.equal(result.skipped.filter(c=>c.reason==='flow-combined-daily-cap').length,2);
-  assert.equal(p.select([cs[2]],history,new Date('2026-09-29T12:00:00Z')).selected.length,1);
+  assert.deepEqual(result.selected.map(c=>c.key).sort(),['d','exceptional','ordinary','s']);
+  assert.equal(result.selected[0].key,'exceptional');
+  assert.deepEqual(result.skipped,[]);
 });
 
 test('cooldowns suppress repeat network topics; held attempts remain deduplicated',()=>{

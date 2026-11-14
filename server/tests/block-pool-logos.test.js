@@ -28,6 +28,7 @@ function load(file) {
     if (name === '@/components/ui/Badge') return { Badge: box };
     if (name === '@/components/ui/HashLink') return { HashLink: ({ value }) => React.createElement('span', {}, value) };
     if (name === 'next/link') return { default: box };
+    if (name === '@/components/Tooltip') return { Tooltip: () => null };
     throw new Error(`Unexpected import ${name}`);
   } });
   return exports;

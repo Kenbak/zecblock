@@ -66,7 +66,18 @@ const NEW_LABELS = [
   { address: 't3fygNh4yTRdhirVn6qu1QAtTUvZNFmGtbH', label: 'Gemini Custody', category: 'exchange', description: 'Gemini institutional custody' },
 
   // Binance (additional)
-  { address: 't1PKBiv7mtzD9bNafYaqyxaENeiNDbpKxxQ', label: 'Binance Hot Wallet', category: 'exchange', description: 'Binance hot wallet' },
+  { address: 't1PKBiv7mtzD9bNafYaqyxaENeiNDbpKxxQ', label: 'Binance Hot Wallet', category: 'exchange', description: 'Binance hot wallet (retired 2026-10-29; swept to t1RyCw cold storage after the Binance hack)' },
+
+  // Binance post-hack wallet rotation (2026-10-29 to 2026-11-14). Evidence:
+  // tx 570f54fe… co-spends t1RyCw/t1XP8/t1Rmpqyu/t1cLXe/t1M1j1 (common-input
+  // ownership) into t1Vscjx + t1Szbu; t1gsBr was funded by t1RyCw in tx
+  // 0baba4e4… (change to t1Rmpqyu) and since then only refills t1Szbu.
+  { address: 't1SzbuFRuPa5upV6c9ZgKb9V7fxn2b8NAKg', label: 'Binance Hot Wallet', category: 'exchange', description: 'Binance hot wallet (active since 2026-10-31; refilled from Binance cold storage)' },
+  { address: 't1VscjxQX2pvPjXCyUAFZxXMAU4BtKr9KGv', label: 'Binance Cold Wallet', category: 'exchange', description: 'Binance cold storage (received the 2026-11-01 cold-wallet consolidation)' },
+  { address: 't1gsBrGZGMyDGZw2icGnMpVBuEGVWip5kH8', label: 'Binance Cold Wallet', category: 'exchange', description: 'Binance cold storage (funded by t1RyCw; refills the Binance hot wallet)' },
+  { address: 't1Rmpqyu1jTXrjU8SEw6GmdRXdxCdPbmj6k', label: 'Binance Cold Wallet', category: 'exchange', description: 'Binance cold storage change address' },
+  { address: 't1cLXeZt4mWKohk51N3Vhy7cWJtfz6fgANF', label: 'Binance Cold Wallet', category: 'exchange', description: 'Binance cold storage change address' },
+  { address: 't1M1j1rPwUFGz8GDFrgi8rs9R3c7XtCH4Gv', label: 'Binance Cold Wallet', category: 'exchange', description: 'Binance cold storage change address' },
 
   // Coinbase
   { address: 't1L3mP83QYtcVc5r48sB4tYaPiA31z78WPw', label: 'Coinbase Cold Wallet', category: 'exchange', description: 'Coinbase cold storage' },

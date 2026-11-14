@@ -107,7 +107,7 @@ test('one economic swap is posted once across NEAR, Maya and THORChain', () => {
   assert.equal(result.selected.length, 1);
   assert.deepEqual(result.skipped.map(s => s.reason), ['swap-overlap-already-posted']);
 
-  // Distinct native transactions are distinct swaps (only the normal slot pacing applies).
+  // Distinct native transactions are distinct swaps (no slot or daily limit applies).
   const other = p.swapStory(venueRow({ id: `maya-swap-${tx('8')}`, zec_legs: [{ side: 'out', txid: tx('7'), address: 't1q' }] }));
   result = p.select([other], history, now);
   assert.notEqual(result.skipped[0]?.reason, 'swap-overlap-already-posted');

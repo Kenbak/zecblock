@@ -76,21 +76,15 @@ test('money-movement family repetition can yield to a fresh analytical topic', (
   assert.equal(ordinary.evidence.editorialSelection.noveltyPenalty, 10);
 });
 
-test('the two-per-day direct-flow cap combines directions and counts held delivery attempts', () => {
+test('qualifying flows have no daily cap and no wait after another flow', () => {
   const history = [posted(flow('b'), '2026-10-26T00:00:00Z', 'posting'),
-    posted(flow('c', { flow_type: 'deshield' }), '2026-10-26T01:00:00Z', 'uncertain')];
+    posted(flow('c', { flow_type: 'deshield' }), '2026-10-26T01:00:00Z', 'uncertain'),
+    posted(flow('1', { flow_type: 'deshield' }), '2026-10-26T07:00:00Z')];
   const result = p.select([flow('d'), flow('e', { flow_type: 'deshield' })], history, now);
-  assert.equal(result.selected.length, 0);
-  assert.deepEqual(result.skipped.map(s => s.reason), ['flow-combined-daily-cap', 'flow-combined-daily-cap']);
-  assert.equal(p.select([flow('f')], history, new Date('2026-10-27T08:00:00Z')).selected.length, 1);
-});
-
-test('an ordinary consecutive flow waits six hours even when there is no filler story', () => {
-  const history = [posted(flow('b', { flow_type: 'deshield' }), '2026-10-26T07:00:00Z')];
-  const result = p.select([flow()], history, now);
-  assert.equal(result.selected.length, 0);
-  assert.equal(result.skipped[0].reason, 'recent-flow-topic');
-  assert.equal(p.select([flow()], history, new Date('2026-10-26T13:00:00Z')).selected.length, 1);
+  assert.deepEqual(result.selected.map(s => s.type).sort(), ['flow_deshield', 'flow_shield']);
+  assert.deepEqual(result.skipped, []);
+  // The same flow is still never posted twice.
+  assert.equal(p.select([flow('b')], history, now).skipped[0].reason, 'duplicate-or-held');
 });
 
 test('source replies cannot change editorial diversity, caps or headline deduplication', () => {

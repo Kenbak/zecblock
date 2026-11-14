@@ -563,8 +563,10 @@ function editorialRank(story, history, now) {
   return { topic, significance, noveltyPenalty, protectedLane, score: protectedLane + significance - noveltyPenalty };
 }
 
-// Keep exceptional swap capacity while limiting direct-flow dominance across
-// both directions. No daily quota needs filling: an empty selection is valid.
+// Flows and swaps have no daily or slot limit (owner decision, 2026-11-14):
+// the size and rarity bars decide what is worth posting, and the job posts one
+// story per run with 20 minutes between posts. Other story types keep their
+// own caps. No quota needs filling: an empty selection is valid.
 function select(candidates, history, now) {
   const today = now.toISOString().slice(0, 10);
   const eligibleHistory = history.filter(isEditorialHistory);
@@ -577,23 +579,10 @@ function select(candidates, history, now) {
     let reason = used.has(c.key) ? 'duplicate-or-held' : null;
     const same = recent.filter(p => p.post_type === c.type);
     const dayPosts = same.filter(p => new Date(p.created_at).toISOString().slice(0, 10) === today);
-    if (!reason && isFlow(c)) {
-      const flowsToday = recent.filter(p => isFlow(p) && new Date(p.created_at).toISOString().slice(0, 10) === today);
-      if (flowsToday.length >= 2) reason = 'flow-combined-daily-cap';
-      const latest = [...recent].sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
-      if (!reason && !exceptionalFlow(c) && latest && isFlow(latest)
-        && now - new Date(latest.created_at) < 6 * 3600000) reason = 'recent-flow-topic';
-    }
     if (!reason && c.type === 'swap') {
       const txids = new Set(swapZecTxids(c));
       if (txids.size && eligibleHistory.some(p => typeOf(p) === 'swap' && ['posted', 'posting', 'uncertain'].includes(p.status)
         && swapZecTxids(p).some(t => txids.has(t)))) reason = 'swap-overlap-already-posted';
-    }
-    if (!reason && c.type === 'swap') {
-      const exceptional = c.evidence.exceptional;
-      const slot = exceptional ? 'exceptional' : now.getUTCHours() < 12 ? 'am' : 'pm';
-      if (dayPosts.some(p => p.metadata?.slot === slot)) reason = `swap-${slot}-slot-used`;
-      c.evidence.slot = slot;
     }
     if (!reason && ['hashrate','network_signal'].includes(c.type)) {
       const comparable = same.filter(p => c.type !== 'network_signal' || p.metadata?.metric === c.evidence.metric);

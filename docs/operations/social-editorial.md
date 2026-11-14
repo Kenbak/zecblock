@@ -136,9 +136,9 @@ against one another. No quota needs filling when nothing qualifies.
 
 | Topic | Qualification and limits | Authority and wording |
 |---|---|---|
-| Shielding/deshielding | >=500 ZEC and inclusive upper tail <=0.5%; >=100 prior samples; two combined across both directions per UTC day | Canonical transaction-joined `shielded_flows`; verify net Sapling+Orchard+Ironwood balance, transparent involvement and non-coinbase; prior 90 days of the same direction, excluding candidate timestamp; exact rank with ties; rounded percentage never overstates rarity. A routine flow cannot immediately follow another direct flow within six hours. >=50,000 ZEC with upper tail <=0.1% has a protected ranking lane, but still respects the combined cap. This does not cover Sprout-only flows or private transferred amounts. |
+| Shielding/deshielding | >=500 ZEC and inclusive upper tail <=0.5%; >=100 prior samples; no daily cap (removed 2026-11-14) | Canonical transaction-joined `shielded_flows`; verify net Sapling+Orchard+Ironwood balance, transparent involvement and non-coinbase; prior 90 days of the same direction, excluding candidate timestamp; exact rank with ties; rounded percentage never overstates rarity. A routine flow cannot immediately follow another direct flow within six hours. >=50,000 ZEC with upper tail <=0.1% has a protected ranking lane, but still respects the combined cap. This does not cover Sprout-only flows or private transferred amounts. |
 | Swaps | >=$50,000 and inclusive upper tail <=1%; >=100 prior samples | Successful external ZEC routes in legacy `cross_chain_swaps`; rank on positive provider-reported **source USD**, never larger-of-two legs. Explicit NEAR 1Click observed sample, not all trading or all Intents activity. Missing source USD excludes ranking. |
-| Swap pacing | One ordinary slot each UTC half-day, plus one exceptional slot per UTC day | Exceptional means >=$1,000,000 and upper tail <=0.1%. Exceptional events retain capacity when ordinary slots are used. |
+| Swap pacing | No slot or daily limit (removed 2026-11-14); one story per run and twenty minutes between posts | Exceptional means >=$1,000,000 and upper tail <=0.1%; it ranks in a protected lane. |
 | Activity | One daily lead selected from share, shielded-component count, fully shielded count and total non-coinbase count | Canonical raw `transactions`/`blocks` through `readActivity`; complete target day plus 30 prior days; fresh tip and reconciled counts. Share differences use percentage points. Counts exclude coinbase; fully shielded means no transparent I/O; migrations are included. No unique-user/adoption claim. |
 | Weekly activity | Existing noteworthy rules: >=1,000 and top-ten rank, >=52 weeks since equal/higher, first record, or >=100% growth | Recompute complete Monday–Sunday weeks from 2016-10-31; genesis-contiguous history, fresh tip and reconciled counts. Explicit ties, exact comparison metadata. Reviewed legacy rows are respected. |
 | Hashrate | New high >=1% above prior peak; fallback to 91/31 daily samples | Shared `target-work-v1`, trailing **7-day** estimate sampled at UTC midnight. ATH requires >=366 continuous valid samples, full genesis block-height coverage, no missing targets/windows. Otherwise only a bounded-window high is possible. Exact peak comparison retained. |
@@ -166,8 +166,10 @@ change, qualified records or explicit evidence-based lenses. Selection records
 lane and final score. Same-topic output over three days incurs up to 24 points
 of penalty; another money-movement story immediately after a movement story
 incurs another ten. Protected lanes bypass novelty penalties: reorg 1000,
-exceptional swap 900, exceptional direct flow 800. The existing swap slots,
-signal/hashrate cooldowns, daily caps and twenty-minute parent spacing remain.
+exceptional swap 900, exceptional direct flow 800. Signal/hashrate
+cooldowns, the daily caps on other story types and twenty-minute parent spacing
+remain. Flows and swaps have had no daily, slot or flow-after-flow limit since
+2026-11-14.
 Source replies are excluded from all story-history and pacing calculations.
 
 The read-only production outbox audit motivating this change found, in its

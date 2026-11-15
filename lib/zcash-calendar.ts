@@ -208,3 +208,9 @@ export function estimateHeightAtTime(anchors: HeightAnchor[], time: number, spac
 
 /** UTC calendar day key, YYYY-MM-DD. */
 export const dayKey = (time: number) => new Date(time).toISOString().slice(0, 10);
+
+/** Countdown for a date-only event: "Today", "Tomorrow" or "N days"; never an invented hour. */
+export function daysUntilLabel(time: number, now: number): string {
+  const days = Math.max(0, Math.ceil((time - now) / 86_400_000));
+  return days === 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days`;
+}

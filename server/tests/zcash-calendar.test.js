@@ -97,3 +97,10 @@ test('watcher-approved events: Dev Fund poll, ZIP 2009 fee change and NSM reissu
   assert.ok(fee.time > now);
   assert.equal(byId('nsm-reissuance').height, 8_939_664);
 });
+
+test('date-only countdowns say Today, Tomorrow or N days', () => {
+  const at = Date.parse('2026-11-16T00:00:00Z');
+  assert.equal(calendar.daysUntilLabel(at, Date.parse('2026-11-15T19:00:00Z')), 'Tomorrow');
+  assert.equal(calendar.daysUntilLabel(at, Date.parse('2026-11-16T08:00:00Z')), 'Today');
+  assert.equal(calendar.daysUntilLabel(at, Date.parse('2026-11-13T19:00:00Z')), '3 days');
+});

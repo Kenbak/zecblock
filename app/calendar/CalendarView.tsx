@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useEffect, useRef, useState } from 'react';
 import { KindIcon } from '@/components/CalendarKindIcon';
-import { CALENDAR_KINDS, estimateHeightAtTime, formatCalendarDate, heightAnchors, type CalendarEvent, type CalendarKind, type HeightAnchor } from '@/lib/zcash-calendar';
+import { CALENDAR_KINDS, daysUntilLabel, estimateHeightAtTime, formatCalendarDate, heightAnchors, type CalendarEvent, type CalendarKind, type HeightAnchor } from '@/lib/zcash-calendar';
 
 const DAY = 86_400_000;
 
@@ -70,7 +70,7 @@ export function CalendarView({ events, tip, tipTime, spacing, eras, generatedAt 
           <div className="flex items-center justify-between gap-2"><KindTag kind={event.kind} /><span className="font-mono text-caption text-muted"><HeightLink event={event} /></span></div>
           <h3 className="mt-3 text-sm font-semibold text-primary"><EventTitle event={event} /></h3>
           <p className="mt-1 flex-1 text-xs leading-relaxed text-secondary">{event.detail}</p>
-          <p className="mt-3 text-2xl font-semibold tabular-nums text-primary">{event.time === null ? '—' : event.dateOnly ? `${Math.max(0, Math.ceil((event.time - now) / DAY))} days` : relative(event.time - now)}</p>
+          <p className="mt-3 text-2xl font-semibold tabular-nums text-primary">{event.time === null ? '—' : event.dateOnly ? daysUntilLabel(event.time, now) : relative(event.time - now)}</p>
           <p className="mt-1 font-mono text-caption text-muted">{formatCalendarDate(event)}</p>
         </li>)}</ol>}
     </section>
@@ -235,6 +235,10 @@ function MonthGroup({ label, items, now }: { label: string; items: CalendarEvent
 
 function agendaWhen(event: CalendarEvent, now: number) {
   const time = event.dateOnly || event.timeEstimated ? '' : `${new Date(event.time!).toLocaleTimeString('en-US', { timeZone: 'UTC', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })} UTC`;
-  if (event.status === 'upcoming' && event.time !== null) return `${time ? `${time} · ` : ''}in ${event.dateOnly ? `${Math.max(0, Math.ceil((event.time - now) / DAY))} days` : relative(event.time - now)}`;
+  if (event.status === 'upcoming' && event.time !== null) {
+    const days = event.dateOnly ? daysUntilLabel(event.time, now) : null;
+    const when = days === 'Today' || days === 'Tomorrow' ? days.toLowerCase() : `in ${days ?? relative(event.time - now)}`;
+    return `${time ? `${time} · ` : ''}${when}`;
+  }
   return time || (event.timeEstimated ? 'estimated date' : 'all day');
 }

@@ -17,7 +17,8 @@ function htmlToText(html) {
   return String(html ?? '')
     .replace(/<(?:br|\/p|\/li|\/h\d|\/tr|\/div)[^>]*>/gi, '\n')
     .replace(/<[^>]+>/g, ' ')
-    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&rsquo;|&#8217;/g, '’')
+    // &amp; last, so an escaped entity such as "&amp;lt;" decodes once to "&lt;".
+    .replace(/&nbsp;/g, ' ').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;|&rsquo;|&#8217;/g, '’').replace(/&amp;/g, '&')
     .replace(/[ \t]+/g, ' ')
     .replace(/\n\s*\n+/g, '\n')
     .trim();
@@ -144,7 +145,7 @@ function knownCalendar(sources) {
   return { topics, dates, heights };
 }
 
-const escapeMarkdown = value => String(value).replace(/([_*`\[\]])/g, '\\$1');
+const escapeMarkdown = value => String(value).replace(/([\\_*`\[\]])/g, '\\$1');
 
 /** One Telegram message (Markdown) for a batch of candidates; trimmed under Telegram's limit. */
 function formatDigest(candidates, { max = 3500 } = {}) {

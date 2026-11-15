@@ -48,10 +48,15 @@ test('the known calendar is read from source files', () => {
   assert.ok(known.heights.has(3_500_662));
 });
 
+test('entities decode exactly once', () => {
+  assert.equal(watch.htmlToText('<p>A &amp;lt;b&amp;gt; &amp; C &lt;tag&gt;</p>'), 'A &lt;b&gt; & C <tag>');
+});
+
 test('digest marks known and new items, escapes Markdown and stays under Telegram limits', () => {
   const text = watch.formatDigest([{ title: 'Fee *drop*', kind: 'upgrade', source: 'github/zebra', url: 'https://x.test', tracked: false,
     dates: [{ date: '2026-12-17', at: null, label: 'Voting', known: true }], heights: [{ value: 3_590_000, excerpt: 'until height 3,590,000', known: false }] }]);
   assert.match(text, /Fee \\\*drop\\\*/);
+  assert.match(watch.formatDigest([{ title: 'a\\_b', kind: 'k', source: 's', url: 'u', dates: [], heights: [] }]), /a\\\\\\_b/);
   assert.match(text, /✓ 2026-12-17 — Voting/);
   assert.match(text, /\+ block #3,590,000/);
   const many = Array.from({ length: 80 }, (_, i) => ({ title: `T${i}`, kind: 'vote', source: 's', url: 'u', dates: [{ date: '2026-12-01', label: 'x'.repeat(60) }], heights: [] }));
@@ -68,7 +73,7 @@ test('a run sends only new candidates once, then remembers them', async () => {
       : u.includes('/c/') ? { topic_list: { topics: [] } }
       : u.endsWith('/t/900.json') ? { title: 'Coinholder poll dates', post_stream: { posts: [{ version: 1, created_at: '2026-11-14T00:00:00Z', cooked: '<p>Polling opens November 20 and closes November 30 @ 20:00 UTC</p>' }] } }
       : u.includes('/v1/network/stats') ? { data: { blockchain: { height: 3_576_600 } } }
-      : u.includes('api.github.com') ? [{ tag_name: 'v9', name: 'v9', published_at: '2026-11-10T00:00:00Z', html_url: 'https://gh/v9', body: 'Mainnet fee change at height 3,600,000 (network upgrade schedule).' }]
+      : new URL(u).hostname === 'api.github.com' ? [{ tag_name: 'v9', name: 'v9', published_at: '2026-11-10T00:00:00Z', html_url: 'https://gh/v9', body: 'Mainnet fee change at height 3,600,000 (network upgrade schedule).' }]
       : null;
     return new Response(JSON.stringify(body), { status: body === null ? 404 : 200 });
   };
@@ -104,7 +109,7 @@ test('X uses the bot token read-only, sends one search, and an expired token onl
       return new Response(JSON.stringify({ data: [{ id: '42', author_id: '7', created_at: '2026-11-15T10:00:00Z', text: 'Coinholder poll on NU7.1 closes December 5 at 20:00 UTC' }], includes: { users: [{ id: '7', username: 'ZcashFoundation' }] } }));
     }
     if (u.includes('/v1/network/stats')) return Response.json({ data: { blockchain: { height: 3_576_600 } } });
-    return Response.json(u.includes('github') ? [] : { topic_list: { topics: [] } });
+    return Response.json(new URL(u).hostname === 'api.github.com' ? [] : { topic_list: { topics: [] } });
   };
   const env = { CALENDAR_WATCH_STATE: path.join(dir, 'state.json'), CALENDAR_WATCH_X_TOKEN_FILE: tokenFile };
   const sent = [];

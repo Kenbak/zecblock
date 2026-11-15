@@ -18,6 +18,7 @@
 
 const { getPool, getReadPool } = require('../lib/db-pool');
 const { XClient } = require('./lib/x-client');
+const { createCreditAlert } = require('./lib/x-credit-alert');
 const editorial = require('./jobs/editorial');
 const replay = require('./jobs/replay');
 const { renderEditorial } = require('./lib/zecblock-cards');
@@ -36,6 +37,8 @@ const xClient = new XClient({
   clientSecret: process.env.X_CLIENT_SECRET || '',
   tokenFile: path.resolve(__dirname, '.env'),
   dryRun,
+  // Telegram alert when the X API account runs out of credits (needs TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID).
+  onError: createCreditAlert(),
 });
 
 const logger = {

@@ -1,0 +1,27 @@
+# Zcash calendar source watcher: forum announcements and node release notes
+# become a Telegram digest of candidate calendar events for human approval.
+# Read-only on the internet side; it never edits the calendar or the database.
+
+[Unit]
+Description=ZecBlock calendar source watcher (forum + releases -> Telegram candidates)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/root/cipherscan
+
+# TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID: same credentials as the ops health check.
+EnvironmentFile=/root/cipherscan-rust/.env
+Environment=NODE_PATH=/root/cipherscan/server/api/node_modules
+Environment=CALENDAR_WATCH_STATE=/var/lib/cipherscan-calendar-watch/state.json
+StateDirectory=cipherscan-calendar-watch
+
+ExecStart=/usr/bin/flock -n -E 0 /run/cipherscan-calendar-watch.lock /usr/bin/node /root/cipherscan/server/jobs/watch-calendar-sources.js
+TimeoutStartSec=300
+Nice=10
+UMask=0077
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=cipherscan-calendar-watch

@@ -1,5 +1,6 @@
 import { readApiData } from '@/lib/api-client';
 import { isGrantsRound } from '@/lib/governance';
+import { GRANT_ROUNDS } from '@/lib/grant-rounds';
 import { getGovernanceCatalog } from '@/lib/governance-data';
 import { unstable_cache } from 'next/cache';
 import { getAllNewsletters } from '@/lib/newsletter';
@@ -297,9 +298,9 @@ export async function GET(
           known.add(url);
         }
       }
-      // The announcement redirects to a registered round once matched.
-      const grants = catalog.votes.filter(vote => isGrantsRound(vote.round));
-      const entries = grants.length === 1 ? staticEntries.filter(entry => !entry.url.endsWith('/governance/retroactive-grants-q3-2026')) : staticEntries;
+      // Each grants alias redirects to its registered round once exactly one matches.
+      const redirected = new Set(GRANT_ROUNDS.filter(round => catalog.votes.filter(vote => isGrantsRound(vote.round, round)).length === 1).map(round => `${baseUrl}/governance/${round.slug}`));
+      const entries = staticEntries.filter(entry => !redirected.has(entry.url));
       return xmlResponse(serializeUrlSet(entries), 300);
     }
     return xmlResponse(serializeUrlSet(staticEntries), 86_400);

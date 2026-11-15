@@ -49,6 +49,7 @@ const categories: NavigationCategory[] = [
     { href: '/usage-clock', label: 'Usage Clock', desc: 'Timing and regional patterns', networks: mainnet },
     { href: '/crosschain', label: 'Cross-Chain Swaps', desc: 'ZEC swaps via NEAR Intents', networks: mainnet },
     { href: '/governance', label: 'Governance', desc: 'Votes, schedules and results', networks: mainnet },
+    { href: '/calendar', label: 'Zcash Calendar', desc: 'Upgrades, votes and key blocks', networks: mainnet },
   ] },
   { id: 'tools', label: 'Tools', items: [
     { href: '/tools', label: 'Developer Tools', desc: 'Transaction and wallet utilities' },

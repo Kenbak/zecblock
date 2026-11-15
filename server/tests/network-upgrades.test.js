@@ -372,6 +372,9 @@ test('announced mainnet future preview renders sourced facts and one approximate
 test('announced site banner keeps its clickable block/date during an API error and stops at the known height', () => {
   const file = 'components/GovernanceBanner.tsx';
   const data = stats(announcedHeight - 100, 'main', null);
+  const realNow = Date.now;
+  Date.now = () => Date.parse('2026-11-01T00:00:00Z');
+  try {
   for (const input of [{ data, error: null }, { data, error: 'Offline' }, { data: null, error: 'Offline' }]) {
     const html = renderComponent(file, 'GovernanceBanner', {}, input.data, input.error, 'mainnet');
     assert.match(html, /NU7 announced mainnet upgrade/);
@@ -386,6 +389,12 @@ test('announced site banner keeps its clickable block/date during an API error a
       assert.match(html, /100<\/span> blocks/);
     }
   }
+  } finally { Date.now = realNow; }
+  // Once the announced date has lapsed, an API outage cannot resurrect the pre-activation notice.
+  Date.now = () => Date.parse('2026-11-15T00:00:00Z');
+  try {
+    assert.equal(renderComponent(file, 'GovernanceBanner', {}, null, 'Offline', 'mainnet'), '');
+  } finally { Date.now = realNow; }
   for (const height of [announcedHeight, announcedHeight + 1]) {
     const reached = stats(height, 'main', null);
     assert.equal(renderComponent(file, 'GovernanceBanner', {}, reached, null, 'mainnet'), '');

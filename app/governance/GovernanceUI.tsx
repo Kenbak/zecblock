@@ -3,7 +3,9 @@ import { STATE_LABELS, catalogIsStale, type Catalog, type VoteState } from '@/li
 import { getBaseUrl } from '@/lib/seo';
 import { GovernanceRefresh } from './GovernanceRefresh';
 
-export function Status({ state }: { state: VoteState | 'announced' }) {
+export function Status({ state, label }: { state?: VoteState | 'announced'; label?: string }) {
+  if (label) return <span className="inline-flex shrink-0 rounded-md border border-brand-gold/30 bg-brand-gold/5 px-2 py-0.5 font-mono text-caption uppercase tracking-wider text-brand-gold">{label}</span>;
+  if (!state) return null;
   const color = state === 'results' ? 'border-brand-gold/30 bg-brand-gold/5 text-brand-gold' : state === 'active' ? 'border-brand-gold/30 bg-brand-gold/5 text-brand-gold' : 'border-cipher-border text-secondary';
   return <span className={`inline-flex shrink-0 rounded-md border px-2 py-1 font-mono text-caption uppercase tracking-wider ${color}`}>{state === 'announced' ? 'Upcoming' : STATE_LABELS[state]}</span>;
 }

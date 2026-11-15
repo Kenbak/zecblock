@@ -1,0 +1,12 @@
+[Unit]
+Description=Check forum announcements and node releases for Zcash calendar events every six hours
+
+[Timer]
+# Off the hour and away from the five-minute venue/NEAR slots.
+OnCalendar=*-*-* 00/6:17:00 UTC
+RandomizedDelaySec=120
+Persistent=true
+Unit=cipherscan-calendar-watch.service
+
+[Install]
+WantedBy=timers.target

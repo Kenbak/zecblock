@@ -643,6 +643,7 @@ test('child sitemap isolates static cohorts and returns explicit 404/503 failure
     'next/cache': { unstable_cache: (callback) => callback },
     '@/lib/governance-data': { getGovernanceCatalog: async () => ({ votes: [], checkedAt: 0, unavailable: true }) },
     '@/lib/governance': { isGrantsRound: () => false },
+    '@/lib/grant-rounds': { GRANT_ROUNDS: [] },
     '@/lib/newsletter': { getAllNewsletters: () => [] },
     '@/lib/refresh-cache': refreshCache,
     '@/lib/seo': {
@@ -695,6 +696,7 @@ function loadNamesSitemapRoute(listZnsRegistrations, { network = 'mainnet', getZ
     'next/cache': { unstable_cache: (callback) => callback },
     '@/lib/governance-data': { getGovernanceCatalog: async () => ({ votes: [], checkedAt: 0, unavailable: true }) },
     '@/lib/governance': { isGrantsRound: () => false },
+    '@/lib/grant-rounds': { GRANT_ROUNDS: [] },
     '@/lib/newsletter': { getAllNewsletters: () => [] },
     '@/lib/refresh-cache': refreshCache,
     '@/lib/seo': {
@@ -950,7 +952,7 @@ test('robots omit unsupported Googlebot crawl delays on every network', () => {
 });
 
 
-test('only mainnet permits its exact public announcement render dependency', () => {
+test('only mainnet permits its exact public announcement and calendar render dependencies', () => {
   for (const network of ['mainnet', 'testnet', 'crosslink-testnet']) {
     const { default: robots } = loadTypeScriptModule('app/robots.ts', {
       '@/lib/seo': { getNetwork: () => network, getBaseUrl: () => 'https://zecblock.com' },
@@ -958,8 +960,9 @@ test('only mainnet permits its exact public announcement render dependency', () 
     for (const rule of [robots().rules].flat()) {
       const allow = [rule.allow].flat();
       assert.equal(allow.includes('/api/governance/announcement$'), network === 'mainnet');
+      assert.equal(allow.includes('/api/calendar$'), network === 'mainnet');
       assert.deepEqual(Array.from(rule.disallow), ['/api/']);
-      assert.ok(allow.every(path => path === '/' || path === '/api/governance/announcement$'));
+      assert.ok(allow.every(path => path === '/' || path === '/api/governance/announcement$' || path === '/api/calendar$'));
     }
   }
 });

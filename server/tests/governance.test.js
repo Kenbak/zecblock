@@ -11,11 +11,12 @@ function load(file, dependencies = {}) {
   const exports = {};
   vm.runInNewContext(ts.transpileModule(fs.readFileSync(file, 'utf8'), {
     compilerOptions: { target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.CommonJS, jsx: ts.JsxEmit.ReactJSX },
-  }).outputText, { exports, atob, URL, setTimeout, clearTimeout, console, require: name => dependencies[name] ?? (name === './bounded-json' ? { readBoundedJson } : name === './governance-upstream' ? load('lib/governance-upstream.ts', dependencies) : require(name)) });
+  }).outputText, { exports, atob, URL, setTimeout, clearTimeout, console, require: name => dependencies[name] ?? (name === './bounded-json' ? { readBoundedJson } : name === './grant-rounds' ? load('lib/grant-rounds.ts') : name === './governance-upstream' ? load('lib/governance-upstream.ts', dependencies) : require(name)) });
   return exports;
 }
 const nu7 = load('lib/nu7-vote-results.ts');
-const model = load('lib/governance.ts', { './nu7-vote-results': nu7 });
+const grantRounds = load('lib/grant-rounds.ts');
+const model = load('lib/governance.ts', { './nu7-vote-results': nu7, './grant-rounds': grantRounds });
 const { roundSchema, parseRoundVote, selectTrustedRounds, selectAnnouncement, TRUSTED_ENDORSER, roundHex, isGrantsRound, roundHref, GRANTS } = model;
 const { ProposalList } = load('app/governance/ProposalList.tsx');
 function fixture() {
@@ -116,7 +117,12 @@ test('official discussion identity connects an announcement without ambiguous ti
   assert.equal(isGrantsRound({ ...round, title: GRANTS.title }), false);
   assert.equal(isGrantsRound({ ...round, discussion_url: GRANTS.source }), true);
   assert.equal(isGrantsRound({ ...round, discussion_url: GRANTS.source.replace('forum.zcashcommunity.com', 'evil.example') }), false);
-  assert.equal(isGrantsRound({ ...round, discussion_url: GRANTS.source.replace('57056', '570560') }), false);
+  assert.equal(isGrantsRound({ ...round, discussion_url: GRANTS.source.replace('59298', '592980') }), false);
+  // Each curated round keeps its own identity: Q3's thread never matches Q4.
+  const q3 = grantRounds.grantRoundBySlug('retroactive-grants-q3-2026');
+  assert.equal(isGrantsRound({ ...round, discussion_url: q3.source }), false);
+  assert.equal(isGrantsRound({ ...round, discussion_url: q3.source }, q3), true);
+  assert.equal(model.grantRoundOf({ ...round, discussion_url: q3.source }).slug, q3.slug);
   assert.equal(roundHref(round), '/governance/nu7');
   const next = { ...round, vote_round_id: Buffer.alloc(32, 1).toString('base64'), discussion_url: GRANTS.source };
   assert.equal(roundHref(next), `/governance/${roundHex(next.vote_round_id)}`);
@@ -124,18 +130,54 @@ test('official discussion identity connects an announcement without ambiguous ti
 
 test('announcements prioritize active voting, expire, and suppress stale actionable claims', () => {
   const { round, summary, tally } = fixture();
-  const now = Date.parse('2026-09-15T00:00:00Z');
+  const now = Date.parse('2026-12-12T00:00:00Z');
   const result = parseRoundVote(round, summary, tally, now);
   const catalog = { votes: [result], checkedAt: now, unavailable: false };
-  assert.equal(selectAnnouncement(catalog, now).key, `${GRANTS.slug}:upcoming`);
+  // Q3-style date-only notice in the week before voting: no invented timer, no hint.
+  const upcoming = selectAnnouncement(catalog, now);
+  assert.equal(upcoming.key, `${GRANTS.slug}:upcoming`);
+  assert.equal(upcoming.text, 'Q4 2026 grants voting opens December 17 · Review the proposals');
+  assert.equal(upcoming.snapshotHeight, undefined);
+  assert.equal(upcoming.hint, undefined);
+  assert.equal(selectAnnouncement({ ...catalog, checkedAt: Date.parse('2026-11-20T00:00:00Z') }, Date.parse('2026-11-20T00:00:00Z')), null);
   const active = { ...result, id: 'other', state: 'active', round: { ...round, vote_end_time: now / 1000 + 3600 } };
   assert.equal(selectAnnouncement({ ...catalog, votes: [result, active] }, now).key, 'other:active');
-  const afterOpening = Date.parse('2026-09-17T12:00:00Z');
-  assert.equal(selectAnnouncement({ ...catalog, checkedAt: afterOpening }, afterOpening).key, `${result.id}:results`);
-  assert.equal(selectAnnouncement({ ...catalog, checkedAt: 0 }, afterOpening), null);
-  const afterExpiry = Date.parse('2026-09-20T00:00:00Z');
-  assert.equal(selectAnnouncement({ ...catalog, checkedAt: afterExpiry }, afterExpiry), null);
-  assert.equal(selectAnnouncement({ ...catalog, votes: [{ ...result, state: 'unavailable' }], checkedAt: afterOpening }, afterOpening), null);
+  // Only a registered round's snapshot block drives a countdown and the shield hint.
+  const preparing = { ...result, id: 'q4', state: 'upcoming', round: { ...round, snapshot_height: 3650000, discussion_url: GRANTS.source } };
+  const prepared = selectAnnouncement({ ...catalog, votes: [result, preparing] }, now);
+  assert.equal(prepared.key, 'q4:snapshot');
+  assert.equal(prepared.snapshotHeight, 3650000);
+  assert.match(prepared.hint, /Ironwood/);
+  // Before the submission deadline and after the voting date, nothing is announced from the calendar.
+  assert.equal(selectAnnouncement({ ...catalog, checkedAt: Date.parse('2026-12-17T00:00:00Z') }, Date.parse('2026-12-17T00:00:00Z')), null);
+  // Results stay bounded by the on-chain closing time and freshness.
+  const closed = round.vote_end_time * 1000 + 3600_000;
+  assert.equal(selectAnnouncement({ ...catalog, checkedAt: closed }, closed).key, `${result.id}:results`);
+  assert.equal(selectAnnouncement({ ...catalog, checkedAt: 0 }, closed), null);
+  assert.equal(selectAnnouncement({ ...catalog, votes: [{ ...result, state: 'unavailable' }], checkedAt: closed }, closed), null);
+});
+
+test('Q4 2026 itemized proposals match the organizer totals for every category', () => {
+  const round = grantRounds.CURRENT_GRANT_ROUND;
+  const totals = grantRounds.grantTotals(round);
+  assert.equal(totals.count, round.statedTotals.proposals);
+  assert.equal(totals.requestedUsd, round.statedTotals.requestedUsd);
+  const expected = { security: [15, 1_213_750], core: [8, 2_237_350], wallets: [9, 729_345], payments: [7, 470_380], tools: [12, 242_533], community: [3, 916_067], admin: [1, 58_000] };
+  for (const { category, count, requestedUsd } of totals.byCategory) assert.deepEqual([count, requestedUsd], expected[category], category);
+  const issues = round.proposals.map(p => p.github).filter(n => n !== null);
+  assert.equal(new Set(issues).size, issues.length);
+  assert.equal(round.proposals.filter(p => p.ownApplication).length, 1);
+});
+
+test('grant phases follow the official schedule without inventing a voting start time', () => {
+  const round = grantRounds.CURRENT_GRANT_ROUND;
+  const at = iso => grantRounds.grantPhase(round, Date.parse(iso)).phase;
+  assert.equal(at('2026-11-13T19:59:59Z'), 'submissions');
+  assert.equal(at('2026-11-15T12:00:00Z'), 'between');
+  assert.equal(at('2026-11-16T00:00:00Z'), 'review');
+  assert.equal(at('2026-12-16T20:00:00Z'), 'awaiting-vote');
+  assert.equal(at('2026-12-17T00:00:00Z'), 'voting');
+  assert.equal(at('2026-12-29T20:00:00Z'), 'closed');
 });
 
 test('directory freshness decides whether a missing round is authoritative independently of tally freshness', () => {
@@ -179,6 +221,8 @@ test('new governance routes resolve missing resources and non-mainnet before HTM
   });
   assert.equal((await outage.resolveGovernanceRequest(`/governance/${'0'.repeat(64)}`, 'mainnet')).status, 503);
   assert.equal((await outage.resolveGovernanceRequest(`/governance/${GRANTS.slug}`, 'mainnet')).status, 200);
+  assert.equal((await outage.resolveGovernanceRequest('/governance/retroactive-grants-q3-2026', 'mainnet')).status, 200);
+  assert.equal((await outage.resolveGovernanceRequest('/governance/retroactive-grants-q9-2026', 'mainnet')).status, 404);
 });
 
 test('a failed historical tally fetch does not suppress discovery of an active vote', async () => {

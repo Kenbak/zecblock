@@ -172,6 +172,12 @@
       "core": true
     },
     {
+      "id": "governance-retroactive-grants-q4-2026",
+      "routeGroup": "/governance/[slug]",
+      "path": "/governance/retroactive-grants-q4-2026",
+      "core": true
+    },
+    {
       "id": "governance-retroactive-grants-q3-2026",
       "routeGroup": "/governance/[slug]",
       "path": "/governance/retroactive-grants-q3-2026",
@@ -181,6 +187,12 @@
       "id": "governance-nu7",
       "routeGroup": "/governance/nu7",
       "path": "/governance/nu7",
+      "core": true
+    },
+    {
+      "id": "calendar",
+      "routeGroup": "/calendar",
+      "path": "/calendar",
       "core": true
     },
     {

@@ -49,7 +49,10 @@ test('fetch pages through results with the read-only token and reports auth fail
   assert.match(new URL(seen[0].url).searchParams.get('query'), /from:zecblock OR from:k6nb4k/);
   assert.equal(new URL(seen[1].url).searchParams.get('next_token'), 'p2');
   assert.equal(pulse.totals.posts, 5);
-  await assert.rejects(fetchPulse({ env: { X_BEARER_TOKEN: 'tok' }, fetchImpl: async () => new Response('{"detail":"secret"}', { status: 401 }) }), error => /HTTP 401.*X_BEARER_TOKEN/.test(error.message) && !/secret/.test(error.message));
-  await assert.rejects(fetchPulse({ env: { X_BEARER_TOKEN: '...' }, fetchImpl }), /placeholder/);
+  await assert.rejects(fetchPulse({ env: { X_BEARER_TOKEN: 'tok' }, fetchImpl: async () => new Response('{"detail":"secret"}', { status: 401 }) }), error => /HTTP 401\): X rejected X_BEARER_TOKEN/.test(error.message) && !/secret/.test(error.message));
+  await assert.rejects(fetchPulse({ env: { X_ACCESS_TOKEN: '...' }, fetchImpl }), /placeholder/);
   await assert.rejects(fetchPulse({ env: { X_TOKEN_FILE: '/nonexistent' }, fetchImpl }), /No X token/);
+  seen.length = 0;
+  await fetchPulse({ env: { X_ACCESS_TOKEN: 'bot-user-token', X_TOKEN_FILE: '/nonexistent' }, fetchImpl: async (url, init) => { seen.push({ auth: init.headers.Authorization }); return Response.json({ data: [] }); } });
+  assert.equal(seen[0].auth, 'Bearer bot-user-token');
 });

@@ -64,8 +64,8 @@ sudo cp server/deploy/cipherscan-calendar-watch.{service,timer} /etc/systemd/sys
 sudo systemctl daemon-reload && sudo systemctl enable --now cipherscan-calendar-watch.timer
 ```
 
-X uses `X_BEARER_TOKEN` if set, otherwise it reads only the `X_ACCESS_TOKEN`
-line from the bot's `/root/cipherscan/server/bot/.env`
+X uses `X_BEARER_TOKEN` or `X_ACCESS_TOKEN` if set, otherwise it reads only
+the `X_ACCESS_TOKEN` line from the bot's `/root/cipherscan/server/bot/.env`
 (`CALENDAR_WATCH_X_TOKEN_FILE`). It never refreshes that token: X refresh
 tokens are single-use and the bot owns them. An expired token skips X for that
 run. Each run costs one paid X search request.

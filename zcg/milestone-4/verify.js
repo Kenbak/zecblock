@@ -190,9 +190,9 @@ async function testNu7() {
         if (zat(p.minerReceiptsZat) === zat(p.minerSubsidyZat) + toMiner) receiptOk++;
       }
     }
-    show('Blocks checked', { feeSplit: feeChecked, receipts: receiptChecked });
-    assert(feeChecked > 0 && feeOk === feeChecked, 'Every block: fees to NSM = floor(fees × 3/5), miner gets the rest', `${feeOk}/${feeChecked}`);
-    assert(receiptChecked > 0 && receiptOk === receiptChecked, 'Every block: miner receipts = subsidy + miner fee share', `${receiptOk}/${receiptChecked}`);
+    show('Recent blocks checked (history endpoint window)', { feeSplit: feeChecked, receipts: receiptChecked });
+    assert(feeChecked > 0 && feeOk === feeChecked, `Latest ${feeChecked} blocks: fees to NSM = floor(fees × 3/5), miner gets the rest`, `${feeOk}/${feeChecked}`);
+    assert(receiptChecked > 0 && receiptOk === receiptChecked, `Latest ${receiptChecked} blocks with receipts: miner receipts = subsidy + miner fee share`, `${receiptOk}/${receiptChecked}`);
   }
 
   // Node readiness

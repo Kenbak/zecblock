@@ -77,7 +77,7 @@ curl -s "https://api.zecblock.com/api/network/accounting/history" | jq '[.points
 }
 ```
 
-`24100 × 3/5 = 14460` to NSM, `24100 − 14460 = 9640` to the miner, `41666668 + 9640 = 41676308` miner receipts. `verify.js` checks this for every block in the history window.
+`24100 × 3/5 = 14460` to NSM, `24100 − 14460 = 9640` to the miner, `41666668 + 9640 = 41676308` miner receipts. `verify.js` checks this for each of the most recent blocks the history endpoint returns (currently 120).
 
 **Node upgrade readiness:**
 

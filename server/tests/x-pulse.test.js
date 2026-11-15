@@ -13,19 +13,20 @@ const tweets = [
   t('12', '2', 'NU7.1 poll opens tomorrow. Shielded ZEC only. Ironwood snapshot details soon.', 400),
   t('13', '1', 'gm', 5),
   t('14', '2', 'Thread on the Dev Fund poll and Ironwood:', 50, { conversation_id: '12' }),
-  t('15', '1', 'What should NU8 prioritise?', 20),
+  t('15', '1', 'What should NU8 prioritise? @0xfoobar well', 20),
+  t('17', '2', '@0xfoobar Well, Ironwood again', 10),
   t('16', '3', 'Block 3,590,000: fees drop to 1,000 zatoshis.', 120),
 ];
 
 test('ranks by engagement, keeps our accounts as a separate baseline', () => {
   const p = analyzePulse(tweets, users, { own: OWN_X_ACCOUNTS, now: Date.parse('2026-11-15T18:00:00Z') });
-  assert.equal(p.totals.posts, 5);
+  assert.equal(p.totals.posts, 6);
   assert.equal(p.topPosts[0].username, 'zooko');
   assert.equal(p.topPosts[0].url, 'https://x.com/zooko/status/11');
   assert.ok(p.topPosts.every(x => x.username !== 'zecblock'));
   assert.equal(p.ours.top[0].username, 'zecblock');
   assert.ok(p.trending.some(x => x.term.toLowerCase() === 'ironwood'));
-  assert.ok(!p.trending.some(x => ['the', 'today', 'https'].includes(x.term.toLowerCase())));
+  assert.ok(!p.trending.some(x => ['the', 'today', 'https', 'well', '0xfoobar'].includes(x.term.toLowerCase())));
   assert.equal(p.format.top.media > 0, true);
   const text = renderPulse(p);
   assert.match(text, /## Trending terms/);
@@ -48,7 +49,7 @@ test('fetch pages through results with the read-only token and reports auth fail
   assert.equal(seen[0].auth, 'Bearer tok');
   assert.match(new URL(seen[0].url).searchParams.get('query'), /from:zecblock OR from:k6nb4k/);
   assert.equal(new URL(seen[1].url).searchParams.get('next_token'), 'p2');
-  assert.equal(pulse.totals.posts, 5);
+  assert.equal(pulse.totals.posts, 6);
   await assert.rejects(fetchPulse({ env: { X_BEARER_TOKEN: 'tok' }, fetchImpl: async () => new Response('{"detail":"secret"}', { status: 401 }) }), error => /HTTP 401\): X rejected X_BEARER_TOKEN/.test(error.message) && !/secret/.test(error.message));
   await assert.rejects(fetchPulse({ env: { X_ACCESS_TOKEN: '...' }, fetchImpl }), /placeholder/);
   await assert.rejects(fetchPulse({ env: { X_TOKEN_FILE: '/nonexistent' }, fetchImpl }), /No X token/);

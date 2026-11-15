@@ -6,7 +6,7 @@
  * Tweets are untrusted data: they are measured and quoted, never followed.
  */
 
-const STOP = new Set(('a an the and or but if then than so of to in on at by for from with without into over under about as is are was were be been being it its this that these those there here we you they i me my our your their he she his her them us not no yes do does did done have has had will would can could should may might just also more most very much many any some all each every one two new now today via amp rt https http co www com what when where who why how which while after before up out off only own same too again once still even back get got make made see let lets need via vs per').split(' '));
+const STOP = new Set(('a an the and or but if then than so of to in on at by for from with without into over under about as is are was were be been being it its this that these those there here we you they i me my our your their he she his her them us not no yes do does did done have has had will would can could should may might just also more most very much many any some all each every one two new now today via amp rt https http co www com what when where who why how which while after before up out off only own same too again once still even back get got make made see let lets need via vs per well yeah really think know good great way thing things lol gm').split(' '));
 
 const score = m => (m?.like_count ?? 0) + 2 * (m?.retweet_count ?? 0) + 2 * (m?.quote_count ?? 0) + (m?.reply_count ?? 0) + (m?.bookmark_count ?? 0);
 const median = list => { const s = [...list].sort((a, b) => a - b); return s.length ? (s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2) : 0; };
@@ -34,7 +34,8 @@ function terms(tweets) {
   for (const t of tweets) {
     const w = 1 + Math.log1p(score(t.public_metrics));
     const seen = new Set();
-    for (const raw of textOf(t).replace(/https?:\/\/\S+/g, ' ').match(/[#$]?[\p{L}\p{N}][\p{L}\p{N}._-]{2,}/gu) ?? []) {
+    // Mentions are conversations, not topics.
+    for (const raw of textOf(t).replace(/https?:\/\/\S+/g, ' ').replace(/@\w{1,15}/g, ' ').match(/[#$]?[\p{L}\p{N}][\p{L}\p{N}._-]{2,}/gu) ?? []) {
       const term = raw.replace(/[._-]+$/, '');
       const key = term.toLowerCase();
       if (STOP.has(key) || /^\d+$/.test(key) || seen.has(key)) continue;

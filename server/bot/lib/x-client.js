@@ -14,7 +14,8 @@ const crypto = require('crypto');
 const MEDIA_CHUNK_BYTES = 4 * 1024 * 1024;
 
 class XClient {
-  constructor({ accessToken, refreshToken, clientId, clientSecret, tokenFile, dryRun = false, logger = console }) {
+  constructor({ accessToken, refreshToken, clientId, clientSecret, tokenFile, dryRun = false, logger = console, onError = null }) {
+    this.onError = onError;
     this.accessToken = accessToken;
     this.refreshTokenValue = refreshToken || '';
     this.clientId = clientId || '';
@@ -36,10 +37,17 @@ class XClient {
       if (err.statusCode === 401 && this.refreshTokenValue && this.clientId) {
         this.logger.info('[XClient] Got 401, attempting token refresh...');
         await this._doRefresh();
-        return await fn();
+        try { return await fn(); } catch (retryError) { this._notify(retryError); throw retryError; }
       }
+      this._notify(err);
       throw err;
     }
+  }
+
+  /** Tell the operator hook about a failed request. It must never change what the caller sees. */
+  _notify(err) {
+    if (!this.onError) return;
+    Promise.resolve().then(() => this.onError(err)).catch(() => {});
   }
 
   async _doRefresh() {
@@ -234,6 +242,7 @@ class XClient {
         mediaId = await this.uploadMedia(imagePath);
       } catch (err) {
         this.logger.warn(`[XClient] Media upload failed, falling back to text-only: ${err.message}`);
+        this._notify(err);
       }
 
       if (text.length > 280) {

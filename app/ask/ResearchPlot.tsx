@@ -1,7 +1,7 @@
 'use client';
 import {useId,useSyncExternalStore} from 'react';
 import {ResponsiveContainer,ComposedChart,Bar,Cell,Line,Area,XAxis,YAxis,CartesianGrid,ReferenceDot,ReferenceLine} from 'recharts';
-import {shortLabel,supportsLine,chartLabel,chartSeries,chartValues,axisFor,dateFormatter,axisDateFormatter,chartHighlight,SERIES_COLORS} from '@/lib/ask/research-display';
+import {shortLabel,supportsLine,chartLabel,chartSeries,chartValues,axisFor,dateFormatter,axisDateFormatter,chartHighlight,chartLegend,SERIES_COLORS} from '@/lib/ask/research-display';
 import {ChartTooltip} from '@/components/charts/ChartTooltip';
 import type {ResearchResult,ResearchChart} from '@/lib/ask/research-contract';
 import styles from './research.module.css';
@@ -49,12 +49,13 @@ export default function ResearchPlot({result,chart}:{result:ResearchResult;chart
  const labelWidth=Math.min(200,Math.max(48,...data.map(d=>String(xLabel(d.x)).length*8+16)));
  const mark=chartHighlight(result,chart);
  const animate=!still,motion={isAnimationActive:animate,animationDuration:700,animationEasing:'ease-out' as const};
- const legend=series?series.legend.map(item=>({value:item.value,color:item.color})):many?values.map((i,k)=>({value:name(i,k),color:SERIES_COLORS[k]})):[];
+ const legend=chartLegend(result,chart);
  const label=values.map(i=>result.columns[i].label).join(', ');
  const primary=SERIES_COLORS[0];
  const places=Math.min(4,Math.max(decimals(mark?.value??null),decimals(mark?.kind==='change'?mark.from.value:null)));
  const delta=mark?.kind==='change'?`${mark.delta>0?'+':mark.delta<0?'−':''}${Math.abs(mark.delta).toLocaleString('en-US',{minimumFractionDigits:places,maximumFractionDigits:places})}`:'';
- return <div role="img" aria-label={`${chart.view} chart of ${label} by ${result.columns[chart.x]?.label}; exact values in the table`}>
+ // data-research-plot: Share → Download image reads this chart's drawn SVG.
+ return <div data-research-plot role="img" aria-label={`${chart.view} chart of ${label} by ${result.columns[chart.x]?.label}; exact values in the table`}>
   {mark||legend.length?<div className={styles.plotHead}>
    {mark?<div className={styles.plotStat} aria-hidden="true">
     <span className={styles.plotStatLabel}>{HIGHLIGHT_LABEL[mark.kind]} · {result.columns[chart.y].label.replaceAll('_',' ')} · {pointLabel(mark.label)}{mark.partial?' (to date)':''}</span>

@@ -15,5 +15,6 @@ export function chartSeries(result:ResearchResult,x:number):{column:number;legen
 export function axisDateFormatter(result:ResearchResult,i:number):((value:string)=>string)|null;
 export function dateFormatter(result:ResearchResult,i:number):((value:string)=>string)|null;
 export function chartValues(result:ResearchResult,chart:ResearchChart):number[];
+export function chartLegend(result:ResearchResult,chart:ResearchChart):{value:string;color:string}[];
 export function axisFor(result:ResearchResult,values:number[]):('left'|'right')[];
 export const SERIES_COLORS:string[];

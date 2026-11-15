@@ -126,3 +126,14 @@ test('charts draw up to five distinct value columns and put very different sizes
  assert.equal(chart.safeParse({view:'line',x:0,y:1,series:[1]}).success,false,'a value is drawn once');
  assert.equal(chart.safeParse({view:'line',x:0,y:1,series:[2,3,4,5,6]}).success,false,'at most five values');
 });
+test('Share → Chart image (PNG) is offered for charts only and exports the result as shown',()=>{
+ const table=panel();const off=table.capture.find(e=>e.type==='button'&&e.props.children==='Chart image (PNG)');assert.ok(off,'menu item');assert.equal(off.props.disabled,true);assert.match(table.html,/<p class="menuHeading">Download<\/p><button[^>]*>Results as CSV<\/button><button[^>]*>Chart image \(PNG\)<\/button>/);
+ const calls=[];const {capture}=panel({chart:{view:'bar',x:0,y:0},exportImage:(svg,shown)=>calls.push([svg,shown])});
+ const item=capture.find(e=>e.type==='button'&&e.props.children==='Chart image (PNG)');assert.equal(item.props.disabled,false);assert.equal(item.props['data-close'],true);
+ item.props.onClick();assert.equal(calls.length,1);assert.equal(calls[0][0],undefined,'no drawn chart during server render');assert.equal(calls[0][1],result);
+});
+test('image export asks for a chart first and reports a browser failure without throwing',async()=>{
+ const fixture=toolsFixture();
+ try{await fixture.tools.exportImage(null,result);fixture.tools=fixture.render();assert.equal(fixture.tools.error,'Show this result as a chart before downloading an image.');}
+ finally{fixture.cleanup();}
+});

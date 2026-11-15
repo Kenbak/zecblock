@@ -7,6 +7,7 @@ import {defaultResearchChart,fitResearchChart,shortLabel,supportsLine,cellLink,d
 import type { ResearchChart, ResearchHighlight, ResearchDocument, ResearchLibrary, ResearchResult, ResearchNarrative } from '@/lib/ask/research-contract';
 import { chartSchema, researchDocumentSchema, researchNarrativeSchema } from '@/lib/ask/research-contract';
 import { emptyLibrary, readLibrary, writeLibrary, readPortable, mergePortable, markdownReport, csvReport, MAX_BYTES } from '@/lib/ask/research-library';
+import { downloadChartImage } from '../../lib/ask/research-image';
 import { queryShare, dashboardShare, compactResearchLink, sharedLibrary, type ResearchShare } from '@/lib/ask/research-share';
 import styles from './research.module.css';
 import { CopyButton } from '../../lib/ask/copy-button';
@@ -187,6 +188,12 @@ export function useResearchTools(initial?: ResearchResult, initialTitle = 'My Zc
     try { download('zecblock-results.csv', csvReport(document()), 'text/csv;charset=utf-8'); setError(''); }
     catch { setError('Run this query before downloading its results as CSV.'); }
   }
+  // Share → Download image: the chart as drawn, on a dark 1200×675 card.
+  async function exportImage(svg: SVGSVGElement | null | undefined, shown: ResearchResult) {
+    if (!svg || chart.view === 'table') { setError('Show this result as a chart before downloading an image.'); return; }
+    try { await downloadChartImage(svg, shown, chart, title); setError(''); }
+    catch { setError('The chart image could not be created in this browser. Try again once the chart has loaded.'); }
+  }
   async function copyLink(board = false) {
     try {
       const share = board && boardId ? dashboardShare(library, boardId) : queryShare(document());
@@ -206,7 +213,7 @@ export function useResearchTools(initial?: ResearchResult, initialTitle = 'My Zc
   }
   // Opening or closing a dashboard starts with no leftover action message.
   function showDashboard(board: string | null) { setBoardId(board); setNotice(''); setError(''); setShareURL(''); }
-  return { library, ready, id, title, setTitle, notes, setNotes, sql, setSQL, limit, setLimit, result, narrative, chart, setChart, suggest, boardId, setBoardId: showDashboard, notice, error, importing, shareURL, dirty, copyLink, saveShared, accept, annotate, open, reset, document, save, importFile, exportFile, exportCSV, renameDocument, updateNotes, removeDocument, toggleDashboard, createDashboard, renameDashboard, removeFromDashboard, deleteDashboard, refreshDocument, downloadLibrary: () => download('zecblock-library.json', JSON.stringify(libraryRef.current, null, 2), 'application/json') };
+  return { library, ready, id, title, setTitle, notes, setNotes, sql, setSQL, limit, setLimit, result, narrative, chart, setChart, suggest, boardId, setBoardId: showDashboard, notice, error, importing, shareURL, dirty, copyLink, exportImage, saveShared, accept, annotate, open, reset, document, save, importFile, exportFile, exportCSV, renameDocument, updateNotes, removeDocument, toggleDashboard, createDashboard, renameDashboard, removeFromDashboard, deleteDashboard, refreshDocument, downloadLibrary: () => download('zecblock-library.json', JSON.stringify(libraryRef.current, null, 2), 'application/json') };
 }
 type Tools = ReturnType<typeof useResearchTools>;
 
@@ -343,7 +350,8 @@ export function ResearchPanel({ tools, result, busy, titleId, embedded = false, 
       </select></span></label>
       {chosen.length > 1 && tools.chart.view !== 'line' ? <label className={styles.checkRow}><input type="checkbox" checked={!!tools.chart.stacked} onChange={event => update({ ...tools.chart, stacked: event.target.checked || undefined })} /><span>Stack</span></label> : null}
     </div>;
-  return <div className={`${styles.panelBody} ${embedded ? styles.embeddedPanel : ''}`}>
+  const root = useRef<HTMLDivElement>(null);
+  return <div ref={root} className={`${styles.panelBody} ${embedded ? styles.embeddedPanel : ''}`}>
     {!embedded ? <h2 className={styles.resultTitle}>{tools.title}</h2> : null}
     <div className={`${styles.resultToolbar} ${embedded ? styles.embeddedToolbar : ''}`}>
       <div className={styles.viewSwitch} role="group" aria-label="Result view">{([['table', 'Table', true], ['bar', 'Bar', numeric], ['area', 'Area', lineAllowed], ['line', 'Line', lineAllowed]] as const).map(([view, label, allowed]) => <button type="button" key={view} aria-pressed={tools.chart.view === view} disabled={!allowed} onClick={() => update({ ...tools.chart, view })}>{label}</button>)}</div>
@@ -371,6 +379,7 @@ export function ResearchPanel({ tools, result, busy, titleId, embedded = false, 
           <p className={styles.menuNote}>Shares the SQL, name and chart settings, not results. It never runs automatically.</p>
           <p className={styles.menuHeading}>Download</p>
           <button type="button" data-close className={styles.menuItem} disabled={disabled || !hasSnapshot} onClick={tools.exportCSV}>Results as CSV</button>
+          <button type="button" data-close className={styles.menuItem} disabled={disabled || tools.chart.view === 'table'} title={tools.chart.view === 'table' ? 'Choose Bar, Area or Line first' : undefined} onClick={() => void tools.exportImage(root.current?.querySelector<SVGSVGElement>('[data-research-plot] svg.recharts-surface'), result)}>Chart image (PNG)</button>
           <button type="button" data-close className={styles.menuItem} disabled={disabled} onClick={() => tools.exportFile(true)}>Report (Markdown)</button>
           <button type="button" data-close className={styles.menuItem} disabled={disabled} onClick={() => tools.exportFile(false)}>Research file (JSON)</button>
         </Menu>

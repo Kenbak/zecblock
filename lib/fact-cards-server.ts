@@ -2,7 +2,7 @@ import 'server-only';
 import { getApiUrlForNetwork } from '@/lib/api-config';
 import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 import {
-  chainHeightCard, chainSizeCard, dailyTransactionsCard, dormantSupplyCard, feesCard, findFactCard, halvingCard, hashrateCard,
+  calendarCard, chainHeightCard, chainSizeCard, dailyTransactionsCard, dormantSupplyCard, feesCard, findFactCard, halvingCard, hashrateCard,
   issuedSupplyCard, miningPoolsCard, miningSoftwareCard, mvrvCard, netShieldingCard, nodesCard, orphanRateCard, shieldedByPoolCard,
   shieldedSupplyCard, shieldedTransactionsCard, SWAP_VENUES, swapSourcesCard, swapVenuesCard, venueCard,
   type CardNetwork, type FactCard, type SwapVenue,
@@ -10,6 +10,7 @@ import {
 import { blocksCard, countdownCard, nsmCard, readinessCard, type Nu7Card } from '@/lib/nu7-cards';
 import { fetchWithDeadline } from '@/lib/server-fetch';
 import { loadUpgradeTrackers } from '@/lib/upgrade-trackers-server';
+import { loadCalendar } from '@/lib/zcash-calendar-server';
 
 const SWAP_TIMEOUT_MS = 20_000;
 
@@ -74,6 +75,7 @@ export async function loadFactCard(id: string, network: CardNetwork): Promise<Fa
     case 'nu7-blocks': return fromNu7(blocksCard((await loadBlockSpeedSnapshot(network)).story));
     case 'nu7-nsm': return fromNu7(nsmCard(network, inner(await api(network, '/v1/network/accounting/history?period=all')) as Parameters<typeof nsmCard>[1]));
     case 'nu7-readiness': return fromNu7(readinessCard(network, inner(await api(network, '/v1/network/nodes/upgrade-readiness')) as Parameters<typeof readinessCard>[1]));
+    case 'calendar': return calendarCard((await loadCalendar()).events);
     default: return null;
   }
 }

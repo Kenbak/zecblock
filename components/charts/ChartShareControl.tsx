@@ -15,13 +15,15 @@ export interface ChartShareControlProps {
   csvText?: () => string;
   disabled?: boolean;
   expanded?: boolean;
+  /** Menu edge classes; right-aligned by default. Page-header actions sit at the left on phones. */
+  menuAlignClassName?: string;
 }
 function download(blob: Blob, fileName: string) {
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, csvData, csvText, disabled = false, expanded = false }: ChartShareControlProps) {
+export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, csvData, csvText, disabled = false, expanded = false, menuAlignClassName = 'right-0' }: ChartShareControlProps) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState('');
   const [nativeFile, setNativeFile] = useState<File | null>(null);
   const [nativeSupported, setNativeSupported] = useState(false);
@@ -82,7 +84,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
       <button ref={trigger} type="button" aria-label={`Share ${title}`} aria-expanded={open} aria-controls={id} onClick={() => setOpen(value => !value)} className="flex h-11 w-11 sm:h-9 sm:w-9 items-center justify-center rounded-md text-muted hover:bg-glass-4 hover:text-primary focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold">
         <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M12 16V3m-4 4 4-4 4 4M5 13v6a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-6"/></svg>
       </button>
-      {open && <div id={id} className="absolute right-0 top-full z-40 mt-1 flex w-52 flex-col rounded-lg border border-cipher-border bg-cipher-surface p-1 shadow-lg" aria-label={`Sharing options for ${title}`}>{actions}</div>}
+      {open && <div id={id} className={`absolute ${menuAlignClassName} top-full z-40 mt-1 flex w-52 flex-col rounded-lg border border-cipher-border bg-cipher-surface p-1 shadow-lg`} aria-label={`Sharing options for ${title}`}>{actions}</div>}
     </>}
     {status && createPortal(<div role="status" className="pointer-events-none fixed bottom-6 left-1/2 z-[100] w-max max-w-[calc(100vw-2rem)] -translate-x-1/2 rounded-lg border border-cipher-border bg-cipher-surface px-4 py-3 text-center text-caption text-secondary shadow-lg">{status}</div>, document.body)}
   </div>;

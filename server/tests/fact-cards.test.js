@@ -245,3 +245,27 @@ test('card pool logos match the app pool logos', () => {
   assert.deepEqual(entries('lib/pool-logos.ts'), app);
   for (const entry of app) assert.ok(fs.existsSync(path.join('public', entry.split('=')[1])), entry);
 });
+
+test('calendar card counts down to the next milestone without inventing an hour, then lists what follows', () => {
+  const now = Date.parse('2026-11-15T19:00:00Z');
+  const ev = (id, kind, title, iso, extra = {}) => ({ id, kind, title, time: Date.parse(iso), dateOnly: iso.length === 10, timeEstimated: false, height: 3_600_000, heightEstimated: true, status: 'upcoming', ...extra });
+  const events = [
+    ev('a', 'vote', 'Dev Fund poll: voting opens', '2026-11-16'),
+    ev('b', 'milestone', 'Standard fee drops to 1,000 zatoshis', '2026-11-19T14:15:00Z', { timeEstimated: true, height: 3_590_000, heightEstimated: false }),
+    ev('c', 'deadline', 'Q4 2026 grants: review closes', '2026-12-16T20:00:00Z'),
+    ev('past', 'vote', 'Old', '2026-11-01T00:00:00Z', { status: 'past' }),
+  ];
+  const card = cards.calendarCard(events, now);
+  assert.equal(card.headline, 'Tomorrow');
+  assert.equal(card.caption, 'Dev Fund poll · voting opens');
+  assert.doesNotMatch(card.detail, /UTC/);
+  assert.deepEqual(card.visual.rows.map(r => r.label), ['Standard fee drops to 1,000 zatoshis', 'Q4 grants · review closes']);
+  assert.equal(card.visual.rows[0].when, '≈Nov 19');
+  assert.equal(card.visual.rows[0].block, '#3,590,000');
+  const exact = cards.calendarCard(events.slice(1), now);
+  assert.equal(exact.headline, '3 days');
+  assert.match(exact.caption, /^until Standard fee drops/);
+  assert.match(exact.detail, /14:15 UTC · block #3,590,000/);
+  assert.equal(cards.calendarCard([events[3]], now), null);
+  assert.equal(cards.findFactCard('calendar').networks.join(), 'mainnet');
+});

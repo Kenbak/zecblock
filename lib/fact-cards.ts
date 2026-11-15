@@ -15,6 +15,7 @@ export type CardColor = 'gold' | 'shielded' | 'transparent' | 'ironwood' | 'orch
 export type CardBar = { value: number; highlight: boolean; projected?: boolean };
 /** `logo` is a local public path; the image route inlines it. */
 export type CardRow = { label: string; value: number; display: string; color?: CardColor; logo?: string };
+export type CardAgendaRow = { when: string; label: string; block: string; color?: CardColor };
 export type CardVisual =
   | { kind: 'progress'; percent: number; from: string; to: string }
   | { kind: 'share'; percent: number; label: string }
@@ -23,6 +24,8 @@ export type CardVisual =
   | { kind: 'ranking'; rows: CardRow[] }
   /** One bar split into parts of a whole. */
   | { kind: 'split'; rows: CardRow[] }
+  /** Upcoming dated milestones, nearest first: when, what, and at which block. */
+  | { kind: 'agenda'; rows: CardAgendaRow[] }
   | null;
 
 export type FactCard = {
@@ -132,6 +135,9 @@ export const FACT_CARDS: readonly FactCardDef[] = [
   { id: 'nu7-readiness', title: 'NU7 node readiness', category: 'Upgrades', networks: both, href: '/network/nodes',
     tags: ['nu7', 'nodes', 'readiness', 'upgrade', 'protocol'],
     description: 'Share of observed nodes advertising the NU7 protocol.' },
+  { id: 'calendar', title: 'Zcash calendar', category: 'Network', networks: mainnet, href: '/calendar',
+    tags: ['calendar', 'upcoming', 'vote', 'poll', 'deadline', 'grants', 'upgrade', 'halving', 'snapshot', 'schedule', 'dates'],
+    description: 'Countdown to the next Zcash milestone, with the ones after it and their blocks.' },
 ];
 
 export const findFactCard = (id: string) => FACT_CARDS.find(card => card.id === id);
@@ -733,5 +739,32 @@ export function chainSizeCard(network: CardNetwork, payload: unknown, now = new 
     detail: `${growth}measured on our node`,
     visual: null,
     source: 'Serving-node disk usage',
+  };
+}
+
+type CalendarCardEvent = { id: string; kind: string; title: string; time: number | null; dateOnly: boolean; timeEstimated: boolean; height: number | null; heightEstimated: boolean; status: string };
+const CALENDAR_COLORS: Record<string, CardColor> = { upgrade: 'gold', halving: 'purple', vote: 'shielded', snapshot: 'shielded', deadline: 'muted', milestone: 'muted' };
+const shortEvent = (title: string) => title.replace(/^(Q\d) \d{4} grants: /, '$1 grants · ').replace(/^(NU7 vote|Dev Fund poll): /, '$1 · ');
+const eventDay = (time: number) => new Date(time).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric' });
+
+/** /calendar events: the next milestone as a countdown, and the next few after it. */
+export function calendarCard(events: readonly CalendarCardEvent[], now = Date.now()): FactCard | null {
+  const upcoming = events.filter(e => e.status === 'upcoming' && e.time !== null && e.time > now - 86_400_000);
+  const next = upcoming[0];
+  if (!next) return null;
+  const ms = next.time! - now;
+  const days = Math.ceil(ms / 86_400_000);
+  // Date-only events never get an invented hour.
+  const headline = next.dateOnly
+    ? (ms <= 0 ? 'Today' : days === 1 ? 'Tomorrow' : `${days} days`)
+    : ms >= 2 * 86_400_000 ? `${Math.floor(ms / 86_400_000)} days` : formatUpgradeDuration(Math.max(60, ms / 1000));
+  const block = (e: CalendarCardEvent) => e.height === null ? '' : `${e.heightEstimated ? '≈' : ''}#${count(e.height)}`;
+  return {
+    eyebrow: 'Calendar · Mainnet',
+    headline,
+    caption: next.dateOnly ? shortEvent(next.title) : `until ${shortEvent(next.title)}`,
+    detail: `${eventDay(next.time!)}${next.dateOnly ? '' : ` · ${new Date(next.time!).toISOString().slice(11, 16)} UTC`}${next.height !== null ? ` · block ${block(next)}` : ''}`,
+    visual: upcoming.length < 2 ? null : { kind: 'agenda', rows: upcoming.slice(1, 5).map(e => ({ when: `${e.timeEstimated ? '≈' : ''}${eventDay(e.time!)}`, label: shortEvent(e.title), block: block(e), color: CALENDAR_COLORS[e.kind] ?? 'muted' })) },
+    source: 'Official schedules, the voting chain and the serving node',
   };
 }

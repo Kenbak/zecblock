@@ -31,7 +31,7 @@ function Icon({ name, className = 'w-4 h-4' }: { name: IconName; className?: str
 
 /** Local logo, or the chain's initial when none is bundled. */
 function ChainLogo({ name, src }: { name: string; src: string | null }) {
-  if (!src) return <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded-full bg-cipher-hover text-[10px] font-mono text-secondary" aria-hidden="true">{name[0]}</span>;
+  if (!src) return <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded-full bg-cipher-hover text-caption font-mono text-secondary" aria-hidden="true">{name[0]}</span>;
   // eslint-disable-next-line @next/next/no-img-element
   return <img src={src} alt="" width={20} height={20} className="w-5 h-5 shrink-0 rounded-full" />;
 }
@@ -93,7 +93,7 @@ function ChainList({ seconds }: { seconds: number }) {
         <span className={`flex items-center gap-2 ${r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}`}><ChainLogo name={r.name} src={r.logo} />{r.name}{r.zcash ? ' · your setting' : ''}<span className="text-caption text-muted font-normal hidden sm:inline">{r.consensus}</span></span>
         <span className="font-mono tabular-nums text-secondary">{r.blockLabel}</span>
       </div>
-      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${pct(r.blockSeconds)}%` }} /></div>
+      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-muted'}`} style={{ width: `${pct(r.blockSeconds)}%` }} /></div>
     </li>)}
   </ul>;
 }
@@ -110,7 +110,7 @@ function WaitList({ result }: { result: SimResult }) {
         <span className={`flex items-center gap-2 ${r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}`}><ChainLogo name={r.name} src={r.logo} />{r.name}{r.zcash ? ` at ${result.seconds}s` : ''}</span>
         <span className="font-mono tabular-nums text-secondary">{formatDuration(r.seconds)}</span>
       </div>
-      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${Math.max(1, r.seconds / max * 100)}%` }} /></div>
+      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-muted'}`} style={{ width: `${Math.max(1, r.seconds / max * 100)}%` }} /></div>
       <div className="text-caption text-muted mt-1 ml-7">{r.rule}</div>
     </li>)}
   </ul>;

@@ -39,8 +39,9 @@ export type SimEra = {
   /** Average of each complete UTC day's longest gap. */
   dailyLongestSeconds: number; days: number;
   /**
-   * Competing blocks seen by ZecBlock's 10 observers ÷ (canonical + orphaned),
-   * complete UTC days. Null when that coverage did not exist yet.
+   * Race orphans ÷ (canonical + race orphans), complete UTC days: losers that
+   * reached at least one of ZecBlock's 10 observers within 2s of the winner,
+   * or that our node adopted. Null when that coverage did not exist yet.
    */
   orphanRate: number | null;
 };
@@ -50,7 +51,7 @@ export const SIM_ERAS: readonly SimEra[] = [
   { targetSeconds: 75, label: 'Before NU7', fromHeight: 3_508_000, toHeight: 3_543_404, intervals: 35_405, meanSeconds: 75.36,
     shareAtLeast60: 0.4599, shareAtLeast120: 0.20664, shareAtLeast300: 0.01887, dailyLongestSeconds: 618, days: 30, orphanRate: null },
   { targetSeconds: 25, label: 'With NU7', fromHeight: 3_543_406, toHeight: 3_579_544, intervals: 36_139, meanSeconds: 25.13,
-    shareAtLeast60: 0.094, shareAtLeast120: 0.00877, shareAtLeast300: 0, dailyLongestSeconds: 216, days: 9, orphanRate: 272 / (31_096 + 272) },
+    shareAtLeast60: 0.094, shareAtLeast120: 0.00877, shareAtLeast300: 0, dailyLongestSeconds: 216, days: 9, orphanRate: 225 / (31_096 + 225) },
 ];
 /** Average size of a block holding only its coinbase transaction since NU7, in bytes. */
 export const EMPTY_BLOCK_BYTES = 1_943;
@@ -94,11 +95,11 @@ export function confirmationsQuantile(seconds: number, p: number, k: number): nu
 export const typicalDailyLongest = (seconds: number) => seconds * (Math.log(blocksPerDay(seconds)) + EULER_GAMMA);
 
 /**
- * Observed orphans on the complete NU7 days Nov 7–15, 2026: 272 orphaned and
- * 31,096 canonical blocks. Observers grew from 1 to 10 on Nov 5, so earlier
- * eras have no comparable orphan count.
+ * /v1/mining/orphan-rates/daily on the complete NU7 days Nov 7–15, 2026:
+ * 225 race orphans, 47 late blocks and 31,096 canonical blocks. Observers
+ * grew from 1 to 10 on Nov 5, so earlier eras have no comparable count.
  */
-export const OBSERVED_NU7_ORPHANS = { orphaned: 272, canonical: 31_096, days: 9 } as const;
+export const OBSERVED_NU7_ORPHANS = { orphaned: 225, late: 47, canonical: 31_096, days: 9 } as const;
 /** Fixed propagation delay implied by the latest measured orphan rate. */
 const MEASURED = SIM_ERAS[2];
 const PROPAGATION_SECONDS = -MEASURED.meanSeconds * Math.log(1 - MEASURED.orphanRate!);

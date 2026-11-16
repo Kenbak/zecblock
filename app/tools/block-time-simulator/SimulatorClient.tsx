@@ -47,7 +47,7 @@ function Metric({ icon, label, value, detail, compare }: { icon: IconName; label
 
 function orphanText(r: SimResult): { value: string; detail: string } {
   const o = r.orphans;
-  if (o.kind === 'measured') return { value: `${(o.rate * 100).toFixed(2)}%`, detail: `Measured by 10 observers · ~${Math.round(r.orphansPerDay!)} a day` };
+  if (o.kind === 'measured') return { value: `${(o.rate * 100).toFixed(2)}%`, detail: `Measured · ~${Math.round(r.orphansPerDay!)} lost races a day, late blocks excluded` };
   if (o.kind === 'estimate') return { value: `~${(o.rate * 100).toFixed(1)}%`, detail: `Estimate · ~${Math.round(r.orphansPerDay!)} a day, if it scales with block rate` };
   if (o.reason === 'unobserved') return { value: 'No comparable data', detail: `Only measured at 25s: ${(OBSERVED_NU7_ORPHANS.orphaned / (OBSERVED_NU7_ORPHANS.canonical + OBSERVED_NU7_ORPHANS.orphaned) * 100).toFixed(2)}%` };
   return { value: 'Unknown', detail: 'No Zcash data this fast' };

@@ -26,14 +26,14 @@ test('simulate gives the published 25s and 20s figures', () => {
   assert.equal(now.spendableMean, 250);
   assert.equal(Math.round(now.spendableP90), 355);
   assert.equal(now.blocksPerDay, 3456);
-  assert.deepEqual(now.orphans, { kind: 'measured', rate: 272 / (31096 + 272) });
-  assert.equal(Math.round(now.orphansPerDay), 30);
+  assert.deepEqual(now.orphans, { kind: 'measured', rate: 225 / (31096 + 225) });
+  assert.equal(Math.round(now.orphansPerDay), 25);
   const proposed = sim.simulate(20, 10);
   assert.equal(sim.formatDuration(proposed.spendableMean), '3.3 min');
   assert.equal(sim.formatDuration(proposed.spendableP90), '4.7 min');
   assert.equal(sim.formatShare(proposed.shareAtLeast120), '1 in 403');
   assert.equal(proposed.orphans.kind, 'estimate');
-  assert.ok(Math.abs(proposed.orphans.rate - 0.0109) < 0.0002);
+  assert.ok(Math.abs(proposed.orphans.rate - 0.0090) < 0.0002);
   // Default depth is 3 blocks; unknown depths fall back to it.
   assert.equal(sim.simulate(25).spendableMean, 75);
   assert.equal(sim.simulate(20, 5).spendableMean, 100);

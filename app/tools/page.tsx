@@ -63,6 +63,12 @@ const tools = [
     icon: Icons.Shield,
   },
   {
+    href: '/tools/block-time-simulator',
+    title: 'Block time simulator',
+    desc: 'See what a faster or slower Zcash block time would mean, from measured mainnet data.',
+    icon: Icons.Bolt,
+  },
+  {
     href: '/tools/unit-converter',
     title: 'Unit converter',
     desc: 'Convert between ZEC and zatoshis, down to the smallest unit.',

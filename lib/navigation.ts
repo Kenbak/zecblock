@@ -57,6 +57,7 @@ const categories: NavigationCategory[] = [
     { href: '/tools/broadcast', label: 'Broadcast Transaction', desc: 'Submit a signed transaction' },
     { href: '/decrypt', label: 'Decrypt Memo', desc: 'Memos via your viewing key' },
     { href: '/tools/blend-check', label: 'Blend Check', desc: 'Compare public flow amounts' },
+    { href: '/tools/block-time-simulator', label: 'Block Time Simulator', desc: 'Compare block speeds' },
     { href: '/tools/unit-converter', label: 'Unit Converter', desc: 'Coins and zatoshis' },
     { href: '/tools/anchor-search', label: 'Anchor Root Search', desc: 'Find commitment tree roots' },
     { href: '/docs', label: 'API Docs', desc: 'Endpoints and response formats' },

@@ -3,8 +3,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import {
-  CHAIN_REFS, ZCASH_LOGO, SIM_DEFAULT_SECONDS, SIM_ERAS, SIM_MAX_SECONDS, SIM_MIN_SECONDS, SIM_PRESETS, SPENDABLE_CONFIRMATIONS,
-  clampSeconds, formatDuration, formatShare, shareAtLeast, simulate, type SimResult, type SimZone,
+  CHAIN_REFS, ZCASH_LOGO, SIM_DEFAULT_SECONDS, SIM_ERAS, SIM_MAX_SECONDS, SIM_MIN_SECONDS, SIM_PRESETS, DEPTH_OPTIONS, DEFAULT_DEPTH, OBSERVED_NU7_ORPHANS,
+  clampSeconds, clampDepth, formatDuration, formatShare, shareAtLeast, simulate, type SimResult, type SimZone,
 } from '@/lib/block-time-sim';
 
 const ZONE_COPY: Record<SimZone, { label: string; detail: string; className: string }> = {
@@ -13,7 +13,6 @@ const ZONE_COPY: Record<SimZone, { label: string; detail: string; className: str
   beyond: { label: 'Far beyond Zcash data', detail: 'Timing math only. Orphan risk is unknown at this speed.', className: 'border-cipher-border text-muted' },
 };
 
-const today = simulate(SIM_DEFAULT_SECONDS);
 
 const ICON_PATHS = {
   wallet: 'M3 7a2 2 0 0 1 2-2h12v4M3 7v10a2 2 0 0 0 2 2h14V9H5a2 2 0 0 1-2-2Zm13 6h.01',
@@ -48,10 +47,9 @@ function Metric({ icon, label, value, detail, compare }: { icon: IconName; label
 
 function orphanText(r: SimResult): { value: string; detail: string } {
   const o = r.orphans;
-  if (o.kind === 'measured') return { value: `${(o.rate * 100).toFixed(2)}%`, detail: `Measured · ~${Math.round(r.orphansPerDay!)} a day` };
-  if (o.kind === 'estimate') return { value: `~${(o.rate * 100).toFixed(2)}%`, detail: `Estimate · ~${Math.round(r.orphansPerDay!)} a day, if it scales with block rate` };
-  if (o.reason === 'unobserved') return { value: 'Not observed', detail: 'Orphan capture began in 2026' };
-  if (o.reason === 'between') return { value: '0.21–0.29%', detail: 'Measured at 25s and 75s; not modelled between' };
+  if (o.kind === 'measured') return { value: `${(o.rate * 100).toFixed(2)}%`, detail: `Measured by 10 observers · ~${Math.round(r.orphansPerDay!)} a day` };
+  if (o.kind === 'estimate') return { value: `~${(o.rate * 100).toFixed(1)}%`, detail: `Estimate · ~${Math.round(r.orphansPerDay!)} a day, if it scales with block rate` };
+  if (o.reason === 'unobserved') return { value: 'No comparable data', detail: `Only measured at 25s: ${(OBSERVED_NU7_ORPHANS.orphaned / (OBSERVED_NU7_ORPHANS.canonical + OBSERVED_NU7_ORPHANS.orphaned) * 100).toFixed(2)}%` };
   return { value: 'Unknown', detail: 'No Zcash data this fast' };
 }
 
@@ -103,7 +101,7 @@ function ChainList({ seconds }: { seconds: number }) {
 function WaitList({ result }: { result: SimResult }) {
   const rows = [
     ...CHAIN_REFS.filter(c => c.wait).map(c => ({ name: c.name, logo: c.logo, seconds: c.wait!.seconds, rule: c.wait!.rule, zcash: false })),
-    { name: 'Zcash', logo: ZCASH_LOGO, seconds: result.spendableMean, rule: `${SPENDABLE_CONFIRMATIONS} confirmations, the ZIP 315 wallet recommendation`, zcash: true },
+    { name: 'Zcash', logo: ZCASH_LOGO, seconds: result.spendableMean, rule: `${result.depth} confirmations, your choice above`, zcash: true },
   ].sort((a, b) => b.seconds - a.seconds);
   const max = Math.max(...rows.map(r => r.seconds));
   return <ul className="space-y-3">
@@ -120,23 +118,27 @@ function WaitList({ result }: { result: SimResult }) {
 
 export default function SimulatorClient() {
   const [seconds, setSeconds] = useState(SIM_DEFAULT_SECONDS);
+  const [depth, setDepth] = useState(DEFAULT_DEPTH);
   const [copied, setCopied] = useState(false);
-  const result = useMemo(() => simulate(seconds), [seconds]);
+  const result = useMemo(() => simulate(seconds, depth), [seconds, depth]);
+  const today = useMemo(() => simulate(SIM_DEFAULT_SECONDS, depth), [depth]);
   const zone = ZONE_COPY[result.zone];
   const orphans = orphanText(result);
 
   useEffect(() => {
-    const t = new URLSearchParams(window.location.search).get('t');
-    if (t != null) setSeconds(clampSeconds(t));
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('t') != null) setSeconds(clampSeconds(params.get('t')));
+    if (params.get('c') != null) setDepth(clampDepth(params.get('c')));
   }, []);
 
-  const update = (value: number) => {
-    const next = clampSeconds(value);
-    setSeconds(next);
+  const syncUrl = (t: number, c: number) => {
     const url = new URL(window.location.href);
-    if (next === SIM_DEFAULT_SECONDS) url.searchParams.delete('t'); else url.searchParams.set('t', String(next));
+    if (t === SIM_DEFAULT_SECONDS) url.searchParams.delete('t'); else url.searchParams.set('t', String(t));
+    if (c === DEFAULT_DEPTH) url.searchParams.delete('c'); else url.searchParams.set('c', String(c));
     window.history.replaceState(null, '', url);
   };
+  const update = (value: number) => { const next = clampSeconds(value); setSeconds(next); syncUrl(next, depth); };
+  const updateDepth = (value: number) => { const next = clampDepth(value); setDepth(next); syncUrl(seconds, next); };
 
   const copyLink = async () => {
     try {
@@ -171,13 +173,23 @@ export default function SimulatorClient() {
           {p.label} <span className="text-muted">· {p.detail}</span>
         </button>)}
       </div>
+      <div className="mt-5 pt-4 border-t border-cipher-border">
+        <div className="type-label text-muted uppercase mb-2" id="depth-label">Confirmations before funds count as received</div>
+        <div className="flex flex-wrap gap-2" role="group" aria-labelledby="depth-label">
+          {DEPTH_OPTIONS.map(o => <button key={o.blocks} type="button" onClick={() => updateDepth(o.blocks)} aria-pressed={depth === o.blocks}
+            className={`rounded-md border px-3 py-1.5 text-caption font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold ${depth === o.blocks ? 'border-cipher-gold text-cipher-gold' : 'border-cipher-border text-secondary hover:bg-cipher-hover'}`}>
+            {o.label} <span className="text-muted">· {o.detail}</span>
+          </button>)}
+        </div>
+        <p className="text-caption text-muted mt-2">Wallets and services pick their own depth.</p>
+      </div>
     </Card>
 
     <section aria-labelledby="feel-heading">
       <h2 id="feel-heading" className="type-section text-primary mb-3">What users would feel</h2>
       <Card className="card-static p-0 overflow-hidden">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
-          <Metric icon="wallet" label="Spendable in" value={formatDuration(result.spendableMean)} detail={`9 times in 10 within ${formatDuration(result.spendableP90)}`} compare={vsToday(today.spendableMean)} />
+          <Metric icon="wallet" label={`${depth} confirmations`} value={formatDuration(result.spendableMean)} detail={`9 times in 10 within ${formatDuration(result.spendableP90)}`} compare={vsToday(today.spendableMean)} />
           <Metric icon="check" label="First confirmation" value={formatDuration(result.firstConfirmationMean)} detail="On average, from sending" compare={vsToday(today.firstConfirmationMean)} />
           <Metric icon="pause" label="Gaps of 2+ minutes" value={formatShare(result.shareAtLeast120)} detail={`Gaps of 1+ minute: ${formatShare(result.shareAtLeast60)}`} compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${formatShare(today.shareAtLeast120)}`} />
           <Metric icon="hourglass" label="Longest wait, typical day" value={formatDuration(result.typicalDailyLongest)} detail="The slowest block gap in a day" compare={vsToday(today.typicalDailyLongest)} />
@@ -228,7 +240,7 @@ export default function SimulatorClient() {
 
     <div className="flex flex-wrap items-center gap-3">
       <button type="button" onClick={copyLink} className="rounded-md border border-cipher-border px-3 py-2 text-caption font-mono text-secondary hover:bg-cipher-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold">
-        {copied ? 'Link copied' : `Copy link to ${seconds}s`}
+        {copied ? 'Link copied' : `Copy link to ${seconds}s · ${depth} blocks`}
       </button>
       <span className="text-caption text-muted">Shares this exact setting.</span>
     </div>

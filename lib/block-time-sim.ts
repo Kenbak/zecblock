@@ -7,8 +7,15 @@
 export const SIM_MIN_SECONDS = 5;
 export const SIM_MAX_SECONDS = 150;
 export const SIM_DEFAULT_SECONDS = 25;
-/** ZIP 315's recommended confirmations before received funds are spendable. */
-export const SPENDABLE_CONFIRMATIONS = 10;
+/** Confirmation depths people actually use; wallets and services choose their own. */
+export type DepthOption = { blocks: number; label: string; detail: string };
+export const DEPTH_OPTIONS: readonly DepthOption[] = [
+  { blocks: 3, label: '3 blocks', detail: 'Everyday payments' },
+  { blocks: 5, label: '5 blocks', detail: 'Large amounts' },
+  { blocks: 10, label: '10 blocks', detail: 'ZIP 315 wallet default for received funds' },
+];
+export const DEFAULT_DEPTH = 3;
+export const clampDepth = (value: unknown) => DEPTH_OPTIONS.find(o => o.blocks === Number(value))?.blocks ?? DEFAULT_DEPTH;
 const DAY = 86_400;
 const EULER_GAMMA = 0.5772156649;
 
@@ -31,16 +38,19 @@ export type SimEra = {
   meanSeconds: number; shareAtLeast60: number; shareAtLeast120: number; shareAtLeast300: number;
   /** Average of each complete UTC day's longest gap. */
   dailyLongestSeconds: number; days: number;
-  /** Observed orphans ÷ canonical blocks; null before orphan observation began. */
+  /**
+   * Competing blocks seen by ZecBlock's 10 observers ÷ (canonical + orphaned),
+   * complete UTC days. Null when that coverage did not exist yet.
+   */
   orphanRate: number | null;
 };
 export const SIM_ERAS: readonly SimEra[] = [
   { targetSeconds: 150, label: 'Before Blossom', fromHeight: 636_320, toHeight: 653_599, intervals: 17_280, meanSeconds: 150.68,
     shareAtLeast60: 0.6684, shareAtLeast120: 0.44722, shareAtLeast300: 0.13756, dailyLongestSeconds: 1_123, days: 30, orphanRate: null },
   { targetSeconds: 75, label: 'Before NU7', fromHeight: 3_508_000, toHeight: 3_543_404, intervals: 35_405, meanSeconds: 75.36,
-    shareAtLeast60: 0.4599, shareAtLeast120: 0.20664, shareAtLeast300: 0.01887, dailyLongestSeconds: 618, days: 30, orphanRate: 101 / 35_405 },
+    shareAtLeast60: 0.4599, shareAtLeast120: 0.20664, shareAtLeast300: 0.01887, dailyLongestSeconds: 618, days: 30, orphanRate: null },
   { targetSeconds: 25, label: 'With NU7', fromHeight: 3_543_406, toHeight: 3_579_544, intervals: 36_139, meanSeconds: 25.13,
-    shareAtLeast60: 0.094, shareAtLeast120: 0.00877, shareAtLeast300: 0, dailyLongestSeconds: 216, days: 9, orphanRate: 76 / 36_040 },
+    shareAtLeast60: 0.094, shareAtLeast120: 0.00877, shareAtLeast300: 0, dailyLongestSeconds: 216, days: 9, orphanRate: 272 / (31_096 + 272) },
 ];
 /** Average size of a block holding only its coinbase transaction since NU7, in bytes. */
 export const EMPTY_BLOCK_BYTES = 1_943;
@@ -71,7 +81,7 @@ function erlangCdf(x: number, k: number, seconds: number): number {
 }
 
 /** Time by which a share `p` of k-block waits finish. */
-export function confirmationsQuantile(seconds: number, p: number, k = SPENDABLE_CONFIRMATIONS): number {
+export function confirmationsQuantile(seconds: number, p: number, k: number): number {
   let lo = 0; let hi = seconds * k * 10;
   for (let i = 0; i < 80; i++) {
     const mid = (lo + hi) / 2;
@@ -83,43 +93,49 @@ export function confirmationsQuantile(seconds: number, p: number, k = SPENDABLE_
 /** Expected longest gap among one day's blocks: T × (ln n + γ). */
 export const typicalDailyLongest = (seconds: number) => seconds * (Math.log(blocksPerDay(seconds)) + EULER_GAMMA);
 
+/**
+ * Observed orphans on the complete NU7 days Nov 7–15, 2026: 272 orphaned and
+ * 31,096 canonical blocks. Observers grew from 1 to 10 on Nov 5, so earlier
+ * eras have no comparable orphan count.
+ */
+export const OBSERVED_NU7_ORPHANS = { orphaned: 272, canonical: 31_096, days: 9 } as const;
 /** Fixed propagation delay implied by the latest measured orphan rate. */
 const MEASURED = SIM_ERAS[2];
 const PROPAGATION_SECONDS = -MEASURED.meanSeconds * Math.log(1 - MEASURED.orphanRate!);
 
-export type OrphanView = { kind: 'measured'; rate: number } | { kind: 'estimate'; rate: number } | { kind: 'none'; reason: 'between' | 'beyond' | 'unobserved' };
+export type OrphanView = { kind: 'measured'; rate: number } | { kind: 'estimate'; rate: number } | { kind: 'none'; reason: 'beyond' | 'unobserved' };
 
 /**
- * Measured orphan rate at a measured era. Below 25s, an estimate that scales
- * today's measurement with block rate (fixed propagation delay). The 75s era's
- * higher rate shows this delay is not constant, so no curve is drawn between
- * measured points, and nothing below 10s, where Zcash has no data.
+ * Measured at 25s. Faster than 25s down to 10s, an estimate that scales
+ * today's measurement with block rate (fixed propagation delay). Slower
+ * targets have no comparable observer data, and below 10s Zcash has none.
  */
 export function orphanView(seconds: number): OrphanView {
   const era = SIM_ERAS.find(e => e.targetSeconds === seconds);
-  if (era) return era.orphanRate == null ? { kind: 'none', reason: 'unobserved' } : { kind: 'measured', rate: era.orphanRate };
+  if (era?.orphanRate != null) return { kind: 'measured', rate: era.orphanRate };
   const zone = simZone(seconds);
   if (zone === 'beyond') return { kind: 'none', reason: 'beyond' };
-  if (zone === 'measured') return { kind: 'none', reason: 'between' };
+  if (zone === 'measured') return { kind: 'none', reason: 'unobserved' };
   return { kind: 'estimate', rate: 1 - Math.exp(-PROPAGATION_SECONDS / seconds) };
 }
 
 export type SimResult = {
-  seconds: number; zone: SimZone;
+  seconds: number; zone: SimZone; depth: number;
   spendableMean: number; spendableP90: number; firstConfirmationMean: number;
   blocksPerDay: number; shareAtLeast60: number; shareAtLeast120: number; typicalDailyLongest: number;
   orphans: OrphanView; orphansPerDay: number | null; emptyBlockBytesPerDay: number;
   era: SimEra | null;
 };
 
-export function simulate(input: number): SimResult {
+export function simulate(input: number, depthInput: number = DEFAULT_DEPTH): SimResult {
   const seconds = clampSeconds(input);
+  const depth = clampDepth(depthInput);
   const perDay = blocksPerDay(seconds);
   const orphans = orphanView(seconds);
   return {
-    seconds, zone: simZone(seconds),
-    spendableMean: seconds * SPENDABLE_CONFIRMATIONS,
-    spendableP90: confirmationsQuantile(seconds, 0.9),
+    seconds, zone: simZone(seconds), depth,
+    spendableMean: seconds * depth,
+    spendableP90: confirmationsQuantile(seconds, 0.9, depth),
     // Random arrivals are memoryless: a transaction waits a full average gap for its first block.
     firstConfirmationMean: seconds,
     blocksPerDay: perDay,

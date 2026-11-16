@@ -22,23 +22,28 @@ test('the random-arrival model reproduces every measured era within a point', ()
 });
 
 test('simulate gives the published 25s and 20s figures', () => {
-  const now = sim.simulate(25);
+  const now = sim.simulate(25, 10);
   assert.equal(now.spendableMean, 250);
   assert.equal(Math.round(now.spendableP90), 355);
   assert.equal(now.blocksPerDay, 3456);
-  assert.deepEqual(now.orphans, { kind: 'measured', rate: 76 / 36040 });
-  const proposed = sim.simulate(20);
+  assert.deepEqual(now.orphans, { kind: 'measured', rate: 272 / (31096 + 272) });
+  assert.equal(Math.round(now.orphansPerDay), 30);
+  const proposed = sim.simulate(20, 10);
   assert.equal(sim.formatDuration(proposed.spendableMean), '3.3 min');
   assert.equal(sim.formatDuration(proposed.spendableP90), '4.7 min');
   assert.equal(sim.formatShare(proposed.shareAtLeast120), '1 in 403');
   assert.equal(proposed.orphans.kind, 'estimate');
-  assert.ok(Math.abs(proposed.orphans.rate - 0.00265) < 0.0001);
+  assert.ok(Math.abs(proposed.orphans.rate - 0.0109) < 0.0002);
+  // Default depth is 3 blocks; unknown depths fall back to it.
+  assert.equal(sim.simulate(25).spendableMean, 75);
+  assert.equal(sim.simulate(20, 5).spendableMean, 100);
+  assert.equal(sim.simulate(20, 7).depth, 3);
   assert.equal(proposed.zone, 'extrapolated');
 });
 
-test('orphans: measured at eras, nothing between them, nothing below 10s, unobserved at 150s', () => {
-  assert.equal(sim.orphanView(75).kind, 'measured');
-  assert.deepEqual(sim.orphanView(50), { kind: 'none', reason: 'between' });
+test('orphans: measured only at 25s, estimated 10–24s, no comparable data above, unknown below 10s', () => {
+  assert.deepEqual(sim.orphanView(75), { kind: 'none', reason: 'unobserved' });
+  assert.deepEqual(sim.orphanView(50), { kind: 'none', reason: 'unobserved' });
   assert.deepEqual(sim.orphanView(9), { kind: 'none', reason: 'beyond' });
   assert.deepEqual(sim.orphanView(150), { kind: 'none', reason: 'unobserved' });
   assert.equal(sim.simulate(5).orphansPerDay, null);

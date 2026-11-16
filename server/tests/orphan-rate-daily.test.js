@@ -50,6 +50,7 @@ test('real PostgreSQL: same orphan definition as the rate cards', {
     CREATE TEMP TABLE captured_blocks(hash text PRIMARY KEY, height bigint, timestamp bigint, miner_address text, coinbase_hex text);
     CREATE TEMP TABLE block_capture_observers(observer text, network text, collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
     CREATE TEMP TABLE orphaned_blocks(hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text, source text, consensus_valid boolean);
+    CREATE TEMP TABLE block_capture_receipts(observer text, hash text, received_at timestamptz, PRIMARY KEY (observer, hash));
     INSERT INTO blocks(height,hash,timestamp) SELECT i, 'c'||i, (floor(extract(epoch FROM now()))::bigint / 86400) * 86400 - 86400 * d + 600
     FROM (VALUES (1,0),(2,0),(3,1),(4,1),(5,1),(6,20)) v(i,d);
     INSERT INTO orphaned_blocks VALUES

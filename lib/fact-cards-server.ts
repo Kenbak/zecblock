@@ -3,7 +3,7 @@ import { getApiUrlForNetwork } from '@/lib/api-config';
 import { loadBlockSpeedSnapshot } from '@/lib/block-speed-server';
 import {
   calendarCard, chainHeightCard, chainSizeCard, dailyTransactionsCard, dormantSupplyCard, feesCard, findFactCard, halvingCard, hashrateCard,
-  issuedSupplyCard, miningPoolsCard, miningSoftwareCard, mvrvCard, netShieldingCard, nodesCard, orphanRateCard, shieldedByPoolCard,
+  issuedSupplyCard, miningPoolsCard, miningSoftwareCard, mvrvCard, netShieldingCard, nodesCard, nu7ConfirmationsCard, orphanRateCard, shieldedByPoolCard,
   shieldedSupplyCard, shieldedTransactionsCard, SWAP_VENUES, swapSourcesCard, swapVenuesCard, venueCard,
   type CardNetwork, type FactCard, type SwapVenue,
 } from '@/lib/fact-cards';
@@ -73,6 +73,7 @@ export async function loadFactCard(id: string, network: CardNetwork): Promise<Fa
       return venueCard(id, await api(network, SWAP_VENUES[id].path, SWAP_TIMEOUT_MS));
     case 'nu7-countdown': return fromNu7(countdownCard(network, (await loadUpgradeTrackers(network)).snapshot));
     case 'nu7-blocks': return fromNu7(blocksCard((await loadBlockSpeedSnapshot(network)).story));
+    case 'nu7-confirmations': return nu7ConfirmationsCard((await loadBlockSpeedSnapshot(network)).story);
     case 'nu7-nsm': return fromNu7(nsmCard(network, inner(await api(network, '/v1/network/accounting/history?period=all')) as Parameters<typeof nsmCard>[1]));
     case 'nu7-readiness': return fromNu7(readinessCard(network, inner(await api(network, '/v1/network/nodes/upgrade-readiness')) as Parameters<typeof readinessCard>[1]));
     case 'calendar': return calendarCard((await loadCalendar()).events);

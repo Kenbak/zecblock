@@ -5,6 +5,7 @@
  * authoritative value, so the image route answers 503 instead of drawing a
  * zero or a guess.
  */
+import type { SpeedSummary } from './block-speed';
 import { getChainLogoSrc } from './chain-logos';
 import { formatUpgradeDuration } from './network-upgrades';
 import { getPoolLogoSrc } from './pool-logos';
@@ -129,6 +130,9 @@ export const FACT_CARDS: readonly FactCardDef[] = [
   { id: 'nu7-blocks', title: 'NU7 blocks per day', category: 'Upgrades', networks: both, href: '/network/block-speed',
     tags: ['nu7', 'block time', 'faster blocks', '25 seconds', 'speed'],
     description: 'Blocks per day before and with NU7’s 25-second target.' },
+  { id: 'nu7-confirmations', title: 'NU7 confirmation time', category: 'Upgrades', networks: mainnet, href: '/network/block-speed',
+    tags: ['nu7', 'confirmations', 'wait', 'block time', 'faster blocks', '25 seconds', 'speed', 'before after'],
+    description: 'How long 10 confirmations take before NU7 and with NU7, from measured block times.' },
   { id: 'nu7-nsm', title: 'NSM reserve', category: 'Upgrades', networks: both, href: '/network#nu7-accounting',
     tags: ['nu7', 'nsm', 'sustainability', 'reserve', 'fees', 'burn'],
     description: 'Network Sustainability Mechanism reserve growth since NU7.' },
@@ -766,5 +770,37 @@ export function calendarCard(events: readonly CalendarCardEvent[], now = Date.no
     detail: `${eventDay(next.time!)}${next.dateOnly ? '' : ` · ${new Date(next.time!).toISOString().slice(11, 16)} UTC`}${next.height !== null ? ` · block ${block(next)}` : ''}`,
     visual: upcoming.length < 2 ? null : { kind: 'agenda', rows: upcoming.slice(1, 5).map(e => ({ when: `${e.timeEstimated ? '≈' : ''}${eventDay(e.time!)}`, label: shortEvent(e.title), block: block(e), color: CALENDAR_COLORS[e.kind] ?? 'muted' })) },
     source: 'Official schedules, the voting chain and the serving node',
+  };
+}
+
+/** ZIP 315's recommended confirmation depth before funds are spendable. */
+const CONFIRMATIONS = 10;
+const waitLabel = (seconds: number) => seconds < 90 ? `${Math.round(seconds)}s` : `${(seconds / 60).toFixed(1)} min`;
+
+/**
+ * Block-speed story windows: the 7 days before NU7 against the latest 7 days with it.
+ * Mainnet only: testnet's pre-NU7 timing never followed a target, so `before` is null there.
+ */
+export function nu7ConfirmationsCard(story: { network: CardNetwork; phase: 'upcoming' | 'active'; before: SpeedSummary | null; after: SpeedSummary | null } | null): FactCard | null {
+  const before = story?.before?.averageSeconds; const after = story?.after?.averageSeconds;
+  if (!story || story.network !== 'mainnet' || story.phase !== 'active' || !before || !after) return null;
+  const [was, now] = [before * CONFIRMATIONS, after * CONFIRMATIONS];
+  const span = story.after!.toTimestamp - story.after!.fromTimestamp;
+  // A window shorter than a day is too few blocks to stand for "with NU7".
+  if (span < 86_400) return null;
+  const [slowBefore, slowAfter] = [story.before!.p90Seconds, story.after!.p90Seconds];
+  const detail = slowBefore && slowAfter
+    ? `Slowest 1 in 10 blocks: ${waitLabel(slowBefore)} → ${waitLabel(slowAfter)}`
+    : `Average block: ${before.toFixed(1)}s → ${after.toFixed(1)}s`;
+  return {
+    eyebrow: 'NU7 · Zcash mainnet',
+    headline: `${(was / 60).toFixed(1)} → ${(now / 60).toFixed(1)} min`,
+    caption: `for ${CONFIRMATIONS} confirmations`,
+    detail,
+    visual: { kind: 'ranking', rows: [
+      { label: 'Before NU7', value: was, display: waitLabel(was), color: 'muted' },
+      { label: 'With NU7', value: now, display: waitLabel(now), color: 'gold' },
+    ] },
+    source: `Block-header times · 7 days before NU7 vs ${span >= 7 * 86_400 - 3_600 ? 'the latest 7 days' : 'NU7 so far'}`,
   };
 }

@@ -11,8 +11,10 @@ export type Window = '24h' | '7d' | '30d';
 export const WINDOWS: readonly Window[] = ['24h', '7d', '30d'];
 const WINDOW_LABEL: Record<Window, string> = { '24h': 'last 24 hours', '7d': 'last 7 days', '30d': 'last 30 days' };
 
-interface PoolRate { name: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null }
-interface RateWindow { period: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null; unavailableReason: string | null; pools: PoolRate[] }
+interface PoolRate { name: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null; raceRate?: number | null; lateOrphanedBlocks?: number }
+interface RateWindow { period: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null; raceRate?: number | null; raceOrphanedBlocks?: number; lateOrphanedBlocks?: number; unavailableReason: string | null; pools: PoolRate[] }
+/** Race-only rate once the API serves the split, otherwise the all-loser rate. */
+const orphanRate = (w: { rate: number | null; raceRate?: number | null }) => w.raceRate !== undefined ? w.raceRate ?? null : w.rate;
 export interface OrphanRates {
   method: string;
   capture?: { startedAt: string | null; observers: number; healthyObservers: number; status: string };
@@ -44,8 +46,8 @@ export function ForkSummary({
 }) {
   const supported = rates?.method === 'observed-indexer-reorg-v1' || rates?.method === 'observed-block-capture-v2';
   const selected = supported ? rates!.periods.find(p => p.period === window) ?? null : null;
-  const pools = (selected?.pools ?? []).filter(p => p.orphanedBlocks > 0).sort((a, b) => b.orphanedBlocks - a.orphanedBlocks || (b.rate ?? 0) - (a.rate ?? 0));
-  const maxRate = Math.max(0.0001, ...pools.map(p => p.rate ?? 0));
+  const pools = (selected?.pools ?? []).filter(p => p.orphanedBlocks > 0).sort((a, b) => b.orphanedBlocks - a.orphanedBlocks || (orphanRate(b) ?? 0) - (orphanRate(a) ?? 0));
+  const maxRate = Math.max(0.0001, ...pools.map(p => orphanRate(p) ?? 0));
   const capture = supported ? rates!.capture : undefined;
 
   return (
@@ -63,7 +65,9 @@ export function ForkSummary({
               </div>
               <p className="mt-2 text-sm text-muted">
                 {selected && selected.rate !== null
-                  ? <><span className="text-cipher-gold">{pct(selected.rate)}</span> of {selected.canonicalBlocks.toLocaleString('en-US')} blocks</>
+                  ? selected.raceRate !== undefined
+                    ? <><span className="text-cipher-gold">{pct(selected.raceRate ?? null)}</span> orphan rate from {selected.raceOrphanedBlocks!.toLocaleString('en-US')} races · {selected.lateOrphanedBlocks!.toLocaleString('en-US')} late blocks · {pct(selected.rate)} counting every competing block, of {selected.canonicalBlocks.toLocaleString('en-US')} blocks</>
+                    : <><span className="text-cipher-gold">{pct(selected.rate)}</span> of {selected.canonicalBlocks.toLocaleString('en-US')} blocks</>
                   : selected?.unavailableReason ?? 'Observed orphan rate unavailable'}
               </p>
               {nodes && (
@@ -117,10 +121,10 @@ export function ForkSummary({
                         {!isUnknownPool(p.name) && <PoolLogo name={p.name} />}<span className="truncate">{p.name}</span>
                       </span>
                       <span className="hidden sm:block h-1.5 rounded-full bg-glass-4 overflow-hidden" aria-hidden>
-                        <span className="block h-full rounded-full bg-cipher-orange/70" style={{ width: `${Math.max(2, ((p.rate ?? 0) / maxRate) * 100)}%` }} />
+                        <span className="block h-full rounded-full bg-cipher-orange/70" style={{ width: `${Math.max(2, ((orphanRate(p) ?? 0) / maxRate) * 100)}%` }} />
                       </span>
                       <span className="text-right font-mono text-xs tabular-nums text-secondary whitespace-nowrap">
-                        <span className="text-primary">{p.orphanedBlocks}</span> lost · {pct(p.rate)}
+                        <span className="text-primary">{p.orphanedBlocks}</span> lost{p.lateOrphanedBlocks ? ` (${p.lateOrphanedBlocks} late)` : ''} · {pct(orphanRate(p))}
                       </span>
                     </button>
                   </li>

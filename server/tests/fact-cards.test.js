@@ -214,6 +214,17 @@ test('orphan rate counts orphans against all observed blocks on closed days', ()
   assert.equal(cards.orphanRateCard('mainnet', { data: { days: days.slice(-4) } }, NOW), null);
 });
 
+test('orphan rate counts only races once the API splits out late blocks', () => {
+  const days = utcDays(10, '2026-11-04', () => ({ canonicalBlocks: 990, orphanedBlocks: 10, raceOrphanedBlocks: 8, lateOrphanedBlocks: 2, partial: false }));
+  days.at(-1).partial = true;
+  const card = cards.orphanRateCard('mainnet', { data: { days } }, NOW);
+  // 56 races ÷ (6,930 canonical + 56 races); the 14 late blocks leave both sides.
+  assert.equal(card.headline, '0.80%');
+  assert.equal(card.detail, '56 lost races of 6,986 blocks · 14 late blocks excluded · Oct 28 – Nov 3 UTC');
+  assert.equal(card.source, 'Observed competing blocks · within 2s of the winner');
+  assert.ok(Math.abs(card.visual.bars[0].value - 8 / 998 * 100) < 1e-9);
+});
+
 test('chain size states the latest sample only while it is fresh', () => {
   const GIB = 1024 ** 3;
   const points = [{ time: '2026-10-05T12:00:00Z', sizeBytes: 262 * GIB, height: 3517427 }, { time: '2026-11-04T12:00:00Z', sizeBytes: 265 * GIB + GIB / 2, height: 3568621 }];

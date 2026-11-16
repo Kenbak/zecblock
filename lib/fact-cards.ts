@@ -696,9 +696,13 @@ export function miningSoftwareCard(network: CardNetwork, payload: unknown): Fact
   };
 }
 
-type OrphanDay = { date: string; canonicalBlocks: number; orphanedBlocks: number };
+type OrphanDay = { date: string; canonicalBlocks: number; orphanedBlocks: number; raceOrphanedBlocks?: number; lateOrphanedBlocks?: number };
 
-/** /v1/mining/orphan-rates/daily: closed UTC days only. An orphan no observer saw is not counted. */
+/**
+ * /v1/mining/orphan-rates/daily: closed UTC days only. An orphan no observer saw is not counted.
+ * Once the API splits races from late blocks, the card shows races only: late
+ * blocks never competed for the tip, so they leave the numerator and denominator.
+ */
 export function orphanRateCard(network: CardNetwork, payload: unknown, now = new Date()): FactCard | null {
   const rows = unwrap(payload)?.days;
   if (!Array.isArray(rows)) return null;
@@ -706,17 +710,27 @@ export function orphanRateCard(network: CardNetwork, payload: unknown, now = new
     && finite(row.canonicalBlocks) && finite(row.orphanedBlocks) && row.canonicalBlocks + row.orphanedBlocks > 0);
   const week = closedDays(days, 7, now);
   if (!week) return null;
-  const orphaned = week.reduce((sum, row) => sum + row.orphanedBlocks, 0);
-  const observed = week.reduce((sum, row) => sum + row.canonicalBlocks + row.orphanedBlocks, 0);
+  const split = week.every(row => finite(row.raceOrphanedBlocks) && finite(row.lateOrphanedBlocks));
+  const lost = (row: OrphanDay) => split ? row.raceOrphanedBlocks! : row.orphanedBlocks;
+  const orphaned = week.reduce((sum, row) => sum + lost(row), 0);
+  const observed = week.reduce((sum, row) => sum + row.canonicalBlocks + lost(row), 0);
+  const late = split ? week.reduce((sum, row) => sum + row.lateOrphanedBlocks!, 0) : 0;
   const today = now.toISOString().slice(0, 10);
   const history = days.filter(row => row.date < today).sort((a, b) => a.date.localeCompare(b.date)).slice(-28);
+  const range = `${formatDayRange(week[0].date, week.at(-1)!.date)} UTC`;
   return {
     eyebrow: `Mining · ${chainLabel(network)}`,
     headline: `${(orphaned / observed * 100).toFixed(2)}%`,
     caption: 'of blocks over 7 days were orphaned',
-    detail: `${count(orphaned)} of ${count(observed)} blocks our observers saw · ${formatDayRange(week[0].date, week.at(-1)!.date)} UTC`,
-    visual: { kind: 'bars', bars: history.map((row, i, all) => ({ value: row.orphanedBlocks / (row.canonicalBlocks + row.orphanedBlocks) * 100, highlight: i >= all.length - 7 })), unit: 'daily orphan rate, %' },
-    source: 'Observed competing blocks',
+    detail: split
+      ? `${count(orphaned)} lost races of ${count(observed)} blocks · ${count(late)} late blocks excluded · ${range}`
+      : `${count(orphaned)} of ${count(observed)} blocks our observers saw · ${range}`,
+    visual: { kind: 'bars', bars: history.map((row, i, all) => {
+      const daySplit = finite(row.raceOrphanedBlocks);
+      const n = daySplit ? row.raceOrphanedBlocks! : row.orphanedBlocks;
+      return { value: n / (row.canonicalBlocks + n) * 100, highlight: i >= all.length - 7 };
+    }), unit: 'daily orphan rate, %' },
+    source: split ? 'Observed competing blocks · within 2s of the winner' : 'Observed competing blocks',
   };
 }
 

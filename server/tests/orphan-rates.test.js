@@ -129,6 +129,7 @@ test('real PostgreSQL filters restored hashes, external reports, invalid archive
     CREATE TEMP TABLE captured_blocks(hash text PRIMARY KEY, height bigint, timestamp bigint, miner_address text, coinbase_hex text);
     CREATE TEMP TABLE block_capture_observers(observer text, network text, collection_started_at timestamptz, heartbeat_at timestamptz, stream_connected boolean, pending_records integer);
     CREATE TEMP TABLE orphaned_blocks(hash text UNIQUE, timestamp bigint, miner_address text, coinbase_hex text, source text, consensus_valid boolean);
+    CREATE TEMP TABLE block_capture_receipts(observer text, hash text, received_at timestamptz, PRIMARY KEY (observer, hash));
     INSERT INTO blocks(height,hash,timestamp,miner_address) SELECT i, 'canonical-'||i,
       floor(extract(epoch FROM now()))::bigint + seconds, '${viaBTC}'
     FROM (VALUES (0,-2678400),(1,-100),(2,-86400),(3,-86401),(4,-604800),(5,-2592000),(6,0),(7,1)) v(i,seconds);

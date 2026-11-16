@@ -7,7 +7,9 @@ import { useApiQuery } from '@/hooks/useApiQuery';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 
-interface DailyRate { date: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null; partial: boolean }
+interface DailyRate { date: string; canonicalBlocks: number; orphanedBlocks: number; rate: number | null; partial: boolean; raceRate?: number | null; raceOrphanedBlocks?: number; lateOrphanedBlocks?: number }
+/** Race-only rate once the API serves the split, otherwise every observed loser. */
+const dayRate = (d: DailyRate) => d.raceRate !== undefined ? d.raceRate ?? null : d.rate;
 type EventKind = 'capture' | 'observers' | 'nu7';
 interface RateEvent { at: string; kind: EventKind; label: string }
 interface DailyRates { days: DailyRate[]; events: RateEvent[]; asOf: string }
@@ -46,14 +48,14 @@ export function OrphanRateDailyChart() {
   if (loading && !data) return <div className="h-56 mb-6" role="status" aria-label="Loading daily orphan rate" />;
   if (!data?.days?.length) return null;
 
-  const points = data.days.map(day => ({ ...day, percent: day.rate === null ? null : day.rate * 100 }));
+  const points = data.days.map(day => ({ ...day, percent: dayRate(day) === null ? null : dayRate(day)! * 100 }));
   const eventsByDay = new Map<string, RateEvent[]>();
   for (const event of data.events ?? []) {
     const day = event.at.slice(0, 10);
     eventsByDay.set(day, [...(eventsByDay.get(day) ?? []), event]);
   }
   const markerColor = (kind: EventKind) => (kind === 'nu7' ? colors.gold : colors.axis);
-  const first = points.find(p => p.rate !== null);
+  const first = points.find(p => dayRate(p) !== null);
 
   return (
     <div className="mb-6">
@@ -87,7 +89,9 @@ export function OrphanRateDailyChart() {
               }}
               formatter={(_value, _name, item) => {
                 const day = item.payload as DailyRate;
-                return [`${pct(day.rate)} (${day.orphanedBlocks.toLocaleString()} orphans, ${day.canonicalBlocks.toLocaleString()} blocks)`, 'Orphan rate'];
+                return day.raceRate !== undefined
+                  ? [`${pct(day.raceRate ?? null)} (${(day.raceOrphanedBlocks ?? 0).toLocaleString()} orphans, ${(day.lateOrphanedBlocks ?? 0).toLocaleString()} late, ${day.canonicalBlocks.toLocaleString()} blocks · all competing ${pct(day.rate)})`, 'Orphan rate']
+                  : [`${pct(day.rate)} (${day.orphanedBlocks.toLocaleString()} orphans, ${day.canonicalBlocks.toLocaleString()} blocks)`, 'Orphan rate'];
               }}
             />
             {[...eventsByDay].map(([day, events]) => {

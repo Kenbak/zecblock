@@ -5,6 +5,8 @@
 // are canonical again; only captures at already-indexed heights), bucketed by
 // UTC day of the block-header timestamp, in one SQL snapshot.
 
+const { RACE_WINDOW_SECONDS, lateCaptureSql, raceRate } = require('./orphan-race');
+
 const MIN_DAYS = 7;
 const MAX_DAYS = 90;
 const DEFAULT_DAYS = 60;
@@ -25,14 +27,14 @@ WITH clock AS (
 ), range AS (
   SELECT min(day_start) AS range_start, max(day_end) AS range_end FROM days
 ), observed AS (
-  SELECT DISTINCT ON (hash) hash, timestamp
+  SELECT DISTINCT ON (hash) hash, timestamp, late
   FROM (
-    SELECT ob.hash, ob.timestamp, 0 AS priority
+    SELECT ob.hash, ob.timestamp, false AS late, 0 AS priority
     FROM orphaned_blocks ob, range
     WHERE ob.source='indexer' AND ob.consensus_valid IS DISTINCT FROM false
       AND ob.timestamp >= range.range_start AND ob.timestamp < range.range_end
     UNION ALL
-    SELECT c.hash, c.timestamp, 1 AS priority
+    SELECT c.hash, c.timestamp, ${lateCaptureSql('c.hash', 'replacement.hash')} AS late, 1 AS priority
     FROM captured_blocks c JOIN blocks replacement ON replacement.height=c.height, range
     WHERE replacement.hash <> c.hash
       AND c.timestamp >= range.range_start AND c.timestamp < range.range_end
@@ -44,10 +46,12 @@ WITH clock AS (
   FROM blocks b, range WHERE b.timestamp >= range.range_start AND b.timestamp < range.range_end
   GROUP BY 1
 ), orphans AS (
-  SELECT (o.timestamp / 86400) * 86400 AS day_start, count(*)::bigint AS n FROM observed o GROUP BY 1
+  SELECT (o.timestamp / 86400) * 86400 AS day_start, count(*)::bigint AS n,
+         count(*) FILTER (WHERE o.late)::bigint AS late FROM observed o GROUP BY 1
 )
 SELECT d.day_start, d.day_end, clock.as_of,
        coalesce(c.n, 0) AS canonical_blocks, coalesce(o.n, 0) AS orphaned_blocks,
+       coalesce(o.late, 0) AS late_orphaned_blocks,
        (SELECT min(timestamp) FROM blocks) AS history_start,
        (SELECT floor(extract(epoch FROM min(collection_started_at)))::bigint FROM block_capture_observers) AS capture_start
 FROM days d CROSS JOIN clock
@@ -80,6 +84,9 @@ function formatDaily(rows, { nu7Timestamp = null } = {}) {
   const days = rows.map(row => {
     const canonicalBlocks = count(row.canonical_blocks);
     const orphanedBlocks = count(row.orphaned_blocks);
+    const lateOrphanedBlocks = row.late_orphaned_blocks == null ? 0 : count(row.late_orphaned_blocks);
+    if (lateOrphanedBlocks > orphanedBlocks) throw new Error('Invalid daily orphan-rate count');
+    const raceOrphanedBlocks = orphanedBlocks - lateOrphanedBlocks;
     const start = Number(row.day_start);
     // A day before indexed history began has no meaningful denominator.
     const complete = historyStart != null && historyStart <= start;
@@ -88,7 +95,10 @@ function formatDaily(rows, { nu7Timestamp = null } = {}) {
       date: isoDay(start),
       canonicalBlocks,
       orphanedBlocks,
+      raceOrphanedBlocks,
+      lateOrphanedBlocks,
       rate: complete && canonicalBlocks > 0 ? orphanedBlocks / total : null,
+      raceRate: complete && canonicalBlocks > 0 ? raceRate(canonicalBlocks, raceOrphanedBlocks) : null,
       partial: Number(row.day_end) > asOf,
     };
   });
@@ -105,6 +115,7 @@ function formatDaily(rows, { nu7Timestamp = null } = {}) {
     success: true,
     asOf: new Date(asOf * 1000).toISOString(),
     timeBasis: 'block-header-utc-day',
+    raceWindowSeconds: RACE_WINDOW_SECONDS,
     days,
     events: events.filter(e => Date.parse(e.at) >= first && Date.parse(e.at) <= asOf * 1000)
       .sort((a, b) => Date.parse(a.at) - Date.parse(b.at)),

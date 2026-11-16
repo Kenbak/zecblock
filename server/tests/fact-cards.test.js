@@ -269,3 +269,22 @@ test('calendar card counts down to the next milestone without inventing an hour,
   assert.equal(cards.calendarCard([events[3]], now), null);
   assert.equal(cards.findFactCard('calendar').networks.join(), 'mainnet');
 });
+
+test('NU7 confirmations card compares 10-block waits before and with NU7 on mainnet only', () => {
+  const day = 86_400; const end = 1_794_838_829;
+  const win = (averageSeconds, p90Seconds, days) => ({ fromHeight: 1, toHeight: 2, fromTimestamp: end - days * day, toTimestamp: end, intervals: 100, averageSeconds, medianSeconds: null, p90Seconds, targetSeconds: 25 });
+  const story = { network: 'mainnet', phase: 'active', before: win(75.4, 171, 7), after: win(25, 57, 7) };
+  const card = cards.nu7ConfirmationsCard(story);
+  assert.equal(card.headline, '12.6 → 4.2 min');
+  assert.equal(card.caption, 'for 10 confirmations');
+  assert.equal(card.detail, 'Slowest 1 in 10 blocks: 2.9 min → 57s');
+  assert.deepEqual(card.visual.rows.map(r => r.display), ['12.6 min', '4.2 min']);
+  assert.match(card.source, /latest 7 days/);
+  assert.match(cards.nu7ConfirmationsCard({ ...story, after: win(25, 57, 3) }).source, /NU7 so far/);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, after: win(25, null, 2) }).detail, 'Average block: 75.4s → 25.0s');
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, after: win(25, 57, 0.5) }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, network: 'testnet' }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, phase: 'upcoming' }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, before: null }), null);
+  assert.equal(cards.nu7ConfirmationsCard(null), null);
+});

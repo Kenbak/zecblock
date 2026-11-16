@@ -107,6 +107,7 @@ export const TOOL_PATHS = [
   '/tools',
   '/tools/anchor-search',
   '/tools/blend-check',
+  '/tools/block-time-simulator',
   '/tools/broadcast',
   '/tools/decode',
   '/tools/unit-converter',

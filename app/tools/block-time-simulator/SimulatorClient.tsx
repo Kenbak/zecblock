@@ -1,0 +1,199 @@
+'use client';
+
+import { useEffect, useMemo, useState } from 'react';
+import { Card } from '@/components/ui/Card';
+import {
+  CHAIN_REFS, SIM_DEFAULT_SECONDS, SIM_ERAS, SIM_MAX_SECONDS, SIM_MIN_SECONDS, SIM_PRESETS, SPENDABLE_CONFIRMATIONS,
+  clampSeconds, formatDuration, formatShare, shareAtLeast, simulate, type SimResult, type SimZone,
+} from '@/lib/block-time-sim';
+
+const ZONE_COPY: Record<SimZone, { label: string; detail: string; className: string }> = {
+  measured: { label: 'Measured range', detail: 'Zcash has run at 150s, 75s and 25s; the math matched each one.', className: 'border-cipher-gold/40 text-cipher-gold' },
+  extrapolated: { label: 'Beyond measured data', detail: 'Timing math still applies. Orphan risk is an estimate.', className: 'border-cipher-border text-secondary' },
+  beyond: { label: 'Far beyond Zcash data', detail: 'Timing math only. Orphan risk is unknown at this speed.', className: 'border-cipher-border text-muted' },
+};
+
+const today = simulate(SIM_DEFAULT_SECONDS);
+
+function Metric({ label, value, detail, compare }: { label: string; value: string; detail?: string; compare?: string }) {
+  return <div className="p-4 sm:p-5">
+    <div className="type-label text-muted uppercase">{label}</div>
+    <div className="type-metric type-metric-compact text-primary mt-2">{value}</div>
+    {detail && <div className="text-caption text-secondary mt-1">{detail}</div>}
+    {compare && <div className="text-caption text-muted mt-1">{compare}</div>}
+  </div>;
+}
+
+function orphanText(r: SimResult): { value: string; detail: string } {
+  const o = r.orphans;
+  if (o.kind === 'measured') return { value: `${(o.rate * 100).toFixed(2)}%`, detail: `Measured · ~${Math.round(r.orphansPerDay!)} a day` };
+  if (o.kind === 'estimate') return { value: `~${(o.rate * 100).toFixed(2)}%`, detail: `Estimate · ~${Math.round(r.orphansPerDay!)} a day, if it scales with block rate` };
+  if (o.reason === 'unobserved') return { value: 'Not observed', detail: 'Orphan capture began in 2026' };
+  if (o.reason === 'between') return { value: '0.21–0.29%', detail: 'Measured at 25s and 75s; not modelled between' };
+  return { value: 'Unknown', detail: 'No Zcash data this fast' };
+}
+
+/** Share of gaps ≥ 2 min against block time: model curve, measured eras, current setting. */
+function EvidenceChart({ seconds }: { seconds: number }) {
+  const W = 480; const H = 240; const L = 44; const R = 16; const T = 14; const B = 36;
+  const x = (s: number) => L + (s - SIM_MIN_SECONDS) / (SIM_MAX_SECONDS - SIM_MIN_SECONDS) * (W - L - R);
+  const y = (share: number) => T + (1 - share / 0.5) * (H - T - B);
+  const curve = Array.from({ length: 146 }, (_, i) => SIM_MIN_SECONDS + i).map((s, i) => `${i ? 'L' : 'M'}${x(s).toFixed(1)},${y(shareAtLeast(s, 120)).toFixed(1)}`).join('');
+  return <figure>
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-labelledby="evidence-title evidence-desc">
+      <title id="evidence-title">Share of block gaps lasting 2 minutes or more</title>
+      <desc id="evidence-desc">Random-arrival model curve with measured Zcash eras: {SIM_ERAS.map(e => `${e.targetSeconds}s measured ${(e.shareAtLeast120 * 100).toFixed(1)}%`).join(', ')}.</desc>
+      <rect x={x(SIM_MIN_SECONDS)} y={T} width={x(25) - x(SIM_MIN_SECONDS)} height={H - T - B} className="fill-cipher-hover" opacity={0.6} />
+      {[0, 0.1, 0.2, 0.3, 0.4, 0.5].map(v => <g key={v}>
+        <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className="stroke-cipher-border" strokeWidth={1} />
+        <text x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-current text-muted" fontSize={13}>{v * 100}%</text>
+      </g>)}
+      {[5, 25, 50, 75, 100, 125, 150].map(s => <text key={s} x={x(s)} y={H - B + 18} textAnchor="middle" className="fill-current text-muted" fontSize={13}>{s}s</text>)}
+      <path d={curve} fill="none" className="stroke-current text-secondary" strokeWidth={2} />
+      <line x1={x(seconds)} x2={x(seconds)} y1={T} y2={H - B} className="stroke-cipher-gold" strokeWidth={1.5} strokeDasharray="4 4" />
+      <circle cx={x(seconds)} cy={y(shareAtLeast(seconds, 120))} r={5} className="fill-cipher-gold" />
+      {SIM_ERAS.map(e => <g key={e.targetSeconds}>
+        <circle cx={x(e.meanSeconds)} cy={y(e.shareAtLeast120)} r={6} fill="none" className="stroke-current text-primary" strokeWidth={2} />
+        <text x={x(e.meanSeconds) + (e.meanSeconds > 120 ? -10 : 9)} y={y(e.shareAtLeast120) + (e.meanSeconds > 120 ? 18 : -8)} textAnchor={e.meanSeconds > 120 ? 'end' : 'start'} className="fill-current text-primary" fontSize={13}>{e.targetSeconds}s measured</text>
+      </g>)}
+    </svg>
+    <figcaption className="text-caption text-muted mt-2">Line: random-arrival model. Circles: measured mainnet eras. Gold: your setting. Shaded: faster than any measured era.</figcaption>
+  </figure>;
+}
+
+function ChainList({ seconds }: { seconds: number }) {
+  const rows = [...CHAIN_REFS.map(c => ({ ...c, zcash: false })), { name: 'Zcash', blockSeconds: seconds, blockLabel: `${seconds}s`, wait: null, consensus: 'Proof of work', zcash: true }]
+    .sort((a, b) => b.blockSeconds - a.blockSeconds);
+  const lo = Math.log10(0.1); const hi = Math.log10(600);
+  const pct = (s: number) => Math.max(2, (Math.log10(s) - lo) / (hi - lo) * 100);
+  return <ul className="space-y-3">
+    {rows.map(r => <li key={r.name}>
+      <div className="flex justify-between gap-3 text-sm">
+        <span className={r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}>{r.name}{r.zcash ? ' · your setting' : ''}</span>
+        <span className="font-mono tabular-nums text-secondary">{r.blockLabel}</span>
+      </div>
+      <div className="h-1.5 mt-1.5 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${pct(r.blockSeconds)}%` }} /></div>
+      <div className="text-caption text-muted mt-1">{r.consensus}</div>
+    </li>)}
+  </ul>;
+}
+
+function WaitList({ result }: { result: SimResult }) {
+  const rows = [
+    ...CHAIN_REFS.filter(c => c.wait).map(c => ({ name: c.name, seconds: c.wait!.seconds, rule: c.wait!.rule, zcash: false })),
+    { name: 'Zcash', seconds: result.spendableMean, rule: `${SPENDABLE_CONFIRMATIONS} confirmations, the ZIP 315 wallet recommendation`, zcash: true },
+  ].sort((a, b) => b.seconds - a.seconds);
+  const max = Math.max(...rows.map(r => r.seconds));
+  return <ul className="space-y-3">
+    {rows.map(r => <li key={r.name}>
+      <div className="flex justify-between gap-3 text-sm">
+        <span className={r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}>{r.name}{r.zcash ? ` at ${result.seconds}s` : ''}</span>
+        <span className="font-mono tabular-nums text-secondary">{formatDuration(r.seconds)}</span>
+      </div>
+      <div className="h-1.5 mt-1.5 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${Math.max(1, r.seconds / max * 100)}%` }} /></div>
+      <div className="text-caption text-muted mt-1">{r.rule}</div>
+    </li>)}
+  </ul>;
+}
+
+export default function SimulatorClient() {
+  const [seconds, setSeconds] = useState(SIM_DEFAULT_SECONDS);
+  const [copied, setCopied] = useState(false);
+  const result = useMemo(() => simulate(seconds), [seconds]);
+  const zone = ZONE_COPY[result.zone];
+  const orphans = orphanText(result);
+
+  useEffect(() => {
+    const t = new URLSearchParams(window.location.search).get('t');
+    if (t != null) setSeconds(clampSeconds(t));
+  }, []);
+
+  const update = (value: number) => {
+    const next = clampSeconds(value);
+    setSeconds(next);
+    const url = new URL(window.location.href);
+    if (next === SIM_DEFAULT_SECONDS) url.searchParams.delete('t'); else url.searchParams.set('t', String(next));
+    window.history.replaceState(null, '', url);
+  };
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.href);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    } catch { /* clipboard unavailable */ }
+  };
+
+  const vsToday = (value: number) => seconds === SIM_DEFAULT_SECONDS ? undefined : `Today at 25s: ${formatDuration(value)}`;
+
+  return <div className="space-y-8">
+    <Card className="card-static p-4 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-4">
+        <div>
+          <label htmlFor="block-time" className="type-label text-muted uppercase">Block time</label>
+          <output htmlFor="block-time" className="block type-metric text-primary mt-1">{seconds}s</output>
+        </div>
+        <div className={`rounded-md border px-3 py-2 text-caption max-w-xs ${zone.className}`}>
+          <span className="font-mono">{zone.label}</span>
+          <span className="block text-muted mt-0.5">{zone.detail}</span>
+        </div>
+      </div>
+      <input id="block-time" type="range" min={SIM_MIN_SECONDS} max={SIM_MAX_SECONDS} step={1} value={seconds}
+        aria-valuetext={`${seconds} seconds`} onChange={e => update(Number(e.target.value))}
+        className="block w-full h-6 mt-4 cursor-pointer accent-cipher-gold focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold" />
+      <div className="mt-1 flex justify-between text-caption font-mono text-muted"><span>{SIM_MIN_SECONDS}s</span><span>{SIM_MAX_SECONDS}s</span></div>
+      <div className="mt-4 flex flex-wrap gap-2">
+        {SIM_PRESETS.map(p => <button key={p.seconds} type="button" onClick={() => update(p.seconds)} aria-pressed={seconds === p.seconds}
+          title={p.detail}
+          className={`rounded-md border px-3 py-1.5 text-caption font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold ${seconds === p.seconds ? 'border-cipher-gold text-cipher-gold' : 'border-cipher-border text-secondary hover:bg-cipher-hover'}`}>
+          {p.label} <span className="text-muted">· {p.detail}</span>
+        </button>)}
+      </div>
+    </Card>
+
+    <section aria-labelledby="feel-heading">
+      <h2 id="feel-heading" className="type-section text-primary mb-3">What users would feel</h2>
+      <Card className="card-static p-0 overflow-hidden">
+        <div className="grid sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
+          <Metric label="Spendable in" value={formatDuration(result.spendableMean)} detail={`9 times in 10 within ${formatDuration(result.spendableP90)}`} compare={vsToday(today.spendableMean)} />
+          <Metric label="First confirmation" value={formatDuration(result.firstConfirmationMean)} detail="On average, from sending" compare={vsToday(today.firstConfirmationMean)} />
+          <Metric label="Gaps of 2+ minutes" value={formatShare(result.shareAtLeast120)} detail={`Gaps of 1+ minute: ${formatShare(result.shareAtLeast60)}`} compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${formatShare(today.shareAtLeast120)}`} />
+          <Metric label="Longest wait, typical day" value={formatDuration(result.typicalDailyLongest)} detail="The slowest block gap in a day" compare={vsToday(today.typicalDailyLongest)} />
+        </div>
+      </Card>
+    </section>
+
+    <section aria-labelledby="cost-heading">
+      <h2 id="cost-heading" className="type-section text-primary mb-3">What it would cost</h2>
+      <Card className="card-static p-0 overflow-hidden">
+        <div className="grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
+          <Metric label="Orphaned blocks" value={orphans.value} detail={orphans.detail} />
+          <Metric label="Blocks per day" value={Math.round(result.blocksPerDay).toLocaleString('en-US')} detail="More headers for nodes and light wallets to process" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${today.blocksPerDay.toLocaleString('en-US')}`} />
+          <Metric label="Empty-block data" value={`${(result.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} detail="Headers and coinbase alone, before any transactions" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${(today.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} />
+        </div>
+      </Card>
+    </section>
+
+    <section aria-labelledby="evidence-heading">
+      <h2 id="evidence-heading" className="type-section text-primary mb-2">Why the math is trustworthy</h2>
+      <p className="text-sm text-muted mb-4 max-w-3xl">The same random-arrival model matched every speed Zcash has run at, within about a percentage point.</p>
+      <Card className="card-static p-4 sm:p-6"><EvidenceChart seconds={seconds} /></Card>
+    </section>
+
+    <section aria-labelledby="chains-heading">
+      <h2 id="chains-heading" className="type-section text-primary mb-2">Compared with other chains</h2>
+      <p className="text-sm text-muted mb-4 max-w-3xl">Protocol block targets. Chains settle differently, so only clear, documented waits are compared.</p>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Card className="card-static p-4 sm:p-6"><h3 className="type-label text-muted uppercase mb-4">Block time (log scale)</h3><ChainList seconds={seconds} /></Card>
+        <Card className="card-static p-4 sm:p-6"><h3 className="type-label text-muted uppercase mb-4">Usual wait until done</h3><WaitList result={result} /></Card>
+      </div>
+    </section>
+
+    <div className="flex flex-wrap items-center gap-3">
+      <button type="button" onClick={copyLink} className="rounded-md border border-cipher-border px-3 py-2 text-caption font-mono text-secondary hover:bg-cipher-hover focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold">
+        {copied ? 'Link copied' : `Copy link to ${seconds}s`}
+      </button>
+      <span className="text-caption text-muted">Shares this exact setting.</span>
+    </div>
+  </div>;
+}

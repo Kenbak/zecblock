@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Card } from '@/components/ui/Card';
 import {
-  CHAIN_REFS, SIM_DEFAULT_SECONDS, SIM_ERAS, SIM_MAX_SECONDS, SIM_MIN_SECONDS, SIM_PRESETS, SPENDABLE_CONFIRMATIONS,
+  CHAIN_REFS, ZCASH_LOGO, SIM_DEFAULT_SECONDS, SIM_ERAS, SIM_MAX_SECONDS, SIM_MIN_SECONDS, SIM_PRESETS, SPENDABLE_CONFIRMATIONS,
   clampSeconds, formatDuration, formatShare, shareAtLeast, simulate, type SimResult, type SimZone,
 } from '@/lib/block-time-sim';
 
@@ -15,9 +15,31 @@ const ZONE_COPY: Record<SimZone, { label: string; detail: string; className: str
 
 const today = simulate(SIM_DEFAULT_SECONDS);
 
-function Metric({ label, value, detail, compare }: { label: string; value: string; detail?: string; compare?: string }) {
+const ICON_PATHS = {
+  wallet: 'M3 7a2 2 0 0 1 2-2h12v4M3 7v10a2 2 0 0 0 2 2h14V9H5a2 2 0 0 1-2-2Zm13 6h.01',
+  check: 'M20 6 9 17l-5-5',
+  pause: 'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20Zm-2-14v8m4-8v8',
+  hourglass: 'M6 2h12M6 22h12M7 2c0 5 10 5 10 10S7 17 7 22M17 2c0 5-10 5-10 10s10 5 10 10',
+  fork: 'M6 3v6a6 6 0 0 0 6 6m0 0a6 6 0 0 0 6-6V3m-6 12v6',
+  cube: 'm12 2 9 5v10l-9 5-9-5V7l9-5Zm0 10 9-5m-9 5L3 7m9 5v10',
+  disk: 'M4 6c0-1.7 3.6-3 8-3s8 1.3 8 3-3.6 3-8 3-8-1.3-8-3Zm0 0v12c0 1.7 3.6 3 8 3s8-1.3 8-3V6m-16 6c0 1.7 3.6 3 8 3s8-1.3 8-3',
+} as const;
+type IconName = keyof typeof ICON_PATHS;
+
+function Icon({ name, className = 'w-4 h-4' }: { name: IconName; className?: string }) {
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.6} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d={ICON_PATHS[name]} /></svg>;
+}
+
+/** Local logo, or the chain's initial when none is bundled. */
+function ChainLogo({ name, src }: { name: string; src: string | null }) {
+  if (!src) return <span className="inline-flex w-5 h-5 shrink-0 items-center justify-center rounded-full bg-cipher-hover text-[10px] font-mono text-secondary" aria-hidden="true">{name[0]}</span>;
+  // eslint-disable-next-line @next/next/no-img-element
+  return <img src={src} alt="" width={20} height={20} className="w-5 h-5 shrink-0 rounded-full" />;
+}
+
+function Metric({ icon, label, value, detail, compare }: { icon: IconName; label: string; value: string; detail?: string; compare?: string }) {
   return <div className="p-4 sm:p-5">
-    <div className="type-label text-muted uppercase">{label}</div>
+    <div className="flex items-center gap-2 type-label text-muted uppercase"><Icon name={icon} className="w-4 h-4 text-cipher-gold" />{label}</div>
     <div className="type-metric type-metric-compact text-primary mt-2">{value}</div>
     {detail && <div className="text-caption text-secondary mt-1">{detail}</div>}
     {compare && <div className="text-caption text-muted mt-1">{compare}</div>}
@@ -35,26 +57,27 @@ function orphanText(r: SimResult): { value: string; detail: string } {
 
 /** Share of gaps ≥ 2 min against block time: model curve, measured eras, current setting. */
 function EvidenceChart({ seconds }: { seconds: number }) {
-  const W = 480; const H = 240; const L = 44; const R = 16; const T = 14; const B = 36;
+  const W = 520; const H = 250; const L = 44; const R = 16; const T = 14; const B = 36;
   const x = (s: number) => L + (s - SIM_MIN_SECONDS) / (SIM_MAX_SECONDS - SIM_MIN_SECONDS) * (W - L - R);
   const y = (share: number) => T + (1 - share / 0.5) * (H - T - B);
   const curve = Array.from({ length: 146 }, (_, i) => SIM_MIN_SECONDS + i).map((s, i) => `${i ? 'L' : 'M'}${x(s).toFixed(1)},${y(shareAtLeast(s, 120)).toFixed(1)}`).join('');
   return <figure>
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto" role="img" aria-labelledby="evidence-title evidence-desc">
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto max-w-[560px]" role="img" aria-labelledby="evidence-title evidence-desc">
       <title id="evidence-title">Share of block gaps lasting 2 minutes or more</title>
       <desc id="evidence-desc">Random-arrival model curve with measured Zcash eras: {SIM_ERAS.map(e => `${e.targetSeconds}s measured ${(e.shareAtLeast120 * 100).toFixed(1)}%`).join(', ')}.</desc>
       <rect x={x(SIM_MIN_SECONDS)} y={T} width={x(25) - x(SIM_MIN_SECONDS)} height={H - T - B} className="fill-cipher-hover" opacity={0.6} />
       {[0, 0.1, 0.2, 0.3, 0.4, 0.5].map(v => <g key={v}>
         <line x1={L} x2={W - R} y1={y(v)} y2={y(v)} className="stroke-cipher-border" strokeWidth={1} />
-        <text x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-current text-muted" fontSize={13}>{v * 100}%</text>
+        <text x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-current text-muted" fontSize={12}>{v * 100}%</text>
       </g>)}
-      {[5, 25, 50, 75, 100, 125, 150].map(s => <text key={s} x={x(s)} y={H - B + 18} textAnchor="middle" className="fill-current text-muted" fontSize={13}>{s}s</text>)}
+      {[5, 25, 50, 75, 100, 125, 150].map(s => <text key={s} x={x(s)} y={H - B + 18} textAnchor="middle" className="fill-current text-muted" fontSize={12}>{s}s</text>)}
       <path d={curve} fill="none" className="stroke-current text-secondary" strokeWidth={2} />
       <line x1={x(seconds)} x2={x(seconds)} y1={T} y2={H - B} className="stroke-cipher-gold" strokeWidth={1.5} strokeDasharray="4 4" />
       <circle cx={x(seconds)} cy={y(shareAtLeast(seconds, 120))} r={5} className="fill-cipher-gold" />
       {SIM_ERAS.map(e => <g key={e.targetSeconds}>
         <circle cx={x(e.meanSeconds)} cy={y(e.shareAtLeast120)} r={6} fill="none" className="stroke-current text-primary" strokeWidth={2} />
-        <text x={x(e.meanSeconds) + (e.meanSeconds > 120 ? -10 : 9)} y={y(e.shareAtLeast120) + (e.meanSeconds > 120 ? 18 : -8)} textAnchor={e.meanSeconds > 120 ? 'end' : 'start'} className="fill-current text-primary" fontSize={13}>{e.targetSeconds}s measured</text>
+        {/* The curve rises to the right: labels sit where it is not, below-right at 25s/75s and left of 150s. */}
+        <text x={x(e.meanSeconds) + (e.targetSeconds === 150 ? -12 : 10)} y={y(e.shareAtLeast120) + (e.targetSeconds === 150 ? -10 : e.targetSeconds === 25 ? -12 : 20)} textAnchor={e.targetSeconds === 150 ? 'end' : 'start'} className="fill-current text-primary" fontSize={12}>{e.targetSeconds}s</text>
       </g>)}
     </svg>
     <figcaption className="text-caption text-muted mt-2">Line: random-arrival model. Circles: measured mainnet eras. Gold: your setting. Shaded: faster than any measured era.</figcaption>
@@ -62,36 +85,35 @@ function EvidenceChart({ seconds }: { seconds: number }) {
 }
 
 function ChainList({ seconds }: { seconds: number }) {
-  const rows = [...CHAIN_REFS.map(c => ({ ...c, zcash: false })), { name: 'Zcash', blockSeconds: seconds, blockLabel: `${seconds}s`, wait: null, consensus: 'Proof of work', zcash: true }]
+  const rows = [...CHAIN_REFS.map(c => ({ ...c, zcash: false })), { name: 'Zcash', logo: ZCASH_LOGO, blockSeconds: seconds, blockLabel: `${seconds}s`, wait: null, consensus: 'Proof of work', zcash: true }]
     .sort((a, b) => b.blockSeconds - a.blockSeconds);
   const lo = Math.log10(0.1); const hi = Math.log10(600);
   const pct = (s: number) => Math.max(2, (Math.log10(s) - lo) / (hi - lo) * 100);
   return <ul className="space-y-3">
     {rows.map(r => <li key={r.name}>
       <div className="flex justify-between gap-3 text-sm">
-        <span className={r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}>{r.name}{r.zcash ? ' · your setting' : ''}</span>
+        <span className={`flex items-center gap-2 ${r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}`}><ChainLogo name={r.name} src={r.logo} />{r.name}{r.zcash ? ' · your setting' : ''}<span className="text-caption text-muted font-normal hidden sm:inline">{r.consensus}</span></span>
         <span className="font-mono tabular-nums text-secondary">{r.blockLabel}</span>
       </div>
-      <div className="h-1.5 mt-1.5 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${pct(r.blockSeconds)}%` }} /></div>
-      <div className="text-caption text-muted mt-1">{r.consensus}</div>
+      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${pct(r.blockSeconds)}%` }} /></div>
     </li>)}
   </ul>;
 }
 
 function WaitList({ result }: { result: SimResult }) {
   const rows = [
-    ...CHAIN_REFS.filter(c => c.wait).map(c => ({ name: c.name, seconds: c.wait!.seconds, rule: c.wait!.rule, zcash: false })),
-    { name: 'Zcash', seconds: result.spendableMean, rule: `${SPENDABLE_CONFIRMATIONS} confirmations, the ZIP 315 wallet recommendation`, zcash: true },
+    ...CHAIN_REFS.filter(c => c.wait).map(c => ({ name: c.name, logo: c.logo, seconds: c.wait!.seconds, rule: c.wait!.rule, zcash: false })),
+    { name: 'Zcash', logo: ZCASH_LOGO, seconds: result.spendableMean, rule: `${SPENDABLE_CONFIRMATIONS} confirmations, the ZIP 315 wallet recommendation`, zcash: true },
   ].sort((a, b) => b.seconds - a.seconds);
   const max = Math.max(...rows.map(r => r.seconds));
   return <ul className="space-y-3">
     {rows.map(r => <li key={r.name}>
       <div className="flex justify-between gap-3 text-sm">
-        <span className={r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}>{r.name}{r.zcash ? ` at ${result.seconds}s` : ''}</span>
+        <span className={`flex items-center gap-2 ${r.zcash ? 'text-cipher-gold font-medium' : 'text-primary'}`}><ChainLogo name={r.name} src={r.logo} />{r.name}{r.zcash ? ` at ${result.seconds}s` : ''}</span>
         <span className="font-mono tabular-nums text-secondary">{formatDuration(r.seconds)}</span>
       </div>
-      <div className="h-1.5 mt-1.5 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${Math.max(1, r.seconds / max * 100)}%` }} /></div>
-      <div className="text-caption text-muted mt-1">{r.rule}</div>
+      <div className="h-1.5 mt-1.5 ml-7 rounded bg-cipher-hover"><div className={`h-1.5 rounded ${r.zcash ? 'bg-cipher-gold' : 'bg-[var(--color-text-muted)]'}`} style={{ width: `${Math.max(1, r.seconds / max * 100)}%` }} /></div>
+      <div className="text-caption text-muted mt-1 ml-7">{r.rule}</div>
     </li>)}
   </ul>;
 }
@@ -155,10 +177,10 @@ export default function SimulatorClient() {
       <h2 id="feel-heading" className="type-section text-primary mb-3">What users would feel</h2>
       <Card className="card-static p-0 overflow-hidden">
         <div className="grid sm:grid-cols-2 lg:grid-cols-4 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
-          <Metric label="Spendable in" value={formatDuration(result.spendableMean)} detail={`9 times in 10 within ${formatDuration(result.spendableP90)}`} compare={vsToday(today.spendableMean)} />
-          <Metric label="First confirmation" value={formatDuration(result.firstConfirmationMean)} detail="On average, from sending" compare={vsToday(today.firstConfirmationMean)} />
-          <Metric label="Gaps of 2+ minutes" value={formatShare(result.shareAtLeast120)} detail={`Gaps of 1+ minute: ${formatShare(result.shareAtLeast60)}`} compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${formatShare(today.shareAtLeast120)}`} />
-          <Metric label="Longest wait, typical day" value={formatDuration(result.typicalDailyLongest)} detail="The slowest block gap in a day" compare={vsToday(today.typicalDailyLongest)} />
+          <Metric icon="wallet" label="Spendable in" value={formatDuration(result.spendableMean)} detail={`9 times in 10 within ${formatDuration(result.spendableP90)}`} compare={vsToday(today.spendableMean)} />
+          <Metric icon="check" label="First confirmation" value={formatDuration(result.firstConfirmationMean)} detail="On average, from sending" compare={vsToday(today.firstConfirmationMean)} />
+          <Metric icon="pause" label="Gaps of 2+ minutes" value={formatShare(result.shareAtLeast120)} detail={`Gaps of 1+ minute: ${formatShare(result.shareAtLeast60)}`} compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${formatShare(today.shareAtLeast120)}`} />
+          <Metric icon="hourglass" label="Longest wait, typical day" value={formatDuration(result.typicalDailyLongest)} detail="The slowest block gap in a day" compare={vsToday(today.typicalDailyLongest)} />
         </div>
       </Card>
     </section>
@@ -167,17 +189,32 @@ export default function SimulatorClient() {
       <h2 id="cost-heading" className="type-section text-primary mb-3">What it would cost</h2>
       <Card className="card-static p-0 overflow-hidden">
         <div className="grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
-          <Metric label="Orphaned blocks" value={orphans.value} detail={orphans.detail} />
-          <Metric label="Blocks per day" value={Math.round(result.blocksPerDay).toLocaleString('en-US')} detail="More headers for nodes and light wallets to process" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${today.blocksPerDay.toLocaleString('en-US')}`} />
-          <Metric label="Empty-block data" value={`${(result.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} detail="Headers and coinbase alone, before any transactions" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${(today.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} />
+          <Metric icon="fork" label="Orphaned blocks" value={orphans.value} detail={orphans.detail} />
+          <Metric icon="cube" label="Blocks per day" value={Math.round(result.blocksPerDay).toLocaleString('en-US')} detail="More headers for nodes and light wallets to process" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${today.blocksPerDay.toLocaleString('en-US')}`} />
+          <Metric icon="disk" label="Empty-block data" value={`${(result.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} detail="Headers and coinbase alone, before any transactions" compare={seconds === SIM_DEFAULT_SECONDS ? undefined : `Today: ${(today.emptyBlockBytesPerDay / 1e6).toFixed(1)} MB/day`} />
         </div>
       </Card>
     </section>
 
     <section aria-labelledby="evidence-heading">
       <h2 id="evidence-heading" className="type-section text-primary mb-2">Why the math is trustworthy</h2>
-      <p className="text-sm text-muted mb-4 max-w-3xl">The same random-arrival model matched every speed Zcash has run at, within about a percentage point.</p>
-      <Card className="card-static p-4 sm:p-6"><EvidenceChart seconds={seconds} /></Card>
+      <p className="text-sm text-muted mb-4 max-w-3xl">Share of block gaps lasting 2 minutes or more. The same random-arrival model matched every speed Zcash has run at, within about a percentage point.</p>
+      <Card className="card-static p-4 sm:p-6">
+        <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,560px)] lg:items-center">
+          <table className="w-full text-sm">
+            <caption className="sr-only">Gaps of 2 minutes or more: model against measured</caption>
+            <thead><tr className="type-label text-muted uppercase text-left"><th className="py-2 font-normal">Era</th><th className="py-2 font-normal text-right">Model</th><th className="py-2 font-normal text-right">Measured</th></tr></thead>
+            <tbody className="divide-y divide-cipher-border">
+              {SIM_ERAS.map(e => <tr key={e.targetSeconds}>
+                <td className="py-2.5"><span className="font-mono text-primary">{e.targetSeconds}s</span> <span className="text-caption text-muted">{e.label}</span></td>
+                <td className="py-2.5 text-right font-mono tabular-nums text-secondary">{(shareAtLeast(e.meanSeconds, 120) * 100).toFixed(e.targetSeconds === 25 ? 2 : 1)}%</td>
+                <td className="py-2.5 text-right font-mono tabular-nums text-cipher-gold">{(e.shareAtLeast120 * 100).toFixed(e.targetSeconds === 25 ? 2 : 1)}%</td>
+              </tr>)}
+            </tbody>
+          </table>
+          <EvidenceChart seconds={seconds} />
+        </div>
+      </Card>
     </section>
 
     <section aria-labelledby="chains-heading">

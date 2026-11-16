@@ -152,13 +152,15 @@ export function formatShare(share: number): string {
  * Other chains at their protocol block targets. `wait` is only given where
  * the chain has a clear, documented rule; each says what it measures.
  */
-export type ChainRef = { name: string; blockSeconds: number; blockLabel: string; wait: { seconds: number; rule: string } | null; consensus: string };
+/** `logo` is a local public path; null draws the chain's initial. */
+export type ChainRef = { name: string; logo: string | null; blockSeconds: number; blockLabel: string; wait: { seconds: number; rule: string } | null; consensus: string };
+export const ZCASH_LOGO = '/tokens/zec.png';
 export const CHAIN_REFS: readonly ChainRef[] = [
-  { name: 'Bitcoin', blockSeconds: 600, blockLabel: '10 min', wait: { seconds: 3_600, rule: '6 confirmations, a common convention' }, consensus: 'Proof of work' },
-  { name: 'Litecoin', blockSeconds: 150, blockLabel: '2.5 min', wait: { seconds: 900, rule: '6 confirmations, a common convention' }, consensus: 'Proof of work' },
-  { name: 'Monero', blockSeconds: 120, blockLabel: '2 min', wait: { seconds: 1_200, rule: '10-block lock before funds can be spent' }, consensus: 'Proof of work' },
-  { name: 'Dogecoin', blockSeconds: 60, blockLabel: '1 min', wait: null, consensus: 'Proof of work' },
-  { name: 'Cardano', blockSeconds: 20, blockLabel: '20s average', wait: null, consensus: 'Proof of stake' },
-  { name: 'Ethereum', blockSeconds: 12, blockLabel: '12s slots', wait: { seconds: 768, rule: 'finality after two epochs (64 slots), nominal' }, consensus: 'Proof of stake' },
-  { name: 'Kaspa', blockSeconds: 0.1, blockLabel: '0.1s (10 per second)', wait: null, consensus: 'Proof of work, blockDAG' },
+  { name: 'Bitcoin', logo: '/chains/btc.png', blockSeconds: 600, blockLabel: '10 min', wait: { seconds: 3_600, rule: '6 confirmations, a common convention' }, consensus: 'Proof of work' },
+  { name: 'Litecoin', logo: '/chains/ltc.png', blockSeconds: 150, blockLabel: '2.5 min', wait: { seconds: 900, rule: '6 confirmations, a common convention' }, consensus: 'Proof of work' },
+  { name: 'Monero', logo: '/tokens/xmr.png', blockSeconds: 120, blockLabel: '2 min', wait: { seconds: 1_200, rule: '10-block lock before funds can be spent' }, consensus: 'Proof of work' },
+  { name: 'Dogecoin', logo: '/chains/doge.png', blockSeconds: 60, blockLabel: '1 min', wait: null, consensus: 'Proof of work' },
+  { name: 'Cardano', logo: '/chains/cardano.png', blockSeconds: 20, blockLabel: '20s average', wait: null, consensus: 'Proof of stake' },
+  { name: 'Ethereum', logo: '/chains/eth.png', blockSeconds: 12, blockLabel: '12s slots', wait: { seconds: 768, rule: 'finality after two epochs (64 slots), nominal' }, consensus: 'Proof of stake' },
+  { name: 'Kaspa', logo: null, blockSeconds: 0.1, blockLabel: '0.1s (10 per second)', wait: null, consensus: 'Proof of work, blockDAG' },
 ];

@@ -91,6 +91,11 @@ const timeline = [
     date: 'Oct 1, 2026', month: '2026-10-01', title: 'CipherScan becomes ZecBlock',
     description: 'The explorer moved from cipherscan.app to zecblock.com under the ZecBlock name.',
   },
+  {
+    date: 'Nov 2026', month: '2026-11', title: 'Zift',
+    description: 'Ask questions about Zcash mainnet, write SQL against public chain data, and save charts and dashboards that link to their sources.',
+    href: '/zift',
+  },
 ];
 
 export default async function AboutPage() {

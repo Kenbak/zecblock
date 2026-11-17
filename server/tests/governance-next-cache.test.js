@@ -28,7 +28,8 @@ function harness() {
   let now = Date.parse('2026-10-28T03:00:00Z');
   const Clock = class extends Date { static now() { return now; } };
   const nu7 = load('lib/nu7-vote-results.ts');
-  const model = load('lib/governance.ts', { './nu7-vote-results': nu7 });
+  const grantRounds = load('lib/grant-rounds.ts');
+  const model = load('lib/governance.ts', { './nu7-vote-results': nu7, './grant-rounds': grantRounds });
   const summary = structuredClone(require('./fixtures/nu7/summary.json'));
   const tally = structuredClone(require('./fixtures/nu7/tally.json'));
   const round = model.roundSchema.parse({

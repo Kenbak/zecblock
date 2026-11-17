@@ -1,4 +1,4 @@
-import type { CardColor, CardRow, FactCard } from '@/lib/fact-cards';
+import type { CardAgendaRow, CardColor, CardRow, FactCard } from '@/lib/fact-cards';
 import { getChartColors } from '@/lib/chart-theme';
 
 /**
@@ -51,6 +51,19 @@ function Ranking({ rows, colors, logos }: { rows: CardRow[]; colors: Record<Card
   </div>;
 }
 
+/** Upcoming milestones: date, name and block, nearest first. Four rows at most. */
+function Agenda({ rows, colors }: { rows: CardAgendaRow[]; colors: Record<CardColor, string> }) {
+  return <div style={{ display: 'flex', flexDirection: 'column', width: 460, gap: 22 }}>
+    {rows.slice(0, 4).map(row => <div key={row.label} style={{ display: 'flex', alignItems: 'flex-start', gap: 16 }}>
+      <span style={{ display: 'flex', width: 12, height: 12, marginTop: 9, borderRadius: 6, background: colors[row.color ?? 'gold'] }} />
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 24, color: TEXT }}>{row.label}</span>
+        <span style={{ fontSize: 18, color: MUTED_TEXT }}>{row.when}{row.block ? ` · ${row.block}` : ''}</span>
+      </div>
+    </div>)}
+  </div>;
+}
+
 function Split({ rows, colors }: { rows: CardRow[]; colors: Record<CardColor, string> }) {
   const total = rows.reduce((sum, row) => sum + Math.max(0, row.value), 0) || 1;
   return <div style={{ display: 'flex', flexDirection: 'column', gap: 20, width: CONTENT }}>
@@ -83,6 +96,7 @@ function Visual({ card, colors, logos }: { card: FactCard; colors: Record<CardCo
   }
   if (visual.kind === 'split') return <Split rows={visual.rows} colors={colors} />;
   if (visual.kind === 'ranking') return <Ranking rows={visual.rows} colors={colors} logos={logos} />;
+  if (visual.kind === 'agenda') return <Agenda rows={visual.rows} colors={colors} />;
   const max = Math.max(...visual.bars.map(bar => bar.value), Number.EPSILON);
   const slot = CONTENT / Math.max(visual.bars.length, 1);
   return <svg width={CONTENT} height={110} viewBox={`0 0 ${CONTENT} 110`} preserveAspectRatio="none">
@@ -98,7 +112,7 @@ function Visual({ card, colors, logos }: { card: FactCard; colors: Record<CardCo
 export function FactCardImage({ card, logo, network, observed, logos = {} }: { card: FactCard; logo: string; network: string; observed: string; logos?: Record<string, string> }) {
   const colors = palette();
   // Ranked lists sit beside the text; every other visual runs full width beneath it.
-  const side = card.visual?.kind === 'ranking';
+  const side = card.visual?.kind === 'ranking' || card.visual?.kind === 'agenda';
   const headlineSize = card.headline.length > 16 ? (side ? 64 : 88) : card.headline.length > 11 ? (side ? 84 : 112) : (side ? 112 : 136);
   const text = <div style={{ display: 'flex', flexDirection: 'column', width: side ? 520 : CONTENT }}>
     <span style={{ fontSize: headlineSize, lineHeight: 1, letterSpacing: -3 }}>{card.headline}</span>

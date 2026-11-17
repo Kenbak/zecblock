@@ -12,8 +12,9 @@ function load(file, dependencies = {}, globals = {}) {
   return exports;
 }
 const nu7 = load('lib/nu7-vote-results.ts');
-const model = load('lib/governance.ts', { './nu7-vote-results': nu7 });
-const helpers = load('lib/governance-announcement.ts', { './governance': model });
+const grantRounds = load('lib/grant-rounds.ts');
+const model = load('lib/governance.ts', { './nu7-vote-results': nu7, './grant-rounds': grantRounds });
+const helpers = load('lib/governance-announcement.ts', { './governance': model, './grant-rounds': grantRounds });
 const now = Date.parse('2026-10-16T00:00:00Z');
 const Clock = class extends Date { static now() { return now; } };
 function vote(state, end = now + 3600_000, id = 'reviewed-vote') {
@@ -141,7 +142,7 @@ function bannerHarness(responses, initialNow = now) {
     },
     'next/link': {}, '@/lib/config': { isMainnet: true, isCrosslink: false, NETWORK: 'mainnet' },
     '@/hooks/useApiQuery': { useApiQuery: () => ({ data: null, error: null }) },
-    '@/lib/network-upgrades': { readUpgradeSnapshot: () => null, getPendingNu7Upgrade: () => null },
+    '@/lib/network-upgrades': { readUpgradeSnapshot: () => null, getPendingNu7Upgrade: () => null, ANNOUNCED_MAINNET_NU7: { date: '2026-11-05' } },
   }, {
     Date: FakeDate, performance: { now: () => clock }, AbortController,
     AbortSignal: { any: signals => signals[0], timeout: () => new AbortController().signal },

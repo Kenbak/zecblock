@@ -49,23 +49,23 @@ export default function robots(): MetadataRoute.Robots {
 
   // These are crawl permissions, not server-side rate limits. Googlebot
   // manages its own crawl rate and does not support Crawl-delay. The public
-  // announcement JSON is a render dependency; its X-Robots-Tag keeps it noindex.
+  // announcement and calendar JSON are render dependencies; X-Robots-Tag keeps them noindex.
   return {
     rules: [
       {
         userAgent: 'Googlebot',
-        allow: ['/', '/api/governance/announcement$'],
+        allow: ['/', '/api/governance/announcement$', '/api/calendar$'],
         disallow: ['/api/'],
       },
       {
         userAgent: 'Bingbot',
-        allow: ['/', '/api/governance/announcement$'],
+        allow: ['/', '/api/governance/announcement$', '/api/calendar$'],
         disallow: ['/api/'],
         crawlDelay: 5,
       },
       {
         userAgent: '*',
-        allow: ['/', '/api/governance/announcement$'],
+        allow: ['/', '/api/governance/announcement$', '/api/calendar$'],
         disallow: ['/api/'],
         crawlDelay: 5,
       },

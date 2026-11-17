@@ -3,6 +3,7 @@
 import { readApiData } from '@/lib/api-client';
 import { useState, useEffect, useRef } from 'react';
 import { getApiUrl } from '@/lib/api-config';
+import { BlockMilestones } from '@/components/BlockMilestones';
 import { getCoinbaseClientEmoji, getCoinbaseClientInfo } from '@/lib/coinbase-client';
 import {
   BlockPageSkeleton,
@@ -105,6 +106,7 @@ export default function BlockPageClient({
       <BlockPageHeader data={data} />
       <OrphanedBlockBanner data={data} />
       <NetworkUpgradeBanner data={data} />
+      {!data.isOrphaned && <BlockMilestones height={data.height} />}
       <BlockFactsCard
         data={data}
         showMoreDetails={showMoreDetails}

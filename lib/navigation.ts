@@ -49,6 +49,7 @@ const categories: NavigationCategory[] = [
     { href: '/usage-clock', label: 'Usage Clock', desc: 'Timing and regional patterns', networks: mainnet },
     { href: '/crosschain', label: 'Cross-Chain Swaps', desc: 'ZEC swaps via NEAR Intents', networks: mainnet },
     { href: '/governance', label: 'Governance', desc: 'Votes, schedules and results', networks: mainnet },
+    { href: '/calendar', label: 'Zcash Calendar', desc: 'Upgrades, votes and key blocks', networks: mainnet },
   ] },
   { id: 'tools', label: 'Tools', items: [
     { href: '/tools', label: 'Developer Tools', desc: 'Transaction and wallet utilities' },
@@ -56,6 +57,7 @@ const categories: NavigationCategory[] = [
     { href: '/tools/broadcast', label: 'Broadcast Transaction', desc: 'Submit a signed transaction' },
     { href: '/decrypt', label: 'Decrypt Memo', desc: 'Memos via your viewing key' },
     { href: '/tools/blend-check', label: 'Blend Check', desc: 'Compare public flow amounts' },
+    { href: '/tools/block-time-simulator', label: 'Block Time Simulator', desc: 'Compare block speeds' },
     { href: '/tools/unit-converter', label: 'Unit Converter', desc: 'Coins and zatoshis' },
     { href: '/tools/anchor-search', label: 'Anchor Root Search', desc: 'Find commitment tree roots' },
     { href: '/docs', label: 'API Docs', desc: 'Endpoints and response formats' },

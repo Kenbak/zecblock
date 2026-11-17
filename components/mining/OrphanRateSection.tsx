@@ -17,6 +17,10 @@ interface PoolRate {
   canonicalBlocks: number;
   orphanedBlocks: number;
   rate: number | null;
+  /** Race/late split; absent from API builds before it shipped. */
+  raceOrphanedBlocks?: number;
+  lateOrphanedBlocks?: number;
+  raceRate?: number | null;
 }
 interface RateWindow {
   period: Period;
@@ -25,6 +29,9 @@ interface RateWindow {
   canonicalBlocks: number;
   orphanedBlocks: number;
   rate: number | null;
+  raceOrphanedBlocks?: number;
+  lateOrphanedBlocks?: number;
+  raceRate?: number | null;
   unavailableReason: string | null;
   pools: PoolRate[];
 }
@@ -44,7 +51,13 @@ interface OrphanRates {
   indexedTimestamp: string | null;
   periods: RateWindow[];
   nu7?: Nu7Comparison | null;
+  raceWindowSeconds?: number;
 }
+
+/** True once the API serves the race/late split. */
+const hasSplit = (w: { raceRate?: number | null }) => w.raceRate !== undefined;
+/** Headline rate: race orphans when split, otherwise every observed loser. */
+const headline = (w: { rate: number | null; raceRate?: number | null }) => hasSplit(w) ? w.raceRate ?? null : w.rate;
 
 function percent(rate: number | null) {
   if (rate === null) return 'Unavailable';
@@ -109,9 +122,11 @@ export function OrphanRateSection() {
             {windows.map(window => (
               <button key={window.period} type="button" aria-pressed={selected?.period === window.period} onClick={() => setPeriod(window.period)}
                 className={`card p-4 text-left transition ${selected?.period === window.period ? 'ring-1 ring-cipher-gold/40' : 'hover:bg-glass-3'} ${window.period === 'nu7' ? 'border-cipher-gold/30' : ''}`}>
-                <span className={`block text-caption font-mono uppercase mb-2 ${window.period === 'nu7' ? 'text-cipher-gold' : 'text-muted'}`}>{PERIOD_LABELS[window.period]} observed rate</span>
-                <span className="block text-xl font-mono font-semibold text-primary mb-2">{percent(window.rate)}</span>
-                <span className="block text-caption text-muted">{window.orphanedBlocks.toLocaleString()} observed orphans · {window.canonicalBlocks.toLocaleString()} canonical blocks</span>
+                <span className={`block text-caption font-mono uppercase mb-2 ${window.period === 'nu7' ? 'text-cipher-gold' : 'text-muted'}`}>{PERIOD_LABELS[window.period]} orphan rate</span>
+                <span className="block text-xl font-mono font-semibold text-primary mb-2">{percent(headline(window))}</span>
+                {hasSplit(window)
+                  ? <span className="block text-caption text-muted">{window.raceOrphanedBlocks!.toLocaleString()} orphans · {window.lateOrphanedBlocks!.toLocaleString()} late blocks · {window.canonicalBlocks.toLocaleString()} canonical<span className="block mt-0.5">All competing blocks: {percent(window.rate)}</span></span>
+                  : <span className="block text-caption text-muted">{window.orphanedBlocks.toLocaleString()} observed orphans · {window.canonicalBlocks.toLocaleString()} canonical blocks</span>}
               </button>
             ))}
           </div>
@@ -122,8 +137,14 @@ export function OrphanRateSection() {
               <SortableDataTable bare caption={`Observed orphan rate by mining pool, ${PERIOD_LABELS[selected.period]}`} columns={[
                 { id: 'pool', header: 'Pool', sortValue: (pool: PoolRate) => pool.name, cell: (pool: PoolRate) => <span className="inline-flex items-center gap-2 font-mono text-xs text-primary"><PoolLogo name={pool.name} />{pool.name}</span> },
                 { id: 'canonical', header: 'Canonical blocks', align: 'right', sortValue: pool => pool.canonicalBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.canonicalBlocks.toLocaleString()}</span> },
-                { id: 'orphans', header: 'Observed orphans', align: 'right', sortValue: pool => pool.orphanedBlocks, cell: pool => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
-                { id: 'rate', header: 'Observed rate', align: 'right', sortValue: pool => pool.rate, cell: pool => <span className="font-mono text-xs tabular-nums">{percent(pool.rate)}</span> },
+                ...(hasSplit(selected) ? [
+                  { id: 'orphans', header: 'Orphans', align: 'right' as const, sortValue: (pool: PoolRate) => pool.raceOrphanedBlocks ?? 0, cell: (pool: PoolRate) => <span className="font-mono text-xs tabular-nums">{(pool.raceOrphanedBlocks ?? 0).toLocaleString()}</span> },
+                  { id: 'late', header: 'Late blocks', align: 'right' as const, sortValue: (pool: PoolRate) => pool.lateOrphanedBlocks ?? 0, cell: (pool: PoolRate) => <span className="font-mono text-xs tabular-nums">{(pool.lateOrphanedBlocks ?? 0).toLocaleString()}</span> },
+                  { id: 'rate', header: 'Orphan rate', align: 'right' as const, sortValue: (pool: PoolRate) => pool.raceRate ?? null, cell: (pool: PoolRate) => <span className="font-mono text-xs tabular-nums">{percent(pool.raceRate ?? null)}</span> },
+                ] : [
+                  { id: 'orphans', header: 'Observed orphans', align: 'right' as const, sortValue: (pool: PoolRate) => pool.orphanedBlocks, cell: (pool: PoolRate) => <span className="font-mono text-xs tabular-nums">{pool.orphanedBlocks.toLocaleString()}</span> },
+                  { id: 'rate', header: 'Observed rate', align: 'right' as const, sortValue: (pool: PoolRate) => pool.rate, cell: (pool: PoolRate) => <span className="font-mono text-xs tabular-nums">{percent(pool.rate)}</span> },
+                ]),
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
@@ -133,8 +154,11 @@ export function OrphanRateSection() {
           <details className="mt-3 text-caption text-muted">
             <summary className="cursor-pointer select-none text-secondary hover:text-primary">How this is measured</summary>
             <div className="mt-2 space-y-2 max-w-3xl">
+              {data.raceWindowSeconds != null && <p>
+                Orphan rate = orphans ÷ (canonical blocks + orphans), by block-header time. A losing block counts as an orphan only if it took part in a race: at least one observer received it no more than {data.raceWindowSeconds} seconds after that same observer received the winning block, or our own node had adopted it before a reorg. Losing blocks that arrived later everywhere are late blocks, usually a pool still mining on an outdated tip. They waste work but were never a candidate for anyone&apos;s chain, so they are shown separately, as is the rate over all competing blocks.
+              </p>}
               <p>
-                Rate = observed orphans ÷ (canonical blocks + observed orphans), by block-header time.
+                {data.raceWindowSeconds != null ? 'All competing blocks' : 'Rate'} = observed orphans ÷ (canonical blocks + observed orphans), by block-header time.
                 {data.method === 'observed-block-capture-v2'
                   ? ' Orphans are competing blocks our observers received plus blocks removed by reorgs.'
                   : ' Orphans are blocks this explorer saw leave the canonical chain in a reorganization.'}

@@ -214,6 +214,17 @@ test('orphan rate counts orphans against all observed blocks on closed days', ()
   assert.equal(cards.orphanRateCard('mainnet', { data: { days: days.slice(-4) } }, NOW), null);
 });
 
+test('orphan rate counts only races once the API splits out late blocks', () => {
+  const days = utcDays(10, '2026-11-04', () => ({ canonicalBlocks: 990, orphanedBlocks: 10, raceOrphanedBlocks: 8, lateOrphanedBlocks: 2, partial: false }));
+  days.at(-1).partial = true;
+  const card = cards.orphanRateCard('mainnet', { data: { days } }, NOW);
+  // 56 races ÷ (6,930 canonical + 56 races); the 14 late blocks leave both sides.
+  assert.equal(card.headline, '0.80%');
+  assert.equal(card.detail, '56 lost races of 6,986 blocks · 14 late blocks excluded · Oct 28 – Nov 3 UTC');
+  assert.equal(card.source, 'Observed competing blocks · within 2s of the winner');
+  assert.ok(Math.abs(card.visual.bars[0].value - 8 / 998 * 100) < 1e-9);
+});
+
 test('chain size states the latest sample only while it is fresh', () => {
   const GIB = 1024 ** 3;
   const points = [{ time: '2026-10-05T12:00:00Z', sizeBytes: 262 * GIB, height: 3517427 }, { time: '2026-11-04T12:00:00Z', sizeBytes: 265 * GIB + GIB / 2, height: 3568621 }];
@@ -244,4 +255,47 @@ test('card pool logos match the app pool logos', () => {
   assert.ok(app.length >= 10);
   assert.deepEqual(entries('lib/pool-logos.ts'), app);
   for (const entry of app) assert.ok(fs.existsSync(path.join('public', entry.split('=')[1])), entry);
+});
+
+test('calendar card counts down to the next milestone without inventing an hour, then lists what follows', () => {
+  const now = Date.parse('2026-11-15T19:00:00Z');
+  const ev = (id, kind, title, iso, extra = {}) => ({ id, kind, title, time: Date.parse(iso), dateOnly: iso.length === 10, timeEstimated: false, height: 3_600_000, heightEstimated: true, status: 'upcoming', ...extra });
+  const events = [
+    ev('a', 'vote', 'Dev Fund poll: voting opens', '2026-11-16'),
+    ev('b', 'milestone', 'Standard fee drops to 1,000 zatoshis', '2026-11-19T14:15:00Z', { timeEstimated: true, height: 3_590_000, heightEstimated: false }),
+    ev('c', 'deadline', 'Q4 2026 grants: review closes', '2026-12-16T20:00:00Z'),
+    ev('past', 'vote', 'Old', '2026-11-01T00:00:00Z', { status: 'past' }),
+  ];
+  const card = cards.calendarCard(events, now);
+  assert.equal(card.headline, 'Tomorrow');
+  assert.equal(card.caption, 'Dev Fund poll · voting opens');
+  assert.doesNotMatch(card.detail, /UTC/);
+  assert.deepEqual(card.visual.rows.map(r => r.label), ['Standard fee drops to 1,000 zatoshis', 'Q4 grants · review closes']);
+  assert.equal(card.visual.rows[0].when, '≈Nov 19');
+  assert.equal(card.visual.rows[0].block, '#3,590,000');
+  const exact = cards.calendarCard(events.slice(1), now);
+  assert.equal(exact.headline, '3 days');
+  assert.match(exact.caption, /^until Standard fee drops/);
+  assert.match(exact.detail, /14:15 UTC · block #3,590,000/);
+  assert.equal(cards.calendarCard([events[3]], now), null);
+  assert.equal(cards.findFactCard('calendar').networks.join(), 'mainnet');
+});
+
+test('NU7 confirmations card compares 10-block waits before and with NU7 on mainnet only', () => {
+  const day = 86_400; const end = 1_794_838_829;
+  const win = (averageSeconds, p90Seconds, days) => ({ fromHeight: 1, toHeight: 2, fromTimestamp: end - days * day, toTimestamp: end, intervals: 100, averageSeconds, medianSeconds: null, p90Seconds, targetSeconds: 25 });
+  const story = { network: 'mainnet', phase: 'active', before: win(75.4, 171, 7), after: win(25, 57, 7) };
+  const card = cards.nu7ConfirmationsCard(story);
+  assert.equal(card.headline, '12.6 → 4.2 min');
+  assert.equal(card.caption, 'for 10 confirmations');
+  assert.equal(card.detail, 'Slowest 1 in 10 blocks: 2.9 min → 57s');
+  assert.deepEqual(card.visual.rows.map(r => r.display), ['12.6 min', '4.2 min']);
+  assert.match(card.source, /latest 7 days/);
+  assert.match(cards.nu7ConfirmationsCard({ ...story, after: win(25, 57, 3) }).source, /NU7 so far/);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, after: win(25, null, 2) }).detail, 'Average block: 75.4s → 25.0s');
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, after: win(25, 57, 0.5) }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, network: 'testnet' }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, phase: 'upcoming' }), null);
+  assert.equal(cards.nu7ConfirmationsCard({ ...story, before: null }), null);
+  assert.equal(cards.nu7ConfirmationsCard(null), null);
 });

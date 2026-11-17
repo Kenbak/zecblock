@@ -3,6 +3,8 @@ import { notFound } from 'next/navigation';
 import { buildPageMetadata, getNetwork } from '@/lib/seo';
 import { getGovernanceCatalog } from '@/lib/governance-data';
 import { GRANTS, isGrantsRound, type Vote } from '@/lib/governance';
+import { CURRENT_GRANT_ROUND, formatUsdCompact, grantPhase, grantTotals } from '@/lib/grant-rounds';
+import { GrantRoundStepper, PHASE_LABEL } from './GrantRoundOverview';
 import { NU7_ROUND_ID } from '@/lib/nu7-vote-results';
 import { GovernanceShell, Status, Freshness, SourceNote } from './GovernanceUI';
 import { HowToVote } from './HowToVote';
@@ -12,7 +14,7 @@ import { HowToVote } from './HowToVote';
 export const revalidate = 60;
 
 const title = 'Zcash Governance: Votes & Results';
-const description = 'Follow Zcash coinholder votes, learn how to vote with a supported wallet, and explore past results with independent tally verification instructions.';
+const description = 'Follow Zcash coinholder votes and retroactive grant rounds, review proposals, learn how to vote with shielded ZEC, and verify past results.';
 export const generateMetadata = () => buildPageMetadata({ title: `${title} | ZecBlock`, description, path: '/governance', index: true, networks: ['mainnet'] });
 
 function VoteCard({ vote }: { vote: Vote }) {
@@ -29,20 +31,27 @@ export default async function GovernancePage() {
   const active = catalog.votes.filter(v => ['active', 'tallying', 'unavailable'].includes(v.state));
   const upcoming = catalog.votes.filter(v => v.state === 'upcoming');
   const past = catalog.votes.filter(v => ['results', 'failed'].includes(v.state));
-  const announcementDue = Date.now() >= Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
-  const announced = !catalog.votes.some(v => isGrantsRound(v.round));
+  const now = Date.now();
+  const round = CURRENT_GRANT_ROUND;
+  const announced = !catalog.votes.some(v => isGrantsRound(v.round)) && grantPhase(round, now).phase !== 'closed';
+  const totals = grantTotals(round);
   return <GovernanceShell title="Zcash Governance" description={description} path="/governance" back={false}>
-    <p className="mb-5 text-sm text-secondary">New to coinholder voting? <a href="#how-to-vote" className="text-cipher-gold hover:underline">How to vote in 3 steps ↓</a></p>
+    <p className="mb-5 text-sm text-secondary">New to coinholder voting? <a href="#how-to-vote" className="text-cipher-gold hover:underline">How to vote in 3 steps ↓</a> · <Link href="/calendar" className="text-cipher-gold hover:underline">Zcash calendar →</Link></p>
     <div className="space-y-7">
       <section aria-labelledby="active-votes"><h2 id="active-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">Active votes {active.length > 0 && `· ${active.length}`}</h2>
         {active.length ? <div className="space-y-3">{active.map(v => <VoteCard key={v.id} vote={v} />)}</div> : <p className="rounded-xl border border-dashed border-cipher-border px-4 py-4 text-sm text-muted">{catalog.unavailable ? 'Current voting status is unavailable.' : 'No active votes in the tracked rounds.'}</p>}
       </section>
-      {(announced || upcoming.length > 0) && <section aria-labelledby="upcoming-votes"><h2 id="upcoming-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">{announcementDue && !upcoming.length ? 'Awaiting confirmation' : 'Upcoming'}</h2><div className="space-y-3">
-        {announced && <Link href={`/governance/${GRANTS.slug}`} className="group block rounded-xl border border-brand-gold/25 bg-cipher-surface p-4 sm:p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-base font-semibold text-primary group-hover:text-brand-gold">{GRANTS.title}</h3>{announcementDue ? <span className="font-mono text-xs text-muted">Schedule announced · awaiting round</span> : <Status state="announced" />}</div>
-          <p className="mt-2 text-sm text-secondary">37 proposals for completed work across the Zcash ecosystem.</p>
-          <div className="mt-4 flex flex-wrap justify-between gap-2 font-mono text-xs"><span className="text-muted">September 17–29, 2026 · Official schedule</span><span className="text-brand-gold">Review the proposals →</span></div>
-        </Link>}
+      {(announced || upcoming.length > 0) && <section aria-labelledby="upcoming-votes"><h2 id="upcoming-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">Upcoming</h2><div className="space-y-3">
+        {announced && <div className="overflow-hidden rounded-xl border border-brand-gold/25 bg-cipher-surface">
+          <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-semibold text-primary"><Link href={`/governance/${GRANTS.slug}`} className="hover:text-brand-gold">{round.title}</Link></h3><Status label={PHASE_LABEL[grantPhase(round, now).phase]} /></div>
+              <p className="mt-1 text-sm text-secondary">{totals.count} proposals · {formatUsdCompact(totals.requestedUsd)} requested for completed work across the Zcash ecosystem.</p>
+            </div>
+            <Link href={`/governance/${GRANTS.slug}#proposal-catalog`} className="btn btn-sm btn-primary shrink-0">Review the proposals →</Link>
+          </div>
+          <GrantRoundStepper round={round} now={now} header={false} />
+        </div>}
         {upcoming.map(v => <VoteCard key={v.id} vote={v} />)}
       </div></section>}
       <section aria-labelledby="past-votes"><h2 id="past-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">Past results</h2><div className="space-y-3">

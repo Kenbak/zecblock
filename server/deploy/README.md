@@ -46,6 +46,37 @@ After block coverage is complete and validated:
 crontab server/deploy/crontab.production
 ```
 
+## Calendar source watcher
+
+`cipherscan-calendar-watch.timer` runs `server/jobs/watch-calendar-sources.js`
+every six hours. It reads public forum announcements (governance, Foundation,
+protocol, Zebra, ecosystem updates and retroactive-grants organizer posts) and
+Zebra/zcashd/Zallet release notes, plus one X recent-search over the ecosystem
+accounts in `server/lib/zcash-x-accounts.js` (override with
+`CALENDAR_WATCH_X_ACCOUNTS`), extracts upcoming dates and mainnet block
+heights, and sends one Telegram digest of candidates not yet in
+`/calendar`. It never edits the calendar: approved events are added to
+`lib/grant-rounds.ts` or `lib/zcash-calendar.ts` in a normal change.
+
+```bash
+node server/jobs/watch-calendar-sources.js --preview   # print candidates; no state, no Telegram
+sudo cp server/deploy/cipherscan-calendar-watch.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload && sudo systemctl enable --now cipherscan-calendar-watch.timer
+```
+
+X uses `X_BEARER_TOKEN` or `X_ACCESS_TOKEN` if set, otherwise it reads only
+the `X_ACCESS_TOKEN` line from the bot's `/root/cipherscan/server/bot/.env`
+(`CALENDAR_WATCH_X_TOKEN_FILE`). It never refreshes that token: X refresh
+tokens are single-use and the bot owns them. An expired token skips X for that
+run. Each run costs one paid X search request.
+
+`node server/scripts/x-pulse.js` uses the same accounts and token rule to brief
+what the ecosystem is posting (top posts, trending terms, format of what
+performs, our accounts as a baseline) before drafting @zecblock posts.
+
+State (seen sources) lives in `/var/lib/cipherscan-calendar-watch/state.json`;
+a document is only marked seen after its digest is delivered.
+
 ## Node map
 
 The node map resolves peer IP geolocation via the free ip-api.com batch endpoint

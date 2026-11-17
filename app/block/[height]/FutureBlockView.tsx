@@ -10,6 +10,7 @@ import { UpgradeClock } from '@/components/network/UpgradeClock';
 import { BlockPulse } from '@/components/network/BlockPulse';
 import { ChartShareControl } from '@/components/charts/ChartShareControl';
 import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
+import { BlockMilestones } from '@/components/BlockMilestones';
 import { ANNOUNCED_MAINNET_NU7, readUpgradeSnapshot, getFutureBlockUpgrade, estimateBlockArrival, estimateBlockArrivalDate, formatUpgradeTime } from '@/lib/network-upgrades';
 
 const subscribeNever = () => () => {};
@@ -61,6 +62,8 @@ export function FutureBlockView({
   // Reserve a displayed 100% for a chain that has reached the target block.
   const decimals = previous ? 2 : 4;
   const progressLabel = progress === null ? null : (Math.floor(progress * 10 ** decimals) / 10 ** decimals).toFixed(decimals);
+
+  const spacing = lastVerifiedSnapshot?.schedule.eras.findLast(era => era.height <= lastVerifiedSnapshot.height)?.seconds ?? null;
 
   // If the block has been mined while we're on this page, link to it
   if (blocksRemaining <= 0 && !error) {
@@ -155,6 +158,8 @@ export function FutureBlockView({
           </div>
         </div>
       )}
+
+      {NETWORK === 'mainnet' && <BlockMilestones height={targetHeight} future spacing={spacing} />}
 
       {error && <p role="status" className="mb-4 text-sm text-muted">We can’t update the countdown right now. The block count is from our last update, and the time estimate is paused.</p>}
 

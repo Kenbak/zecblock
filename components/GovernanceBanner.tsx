@@ -18,7 +18,10 @@ export function GovernanceBanner() {
   const lastVerifiedSnapshot = readUpgradeSnapshot(data, network);
   const snapshot = error ? null : lastVerifiedSnapshot;
   const candidate = getPendingNu7Upgrade(network, lastVerifiedSnapshot);
-  const pending = candidate?.upgrade.authority === 'announcement' || !error ? candidate : null;
+  // The editorial NU7 date has passed (mainnet activated at the announced block),
+  // so an API outage must not resurrect the pre-activation announcement.
+  const announcementLapsed = Date.now() > Date.parse(`${ANNOUNCED_MAINNET_NU7.date}T00:00:00Z`) + 7 * 86_400_000;
+  const pending = candidate?.upgrade.authority === 'announcement' ? (announcementLapsed ? null : candidate) : !error ? candidate : null;
   const announced = pending?.upgrade.authority === 'announcement';
   const estimate = pending ? estimateBlockArrival(snapshot, pending.height) : null;
   const blocksRemaining = pending && snapshot ? pending.height - snapshot.height : null;
@@ -89,9 +92,12 @@ export function GovernanceBanner() {
     return () => { observer.disconnect(); document.documentElement.style.setProperty('--app-ironwood-height', '0px'); };
   }, [visible]);
   if (!visible || !displayed) return null;
+  const rich = !pending && announcement && (announcement.snapshotHeight !== undefined || announcement.hint) ? announcement : null;
+  const snapshotHeightNow = snapshot?.height ?? null;
+  const snapshotEta = rich?.snapshotHeight !== undefined && snapshot ? estimateBlockArrival(snapshot, rich.snapshotHeight) : null;
   return <div ref={ref} role="region" aria-label={announced ? 'NU7 announced mainnet upgrade' : pending ? 'NU7 activation countdown' : 'Governance announcement'} className="ironwood-banner sticky top-[calc(var(--app-nav-height,4rem)+var(--app-stats-height,2.75rem))] z-40 border-b border-cipher-border/50 backdrop-blur-xl">
     <div className="relative mx-auto flex min-h-12 max-w-7xl items-center justify-center px-4 pr-12 py-2.5 sm:px-12">
-      <Link href={displayed.href} prefetch={false} className={pending ? 'group flex items-center gap-3' : 'text-center font-mono text-xs text-brand-gold hover:underline'}>
+      <Link href={displayed.href} prefetch={false} className={pending ? 'group flex items-center gap-3' : rich ? 'group block' : 'text-center font-mono text-xs text-brand-gold hover:underline'}>
         {pending ? <>
           <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cipher-gold/20 bg-cipher-gold/10 text-cipher-gold">
             <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
@@ -104,7 +110,16 @@ export function GovernanceBanner() {
             </span>
           </span>
           <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-cipher-gold transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14m-6-6 6 6-6 6" /></svg>
-        </> : <>{displayed.text} →</>}
+        </> : rich ? <span className="flex flex-col items-center gap-0.5 text-center font-sans sm:flex-row sm:gap-3">
+          <span className="text-xs font-medium text-brand-gold group-hover:underline sm:text-sm">{rich.text}</span>
+          <span className="flex flex-wrap items-center justify-center gap-x-3 text-xs text-secondary">
+            {rich.snapshotHeight !== undefined && snapshotHeightNow !== null && (rich.snapshotHeight > snapshotHeightNow
+              ? <span className="whitespace-nowrap"><span className="tabular-nums text-primary">{(rich.snapshotHeight - snapshotHeightNow).toLocaleString('en-US')}</span> blocks to go{snapshotEta ? ` · ≈ ${formatUpgradeTime(snapshotEta.seconds)}` : ''}</span>
+              : <span>Snapshot taken · voting opens soon</span>)}
+            {rich.hint && <><span className="text-muted sm:hidden">Shield ZEC to vote</span><span className="hidden text-muted sm:inline">{rich.hint}</span></>}
+            <span className="text-brand-gold" aria-hidden="true">→</span>
+          </span>
+        </span> : <>{displayed.text} →</>}
       </Link>
       <button aria-label={announced ? 'Dismiss NU7 announcement' : pending ? 'Dismiss NU7 activation countdown' : 'Dismiss governance announcement'} className="absolute right-3 flex h-8 w-8 items-center justify-center text-muted hover:text-primary" onClick={() => { dismissedKeys.current.add(displayed.key); try { sessionStorage.setItem(`governance:${displayed.key}`, '1'); } catch { /* In-memory fallback. */ } setDismissed(displayed.key); }}>×</button>
     </div>

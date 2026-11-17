@@ -1,4 +1,4 @@
-import { GRANTS, catalogDirectoryIsStale, catalogIsStale, isGrantsRound, selectAnnouncement, type Announcement, type Catalog } from './governance';
+import { catalogDirectoryIsStale, catalogIsStale, grantAnnouncementWindow, isGrantsRound, selectAnnouncement, type Announcement, type Catalog } from './governance';
 
 const CATALOG_REFRESH_MS = 60_000;
 const CATALOG_MAX_AGE_MS = 10 * 60_000;
@@ -13,14 +13,15 @@ export type AnnouncementSnapshot = {
 export function buildAnnouncementSnapshot(catalog: Catalog, now: number) {
   const directoryCheckedAt = catalog.directoryCheckedAt ?? catalog.checkedAt;
   const announcement = selectAnnouncement(catalog, now);
-  const active = announcement?.key.endsWith(':active') ?? false;
+  // Live and pre-vote states follow the directory; only results need tally freshness.
+  const active = /:(active|snapshot)$/.test(announcement?.key ?? '');
   const checkedAt = active ? directoryCheckedAt : catalog.checkedAt;
   // Include every clock-driven selection boundary, including a currently empty
   // banner becoming eligible. Only a new catalog may announce a vote opening.
   const boundaries = [checkedAt + CATALOG_MAX_AGE_MS + 1];
   if (!catalog.votes.some(vote => isGrantsRound(vote.round))) {
-    const opening = Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
-    boundaries.push(opening - 7 * 86_400_000, opening);
+    const window = grantAnnouncementWindow();
+    boundaries.push(window.from, window.to);
   }
   for (const vote of catalog.votes) {
     if (vote.state === 'active' || vote.state === 'results') boundaries.push(vote.round.vote_end_time * 1000);

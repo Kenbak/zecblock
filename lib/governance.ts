@@ -1,17 +1,19 @@
 import { z } from 'zod';
 import { NU7_ROUND_ID, ZEC_PER_VOTE_UNIT } from './nu7-vote-results';
+import { CURRENT_GRANT_ROUND, GRANT_ROUNDS, grantRoundForDiscussion, type GrantRound } from './grant-rounds';
 
 export const GOVERNANCE_API = 'https://prod.vote-chain-primary.valargroup.org/shielded-vote/v1';
 // Pin both identity and address: a new registry entry is not automatically trusted.
 export const TRUSTED_ENDORSER = { id: 'zodl', address: 'sv17k5lukq3g49qkemf7e6cax2umweftm0k3mrkzq' };
+/** The currently announced grants round (kept as GRANTS for existing callers). */
 export const GRANTS = {
-  slug: 'retroactive-grants-q3-2026',
-  title: 'Q3 2026 Retroactive Grants',
-  description: 'Coinholder polling on completed work across the Zcash ecosystem. Review the proposals before voting opens.',
-  opensOn: '2026-09-17',
-  closesOn: '2026-09-29',
-  source: 'https://forum.zcashcommunity.com/t/30-day-review-period-coinholder-directed-retroactive-grants-program-q3/57056',
-  calendar: 'https://shieldedlabs.net/governance/',
+  slug: CURRENT_GRANT_ROUND.slug,
+  title: CURRENT_GRANT_ROUND.title,
+  description: CURRENT_GRANT_ROUND.description,
+  opensOn: CURRENT_GRANT_ROUND.schedule.votingOpensOn,
+  closesOn: CURRENT_GRANT_ROUND.schedule.votingClose.slice(0, 10),
+  source: CURRENT_GRANT_ROUND.source,
+  schedule: CURRENT_GRANT_ROUND.callForProposals,
 } as const;
 
 const integer = z.union([z.number(), z.string().regex(/^\d+$/).transform(Number)])
@@ -40,14 +42,14 @@ export const STATE_LABELS: Record<VoteState, string> = {
 export function roundHex(base64: string): string {
   return Array.from(atob(base64), c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
 }
-export function isGrantsRound(round: Round): boolean {
+export function isGrantsRound(round: Round, grants: GrantRound = CURRENT_GRANT_ROUND): boolean {
   // Exact official discussion identity; never associate a ballot by title alone.
-  try {
-    const url = new URL(round.discussion_url);
-    return url.protocol === 'https:' && url.hostname === 'forum.zcashcommunity.com'
-      && /^\/t\/[^/]+\/57056(?:\/|$)/.test(url.pathname);
-  } catch { return false; }
+  return grantRoundForDiscussion(round.discussion_url)?.slug === grants.slug;
 }
+export function grantRoundOf(round: Round): GrantRound | undefined {
+  return grantRoundForDiscussion(round.discussion_url);
+}
+export { GRANT_ROUNDS };
 export function roundHref(round: Round): string {
   const id = roundHex(round.vote_round_id);
   return `/governance/${id === NU7_ROUND_ID ? 'nu7' : id}`;
@@ -114,19 +116,38 @@ export function catalogIsStale(catalog: Catalog, now: number): boolean {
 export function catalogDirectoryIsStale(catalog: Catalog, now: number): boolean {
   return catalog.unavailable || now - (catalog.directoryCheckedAt ?? catalog.checkedAt) > 10 * 60_000;
 }
-export type Announcement = { key: string; href: string; text: string };
+export type Announcement = {
+  key: string; href: string; text: string;
+  /** A registered snapshot block: the banner counts blocks down to it from the live tip. */
+  snapshotHeight?: number;
+  /** One short secondary line, e.g. eligibility preparation. */
+  hint?: string;
+};
+const DAY = 86_400_000;
+const fmtDay = (iso: string) => new Date(`${iso}T00:00:00Z`).toLocaleDateString('en-US', { timeZone: 'UTC', month: 'long', day: 'numeric' });
+export const SHIELD_HINT = 'Only ZEC shielded in Ironwood at this block can vote.';
+
+/** Curated date-only notice: the seven days before the official voting date, as in Q3. */
+export function grantAnnouncementWindow(grants: GrantRound = CURRENT_GRANT_ROUND) {
+  const to = Date.parse(`${grants.schedule.votingOpensOn}T00:00:00Z`);
+  return { from: to - 7 * DAY, to };
+}
+
 export function selectAnnouncement(catalog: Catalog, now: number): Announcement | null {
   // Current voting status comes from the directory. An unrelated historical
   // tally failing to refresh must not hide a freshly confirmed open vote.
   const active = !catalogDirectoryIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'active' && v.round.vote_end_time * 1000 > now).sort((a, b) => a.round.vote_end_time - b.round.vote_end_time)[0];
   if (active) return { key: `${active.id}:active`, href: active.href, text: `${active.title}: voting is open` };
+  // A registered grants round publishes its snapshot block: the one moment to count down to.
+  const preparing = !catalogDirectoryIsStale(catalog, now) && catalog.votes.find(v => v.state === 'upcoming' && isGrantsRound(v.round));
+  if (preparing) return { key: `${preparing.id}:snapshot`, href: preparing.href, text: `${CURRENT_GRANT_ROUND.quarter} grants vote snapshot · Block ${preparing.round.snapshot_height.toLocaleString('en-US')}`, snapshotHeight: preparing.round.snapshot_height, hint: SHIELD_HINT };
   // Date-only announcement: never invent an exact opening time or transition to active by the clock.
-  const opening = Date.parse(`${GRANTS.opensOn}T00:00:00Z`);
-  if (!catalog.votes.some(v => isGrantsRound(v.round)) && now >= opening - 7 * 86400_000 && now < opening) {
-    return { key: `${GRANTS.slug}:upcoming`, href: `/governance/${GRANTS.slug}`, text: 'Retroactive grants voting opens September 17 · Review the proposals' };
+  const window = grantAnnouncementWindow();
+  if (!catalog.votes.some(v => isGrantsRound(v.round)) && now >= window.from && now < window.to) {
+    return { key: `${GRANTS.slug}:upcoming`, href: `/governance/${GRANTS.slug}`, text: `${CURRENT_GRANT_ROUND.quarter} grants voting opens ${fmtDay(CURRENT_GRANT_ROUND.schedule.votingOpensOn)} · Review the proposals` };
   }
   // Bound announcements by the on-chain closing time; refreshes cannot restart the window.
-  const result = !catalogIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * 86400_000).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
+  const result = !catalogIsStale(catalog, now) && catalog.votes.filter(v => v.state === 'results' && now >= v.round.vote_end_time * 1000 && now < v.round.vote_end_time * 1000 + 5 * DAY).sort((a, b) => b.round.vote_end_time - a.round.vote_end_time)[0];
   if (result) return { key: `${result.id}:results`, href: result.href, text: `${result.title}: results are live · Explore and verify the tally` };
   return null;
 }

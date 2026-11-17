@@ -138,7 +138,7 @@ export default async function BlockSpeedPage() {
       </Card>
       <p className="text-sm text-muted mb-4 max-w-3xl">Rolling 120-block average · refreshed every 15s.</p>
       <BlockTimeChart />
-      <p className="text-caption text-muted mt-3 max-w-3xl">Faster blocks give competing blocks less time to propagate. <Link href={`/mining?orphans=${story?.phase === 'active' ? 'nu7' : '30d'}#orphans`} className="text-secondary underline underline-offset-4 hover:text-primary">Compare observed orphan rates before and since NU7 →</Link></p>
+      <p className="text-caption text-muted mt-3 max-w-3xl">Faster blocks give competing blocks less time to propagate. <Link href={`/mining?orphans=${story?.phase === 'active' ? 'nu7' : '30d'}#orphans`} className="text-secondary underline underline-offset-4 hover:text-primary">Compare observed orphan rates before and since NU7 →</Link> · <Link href="/tools/block-time-simulator" className="text-secondary underline underline-offset-4 hover:text-primary">Try other block times in the simulator →</Link></p>
     </section>
 
     <Card className="network-detail-panel card-static">

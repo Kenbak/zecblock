@@ -56,6 +56,7 @@ const categories: NavigationCategory[] = [
     { href: '/tools/decode', label: 'Decode Transaction', desc: 'Inspect raw transaction fields' },
     { href: '/tools/broadcast', label: 'Broadcast Transaction', desc: 'Submit a signed transaction' },
     { href: '/decrypt', label: 'Decrypt Memo', desc: 'Memos via your viewing key' },
+    { href: 'https://private.zecblock.com', label: 'Private Search ↗', desc: 'Look up without revealing what', networks: mainnet },
     { href: '/tools/blend-check', label: 'Blend Check', desc: 'Compare public flow amounts' },
     { href: '/tools/block-time-simulator', label: 'Block Time Simulator', desc: 'Compare block speeds' },
     { href: '/tools/unit-converter', label: 'Unit Converter', desc: 'Coins and zatoshis' },

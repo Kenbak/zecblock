@@ -226,27 +226,12 @@ export function StatsBar() {
   // Still relevant on narrow/mobile widths even with the 6-stat cap; the cap
   // guarantees no scroll on desktop, not on every phone width.
   const scrollRef = useRef<HTMLDivElement>(null);
-  const barRef = useRef<HTMLDivElement>(null);
   const [canScrollLeft, setCanScrollLeft] = useState(false);
   const [canScrollRight, setCanScrollRight] = useState(false);
 
-  // Expose measured bar height for sticky offsets below it (Ironwood banner) —
-  // the bar's height changes across breakpoints (h-10 sm:h-11), so a static
-  // CSS var would drift out of sync the way --app-nav-height would without this.
-  useEffect(() => {
-    const bar = barRef.current;
-    if (!bar) return;
-
-    const syncStatsHeight = () => {
-      document.documentElement.style.setProperty('--app-stats-height', `${bar.offsetHeight}px`);
-    };
-
-    syncStatsHeight();
-    const observer = new ResizeObserver(syncStatsHeight);
-    observer.observe(bar);
-    return () => observer.disconnect();
-  }, []);
-
+  // The bar's height is fixed by its classes (h-9 sm:h-10 + 1px border), so
+  // --app-stats-height lives in globals.css per breakpoint. No runtime
+  // measurement: a late or stale value left a strip of page under the bar.
   const updateScrollFade = useCallback(() => {
     const el = scrollRef.current;
     if (!el) return;
@@ -406,7 +391,7 @@ export function StatsBar() {
     .filter((item) => item.node !== null);
 
   return (
-    <div ref={barRef} className="stats-bar backdrop-blur-xl sticky top-[var(--app-nav-height,4rem)] z-40">
+    <div className="stats-bar backdrop-blur-xl sticky top-[var(--app-nav-height,4rem)] z-40">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         <div className="flex h-9 sm:h-10 items-center gap-2">
           <div

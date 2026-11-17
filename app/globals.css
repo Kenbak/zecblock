@@ -187,9 +187,11 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
 
 /* ===== CSS CUSTOM PROPERTIES ===== */
 :root {
-  /* Sticky chrome offsets — synced from NavBar/StatsBar/IronwoodBanner at runtime via ResizeObserver */
+  /* Sticky chrome offsets. Nav and notice heights are synced at runtime; the stats bar's is fixed in CSS. */
   --app-nav-height: 4rem;
-  --app-stats-height: 2.75rem;
+  /* Exactly the StatsBar box (h-9 + 1px border; h-10 from sm). Keep in sync with
+     components/StatsBar.tsx; a mismatch shows a strip of page under the bar. */
+  --app-stats-height: calc(2.25rem + 1px);
   --app-ironwood-height: 0px;
 
   /* Colors - Dark Theme (default) */
@@ -413,6 +415,10 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   --risk-connector-color: rgb(var(--color-purple-rgb) / 0.25);
   --reactflow-bg-opacity: 1;
 
+}
+
+@media (min-width: 640px) {
+  :root { --app-stats-height: calc(2.5rem + 1px); }
 }
 
 /* Light Theme Overrides */

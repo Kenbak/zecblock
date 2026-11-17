@@ -174,14 +174,14 @@ export default function SimulatorClient() {
         </button>)}
       </div>
       <div className="mt-5 pt-4 border-t border-cipher-border">
-        <div className="type-label text-muted uppercase mb-2" id="depth-label">Confirmations before funds count as received</div>
+        <div className="type-label text-muted uppercase mb-2" id="depth-label">Amount received · confirmations before it counts</div>
         <div className="flex flex-wrap gap-2" role="group" aria-labelledby="depth-label">
           {DEPTH_OPTIONS.map(o => <button key={o.blocks} type="button" onClick={() => updateDepth(o.blocks)} aria-pressed={depth === o.blocks}
-            className={`rounded-md border px-3 py-1.5 text-caption font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold ${depth === o.blocks ? 'border-cipher-gold text-cipher-gold' : 'border-cipher-border text-secondary hover:bg-cipher-hover'}`}>
+            className={`whitespace-nowrap rounded-md border px-3 py-1.5 text-caption font-mono transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-cipher-gold ${depth === o.blocks ? 'border-cipher-gold text-cipher-gold' : 'border-cipher-border text-secondary hover:bg-cipher-hover'}`}>
             {o.label} <span className="text-muted">· {o.detail}</span>
           </button>)}
         </div>
-        <p className="text-caption text-muted mt-2">Wallets and services pick their own depth.</p>
+        <p className="text-caption text-muted mt-2">The amount tiers are one proposed policy, not a standard; wallets today wait 10 blocks for every amount, as ZIP 315 recommends. Wallets and services pick their own depth.</p>
       </div>
     </Card>
 

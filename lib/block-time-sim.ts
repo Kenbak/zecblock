@@ -7,12 +7,18 @@
 export const SIM_MIN_SECONDS = 5;
 export const SIM_MAX_SECONDS = 150;
 export const SIM_DEFAULT_SECONDS = 25;
-/** Confirmation depths people actually use; wallets and services choose their own. */
+/**
+ * Confirmation depth by amount received. The first four tiers are an example
+ * amount-based policy discussed in the community (not a standard); the last
+ * is the ZIP 315 wallet default in use today. Wallets and services choose their own.
+ */
 export type DepthOption = { blocks: number; label: string; detail: string };
 export const DEPTH_OPTIONS: readonly DepthOption[] = [
-  { blocks: 3, label: '3 blocks', detail: 'Everyday payments' },
-  { blocks: 5, label: '5 blocks', detail: 'Large amounts' },
-  { blocks: 10, label: '10 blocks', detail: 'ZIP 315 wallet default for received funds' },
+  { blocks: 2, label: 'Under 10 ZEC', detail: '2 blocks' },
+  { blocks: 3, label: 'Under 100 ZEC', detail: '3 blocks' },
+  { blocks: 4, label: 'Under 1,000 ZEC', detail: '4 blocks' },
+  { blocks: 6, label: '1,000+ ZEC', detail: '6 blocks' },
+  { blocks: 10, label: 'Wallets today', detail: '10 blocks' },
 ];
 export const DEFAULT_DEPTH = 3;
 export const clampDepth = (value: unknown) => DEPTH_OPTIONS.find(o => o.blocks === Number(value))?.blocks ?? DEFAULT_DEPTH;

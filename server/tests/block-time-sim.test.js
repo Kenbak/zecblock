@@ -36,7 +36,9 @@ test('simulate gives the published 25s and 20s figures', () => {
   assert.ok(Math.abs(proposed.orphans.rate - 0.0090) < 0.0002);
   // Default depth is 3 blocks; unknown depths fall back to it.
   assert.equal(sim.simulate(25).spendableMean, 75);
-  assert.equal(sim.simulate(20, 5).spendableMean, 100);
+  assert.equal(sim.simulate(20, 4).spendableMean, 80);
+  assert.deepEqual(sim.DEPTH_OPTIONS.map(o => o.blocks), [2, 3, 4, 6, 10]);
+  assert.equal(sim.simulate(20, 5).depth, 3);
   assert.equal(sim.simulate(20, 7).depth, 3);
   assert.equal(proposed.zone, 'extrapolated');
 });

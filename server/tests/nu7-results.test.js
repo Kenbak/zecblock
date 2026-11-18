@@ -15,7 +15,8 @@ function load(file, dependencies = {}) {
 const moduleUnderTest = load('lib/nu7-vote-results.ts');
 const { parseVoteResults, ZEC_PER_VOTE_UNIT, NU7_ROUND_ID } = moduleUnderTest;
 const copyable = load('app/governance/CopyableValue.tsx', { '@/components/CopyButton': load('components/CopyButton.tsx') });
-const { VoteResults } = load('app/governance/nu7/VoteResults.tsx', { '@/lib/nu7-vote-results': moduleUnderTest, '../CopyableValue': copyable });
+const submissionsModule = load('lib/vote-submissions.ts');
+const { VoteResults } = load('app/governance/nu7/VoteResults.tsx', { '@/lib/nu7-vote-results': moduleUnderTest, '@/lib/vote-submissions': submissionsModule, '../CopyableValue': copyable });
 const fixture = () => [structuredClone(require('./fixtures/nu7/summary.json')), structuredClone(require('./fixtures/nu7/tally.json'))];
 
 test('NU7 rejects oversized proposal, option and tally collections before walking elements', () => {
@@ -133,6 +134,42 @@ test('snapshot comparison uses the historical Ironwood balance and separate ques
   assert.match(html, /3,731,959.40650354/);
   assert.match(html, /64.3–64.4%/);
   assert.match(html, /not an exact eligible-voter turnout rate/);
+});
+
+test('pinned submission counts reconcile with the commitment tree and captured share counts', () => {
+  const { ROUND_SUBMISSIONS, roundSubmissions } = submissionsModule;
+  const nu7 = roundSubmissions(NU7_ROUND_ID);
+  // Unbatched round: one leaf per delegation, two per cast vote.
+  assert.equal(nu7.delegations + 2 * nu7.votes, nu7.treeLeaves);
+  const [summary] = fixture();
+  const shares = summary.proposals.flatMap(p => p.options).reduce((n, o) => n + Number(o.ballot_count ?? 0), 0);
+  assert.equal(shares, nu7.revealedShares);
+  // A registration votes at most once per question.
+  assert.ok(nu7.votes <= nu7.delegations * summary.proposals.length);
+  for (const [id, row] of Object.entries(ROUND_SUBMISSIONS)) {
+    assert.match(id, /^[a-f0-9]{64}$/);
+    assert.ok(Number.isSafeInteger(row.delegations) && row.delegations > 0 && row.delegations < row.treeLeaves);
+    assert.match(row.observedOn, /^\d{4}-\d{2}-\d{2}$/);
+  }
+  assert.equal(roundSubmissions('toString'), null);
+  assert.equal(roundSubmissions('f'.repeat(64)), null);
+});
+
+test('registrations are shown as a wallet upper limit, never as a voter count', () => {
+  const html = renderToStaticMarkup(React.createElement(VoteResults, { results: parseVoteResults(...fixture()) }));
+  assert.match(html, /Voting registrations<\/dt><dd[^>]*>1,429</);
+  assert.match(html, /At most this many wallets/);
+  assert.match(html, /6,677 encrypted votes/);
+  assert.match(html, /104,092 revealed vote shares/);
+  assert.match(html, /14,783 entries/);
+  assert.match(html, /not a count of people/);
+  assert.match(html, /no exact voter count exists/);
+  assert.ok(!/1,429 (voters|people|wallets voted)/.test(html));
+  for (const state of [parseVoteResults(null, null), (() => { const [s, t] = fixture(); s.status = 1; return parseVoteResults(s, t); })()]) {
+    const other = renderToStaticMarkup(React.createElement(VoteResults, { results: state }));
+    assert.ok(!other.includes('Voting registrations'));
+    assert.ok(!other.includes('1,429'));
+  }
 });
 
 test('results announcement lasts five days and is independent of the old dismissal', () => {

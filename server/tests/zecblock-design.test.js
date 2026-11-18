@@ -79,6 +79,39 @@ test('metadata uses the new mainnet identity and preserves network indexation bo
   }
 });
 
+test('homepage titles lead with each network\'s search phrase and name the brand once', () => {
+  const expected = {
+    mainnet: /^Zcash Explorer\b/,
+    testnet: /^Zcash Testnet Explorer\b/,
+    'crosslink-testnet': /^Zcash Crosslink Explorer\b/,
+  };
+  for (const [network, phrase] of Object.entries(expected)) {
+    const seo = load('lib/seo.ts', {
+      '@/lib/network': { getConfiguredNetwork: () => network },
+      '@/lib/api-config': { getApiUrlForNetwork: () => '' },
+      '@/lib/server-fetch': {},
+      '@/lib/api-client': load('lib/api-client.ts'),
+    });
+    const { title, description } = seo.getSiteCopy();
+    assert.match(title, phrase);
+    assert.match(title, / \| ZecBlock$/);
+    assert.equal(title.match(/ZecBlock/g).length, 1);
+    assert.ok(description.length >= 50 && description.length <= 160, `${network} description length ${description.length}`);
+  }
+});
+
+test('the hidden homepage feed placeholder adds no heading or placeholder text to the outline', () => {
+  const feedCard = fs.readFileSync(path.join(root, 'components/HomeFeedCard.tsx'), 'utf8');
+  assert.doesNotMatch(feedCard, /LOADING_ACTIVITY/);
+  assert.match(feedCard, /labelAsHeading=\{false\}/);
+  const { SectionHeader } = load('components/ui/SectionHeader.tsx', { 'next/link': () => null });
+  const heading = renderToStaticMarkup(React.createElement(SectionHeader, { label: 'RECENT_BLOCKS' }));
+  const sizer = renderToStaticMarkup(React.createElement(SectionHeader, { label: 'RECENT_BLOCKS', labelAsHeading: false }));
+  assert.match(heading, /<h2[^>]*>RECENT_BLOCKS<\/h2>/);
+  assert.doesNotMatch(sizer, /<h2/);
+  assert.match(sizer, /<div class="section-header-label [^"]*">RECENT_BLOCKS<\/div>/);
+});
+
 const { summarizeMempool } = load('lib/mempool-summary.ts');
 
 test('mempool composition separates fully shielded count from inclusive pool share', () => {

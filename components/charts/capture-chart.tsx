@@ -35,7 +35,7 @@ export async function captureChartPng(data: ChartExportData): Promise<Blob> {
     flushSync(() => root.render(<ChartExport data={data}/>));
     await Promise.all(Array.from(host.querySelectorAll('img')).map(img => img.decode()));
     const { toBlob } = await import('html-to-image');
-    const blob = await toBlob(host.firstElementChild as HTMLElement, { ...EXPORT_SIZE, pixelRatio: 1, fontEmbedCSS, backgroundColor: '#0B0C0E' });
+    const blob = await toBlob(host.firstElementChild as HTMLElement, { ...EXPORT_SIZE, pixelRatio: 1, fontEmbedCSS, backgroundColor: '#0B0C0E', includeQueryParams: true });
     if (!blob) throw new Error('Image unavailable');
     return blob;
   } finally { root.unmount(); host.remove(); }

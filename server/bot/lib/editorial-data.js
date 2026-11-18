@@ -226,6 +226,26 @@ async function activityCandidates(pool, now, includeWeekly) {
   return candidates;
 }
 
+// Last completed UTC week of public shielding, by hour. The week must be
+// fully indexed: every block's transactions present, and the tip past its end.
+async function heatmapCandidates(pool, now) {
+  const endExclusive = completedWeekEnd(now), start = addDays(endExclusive, -7);
+  const from = Date.parse(`${start}T00:00:00Z`) / 1000, to = Date.parse(`${endExclusive}T00:00:00Z`) / 1000;
+  return snapshot(pool, async db => {
+    await assertMainnetFresh(db, now);
+    const { rows: [coverage] } = await db.query(`SELECT
+      (SELECT max(timestamp) FROM blocks) >= $2 AS past_end,
+      (SELECT COALESCE(SUM(transaction_count),-1) FROM blocks WHERE timestamp >= $1 AND timestamp < $2)
+        = (SELECT count(*) FROM transactions WHERE block_time >= $1 AND block_time < $2) AS complete`, [from, to]);
+    if (!coverage?.past_end || !coverage.complete) return { candidates: [], decisions: [{ key: `analysis:shield_heatmap:${start}`, reason: 'week-incomplete' }] };
+    const { rows } = await db.query(`SELECT floor((block_time - $1) / 3600)::int AS slot, SUM(amount_zat)::text AS zat, count(*)::int AS n
+      FROM (${VALID_FLOWS} AND sf.flow_type='shield' AND sf.block_time >= $1 AND sf.block_time < $2) h
+      GROUP BY 1 ORDER BY 1`, [from, to]);
+    const story = policy.heatmapStory({ start, endExclusive, slots: rows });
+    return story ? [story] : [];
+  });
+}
+
 async function hashrateCandidate(pool, now) {
   return snapshot(pool, async db => {
     await assertMainnetFresh(db, now);
@@ -330,4 +350,4 @@ async function poolActivityCandidates(pool, now, options) {
   return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
 }
 
-module.exports = { venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };
+module.exports = { heatmapCandidates, venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, VALID_VENUE_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

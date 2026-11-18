@@ -1,15 +1,18 @@
 'use strict';
 
-// Animated replays: a video goes out only when its data has a story.
+// Animated replays, posted as looping GIFs.
 //
 // Each evening from 21:00 UTC the bot asks every animation whether something
 // just happened in its data (a new leader, a record, a round level crossed).
-// If one says yes, that video is posted. An ordinary day posts nothing. At
-// most one video a week, and the same video at most once in 30 days.
+// Every story is posted, once (owner decision 2026-11-18: a GIF costs the
+// same as an image post, so replays have no weekly or per-animation cap).
+// The shared 20-minute pacing between posts spreads several stories over the
+// evening. When no replay has gone out for a week and no animation has a
+// story, the one posted longest ago goes out as that week's replay.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { ANIMATIONS, renderVideo } = require('../lib/animated-card');
+const { ANIMATIONS, renderGif } = require('../lib/animated-card');
 const { assertMainnetFresh } = require('../lib/editorial-data');
 
 // Same sender lock as the editorial job: one process posts at a time.
@@ -23,11 +26,18 @@ const ORDER = ['software', 'swaps', 'pools', 'pool-race', 'shielded-share', 'has
 const WINDOW_START_HOUR = 21;
 const PACING_MS = 20 * 60_000;
 const DAY_MS = 86_400_000;
-const WEEKLY_CAP_MS = 7 * DAY_MS;
-const SAME_VIDEO_MS = 30 * DAY_MS;
+// A quiet week still gets one replay.
+const QUIET_WEEK_MS = 7 * DAY_MS;
 // A failing renderer or upload must not retry on every five-minute tick.
 const MAX_ATTEMPTS = 3;
 const HELD = ['posted', 'posting', 'uncertain'];
+
+/** Monday (UTC) of the week `now` falls in, as YYYY-MM-DD. */
+function weekStart(now) {
+  const day = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  day.setUTCDate(day.getUTCDate() - ((day.getUTCDay() + 6) % 7));
+  return day.toISOString().slice(0, 10);
+}
 
 /** The evening `now` falls in (21:00–24:00 UTC), or null. Data for the last closed UTC day is settled by then. */
 function replaySlot(now) {
@@ -66,7 +76,7 @@ const attempts = new Map();
 
 async function run(pool, xClient, {
   now = new Date(), logger = console, api = process.env.BOT_API_BASE || API,
-  load = fetchJson, render = renderVideo, assertFresh = assertMainnetFresh, tries = attempts,
+  load = fetchJson, render = renderGif, assertFresh = assertMainnetFresh, tries = attempts,
 } = {}) {
   const slot = replaySlot(now);
   if (!slot) return { skipped: 'outside-window' };
@@ -75,7 +85,6 @@ async function run(pool, xClient, {
   const { rows: history } = await pool.query(`SELECT post_type,dedup_key,status,created_at,metadata
     FROM social_post_outbox WHERE post_type=$1 OR created_at >= $2::timestamptz-interval '20 minutes'`, [POST_TYPE, now.toISOString()]);
   const replays = heldReplays(history);
-  if (replays.some(row => now - new Date(row.created_at) < WEEKLY_CAP_MS)) return { skipped: 'weekly-cap' };
   // Stay clear of a post that has just gone out; the next tick tries again.
   if (history.some(row => row.post_type !== 'source_reply' && HELD.includes(row.status) && now - new Date(row.created_at) < PACING_MS)) return { skipped: 'paced' };
   if ((tries.get(slot.date) || 0) >= MAX_ATTEMPTS) return { skipped: 'attempts-exhausted' };
@@ -89,14 +98,14 @@ async function run(pool, xClient, {
     await assertFresh(pool, now);
 
     let chosen, failed = false;
+    const quiet = [];
     for (const id of rotation(history)) {
       const decide = reason => logger.info(`[Replay decision] ${JSON.stringify({ date: slot.date, animation: id, reason })}`);
-      if (replays.some(p => p.metadata?.animation === id && now - new Date(p.created_at) < SAME_VIDEO_MS)) { decide('posted-within-30-days'); continue; }
       try {
         const model = ANIMATIONS[id].build(await load(`${api}${ANIMATIONS[id].path}`), { network: 'mainnet' }, now);
         if (!model) { decide('source-incomplete'); continue; }
         const event = model.event();
-        if (!event) { decide('no-story'); continue; }
+        if (!event) { decide('no-story'); quiet.push({ id, model }); continue; }
         const key = `replay:v2:${id}:${event}`;
         if (history.some(p => p.dedup_key === key)) { decide('already-posted'); continue; }
         chosen = { id, model, event, key };
@@ -107,19 +116,28 @@ async function run(pool, xClient, {
         logger.warn(`[Replay] ${id} skipped: ${error.message}`);
       }
     }
+    // Quiet week: the animation posted longest ago (rotation order) goes out once.
+    if (!chosen && !failed && quiet.length && !replays.some(row => now - new Date(row.created_at) < QUIET_WEEK_MS)) {
+      const { id, model } = quiet[0];
+      const event = `week:${weekStart(now)}`;
+      chosen = { id, model, event, key: `replay:v2:${id}:${event}` };
+      logger.info(`[Replay decision] ${JSON.stringify({ date: slot.date, animation: id, reason: 'quiet-week' })}`);
+    }
     if (!chosen) {
       if (!failed) tries.set(slot.date, 'settled');
       return { skipped: failed ? 'source-unavailable' : 'no-story-today' };
     }
-    tries.set(slot.date, (tries.get(slot.date) || 0) + 1);
+    const tried = tries.get(slot.date) || 0;
+    tries.set(slot.date, tried + 1);
     const { id, model, event, key } = chosen;
     const content = replayCopy(id, model);
     const metadata = { animation: id, event, from: model.dates[0], to: model.dates.at(-1), points: model.dates.length,
       source: ANIMATIONS[id].path, editorialVersion: 1, editorial: { topic: `replay:${id}` } };
 
-    file = path.join(os.tmpdir(), `zecblock-replay-${id}-${process.pid}-${now.getTime()}.mp4`);
+    file = path.join(os.tmpdir(), `zecblock-replay-${id}-${process.pid}-${now.getTime()}.gif`);
     await render(model, file);
     if (xClient.dryRun) {
+      tries.set(slot.date, tried);
       logger.info(`[Replay preview] ${key} ${id}\n${content}`);
       return { key: key, status: 'preview', animation: id, content };
     }
@@ -129,6 +147,8 @@ async function run(pool, xClient, {
     const { rows: [claim] } = await pool.query(`INSERT INTO social_post_outbox
       (post_type,dedup_key,content,metadata,status) VALUES ($1,$2,$3,$4::jsonb,'posting')
       ON CONFLICT(dedup_key) DO NOTHING RETURNING id`, [POST_TYPE, key, content, JSON.stringify(metadata)]);
+    // Only failures count toward the retry limit; a posted story frees the evening for the next.
+    tries.set(slot.date, tried);
     if (!claim) return { key: key, status: 'duplicate' };
     try {
       const result = await xClient.postUploaded(content, mediaId);
@@ -151,4 +171,4 @@ async function run(pool, xClient, {
   }
 }
 
-module.exports = { run, replaySlot, rotation, replayCopy, ORDER, MAX_ATTEMPTS };
+module.exports = { run, replaySlot, rotation, replayCopy, weekStart, ORDER, MAX_ATTEMPTS };

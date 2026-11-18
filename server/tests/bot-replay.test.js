@@ -73,13 +73,16 @@ test('each model names its own story from its own data', () => {
   assert.equal(cards.softwareShareModel(software(50), {}, EVENING).event(), null, 'a lead taken weeks ago at a level already held');
   const pools = share => Array.from({ length: 60 }, (_, i) => ({ date: day(i), sprout: 0, sapling: i < 57 ? 28_500 : share, orchard: 0, ironwood: 0, chainSupply: 100_000, hasPoolBreakdown: true }));
   assert.equal(cards.poolGrowthModel({ data: { points: pools(29_100) } }).event(), 'share:29');
-  assert.equal(cards.poolGrowthModel({ data: { points: pools(28_900) } }).event(), null);
+  assert.equal(cards.poolGrowthModel({ data: { points: pools(28_900) } }).event(), null, 'still inside the 28.5% step');
+  const from28 = Array.from({ length: 60 }, (_, i) => ({ date: day(i), sprout: 0, sapling: i < 57 ? 28_000 : 28_600, orchard: 0, ironwood: 0, chainSupply: 100_000, hasPoolBreakdown: true }));
+  assert.equal(cards.poolGrowthModel({ data: { points: from28 } }).event(), 'share:28.5', 'each half percent is a story');
   const supply = last => ({ data: { supplyHistory: Array.from({ length: 60 }, (_, i) => ({ date: day(i), circulatingZat: (i < 58 ? 16_999_000 : last) * 1e8 })) } });
   assert.equal(cards.supplyModel(supply(17_010_000)).event(), 'cap:81');
   assert.equal(cards.supplyModel(supply(16_999_500)).event(), null);
   const hashrate = peak => ({ data: { points: Array.from({ length: 100 }, (_, i) => ({ windowStart: `${day(i)}T00:00:00Z`, windowEnd: `${day(i + 1)}T00:00:00Z`, hashrate: i < 93 ? 10e9 : peak })) } });
   assert.equal(cards.hashrateModel(hashrate(15.2e9), {}, new Date(`${day(100)}T21:00:00Z`)).event(), 'record:15.0 GSol/s');
-  assert.equal(cards.hashrateModel(hashrate(14.9e9), {}, new Date(`${day(100)}T21:00:00Z`)).event(), null, 'a record short of the next round level is not a story');
+  assert.equal(cards.hashrateModel(hashrate(14.9e9), {}, new Date(`${day(100)}T21:00:00Z`)).event(), 'record:12.5 GSol/s', 'quarter steps of the leading power of ten');
+  assert.equal(cards.hashrateModel(hashrate(12.4e9), {}, new Date(`${day(100)}T21:00:00Z`)).event(), null, 'a record short of the next round level is not a story');
   const race = lead => ({ data: { series: Array.from({ length: 200 }, (_, i) => ({ date: day(i - 100), totalBlocks: 1000, pools: i < lead ? { A: 0.6, B: 0.4 } : { A: 0, B: 1 } })) } });
   const raced = cards.poolRaceModel(race(188), {}, EVENING);
   assert.match(raced.event(), /^leader:B:2026-04-/);
@@ -125,12 +128,26 @@ test('an ordinary day posts nothing and is decided once', async () => {
   const tries = new Map();
   let loads = 0;
   const load = async url => { loads++; return url.includes('/v1/mining/software') ? software(50) : { success: false }; };
-  assert.deepEqual(await replay.run(fakePool(), forbidden, options({ tries, load })), { skipped: 'no-story-today' });
+  const lastWeek = [replayRow('pools', '2026-04-06T21:00:00Z')];
+  assert.deepEqual(await replay.run(fakePool(lastWeek), forbidden, options({ tries, load })), { skipped: 'no-story-today' });
   assert.equal(loads, 7, 'every animation was asked');
-  const pool = fakePool();
+  const pool = fakePool(lastWeek);
   assert.deepEqual(await replay.run(pool, forbidden, options({ tries, load })), { skipped: 'no-story-today' });
   assert.equal(loads, 7, 'the next tick does not fetch again');
   assert.equal(pool.calls.length, 0);
+});
+
+test('a quiet week still gets one replay: the animation posted longest ago', async () => {
+  const load = async url => (url.includes('/v1/mining/software') ? software(50) : { success: false });
+  const x = fakeX();
+  const pool = fakePool([replayRow('pools', '2026-04-02T21:00:00Z')]);
+  const result = await replay.run(pool, x, options({ load }));
+  assert.equal(result.status, 'posted');
+  assert.equal(result.key, 'replay:v2:software:week:2026-04-06');
+  assert.equal(replay.weekStart(EVENING), '2026-04-06');
+  assert.equal(replay.weekStart(new Date('2026-04-12T23:59:00Z')), '2026-04-06', 'Sunday belongs to the week that began Monday');
+  const claimed = pool.calls.find(call => /^INSERT/.test(call.sql.trim()));
+  assert.equal(JSON.parse(claimed.params[3]).event, 'week:2026-04-06');
 });
 
 test('an unreachable source is looked at again on the next tick', async () => {
@@ -140,20 +157,24 @@ test('an unreachable source is looked at again on the next tick', async () => {
   assert.equal((await replay.run(fakePool(), fakeX(), options({ tries }))).status, 'posted');
 });
 
-test('caps: one video a week, the same video once in 30 days, the same story once', async () => {
+test('no weekly or per-animation cap: every story posts, each once', async () => {
   const forbidden = fakeX({ uploadVideo: async () => { throw new Error('must not upload'); } });
   assert.deepEqual(await replay.run(fakePool(), forbidden, options({ now: new Date('2026-04-10T12:00:00Z') })), { skipped: 'outside-window' });
-  assert.deepEqual(await replay.run(fakePool([replayRow('pools', '2026-04-05T21:00:00Z')]), forbidden, options()), { skipped: 'weekly-cap' });
-  assert.deepEqual(await replay.run(fakePool([replayRow('pools', '2026-04-05T21:00:00Z', { status: 'uncertain' })]), forbidden, options()), { skipped: 'weekly-cap' }, 'a held post counts');
-  assert.deepEqual(await replay.run(fakePool([replayRow('software', '2026-03-20T21:00:00Z')]), forbidden, options()), { skipped: 'no-story-today' }, 'same video within 30 days');
-  assert.equal((await replay.run(fakePool([replayRow('software', '2026-03-01T21:00:00Z')]), fakeX(), options())).status, 'posted');
-  const same = [{ post_type: 'replay', dedup_key: KEY, status: 'failed', created_at: '2026-01-01T21:00:00Z', metadata: { animation: 'software' } }];
+  assert.equal((await replay.run(fakePool([replayRow('pools', '2026-04-09T21:00:00Z')]), fakeX(), options())).status, 'posted', 'a replay yesterday does not block a new story');
+  assert.equal((await replay.run(fakePool([replayRow('software', '2026-04-08T21:00:00Z')]), fakeX(), options())).status, 'posted', 'nor does the same animation recently');
+  const same = [{ post_type: 'replay', dedup_key: KEY, status: 'failed', created_at: '2026-04-09T21:00:00Z', metadata: { animation: 'software' } }];
   assert.deepEqual(await replay.run(fakePool(same), forbidden, options()), { skipped: 'no-story-today' }, 'a story is claimed once');
   const recent = [{ post_type: 'swap', dedup_key: 'swap:a', status: 'posted', created_at: '2026-04-10T20:55:00Z', metadata: {} }];
   assert.deepEqual(await replay.run(fakePool(recent), forbidden, options()), { skipped: 'paced' });
   const scan = [{ post_type: 'editorial_scan', dedup_key: 'analysis:scan:x', status: 'evaluated', created_at: '2026-04-10T21:04:00Z', metadata: {} }];
   assert.equal((await replay.run(fakePool(scan), fakeX(), options())).status, 'posted', 'bookkeeping rows do not pace a post');
   assert.deepEqual(await replay.run(fakePool([], { locked: false }), forbidden, options()), { skipped: 'another-run-active' });
+});
+
+test('a posted story does not use up the evening: the next tick may post another', async () => {
+  const tries = new Map();
+  assert.equal((await replay.run(fakePool(), fakeX(), options({ tries }))).status, 'posted');
+  assert.equal(tries.get('2026-04-10'), 0);
 });
 
 test('a failed render or upload claims nothing and stops after three tries', async () => {
@@ -181,6 +202,35 @@ test('dry run renders and previews without touching X or the outbox', async () =
   const result = await replay.run(pool, x, options());
   assert.equal(result.status, 'preview');
   assert.equal(pool.calls.length, 1);
+});
+
+test('a GIF uploads as an X GIF and waits for processing; oversize GIFs are refused', async () => {
+  const file = path.join(os.tmpdir(), `bot-replay-test-${process.pid}.gif`);
+  fs.writeFileSync(file, Buffer.alloc(1024, 1));
+  try {
+    const x = new XClient({ accessToken: 'unit-test-placeholder', logger: quiet });
+    const requests = [], chunks = [];
+    x._apiRequest = async (_host, target, method, body) => {
+      requests.push([method, target, body ? JSON.parse(body) : null]);
+      if (target.endsWith('/initialize')) return { data: { id: '777' } };
+      if (target.endsWith('/finalize')) return { data: { id: '777', processing_info: { state: 'pending', check_after_secs: 1 } } };
+      return { data: { processing_info: { state: 'succeeded' } } };
+    };
+    x._appendChunk = async (id, index, chunk, type, name) => { chunks.push([id, index, chunk.length, type, name]); };
+    const wait = x._waitForProcessing.bind(x);
+    x._waitForProcessing = (id, info) => wait(id, info, { sleep: async () => {} });
+    assert.equal(await x.uploadMedia(file), '777');
+    assert.deepEqual(requests[0], ['POST', '/2/media/upload/initialize', { media_type: 'image/gif', media_category: 'tweet_gif', total_bytes: 1024 }]);
+    assert.deepEqual(chunks, [['777', 0, 1024, 'image/gif', 'image.gif']]);
+    assert.ok(requests.some(r => r[1].includes('command=STATUS')), 'waited for processing');
+    fs.writeFileSync(file, Buffer.alloc(15 * 1024 * 1024 + 1, 1));
+    await assert.rejects(x.uploadMedia(file), /15728640 byte limit/);
+  } finally { fs.unlinkSync(file); }
+});
+
+test('replays render GIFs', () => {
+  assert.equal(typeof cards.renderGif, 'function');
+  assert.match(fs.readFileSync(path.join(__dirname, '../bot/jobs/replay.js'), 'utf8'), /zecblock-replay-\$\{id\}-\$\{process\.pid\}-\$\{now\.getTime\(\)\}\.gif/);
 });
 
 test('video upload is chunked and waits for X to finish processing', async () => {

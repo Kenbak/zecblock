@@ -9,6 +9,7 @@
 // a flat or zero stretch would misstate history, so nothing is rendered.
 const { spawn } = require('child_process');
 const path = require('path');
+const { encodeGif } = require('./gif-encoder');
 
 const ASSETS = path.join(__dirname, '..', 'assets');
 const LOGO = path.join(__dirname, '..', '..', '..', 'public', 'brand', 'zecblock-logotype.png');
@@ -94,6 +95,9 @@ function trailing(values, window) {
 
 const RECENT_DAYS = 7;
 
+/** Whole half-percent steps of a percentage; the epsilon keeps 28.5% from flooring to 56 through float error. */
+const halfSteps = pct => Math.floor(pct * 2 + 1e-9);
+
 /** The latest level, when it is an all-time high first reached within the last week; otherwise null. */
 function newLevel(levels, recent = RECENT_DAYS) {
   const last = levels.length - 1;
@@ -152,8 +156,8 @@ function poolGrowthModel(payload, options = {}) {
     chart: { kind: 'area', max: Math.max(...days.map(day => day.shielded)), series: POOLS.map((pool, p) => ({ ...pool, color: C[pool.key], values: days.map(day => day.pools[p]) })) },
     // A pool joins the legend once it holds a balance.
     legend: (i, final) => POOLS.map((pool, p) => ({ label: pool.label, color: C[pool.key], value: (final ? fmt : compact)(days[i].pools[p]), show: started[p] >= 0 && started[p] <= i })).filter(item => item.show),
-    // A new whole percent of supply shielded.
-    event: () => { const level = newLevel(days.map(day => Math.floor(day.shielded / day.supply * 100))); return level == null ? null : `share:${level}`; },
+    // Each new half percent of supply shielded.
+    event: () => { const level = newLevel(days.map(day => halfSteps(day.shielded / day.supply * 100))); return level == null ? null : `share:${level / 2}`; },
     post: () => ({
       lead: `${fmt(days.at(-1).shielded)} ${unit} is shielded: ${(days.at(-1).shielded / days.at(-1).supply * 100).toFixed(1)}% of supply.`,
       context: `The shielded pools since ${monthLabel(dates[0])}, day by day.`,
@@ -215,12 +219,12 @@ function softwareShareModel(payload, options = {}, now = new Date()) {
     // Untagged blocks are the empty space above the areas: drawing them would fill the whole chart with grey.
     chart: { kind: 'area', max: 100, series: SOFTWARE.map((item, s) => ({ ...item, values: kept.map((_, i) => share(i, s)) })).filter(series => series.key !== 'unknown') },
     legend: (i, final) => SOFTWARE.map((item, s) => ({ label: item.label, color: item.color, value: `${share(i, s).toFixed(final ? 1 : 0)}%`, show: started[s] >= 0 && started[s] <= i })).filter(item => item.show),
-    // A new leading tag, or the leader passing a new ten-point share.
+    // A new leading tag, or the leader passing a new five-point share.
     event: () => {
       const top = leader(kept.length - 1);
       const changed = newLeader(kept.map((_, i) => SOFTWARE[leader(i)].key), dates);
       if (changed) return `leader:${changed}`;
-      const level = newLevel(kept.map((_, i) => Math.floor(share(i, top) / 10) * 10));
+      const level = newLevel(kept.map((_, i) => Math.floor(share(i, top) / 5) * 5));
       return level == null ? null : `level:${SOFTWARE[top].key}:${level}`;
     },
     post: () => ({
@@ -270,7 +274,7 @@ function swapFlowModel(payload, options = {}, now = new Date()) {
       { label: 'Into ZEC', color: C.in, value: usd(totals[i].into, final) },
       { label: 'Out of ZEC', color: C.out, value: usd(totals[i].out, final) },
     ],
-    // Another $250M swapped into ZEC.
+    // Another $100M swapped into ZEC.
     event: () => { const level = newLevel(totals.map(total => Math.floor(total.into / SWAP_STEP_USD))); return level == null ? null : `into:${level * SWAP_STEP_USD / 1e6}M`; },
     post: () => ({
       lead: `${usd(totals.at(-1).into, true)} swapped into ZEC through NEAR Intents since ${monthLabel(dates[0])}.`,
@@ -279,7 +283,7 @@ function swapFlowModel(payload, options = {}, now = new Date()) {
   };
 }
 
-const SWAP_STEP_USD = 250_000_000;
+const SWAP_STEP_USD = 100_000_000;
 const MAX_SUPPLY = 21_000_000;
 
 /** `/v1/network/emission` (`supplyHistory`): issued supply at each UTC day's last observation, toward the 21M cap. */
@@ -304,8 +308,8 @@ function supplyModel(payload, options = {}) {
     caption: (i, final) => `issued · ${(days[i].supply / MAX_SUPPLY * 100).toFixed(final ? 1 : 0)}% of the 21M cap`,
     chart: { kind: 'area', max: MAX_SUPPLY, capLabel: `21M ${unit} cap`, series: [{ key: 'supply', label: 'Issued', color: C.gold, values: days.map(day => day.supply) }] },
     legend: () => [],
-    // Another whole percent of the cap issued.
-    event: () => { const level = newLevel(days.map(day => Math.floor(day.supply / MAX_SUPPLY * 100))); return level == null ? null : `cap:${level}`; },
+    // Each new half percent of the 21M cap issued.
+    event: () => { const level = newLevel(days.map(day => halfSteps(day.supply / MAX_SUPPLY * 100))); return level == null ? null : `cap:${level / 2}`; },
     post: () => ({
       lead: `${fmt(days.at(-1).supply)} ${unit} has been issued: ${(days.at(-1).supply / MAX_SUPPLY * 100).toFixed(1)}% of the 21M cap.`,
       context: `Zcash issuance since ${monthLabel(dates[0])}, day by day.`,
@@ -341,8 +345,8 @@ function shieldedShareModel(payload, options = {}, now = new Date()) {
     caption: () => 'of transactions are shielded · 30-day share',
     chart: { kind: 'area', max: 100, series: [{ key: 'shielded', label: 'Shielded', color: C.ironwood, values: kept.map(day => day.share) }] },
     legend: () => [],
-    // The 30-day share reaching a new whole percent for the first time in this series.
-    event: () => { const level = newLevel(kept.map(day => Math.floor(day.share))); return level == null ? null : `share:${level}`; },
+    // Each new half percent of 30-day transactions using a shielded pool.
+    event: () => { const level = newLevel(kept.map(day => halfSteps(day.share))); return level == null ? null : `share:${level / 2}`; },
     post: () => ({
       lead: `${kept.at(-1).share.toFixed(1)}% of Zcash transactions are shielded.`,
       context: `The 30-day share since ${monthLabel(dates[0])}.`,
@@ -377,10 +381,10 @@ function hashrateModel(payload, options = {}, now = new Date()) {
     caption: () => 'network hashrate · 7-day average',
     chart: { kind: 'area', max: Math.max(...kept.map(day => day.hashrate)), series: [{ key: 'hashrate', label: 'Hashrate', color: C.gold, values: kept.map(day => day.hashrate) }] },
     legend: () => [],
-    // A record 7-day average passing a new round level: half the leading power of ten, so 5 GSol/s steps at 32 GSol/s.
+    // A record 7-day average passing a new round level: a quarter of the leading power of ten, so 2.5 GSol/s steps at 32 GSol/s.
     event: () => {
       const values = kept.map(day => day.hashrate);
-      const step = 10 ** Math.floor(Math.log10(Math.max(...values))) / 2;
+      const step = 10 ** Math.floor(Math.log10(Math.max(...values))) / 4;
       const level = newLevel(values.map(value => Math.floor(value / step)));
       return level == null ? null : `record:${hashrateLabel(level * step)}`;
     },
@@ -640,6 +644,19 @@ async function renderVideo(model, output, { ffmpeg = 'ffmpeg' } = {}) {
   return { output, frames: model.frames.length, fps: FPS, seconds: model.frames.length / FPS };
 }
 
+// GIFs play at 20 fps: smooth enough for a chart, and about two thirds the size of 30.
+const GIF_FPS = 20;
+
+/** Renders a model to a looping GIF (posted as an X "GIF": autoplay, loop, no player). */
+async function renderGif(model, output, { ffmpeg = 'ffmpeg' } = {}) {
+  const { createCanvas, loadImage } = canvasApi();
+  const canvas = createCanvas(W, H);
+  const ctx = canvas.getContext('2d');
+  const logo = await loadImage(LOGO).catch(() => null);
+  return encodeGif({ width: W, height: H, inputFps: FPS, outputFps: GIF_FPS, count: model.frames.length, output, ffmpeg,
+    frame: index => { drawFrame(ctx, model, index, logo); return canvas.toBuffer('raw'); } });
+}
+
 /** One frame as PNG, for review. */
 async function renderStill(model, frame) {
   const { createCanvas, loadImage } = canvasApi();
@@ -661,5 +678,5 @@ const ANIMATIONS = {
 
 module.exports = {
   ANIMATIONS, poolGrowthModel, softwareShareModel, swapFlowModel, supplyModel, shieldedShareModel, hashrateModel, poolRaceModel,
-  renderVideo, renderStill, timeline, compact, newLevel, newLeader, FPS, TEXT_STEP_FRAMES,
+  renderVideo, renderGif, renderStill, timeline, compact, newLevel, newLeader, FPS, TEXT_STEP_FRAMES,
 };

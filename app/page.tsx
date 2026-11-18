@@ -11,6 +11,7 @@ import { CrosslinkStats } from '@/components/CrosslinkStats';
 import { CrosslinkChainGraph } from '@/components/CrosslinkChainGraph.lazy';
 import { StakingDayBanner } from '@/components/StakingDayBanner';
 import { PulseWidget } from '@/components/PulseWidget';
+import { HomeAbout } from '@/components/HomeAbout';
 import { getApiUrl } from '@/lib/api-config';
 import { isCrosslink, isTestnet } from '@/lib/config';
 import { fetchWithDeadline } from '@/lib/server-fetch';
@@ -130,7 +131,7 @@ export default async function Home() {
                 ? 'The Zcash Crosslink Explorer'
                 : isTestnet
                   ? 'The Zcash Testnet Explorer (TAZ)'
-                  : 'The Zcash Blockchain Explorer'}
+                  : 'Zcash Explorer'}
             </h1>
             <p className="home-hero-intro text-secondary">
               {crosslinkMode
@@ -228,6 +229,10 @@ export default async function Home() {
           }
         />
       </div>
+
+      {/* Mainnet only: the testnet and Crosslink homepages answer a different
+          search intent and keep their own introductions. */}
+      {!crosslinkMode && !isTestnet && <HomeAbout />}
       </div>
     </div>
     </HomeBlocksProvider>

@@ -86,6 +86,7 @@ export function SectionHeader({
   actions,
   size = 'sm',
   className = '',
+  labelAsHeading = true,
 }: {
   /** Mono uppercase section label, e.g. "POOL_RANKING" */
   label: string;
@@ -97,7 +98,15 @@ export function SectionHeader({
   /** 'lg' for a page's primary top-level sections; default 'sm' matches every other SectionHeader. */
   size?: keyof typeof LABEL_SIZE;
   className?: string;
+  /**
+   * Render the label as a plain element instead of an H2.
+   *
+   * Only for hidden layout placeholders: a sizing copy of a section header
+   * must not add a second heading to the document outline.
+   */
+  labelAsHeading?: boolean;
 }) {
+  const Label = labelAsHeading ? 'h2' : 'div';
   return (
     <div className={`flex items-start sm:items-center justify-between gap-2 mb-4 flex-wrap ${className}`}>
       <div className="flex items-center gap-2">
@@ -106,9 +115,9 @@ export function SectionHeader({
         ) : (
           <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{'>'}</span>
         )}
-        <h2 className={`${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
+        <Label className={`${labelAsHeading ? '' : 'section-header-label '}${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
           {label}
-        </h2>
+        </Label>
         {live && (
           <span className="relative flex h-2 w-2" aria-label="Live">
             <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cipher-green opacity-60" />

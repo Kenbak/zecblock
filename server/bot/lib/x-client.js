@@ -12,6 +12,8 @@ const fs = require('fs');
 const crypto = require('crypto');
 
 const MEDIA_CHUNK_BYTES = 4 * 1024 * 1024;
+// X accepts animated GIFs up to 15 MB.
+const GIF_MAX_BYTES = 15 * 1024 * 1024;
 
 class XClient {
   constructor({ accessToken, refreshToken, clientId, clientSecret, tokenFile, dryRun = false, logger = console, onError = null }) {
@@ -86,18 +88,21 @@ class XClient {
   }
 
   /**
-   * Upload an image or MP4 video to X and return the media ID.
-   * v2 chunked upload: initialize, append, finalize. A video is then
-   * processed by X and is attachable only once that reports "succeeded".
+   * Upload an image, animated GIF or MP4 video to X and return the media ID.
+   * v2 chunked upload: initialize, append, finalize. GIFs and videos are then
+   * processed by X and are attachable only once that reports "succeeded".
+   * A GIF posts as an autoplaying, looping "GIF", not as a video player.
    */
   async uploadMedia(filePath) {
     const data = fs.readFileSync(filePath);
     const video = filePath.endsWith('.mp4');
-    const mediaType = video ? 'video/mp4' : filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
+    const gif = filePath.endsWith('.gif');
+    if (gif && data.length > GIF_MAX_BYTES) throw new Error(`GIF exceeds X's ${GIF_MAX_BYTES} byte limit (${data.length})`);
+    const mediaType = video ? 'video/mp4' : gif ? 'image/gif' : filePath.endsWith('.png') ? 'image/png' : 'image/jpeg';
 
     const initBody = JSON.stringify({
       media_type: mediaType,
-      media_category: video ? 'tweet_video' : 'tweet_image',
+      media_category: video ? 'tweet_video' : gif ? 'tweet_gif' : 'tweet_image',
       total_bytes: data.length,
     });
 
@@ -113,7 +118,7 @@ class XClient {
 
     // X accepts segments up to 5 MB; images and short cards fit in one.
     for (let index = 0, offset = 0; offset < data.length; index++, offset += MEDIA_CHUNK_BYTES) {
-      await this._appendChunk(mediaId, index, data.subarray(offset, offset + MEDIA_CHUNK_BYTES), mediaType, video ? 'video.mp4' : 'image.png');
+      await this._appendChunk(mediaId, index, data.subarray(offset, offset + MEDIA_CHUNK_BYTES), mediaType, video ? 'video.mp4' : gif ? 'image.gif' : 'image.png');
     }
 
     this.logger.info(`[XClient] Media appended`);
@@ -124,7 +129,7 @@ class XClient {
 
     const finalId = finalRes.data?.id || finalRes.id || mediaId;
     const processing = finalRes.data?.processing_info || finalRes.processing_info;
-    if (video || processing) await this._waitForProcessing(finalId, processing);
+    if (video || gif || processing) await this._waitForProcessing(finalId, processing);
     this.logger.info(`[XClient] Media finalized: ${finalId}`);
     return finalId;
   }
@@ -314,7 +319,7 @@ class XClient {
     return this._withAutoRefresh(() => this._postTweet(text));
   }
 
-  /** Upload a video with token refresh. Nothing is posted by this call. */
+  /** Upload a GIF or video with token refresh. Nothing is posted by this call. */
   async uploadVideo(videoPath) {
     if (this.dryRun) return `dry_run_${Date.now()}`;
     return this._withAutoRefresh(() => this.uploadMedia(videoPath));
@@ -322,7 +327,7 @@ class XClient {
 
   /**
    * Post with media that is already uploaded. Unlike postWithMedia there is
-   * no text-only fallback: a replay without its video is not worth posting.
+   * no text-only fallback: a replay without its animation is not worth posting.
    */
   async postUploaded(text, mediaId) {
     if (!/^\d+$/.test(String(mediaId))) throw new Error('Invalid media ID');

@@ -48,8 +48,8 @@ export function getSiteCopy(): { title: string; description: string; keywords: s
   const network = getNetwork();
   if (network === 'mainnet') {
     return {
-      title: 'Zcash Block Explorer & Privacy Analytics | ZecBlock',
-      description: 'Search Zcash blocks, transactions, and addresses. Explore shielded pools, network activity, and privacy analytics with ZecBlock.',
+      title: 'Zcash Explorer & Privacy Analytics | ZecBlock',
+      description: 'ZecBlock is an open-source Zcash block explorer. Search blocks, transactions and addresses, and explore shielded pools, network activity and privacy analytics.',
       keywords: ['zcash block explorer', 'zcash explorer', 'ZEC explorer', 'zcash blockchain explorer', 'zcash transactions', 'zcash shielded pool', 'privacy', 'ZEC', 'ZecBlock', 'zcash rich list', 'zcash network'],
       imageAlt: 'ZecBlock - Zcash Block Explorer',
     };

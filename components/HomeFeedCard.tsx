@@ -117,7 +117,7 @@ export function HomeFeedCard({
       <div className="home-feed-placeholder">
         <div className="relative" aria-hidden="true">
           <div className="invisible">
-            <SectionHeader label="LOADING_ACTIVITY" icon={<PlaceholderIcon />} size="lg" actions={
+            <SectionHeader label={FEED_META[defaultType].sectionLabel} labelAsHeading={false} icon={<PlaceholderIcon />} size="lg" actions={
               <div>
                 <button disabled tabIndex={-1} className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-xs font-mono">
                   <SlidersIcon className="w-3.5 h-3.5" />

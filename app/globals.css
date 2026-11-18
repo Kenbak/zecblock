@@ -2019,7 +2019,8 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   .home-body { padding-top: 40px; }
   .home-feeds { margin-top: 0; }
   .home-feeds > div { min-width: 0; }
-  .home-page .home-table-section h2 { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.875rem; font-weight: 600; color: var(--color-text-primary); }
+  .home-page .home-table-section h2,
+  .home-page .home-table-section div.section-header-label { text-transform: uppercase; letter-spacing: 0.04em; font-size: 0.875rem; font-weight: 600; color: var(--color-text-primary); }
   /* A row height, not cell padding, so feeds with icons keep the same rhythm. */
   .home-page .home-table-section tbody tr { height: 54px; }
   .home-page table th { font-family: var(--font-geist-mono); font-weight: 500; font-size: 0.75rem; letter-spacing: 0.04em; }

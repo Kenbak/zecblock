@@ -76,7 +76,7 @@ export function HalvingPanel({ halving }: { halving: HalvingInfo | null }) {
             </span>
           </div>
         </div>
-        {halving.halvingStatus !== 'unavailable' && <p className="text-caption text-muted mt-4">Estimate from the current node schedule and recent block timing.</p>}
+        {halving.halvingStatus !== 'unavailable' && <p className="text-caption text-muted mt-4">Date assumes the consensus target block time from the current node schedule. Era progress is measured in target time, not block count.</p>}
       </CardBody>
     </Card>
   );

@@ -1,4 +1,4 @@
-const { supplyProjection } = require('../lib/issuance-projection');
+const { supplyProjection, targetDate } = require('../lib/issuance-projection');
 const { networkSchedule, targetSeconds, targetSpacing, halvingIndex, halvingHeight } = require('../lib/network-schedule');
 const { cachedHashrateHistory } = require('../lib/hashrate');
 const { loadDifficultyStability } = require('../lib/difficulty-stability');
@@ -10,8 +10,8 @@ const { subsidyZat, supplyZat, supplyHistory, mergedSupplyHistory, dailyNetSuppl
  */
 
 const MAX_SUPPLY_ZEC = 21_000_000;
-// Do not reuse countdowns cached by the old "any subsidy decrease" detector.
-const HALVING_CACHE_KEY = 'zcash:halving_info:v3';
+// v3 held observed-cadence dates; v4 dates follow consensus target spacing.
+const HALVING_CACHE_KEY = 'zcash:halving_info:v4';
 const HALVING_CACHE_TTL = 300;
 
 async function getFromRedisCache(redisClient, key) {
@@ -160,24 +160,22 @@ function registerNetworkAnalyticsRoutes(router) {
       if (!Number.isSafeInteger(currentHeight) || currentHeight < 1) {
         throw new Error('Could not read current Zebra height');
       }
-      const [halving, cadence] = await Promise.all([
-        discoverNextHalving(callZebraRPC, currentHeight, chainInfo),
-        observedBlockCadence(req.app.locals.pool, currentHeight).catch(() => null),
-      ]);
-      const estimatedSeconds = halving.blocksRemaining != null && cadence !== null
-        ? halving.targetSecondsRemaining * cadence.intervalSeconds / targetSpacing(halving.schedule, currentHeight) : null;
+      const halving = await discoverNextHalving(callZebraRPC, currentHeight, chainInfo);
+      // Same clock and anchor as the /api/network/emission projection, so the
+      // card and the chart's halving marker cannot disagree.
+      const estimatedSeconds = halving.blocksRemaining != null ? halving.targetSecondsRemaining : null;
       const payload = {
         ...halving,
         currentHeight,
-        cadence,
         estimatedSeconds,
         estimatedDate: estimatedSeconds
-          ? new Date(Date.now() + estimatedSeconds * 1000).toISOString()
+          ? targetDate(halving.schedule, { height: currentHeight, time: Date.now() }, halving.halvingBlock)
           : null,
+        dateBasis: 'consensus-target-spacing',
       };
 
       // Retry unavailable data promptly, without retaining an old countdown.
-      if (payload.halvingStatus === 'available' && cadence !== null) {
+      if (payload.halvingStatus === 'available') {
         await setRedisCache(redisClient, HALVING_CACHE_KEY, payload, HALVING_CACHE_TTL);
       }
       res.json({ success: true, ...payload, cached: false });
@@ -500,8 +498,11 @@ function registerNetworkAnalyticsRoutes(router) {
           observedBlockCadence(pool, currentHeight).catch(() => null),
           callZebraRPC('getblockchaininfo').catch(() => null),
         ]) : [null, null, null];
-      const dailyEstimate = subsidyZat(subsidy?.totalblocksubsidy) !== null && cadence !== null
-        ? subsidy.totalblocksubsidy * (86400 / cadence.intervalSeconds) : null;
+      const schedule = networkSchedule(chainInfo);
+      const spacing = targetSpacing(schedule, currentHeight);
+      // Scheduled issuance per target day; observed cadence is reported, not extrapolated.
+      const dailyEstimate = subsidyZat(subsidy?.totalblocksubsidy) !== null && spacing !== null
+        ? subsidy.totalblocksubsidy * (86400 / spacing) : null;
       const observations = validCount(supplyPoints);
 
       res.json({
@@ -513,9 +514,11 @@ function registerNetworkAnalyticsRoutes(router) {
         remaining: latestSupply === null ? null : (21_000_000 * 1e8 - latest.circulatingZat) / 1e8,
         circulatingPct: latestSupply === null ? null : (latestSupply / MAX_SUPPLY_ZEC) * 100,
         dailyEmissionEstimate: dailyEstimate,
+        dailyEmissionBasis: 'current-subsidy-at-target-spacing',
+        targetSpacingSeconds: spacing,
         cadence,
         supplyHistory: supplyPoints,
-        projection: supplyProjection({ schedule: networkSchedule(chainInfo), latest, currentHeight, cadence }),
+        projection: supplyProjection({ schedule, latest, currentHeight, anchorTime: Date.now() }),
         dailyEmission,
         dailyEmissionMeaning: 'net-chain-supply-change',
         hasChainSnapshots,

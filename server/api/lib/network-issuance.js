@@ -64,32 +64,42 @@ function dailyNetSupplyChanges(rows) {
   });
 }
 
-/** An observed cadence, not a consensus target or a prediction across upgrades. */
+// One target day at the post-NU7 25-second spacing.
+const CADENCE_WINDOW_BLOCKS = 3456;
+
+/**
+ * A short-term observed cadence over the latest CADENCE_WINDOW_BLOCKS indexed
+ * intervals. Informational only: dates and daily issuance use target spacing.
+ */
 async function observedBlockCadence(pool, currentHeight) {
   if (!Number.isSafeInteger(currentHeight) || currentHeight < 1) return null;
   const { rows } = await pool.query(
-    'SELECT height, timestamp FROM blocks WHERE height <= $1 ORDER BY height DESC LIMIT 121',
-    [currentHeight],
+    `WITH tip AS (SELECT max(height) AS h FROM blocks WHERE height <= $1)
+     SELECT tip.h AS end_height, count(b.height) AS block_count,
+       max(b.timestamp) FILTER (WHERE b.height = tip.h) AS end_timestamp,
+       max(b.timestamp) FILTER (WHERE b.height = tip.h - $2) AS start_timestamp
+     FROM tip LEFT JOIN blocks b ON b.height BETWEEN tip.h - $2 AND tip.h
+     GROUP BY tip.h`,
+    [currentHeight, CADENCE_WINDOW_BLOCKS],
   );
-  const endHeight = Number(rows[0]?.height);
+  const row = rows[0];
+  const endHeight = supplyZat(row?.end_height);
+  if (endHeight === null) return null;
   const lagBlocks = currentHeight - endHeight;
   // A polling indexer can trail a rapidly advancing node. Use its latest
   // complete window while the lag is bounded; never conceal a large backlog.
-  if (rows.length < 2 || !Number.isSafeInteger(endHeight) || lagBlocks < 0 || lagBlocks > 12) return null;
-  for (let i = 0; i < rows.length; i++) {
-    if (supplyZat(rows[i].height) !== endHeight - i || supplyZat(rows[i].timestamp) === null) return null;
-  }
-  const first = rows[rows.length - 1];
-  const elapsed = Number(rows[0].timestamp) - Number(first.timestamp);
-  if (elapsed <= 0) return null;
+  if (lagBlocks < 0 || lagBlocks > 12 || endHeight < CADENCE_WINDOW_BLOCKS) return null;
+  const end = supplyZat(row.end_timestamp);
+  const start = supplyZat(row.start_timestamp);
+  if (supplyZat(row.block_count) !== CADENCE_WINDOW_BLOCKS + 1 || end === null || start === null || end <= start) return null;
   return {
-    intervalSeconds: elapsed / (rows.length - 1),
-    startHeight: Number(first.height),
+    intervalSeconds: (end - start) / CADENCE_WINDOW_BLOCKS,
+    startHeight: endHeight - CADENCE_WINDOW_BLOCKS,
     endHeight,
     lagBlocks,
-    intervals: rows.length - 1,
+    intervals: CADENCE_WINDOW_BLOCKS,
     source: 'indexed-block-timestamps',
   };
 }
 
-module.exports = { mergedSupplyHistory, ZAT_PER_ZEC, supplyZat, subsidyZat, supplyHistory, dailyNetSupplyChanges, observedBlockCadence };
+module.exports = { mergedSupplyHistory, ZAT_PER_ZEC, supplyZat, subsidyZat, supplyHistory, dailyNetSupplyChanges, observedBlockCadence, CADENCE_WINDOW_BLOCKS };

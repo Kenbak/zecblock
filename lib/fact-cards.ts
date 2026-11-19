@@ -341,7 +341,7 @@ export function halvingCard(network: CardNetwork, payload: unknown): FactCard | 
     caption: 'until the next halving',
     detail: `${count(blocksRemaining)} blocks to go${seconds && typeof estimatedDate === 'string' ? ` · estimated ${formatDay(estimatedDate)}` : ''}`,
     visual: { kind: 'progress', percent: Math.max(0, Math.min(100, eraProgress)), from: `#${count(eraStartBlock)}`, to: `#${count(halvingBlock)}` },
-    source: 'Serving-node upgrade schedule and recent block timestamps',
+    source: 'Serving-node upgrade schedule at the target block time',
   };
 }
 

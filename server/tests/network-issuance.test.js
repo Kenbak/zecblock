@@ -1,10 +1,21 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 const { registerNetworkAnalyticsRoutes } = require('../api/routes/network-analytics');
-const { observedBlockCadence, subsidyZat } = require('../api/lib/network-issuance');
+const { observedBlockCadence, subsidyZat, CADENCE_WINDOW_BLOCKS } = require('../api/lib/network-issuance');
+const { supplyProjection } = require('../api/lib/issuance-projection');
 
 function blocks(spacing = 75, height = 3_500_000) {
-  return Array.from({ length: 121 }, (_, index) => ({ height: height - index, timestamp: 1_800_000_000 - index * spacing }));
+  return Array.from({ length: CADENCE_WINDOW_BLOCKS + 1 }, (_, index) => ({ height: height - index, timestamp: 1_800_000_000 - index * spacing }));
+}
+
+// Evaluates the cadence aggregate the way PostgreSQL would over `rows`.
+function cadenceQuery(rows, [currentHeight, window]) {
+  const eligible = rows.filter(row => row.height <= currentHeight);
+  if (!eligible.length) return { rows: [{ end_height: null, block_count: '0', end_timestamp: null, start_timestamp: null }] };
+  const tip = Math.max(...eligible.map(row => row.height));
+  const inWindow = rows.filter(row => row.height >= tip - window && row.height <= tip);
+  const at = height => inWindow.find(row => row.height === height)?.timestamp ?? null;
+  return { rows: [{ end_height: String(tip), block_count: String(inWindow.length), end_timestamp: at(tip) === null ? null : String(at(tip)), start_timestamp: at(tip - window) === null ? null : String(at(tip - window)) }] };
 }
 
 async function request(path, { snapshots = null, trends = [], archive = null, archiveCanonical = true, blockRows = blocks(), subsidy = 1.5625, redisClient = null, rpc } = {}) {
@@ -16,7 +27,7 @@ async function request(path, { snapshots = null, trends = [], archive = null, ar
     if (sql.includes('FROM chain_supply_daily')) return { rows: archive };
     if (sql.includes('FROM chain_snapshots')) return { rows: snapshots };
     if (sql.includes('FROM privacy_trends_daily')) return { rows: trends };
-    if (sql.includes('SELECT height, timestamp FROM blocks')) return { rows: blockRows };
+    if (sql.includes('WITH tip AS (SELECT max(height) AS h FROM blocks')) return cadenceQuery(blockRows, params);
     throw new Error(`Unexpected SQL: ${sql}`);
   } };
   const callZebraRPC = rpc || (async (method, params) => {
@@ -80,25 +91,28 @@ test('missing and invalid supply is unavailable, never silently zero or carried 
   assert.equal(body.supplyHistorySource, 'none');
 });
 
-test('daily subsidy estimates adapt to observed 75-second and 25-second cadences', async () => {
-  for (const spacing of [75, 25]) {
+test('daily issuance is scheduled subsidy per target day, not an extrapolated cadence sample', async () => {
+  for (const spacing of [75, 25, 40]) {
     const { body } = await request('/api/network/emission', { blockRows: blocks(spacing) });
-    assert.equal(body.dailyEmissionEstimate, 1.5625 * 86400 / spacing);
+    // The mock node has no NU7 activation, so target spacing stays 75 seconds.
+    assert.equal(body.dailyEmissionEstimate, 1.5625 * 86400 / 75);
+    assert.equal(body.dailyEmissionBasis, 'current-subsidy-at-target-spacing');
+    assert.equal(body.targetSpacingSeconds, 75);
     assert.equal(body.cadence.intervalSeconds, spacing);
-    assert.equal(body.cadence.intervals, 120);
+    assert.equal(body.cadence.intervals, CADENCE_WINDOW_BLOCKS);
     assert.equal(body.cadence.source, 'indexed-block-timestamps');
   }
 });
 
-test('incomplete, lagging, or unusable cadence produces no fabricated timing estimate', async () => {
+test('incomplete, lagging, or unusable cadence is unavailable without hiding scheduled issuance', async () => {
   for (const rows of [[], blocks().slice(0, 1), blocks(75, 3_499_987), blocks().filter((_, i) => i !== 30), blocks(0), blocks(-25)]) {
     const { body } = await request('/api/network/emission', { blockRows: rows });
-    assert.equal(body.dailyEmissionEstimate, null);
     assert.equal(body.cadence, null);
+    assert.equal(body.dailyEmissionEstimate, 1800);
   }
   const rows = blocks();
   rows[50].timestamp = rows[49].timestamp + 1; // Interior timestamps need not be monotonic.
-  const cadence = await observedBlockCadence({ query: async () => ({ rows }) }, 3_500_000);
+  const cadence = await observedBlockCadence({ query: async (sql, params) => cadenceQuery(rows, params) }, 3_500_000);
   assert.equal(cadence.intervalSeconds, 75);
 });
 
@@ -108,6 +122,8 @@ test('subsidy failures do not hide supply observations or invent daily issuance'
     assert.equal(body.circulatingZat, 100);
     assert.equal(body.dailyEmissionEstimate, null);
   }
+  const { body } = await request('/api/network/emission', { rpc: async method => method === 'getblockcount' ? 3_500_000 : method === 'getblockchaininfo' ? null : { totalblocksubsidy: 1.5625 } });
+  assert.equal(body.dailyEmissionEstimate, null, 'no node schedule means no target spacing');
   assert.equal(subsidyZat(0), 0);
   assert.equal(subsidyZat(0.52083333), 52083333);
 });
@@ -123,29 +139,62 @@ test('halving route ignores legacy cached countdowns and fails closed on unsuppo
       return key === 'zcash:halving_info' ? JSON.stringify({ halvingBlock: 3_600_000 }) : null;
     }, async setEx() { assert.fail('unavailable countdown must not be cached'); } },
   });
-  assert.deepEqual(keys, ['zcash:halving_info:v3']);
+  assert.deepEqual(keys, ['zcash:halving_info:v4']);
   assert.equal(body.halvingStatus, 'unavailable');
   assert.equal(body.estimatedSeconds, null);
   assert.equal(body.estimatedDate, null);
   assert.equal(body.currentSubsidy, 1.5625);
 });
 
-test('halving route extrapolates observed cadence and caches for five minutes', async () => {
-  const stored = [];
-  const { body } = await request('/api/network/halving', {
-    blockRows: blocks(25),
-    rpc: async (method, params) => method === 'getblockchaininfo' ? { chain: 'main', blocks: 3500000, upgrades: { b: { name: 'Blossom', activationheight: 653600 } } } : ({ totalblocksubsidy:
-      params[0] < 2_726_400 ? 3.125 : params[0] < 4_406_400 ? 1.5625 : 0.78125,
-    }),
-    redisClient: { isOpen: true, async get() { return null; }, async setEx(...args) { stored.push(args); } },
-  });
-  assert.equal(body.estimatedSeconds, (4_406_400 - 3_500_000) * 25);
-  assert.equal(stored[0][1], 300);
+const nu7Rpc = async (method, params) => {
+  if (method === 'getblockcount') return 3_589_445;
+  if (method === 'getblockhash') return 'a'.repeat(64);
+  if (method === 'getblockchaininfo') return { chain: 'main', blocks: 3_589_445, upgrades: { b: { name: 'Blossom', activationheight: 653600 }, n: { name: 'NU7', activationheight: 3_543_405 } } };
+  return { totalblocksubsidy: params[0] < 3_543_405 ? 1.5625 : params[0] < 6_132_390 ? 0.52083333 : 0.26041666 };
+};
+
+async function at(time, fn) {
+  const now = Date.now;
+  Date.now = () => time;
+  try { return await fn(); } finally { Date.now = now; }
+}
+
+test('halving date follows consensus target spacing, ignores cadence samples and caches for five minutes', async () => {
+  const time = Date.parse('2026-11-19T11:00:00Z');
+  for (const spacing of [17, 25, 43]) {
+    const stored = [];
+    const { body } = await at(time, () => request('/api/network/halving', {
+      blockRows: blocks(spacing, 3_589_445), rpc: nu7Rpc,
+      redisClient: { isOpen: true, async get() { return null; }, async setEx(...args) { stored.push(args); } },
+    }));
+    assert.equal(body.halvingBlock, 6_132_390);
+    assert.equal(body.blocksRemaining, 2_542_945);
+    assert.equal(body.estimatedSeconds, 2_542_945 * 25);
+    assert.equal(body.estimatedSeconds, body.targetSecondsRemaining);
+    assert.equal(body.estimatedDate, new Date(time + 63_573_625_000).toISOString());
+    assert.equal(body.estimatedDate.slice(0, 10), '2028-11-24');
+    assert.equal(body.dateBasis, 'consensus-target-spacing');
+    assert.equal(stored[0][1], 300);
+  }
+});
+
+test('the halving card and the projection marker give the same date for the same tip and time', async () => {
+  const time = Date.parse('2026-11-19T11:00:00Z');
+  const snapshots = [{ snapshot_time: '2026-11-19T10:00:00Z', chain_supply_zat: '1650000000000000', block_height: '3589300' }];
+  const halving = await at(time, () => request('/api/network/halving', { rpc: nu7Rpc, blockRows: blocks(21, 3_589_445) }));
+  const emission = await at(time, () => request('/api/network/emission', { rpc: nu7Rpc, snapshots, blockRows: blocks(29, 3_589_445) }));
+  const marker = emission.body.projection.points.find(point => point.halving != null);
+  assert.equal(marker.height, halving.body.halvingBlock);
+  assert.equal(marker.date, halving.body.estimatedDate);
+  assert.equal(emission.body.projection.dateBasis, 'consensus-target-spacing');
+  assert.equal(emission.body.projection.points[0].date, '2026-11-19T10:00:00.000Z', 'the projection starts at the supply observation');
+  assert.equal(emission.body.dailyEmissionEstimate, 0.52083333 * 3456);
+  assert.equal(emission.body.targetSpacingSeconds, 25);
 });
 
 test('brief polling lag uses the complete indexed cadence window and discloses its height lag', async () => {
  const { body } = await request('/api/network/emission', { blockRows: blocks(75, 3_499_995) });
- assert.equal(body.dailyEmissionEstimate,1800);
+ assert.equal(body.cadence.intervalSeconds,75);
  assert.equal(body.cadence.endHeight,3499995);
  assert.equal(body.cadence.lagBlocks,5);
 });

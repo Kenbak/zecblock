@@ -34,7 +34,16 @@ test('server-rendered halving panel explains unknown schedules without guessed p
   assert.doesNotMatch(html, /Current era progress|NaN|Invalid Date/);
 });
 
-test('issuance copy describes observed cadence and keeps missing allocations unavailable', () => {
+test('halving copy names the target-time basis for the date and era progress', () => {
+  const html = renderToStaticMarkup(React.createElement(HalvingPanel, { halving: { ...unavailable, halvingStatus: 'available',
+    halvingBlock: 6132390, blocksRemaining: 2542945, eraProgress: 49.5, estimatedSeconds: 63573625, estimatedDate: '2028-11-24T10:20:25.000Z' } }));
+  assert.match(html, /Nov 24, 2028/);
+  assert.match(html, /consensus target block time/);
+  assert.match(html, /measured in target time, not block count/);
+  assert.doesNotMatch(html, /recent block timing/);
+});
+
+test('issuance copy describes the scheduled daily estimate and keeps missing allocations unavailable', () => {
   const { MiningIssuance } = load('components/network/MiningIssuance.tsx', {
     '@/components/ui/Card': cards,
     '@/components/ui/Skeleton': { Skeleton: () => null },

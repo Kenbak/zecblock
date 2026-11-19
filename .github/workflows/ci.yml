@@ -118,26 +118,27 @@ jobs:
       - name: Install native Redis fixture runtime
         # The Docker service supplies TEST_REDIS_URL, while the Ask isolation
         # fixtures launch their own redis-server with port 0/private Unix sockets.
-        # Suppress package service startup so it cannot contend for TCP 6379.
+        # Copy the binary from the official Debian (glibc) image instead of
+        # apt-get, so an Ubuntu package-mirror outage cannot block CI and the
+        # deploy gated on it. No package service is installed or started.
         run: |
-          sudo apt-get update
-          fixture_policy_dir="$(mktemp -d)"
-          if sudo test -e /usr/sbin/policy-rc.d || sudo test -L /usr/sbin/policy-rc.d; then
-            sudo cp -a /usr/sbin/policy-rc.d "$fixture_policy_dir/original"
+          set -euo pipefail
+          for attempt in 1 2 3; do
+            docker pull --quiet "$REDIS_FIXTURE_IMAGE" && break
+            [[ $attempt == 3 ]] && exit 1
+            sleep $((attempt * 10))
+          done
+          container="$(docker create "$REDIS_FIXTURE_IMAGE")"
+          trap 'docker rm -f "$container" >/dev/null' EXIT
+          docker cp -L "$container:/usr/local/bin/redis-server" "$RUNNER_TEMP/redis-server"
+          sudo install -o root -g root -m 0755 "$RUNNER_TEMP/redis-server" /usr/local/bin/redis-server
+          if ldd /usr/local/bin/redis-server | grep -q 'not found'; then
+            ldd /usr/local/bin/redis-server
+            exit 1
           fi
-          restore_fixture_policy() {
-            sudo rm -f /usr/sbin/policy-rc.d
-            if sudo test -e "$fixture_policy_dir/original" || sudo test -L "$fixture_policy_dir/original"; then
-              sudo cp -a "$fixture_policy_dir/original" /usr/sbin/policy-rc.d
-            fi
-            rm -rf "$fixture_policy_dir"
-          }
-          trap restore_fixture_policy EXIT
-          printf '#!/bin/sh\nexit 101\n' > "$fixture_policy_dir/deny-service-start"
-          sudo rm -f /usr/sbin/policy-rc.d
-          sudo install -o root -g root -m 0755 "$fixture_policy_dir/deny-service-start" /usr/sbin/policy-rc.d
-          sudo apt-get install -y --no-install-recommends redis-server
           redis-server --version
+        env:
+          REDIS_FIXTURE_IMAGE: redis:7.4-bookworm
       - name: Install dependencies
         run: npm ci --no-audit --no-fund
       - name: Install shared inventory-test dependencies

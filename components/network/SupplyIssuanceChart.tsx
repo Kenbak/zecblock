@@ -14,6 +14,8 @@ import { issuanceChartPoints, type EmissionResponse } from '@/lib/issuance-curve
 const amount = (value: number | null | undefined) => value != null && Number.isFinite(value)
   ? value.toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—';
 const fullDate = (value: number) => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'UTC' });
+const cadence = (sample: EmissionResponse['cadence']) => sample && Number.isFinite(sample.intervalSeconds)
+  ? ` Last ${sample.intervals.toLocaleString('en-US')} blocks averaged ${sample.intervalSeconds.toFixed(1)} s${sample.lagBlocks ? `, ending ${sample.lagBlocks} blocks behind the node` : ''}.` : '';
 const date = (value: number) => new Date(value).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' });
 
 export function SupplyIssuanceChart({ data, loading, error }: { data: EmissionResponse | null; loading: boolean; error: string | null }) {
@@ -32,7 +34,7 @@ export function SupplyIssuanceChart({ data, loading, error }: { data: EmissionRe
         <div key={label}><dt className="text-caption text-muted mb-1">{label}</dt><dd className="font-mono text-primary tabular-nums">{amount(value)} <span className="text-caption text-muted">{CURRENCY}</span></dd></div>)}
     </dl>
     {observedAt != null && Number.isFinite(observedAt) && <p className="text-caption text-muted mb-2">Latest observation: {fullDate(observedAt)}.</p>}
-    <p className="text-caption text-muted mb-4">Daily estimate uses recent observed block cadence. Transaction fees excluded.{data?.cadence?.lagBlocks ? ` Sample ends ${data.cadence.lagBlocks} blocks behind the node.` : ''}</p>
+    <p className="text-caption text-muted mb-4">Daily estimate: current block subsidy × {data?.targetSpacingSeconds ? `${(86400 / data.targetSpacingSeconds).toLocaleString('en-US')} blocks per day at the ${data.targetSpacingSeconds}-second target` : 'blocks per day at the target block time'}. Transaction fees excluded.{cadence(data?.cadence)}</p>
     {loading && !points.length ? <ChartSkeleton height={280} /> : !points.length ? <p role="status" className="text-sm text-muted py-12 text-center">Supply history is unavailable.</p> : <>
       <ResponsiveContainer width="100%" height={280} initialDimension={{ width: 600, height: 280 }}>
         <ComposedChart data={points} margin={{ top: 26, right: 28, left: 0, bottom: 0 }}>
@@ -48,7 +50,7 @@ export function SupplyIssuanceChart({ data, loading, error }: { data: EmissionRe
         </ComposedChart>
       </ResponsiveContainer>
       <ChartWatermark />
-      <p className="text-caption text-muted mt-3">Solid: observed supply. Dashed: projected new issuance; excludes future removals and reissuance. Dates are estimates.</p>
+      <p className="text-caption text-muted mt-3">Solid: observed supply. Dashed: projected new issuance; excludes future removals and reissuance. Dates assume the target block time.</p>
       {!data?.projection && <p className="text-caption text-muted mt-2">Projection unavailable.</p>}
     </>}
     {error && <p role="status" className="text-caption text-warning mt-3">Supply could not refresh. Last received observations are shown when available.</p>}

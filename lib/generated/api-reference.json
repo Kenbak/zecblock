@@ -2007,12 +2007,12 @@
   {
     "method": "GET",
     "path": "/v1/network/halving",
-    "description": "Node-observed halving schedule and cadence-based estimates.",
+    "description": "Node-observed halving schedule with dates at consensus target spacing.",
     "category": "network",
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Halving boundaries use the public-network consensus subsidy clock, integrating 150/75/25-second target-spacing eras from the serving node activation schedule. Unscheduled future upgrades can change the forecast. Observed cadence scales elapsed-time estimates across the known eras. Unknown schedules and missing observations are unavailable. Future state-dependent rewards may be null even when the halving boundary is known. Complete estimates may be cached for 300 seconds.",
+    "note": "Halving boundaries use the public-network consensus subsidy clock, integrating 150/75/25-second target-spacing eras from the serving node activation schedule. Unscheduled future upgrades can change the forecast. estimatedSeconds equals targetSecondsRemaining and estimatedDate is response time plus that target time; dateBasis is consensus-target-spacing. Observed block cadence is not extrapolated. eraProgress is the share of the era’s target time elapsed, not of its blocks. Unknown schedules and missing observations are unavailable. Future state-dependent rewards may be null even when the halving boundary is known. Complete estimates may be cached for 300 seconds.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
@@ -2212,14 +2212,14 @@
   {
     "method": "GET",
     "path": "/v1/network/emission",
-    "description": "Observed chain supply and estimated daily subsidy.",
+    "description": "Observed chain supply, scheduled daily subsidy at target spacing and a target-spacing supply projection.",
     "category": "network",
     "query": [
       "period"
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Supply history defaults to all available history, preserving decreases and remaining gaps. Permanent chain_supply_daily records reconstruct completed UTC header-day boundaries from canonical node getblock chain supply; the shared serving-node ancestry checkpoint is checked by height/hash on each read. The database supplies calendar/height hints; node-canonical blocks override stale indexed fork hints. Idle days retain the actual unchanged chain state. Recent chain_snapshots provide newer observations. Legacy privacy trends are a fallback when snapshots are sparse and the permanent archive is absent. circulatingZat and emissionZat are integer zatoshis; ZEC values are display conversions. Invalid or missing supply (including legacy zero sentinels) is null. supplyHistoryTable and supplyObservedAt identify the selected stored source and its latest timestamp; stored history is not live supply. The legacy dailyEmission array is signed net chain-supply change, not gross issuance; missing or nonconsecutive days have null changes. dailyEmissionEstimate extrapolates the current node subsidy at the observed recent block cadence and is null when those inputs are unavailable. Complete cadence windows may end up to 12 indexed blocks behind the node; cadence.lagBlocks and endHeight disclose this lag, and larger backlogs remain unavailable. Optional projection starts at a height-tagged supply snapshot and adds exact scheduled subsidies using the node activation schedule; future removals and NSM reissuance are excluded. Projection dates extrapolate observed cadence across scheduled target-spacing eras, or use consensus target spacing when measured cadence is unavailable; dateBasis identifies the basis. Missing baseline or schedule yields null projection.",
+    "note": "Supply history defaults to all available history, preserving decreases and remaining gaps. Permanent chain_supply_daily records reconstruct completed UTC header-day boundaries from canonical node getblock chain supply; the shared serving-node ancestry checkpoint is checked by height/hash on each read. The database supplies calendar/height hints; node-canonical blocks override stale indexed fork hints. Idle days retain the actual unchanged chain state. Recent chain_snapshots provide newer observations. Legacy privacy trends are a fallback when snapshots are sparse and the permanent archive is absent. circulatingZat and emissionZat are integer zatoshis; ZEC values are display conversions. Invalid or missing supply (including legacy zero sentinels) is null. supplyHistoryTable and supplyObservedAt identify the selected stored source and its latest timestamp; stored history is not live supply. The legacy dailyEmission array is signed net chain-supply change, not gross issuance; missing or nonconsecutive days have null changes. dailyEmissionEstimate is the current node block subsidy times target blocks per day (86,400 / targetSpacingSeconds), fees excluded; dailyEmissionBasis is current-subsidy-at-target-spacing, and the value is null when the subsidy or node schedule is unavailable. cadence is an informational observed average over the latest 3,456 indexed block intervals (one target day at 25 seconds) and is not used for estimates; complete windows may end up to 12 indexed blocks behind the node, cadence.lagBlocks and endHeight disclose this lag, and larger backlogs or gaps make cadence null. Optional projection starts at a height-tagged supply snapshot and adds exact scheduled subsidies using the node activation schedule; future removals and NSM reissuance are excluded. Projection dates count consensus target-spacing seconds from the node height at response time (anchorHeight); dateBasis is consensus-target-spacing. Already-mined heights between the snapshot and the anchor are dated no earlier than the snapshot. The same clock dates /v1/network/halving, so its estimatedDate matches the projection’s halving point for the same tip. Missing baseline or schedule yields null projection.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [

@@ -2,11 +2,13 @@ export interface SupplyObservation { date: string; circulating: number | null; c
 export interface EmissionResponse {
   circulating: number | null;
   remaining: number | null;
+  /** Current subsidy × target blocks per day; not an observed rate. */
   dailyEmissionEstimate: number | null;
+  targetSpacingSeconds?: number | null;
   supplyObservedAt: string | null;
   supplyHistory: SupplyObservation[];
   cadence?: { intervalSeconds: number; startHeight: number; endHeight: number; intervals: number; lagBlocks?: number } | null;
-  projection?: { points: (SupplyObservation & { halving: number | null })[] } | null;
+  projection?: { dateBasis?: string; points: (SupplyObservation & { halving: number | null })[] } | null;
 }
 
 /** Keep the final observation of each UTC day; unknown values stay unknown. */

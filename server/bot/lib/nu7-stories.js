@@ -6,6 +6,8 @@
 // gate and sentence is testable without a database.
 const { candidate } = require('./editorial-policy');
 const f = require('./editorial-format');
+// The site's halving card and supply chart date the halving with this clock.
+const { targetDate } = require('../../api/lib/issuance-projection');
 
 const BASE = 'https://zecblock.com';
 const MARK = '🟨';
@@ -136,6 +138,7 @@ const zecAmount = zat => f.number(Number(zat) / 1e8, 8).replace(/(\.\d\d)\d*$/, 
 /**
  * Next halving, estimated from consensus target spacing (NU7 moves its height).
  * Posts once per threshold, only while the estimate sits within a day of it.
+ * The date counts target time from the tip, as /v1/network/halving does.
  */
 function halvingCountdownStory({ schedule, tip, halvingIndex, halvingHeight, targetSeconds }) {
   const index = halvingIndex(schedule, tip.height);
@@ -144,22 +147,25 @@ function halvingCountdownStory({ schedule, tip, halvingIndex, halvingHeight, tar
   const days = targetSeconds(schedule, tip.height, height) / DAY;
   const threshold = HALVING_DAYS.find(t => days <= t && days > t - 1);
   if (!threshold) return null;
+  const date = targetDate(schedule, { height: tip.height, time: tip.timestamp * 1000 }, height);
+  if (!date) return null;
+  const day = f.dayYear(date);
   const spacing = h => schedule.eras.filter(era => era.height <= h).at(-1).seconds;
   const before = subsidyZat(spacing(height - 1), index), after = subsidyZat(spacing(height), index + 1);
   const when = threshold === 730 ? 'about two years' : threshold === 365 ? 'about a year' : threshold === 1 ? 'about a day' : `about ${threshold} days`;
   const nu7Note = schedule.nu7Height != null && schedule.nu7Height < height ? ' NU7’s 25-second blocks set this height.' : '';
-  const content = `${MARK} The next Zcash halving is ${when} away.
+  const content = `${MARK} The next Zcash halving is ${when} away, around ${day}.
 
 At block #${f.number(height)}, the block reward drops from `
-    + `${zecAmount(before)} to ${zecAmount(after)} ZEC.${nu7Note} Timing is estimated from the target block spacing.
+    + `${zecAmount(before)} to ${zecAmount(after)} ZEC.${nu7Note} The date assumes the target block time.
 
 ${BASE}/network#issuance`;
   const card = { kicker: 'Halving · Countdown', title: `Next halving: ${when}.`, hero: threshold >= 365 ? (threshold === 730 ? '~2' : '~1') : f.number(threshold),
     unit: threshold >= 365 ? (threshold === 730 ? 'years' : 'year') : threshold === 1 ? 'day' : 'days', tone: 'gold',
-    line: 'until the next Zcash halving.', qualifier: `Block #${f.number(height)} · ${zecAmount(before)} → ${zecAmount(after)} ZEC.`,
+    line: 'until the next Zcash halving.', qualifier: `Est. ${day} · ${zecAmount(before)} → ${zecAmount(after)} ZEC.`,
     source: 'zecblock.com/network#issuance', date: f.timeText(tip.timestamp), visual: null };
   return candidate('halving', `halving:${height}:${threshold}d`, content,
-    { halvingHeight: height, threshold, days, beforeZat: before.toString(), afterZat: after.toString(), tip, eventAt: iso(tip.timestamp), card,
+    { halvingHeight: height, estimatedDate: date, dateBasis: 'consensus-target-spacing', threshold, days, beforeZat: before.toString(), afterZat: after.toString(), tip, eventAt: iso(tip.timestamp), card,
       editorial: { topic: 'halving', lens: 'countdown', significance: threshold <= 7 ? 85 : 70 } }, 70);
 }
 

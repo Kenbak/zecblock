@@ -60,6 +60,8 @@ export interface NetworkUpgrade {
   link?: string;
   linkText?: string;
   badge?: string;
+  /** A governance height (vote snapshot, miner poll), not a protocol upgrade; changes the countdown wording. */
+  kind?: 'governance';
 }
 
 export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
@@ -76,6 +78,7 @@ export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
     link: '/governance/nu7',
     linkText: 'View vote details →',
     badge: 'SNAPSHOT',
+    kind: 'governance',
   },
   3591200: {
     name: 'NU7.1 Miner Poll — Voting Opens',
@@ -84,6 +87,7 @@ export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
     link: '/governance/nu7-1-miner-poll',
     linkText: 'See the miner poll tally →',
     badge: 'POLL',
+    kind: 'governance',
   },
   3629650: {
     name: 'NU7.1 Miner Poll — Voting Closes',
@@ -92,6 +96,7 @@ export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
     link: '/governance/nu7-1-miner-poll',
     linkText: 'See the miner poll tally →',
     badge: 'POLL',
+    kind: 'governance',
   },
   4134000: {
     name: 'Ironwood (NU6.3)',

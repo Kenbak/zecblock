@@ -8,10 +8,10 @@ import { CALENDAR_KINDS, daysUntilLabel, estimateHeightAtTime, formatCalendarDat
 const DAY = 86_400_000;
 
 const KIND_TEXT: Record<CalendarKind, string> = {
-  upgrade: 'text-brand-gold', halving: 'text-cipher-purple', vote: 'text-cipher-green', snapshot: 'text-cipher-green', deadline: 'text-secondary', milestone: 'text-secondary',
+  upgrade: 'text-brand-gold', halving: 'text-cipher-purple', vote: 'text-cipher-green', poll: 'text-cipher-green', snapshot: 'text-cipher-green', deadline: 'text-secondary', milestone: 'text-secondary',
 };
 const KIND_BORDER: Record<CalendarKind, string> = {
-  upgrade: 'border-brand-gold/50', halving: 'border-cipher-purple/50', vote: 'border-cipher-green/50', snapshot: 'border-cipher-green/50', deadline: 'border-cipher-border', milestone: 'border-cipher-border',
+  upgrade: 'border-brand-gold/50', halving: 'border-cipher-purple/50', vote: 'border-cipher-green/50', poll: 'border-cipher-green/50', snapshot: 'border-cipher-green/50', deadline: 'border-cipher-border', milestone: 'border-cipher-border',
 };
 
 function KindTag({ kind }: { kind: CalendarKind }) {

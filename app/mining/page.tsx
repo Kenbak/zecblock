@@ -3,6 +3,7 @@ import { MiningSoftwareSection } from '@/components/mining/MiningSoftwareSection
 import { OrphanRateSection } from '@/components/mining/OrphanRateSection';
 import { ObservationLagSection } from '@/components/mining/ObservationLagSection';
 import { readApiData } from '@/lib/api-client';
+import { formatDateLabelUTC } from '@/lib/utils';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
@@ -10,10 +11,18 @@ import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import {
-  AreaChart, Area, BarChart, Bar,
-  LineChart, Line,
-  XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend,
+  AreaChart,
+  Area,
+  BarChart,
+  Bar,
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { getApiUrl, NETWORK } from '@/lib/api-config';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -154,7 +163,7 @@ function DistributionSection() {
   return (
     <section id="distribution" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-2">
       <Card><CardBody>
-        <SectionHeader label="MINING_POOL_DISTRIBUTION" actions={<PeriodSelector value={period} onChange={setPeriod} />} />
+        <SectionHeader card label="Mining pool distribution" actions={<PeriodSelector value={period} onChange={setPeriod} />} />
         {loading ? (
           <ChartSkeleton height={360} />
         ) : (
@@ -199,7 +208,7 @@ function RankingSection() {
     <section id="ranking" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-3">
       <Card>
         <CardBody>
-          <SectionHeader label="POOL_RANKING" actions={
+          <SectionHeader card label="Pool ranking" actions={
             <div className="flex flex-wrap items-center gap-2">
               <PeriodSelector value={period} onChange={setPeriod} />
               {ranking.length > 0 && (
@@ -404,7 +413,7 @@ function HashrateShareSection() {
   return (
     <section id="hashrate" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-4">
       <ChartCard
-        title="POOL_NETWORK_BLOCK_SHARE"
+        title="Pool network block share"
         share={{ title: `Zcash mining pool block share (${period})`, fileName: `zecblock-pool-block-share-${period}`, csv: () => objectRowsCsv(chartData) }}
         height={380}
         controls={chartControls}
@@ -414,17 +423,15 @@ function HashrateShareSection() {
         ) : chartMode === 'area' ? (
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={380}>
             <AreaChart data={chartData}>
-              <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-              <XAxis
+              <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+              <XAxis tickLine={false} axisLine={false}
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={(d: string) => {
-                  const date = new Date(d);
-                  return `${date.getMonth() + 1}/${date.getDate()}`;
-                }}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={(v: number) => `${v.toFixed(0)}%`}
@@ -449,7 +456,7 @@ function HashrateShareSection() {
                 return (
                   <Area
                     key={pool}
-                    type="monotone"
+                    type="linear"
                     dataKey={pool}
                     stackId="1"
                     fill={categoryColor(pool, theme)}
@@ -463,17 +470,15 @@ function HashrateShareSection() {
         ) : (
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={380}>
             <LineChart data={chartData}>
-              <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-              <XAxis
+              <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+              <XAxis tickLine={false} axisLine={false}
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={(d: string) => {
-                  const date = new Date(d);
-                  return `${date.getMonth() + 1}/${date.getDate()}`;
-                }}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={(v: number) => `${v.toFixed(0)}%`}
@@ -498,7 +503,7 @@ function HashrateShareSection() {
                 return (
                   <Line
                     key={pool}
-                    type="monotone"
+                    type="linear"
                     dataKey={pool}
                     stroke={categoryColor(pool, theme)}
                     strokeWidth={2}
@@ -651,7 +656,7 @@ function MinerBehaviorSection() {
       )}
 
       <ChartCard
-        title="MINER_EARNED_VS_MOVED"
+        title="Miner earned vs moved"
         share={{ title: `Zcash miner rewards earned vs moved (${period})`, fileName: `zecblock-miner-earned-vs-moved-${period}`, csv: () => objectRowsCsv(chartData) }}
         height={320}
         controls={<PeriodSelector value={period} onChange={setPeriod} />}
@@ -667,17 +672,15 @@ function MinerBehaviorSection() {
         ) : (
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={320}>
             <BarChart data={chartData}>
-              <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-              <XAxis
+              <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+              <XAxis tickLine={false} axisLine={false}
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={(d: string) => {
-                  const date = new Date(d);
-                  return `${date.getMonth() + 1}/${date.getDate()}`;
-                }}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={(v: number) => `${v.toFixed(0)}`}
@@ -700,8 +703,7 @@ function MinerBehaviorSection() {
                 }}
                 labelFormatter={(label) => String(label)}
               />
-              <Legend
-                wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-geist-mono), monospace' }}
+              <ChartLegend
                 formatter={(value) => value === 'earned' ? 'Earned' : value === 'spent' ? 'Moved' : 'Held'}
               />
               <Bar dataKey="earned" fill={colors.gold} fillOpacity={0.3} stroke={colors.gold} />

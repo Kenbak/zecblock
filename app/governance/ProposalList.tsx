@@ -13,7 +13,7 @@ export function ProposalList({ proposals, published, zecPerUnit }: { proposals: 
     {visible.length === 0 && <p className="py-5 text-sm text-muted">No proposals match your search.</p>}
     <div className="space-y-2">{visible.map(p => {
       const total = p.options.reduce((n, o) => n + o.total_value, 0);
-      return <details key={p.id} className="group rounded-xl border border-cipher-border bg-cipher-surface">
+      return <details key={p.id} className="group rounded-xl border border-cipher-border bg-cipher-card">
         <summary className="cursor-pointer px-4 py-3 text-sm text-primary"><span className="mr-3 font-mono text-xs text-muted">{String(p.id).padStart(2, '0')}</span><span className="font-medium">{p.title}</span>{published && <span className="ml-3 inline-block font-mono text-xs text-secondary">{(total * (zecPerUnit ?? 1)).toLocaleString('en-US', { maximumFractionDigits: 3 })} {zecPerUnit === null ? 'vote-weight units' : 'ZEC'} participating</span>}</summary>
         <div className="border-t border-cipher-border-subtle px-4 py-4"><p className="mb-4 whitespace-pre-line text-sm leading-relaxed text-secondary">{p.description}</p>
           <div className="space-y-3">{p.options.map(o => {

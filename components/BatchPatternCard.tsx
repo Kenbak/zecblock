@@ -112,7 +112,7 @@ export function BatchPatternCard({ pattern }: { pattern: BatchPattern }) {
 
   const span = pattern.timeSpanHours < 24 ? `${pattern.timeSpanHours.toFixed(1)} hours` : `${(pattern.timeSpanHours / 24).toFixed(1)} days`;
   const memberCount = pattern.txids.length;
-  return <article id={cardId} className="rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-5 scroll-mt-24">
+  return <article id={cardId} className="rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-5 scroll-mt-24">
     <header className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <h3 className="text-sm font-medium text-primary">Repeated withdrawal pattern</h3>
       <RiskScore score={pattern.score} level={pattern.warningLevel} />

@@ -156,11 +156,11 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
           <dl id="network-overview" className="network-section network-summary-grid network-live-facts" aria-label="Current chain activity">
             {[
               { label: 'Latest block', value: height != null ? <Link href={`/block/${height}`} prefetch={false} className="hover:text-cipher-gold">{height.toLocaleString()}</Link> : '—', hint: stats ? `Block timestamp · ${blockAgeLabel(stats.blockchain.latestBlockTime, now)}` : 'Awaiting chain data' },
-              { label: 'Average block interval', value: stats?.mining.avgBlockTime != null ? `${stats.mining.avgBlockTime.toFixed(1)}s` : '—', hint: isCrosslink
+              { label: 'Average block time', value: stats?.mining.avgBlockTime != null ? `${stats.mining.avgBlockTime.toFixed(1)}s` : '—', hint: isCrosslink
                 ? (stats?.mining.targetBlockTime != null ? `Observed · protocol target ${stats.mining.targetBlockTime}s` : 'Observed · protocol target unavailable')
-                : <Link href="/network/block-speed" className="hover:text-primary underline underline-offset-4">{stats?.mining.targetBlockTime != null ? `Observed · target ${stats.mining.targetBlockTime}s · Daily speed →` : 'Observed · Daily speed →'}</Link> },
+                : <Link href="/network/block-speed" className="hover:text-primary underline underline-offset-4">{stats?.mining.targetBlockTime != null ? `Observed · target ${stats.mining.targetBlockTime}s · Block Speed →` : 'Observed · Block Speed →'}</Link> },
               { label: 'Transactions · 24h', value: txCount?.toLocaleString() ?? '—', hint: stats?.blockchain.tx24hExclCoinbase != null ? 'Confirmed · coinbase excluded' : 'Confirmed · includes coinbase' },
-              { label: 'Estimated hashrate · 24h', value: stats?.mining.hashrateEstimate ? stats.mining.networkHashrate : '—', hint: <Link href="/mining#metrics" className="hover:text-primary underline underline-offset-4">Trailing 24-hour estimate →</Link> },
+              { label: 'Estimated hashrate · 24h', value: stats?.mining.hashrateEstimate ? stats.mining.networkHashrate : '—', hint: <Link href="/mining#metrics" className="hover:text-primary underline underline-offset-4">Trailing 24-hour estimate · Mining →</Link> },
             ].map(({ label, value, hint }) => <div key={label}>
               <dt className="type-label text-muted uppercase mb-2">{label}</dt>
               <dd><div className="type-metric text-primary">{value}</div><p className="text-caption text-muted mt-2">{hint}</p></dd>

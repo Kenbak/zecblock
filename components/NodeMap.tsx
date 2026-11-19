@@ -163,7 +163,7 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
 
   if (error && locations.length === 0) {
     return (
-      <div className="bg-cipher-surface border border-cipher-border rounded-xl p-6">
+      <div className="bg-cipher-card border border-cipher-border rounded-xl p-6">
         <div className="text-center py-12">
           <p className="text-secondary mb-2">Node map unavailable</p>
           <p className="text-xs text-muted font-mono">{error}</p>
@@ -174,7 +174,7 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
 
   return (
     <div
-      className="bg-cipher-surface border border-cipher-border rounded-xl overflow-hidden"
+      className="bg-cipher-card border border-cipher-border rounded-xl overflow-hidden"
       data-node-map-ready={locations.length > 0 ? 'true' : 'false'}
     >
       {/* Header */}

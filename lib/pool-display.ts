@@ -56,8 +56,10 @@ export function poolDateAxis(dates: string[], width: number) {
   }
   return {
     ticks,
-    format: (value: number) => new Date(value).toLocaleDateString('en-GB', {
-      timeZone: 'UTC', ...(yearly ? { year: 'numeric' } as const : monthly ? { month: 'short', year: '2-digit' } as const : { day: 'numeric', month: 'short' } as const),
+    // The tick style every chart uses: "Oct 21", then "Oct 2026", then "2026". A full year
+    // keeps a month tick from reading as a day ("Oct 26").
+    format: (value: number) => new Date(value).toLocaleDateString('en-US', {
+      timeZone: 'UTC', ...(yearly ? { year: 'numeric' } as const : monthly ? { month: 'short', year: 'numeric' } as const : { month: 'short', day: 'numeric' } as const),
     }),
   };
 }

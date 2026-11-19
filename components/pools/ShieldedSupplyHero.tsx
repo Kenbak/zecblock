@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, Tooltip, XAxis, YAxis } from 'recharts';
+import { Area, AreaChart, CartesianGrid, Line, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { zatToZec } from '@/lib/format-numbers';
@@ -102,7 +103,7 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
   const yFormat = (v: number) => metric === 'share' ? `${v}%` : format(v, false);
   const shareText = `${share == null ? '—' : share.toFixed(1) + '%'} of issued ZEC is shielded — ${Math.round(live.shielded).toLocaleString('en-US')} ZEC.\n\nhttps://zecblock.com/pools`;
 
-  const card = 'rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-6';
+  const card = 'rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-6';
   const cardTitle = 'text-sm font-semibold leading-snug text-primary';
 
   return <div className="space-y-4">
@@ -145,28 +146,28 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
                   <stop offset="100%" stopColor={colors.shielded} stopOpacity={0} />
                 </linearGradient>
               </defs>
-              <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="2 6" opacity={0.5} />
+              <CartesianGrid vertical={false} stroke={colors.gridStroke} />
               <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} ticks={axis.ticks} tickFormatter={axis.format}
                 tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} minTickGap={32} interval="preserveStartEnd" />
-              <YAxis orientation="right" width={56} tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} tickCount={4}
+              <YAxis width={56} tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} tickCount={4}
                 tickFormatter={yFormat} domain={metric === 'share' ? ['auto', 'auto'] : [0, 'auto']} />
-              <Tooltip content={<ScrubReporter onScrub={onScrub} />} cursor={{ stroke: colors.axis, strokeWidth: 1, strokeDasharray: '2 4' }} isAnimationActive={false} />
-              {metric === 'total' && <Area type="monotone" dataKey="shielded" stroke={colors.shielded} strokeWidth={1.75} fill="url(#shieldedFade)" dot={false}
+              <ChartTooltip content={<ScrubReporter onScrub={onScrub} />} cursor={{ stroke: colors.axis, strokeWidth: 1, strokeDasharray: '2 4' }} isAnimationActive={false} />
+              {metric === 'total' && <Area type="linear" dataKey="shielded" stroke={colors.shielded} strokeWidth={2} fill="url(#shieldedFade)" dot={false}
                 activeDot={{ r: 3, fill: colors.shielded, strokeWidth: 0 }} isAnimationActive={false} />}
-              {metric === 'share' && <Area type="monotone" dataKey="shieldedSupplyPct" stroke={colors.shielded} strokeWidth={1.75} fill="url(#shieldedFade)" dot={false}
+              {metric === 'share' && <Line type="linear" dataKey="shieldedSupplyPct" stroke={colors.shielded} strokeWidth={2} dot={false}
                 activeDot={{ r: 3, fill: colors.shielded, strokeWidth: 0 }} isAnimationActive={false} connectNulls={false} />}
-              {metric === 'public' && <Line type="monotone" dataKey="transparent" stroke={colors.transparent} strokeWidth={1.75} dot={false}
+              {metric === 'public' && <Line type="linear" dataKey="transparent" stroke={colors.transparent} strokeWidth={2} dot={false}
                 activeDot={{ r: 3, fill: colors.transparent, strokeWidth: 0 }} isAnimationActive={false} />}
-              {metric === 'public' && <Area type="monotone" dataKey="shielded" stroke={colors.shielded} strokeWidth={1.75} fill="url(#shieldedFade)" dot={false}
+              {metric === 'public' && <Area type="linear" dataKey="shielded" stroke={colors.shielded} strokeWidth={2} fill="url(#shieldedFade)" dot={false}
                 activeDot={{ r: 3, fill: colors.shielded, strokeWidth: 0 }} isAnimationActive={false} />}
-              {metric === 'pools' && POOL_ORDER.map(key => <Line key={key} type="monotone" dataKey={key} stroke={colors[key]} dot={false}
+              {metric === 'pools' && POOL_ORDER.map(key => <Line key={key} type="linear" dataKey={key} stroke={colors[key]} dot={false}
                 strokeWidth={focusPool === key ? 2.25 : 1.5} strokeOpacity={focusPool && focusPool !== key ? 0.2 : 1}
                 activeDot={{ r: 3, fill: colors[key], strokeWidth: 0 }} isAnimationActive={false} />)}
             </AreaChart>
           </ResponsiveContainer>}
-        {(metric === 'public' || metric === 'pools') && points.length > 0 && <div className="mt-3 flex flex-wrap justify-center gap-x-4 gap-y-1 text-caption font-mono text-secondary" aria-label="Chart legend">
+        {(metric === 'public' || metric === 'pools') && points.length > 0 && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted" aria-label="Chart legend">
           {(metric === 'public' ? [['shielded', 'Shielded'], ['transparent', 'Transparent']] as const : POOL_ORDER.map(k => [k, POOL_LABEL[k]] as const)).map(([key, label]) =>
-            <span key={key} className="flex items-center gap-1.5"><span className="h-2 w-2 rounded-full" style={{ background: colors[key] }} />{label}</span>)}
+            <span key={key} className="flex items-center gap-2 py-1"><span className="h-2 w-2 rounded-sm" style={{ background: colors[key] }} />{label}</span>)}
         </div>}
       </div>
       <PoolCurrencyNote />
@@ -238,15 +239,15 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
 
 export function ShieldedSupplySkeleton() {
   return <div aria-busy="true" aria-label="Loading shielded supply" className="space-y-4 animate-pulse">
-    <div className="rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-6">
+    <div className="rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-6">
       <div className="h-4 w-32 rounded bg-glass-4" />
       <div className="mt-6 h-12 sm:h-14 w-72 rounded-lg bg-glass-4" />
       <div className="mt-3 h-4 w-56 rounded bg-glass-4" />
       <div className="mt-6 rounded-lg bg-glass-3" style={{ height: CHART_HEIGHT }} />
     </div>
     <div className="grid gap-4 lg:grid-cols-5">
-      <div className="h-64 rounded-xl border border-cipher-border bg-cipher-surface lg:col-span-3" />
-      <div className="h-64 rounded-xl border border-cipher-border bg-cipher-surface lg:col-span-2" />
+      <div className="h-64 rounded-xl border border-cipher-border bg-cipher-card lg:col-span-3" />
+      <div className="h-64 rounded-xl border border-cipher-border bg-cipher-card lg:col-span-2" />
     </div>
   </div>;
 }

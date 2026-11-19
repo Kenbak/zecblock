@@ -48,7 +48,7 @@ export function GrantProposalCatalog({ proposals, source }: { proposals: readonl
     </div>
     {visible.length === 0 && <p className="py-6 text-sm text-muted">No proposals match your search.</p>}
     <ul className="mt-3 grid gap-3 lg:grid-cols-2">
-      {visible.map(p => <li key={`${p.github}-${p.title}`} className="flex flex-col rounded-xl border border-cipher-border bg-cipher-surface p-4">
+      {visible.map(p => <li key={`${p.github}-${p.title}`} className="flex flex-col rounded-xl border border-cipher-border bg-cipher-card p-4">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-1.5 font-mono text-caption">

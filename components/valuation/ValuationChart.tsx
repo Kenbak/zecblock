@@ -3,7 +3,8 @@
 import { useRef } from 'react';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import type { ReactNode } from 'react';
-import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, Legend, ReferenceLine } from 'recharts';
+import { ResponsiveContainer, ComposedChart, Line, Area, XAxis, YAxis, CartesianGrid, ReferenceLine } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
@@ -34,9 +35,9 @@ export function ValuationChart({ title, description, data, series, format, loadi
         <><ResponsiveContainer width="100%" height={300} initialDimension={{width:500,height:300}}><ComposedChart data={plotted} margin={{top:24,right:12,left:0,bottom:4}}>
           <CartesianGrid vertical={false} stroke={c.gridStroke} />
           <XAxis dataKey="date" minTickGap={65} tickFormatter={d => new Date(String(d)).toLocaleDateString('en-US',{month:'short',...(multiYear?{year:'numeric' as const}:{day:'numeric' as const}),timeZone:'UTC'})} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
-          <YAxis domain={domain} width={64} tickFormatter={format} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
+          <YAxis domain={domain} width={64} tickFormatter={v => format(Number(v)).replace(/\.00(?=\D*$)/, "")} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
           <ChartTooltip itemStyle={{color:c.tooltipText}} labelFormatter={d => new Date(String(d)).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'})} formatter={(value, name) => [format(Number(value)),String(name)]} />
-          <Legend wrapperStyle={{fontSize:12,paddingTop:12}} formatter={label => <span className="text-muted">{label}</span>} />
+          <ChartLegend formatter={label => <span className="text-muted">{label}</span>} />
           {reference && <ReferenceLine y={reference.value} stroke={c.referenceLine} strokeDasharray="4 4" label={{value:reference.label,fill:c.axis,fontSize:12,position:'insideTopRight'}} />}
           {series.map(s => s.area ? <Area key={s.key} dataKey={s.key} name={s.label} stackId={s.stack?'age':undefined} stroke={s.color} fill={s.color} fillOpacity={s.stack?0.65:0.12} type="linear" isAnimationActive={false} connectNulls={false} /> : <Line key={s.key} dataKey={s.key} name={s.label} stroke={s.color} strokeWidth={2} strokeDasharray={s.dashed?'5 4':undefined} dot={false} type="linear" isAnimationActive={false} connectNulls={false} />)}
         </ComposedChart></ResponsiveContainer><ChartWatermark /></>}

@@ -35,7 +35,7 @@ export function BlockCadenceChart({ initialData, initialFetchedAt, chainHeight, 
   const step = plotWidth / Math.max(points.length, 1);
 
   return <Card className="h-full"><CardBody>
-    <SectionHeader label="RECENT_BLOCK_INTERVALS" actions={<Link href="/blocks" className="text-caption font-mono text-muted hover:text-primary">All blocks →</Link>} />
+    <SectionHeader card label="Recent block intervals" actions={<Link href="/blocks" className="text-caption font-mono text-muted hover:text-primary">All blocks →</Link>} />
     <p className="text-caption text-muted mb-4">Individual intervals from block timestamps in the latest 30-block sample. {targetSeconds != null ? `Dashed line: ${targetSeconds}s target.` : 'Current target unavailable.'}</p>
     <div ref={wrapper} className="min-h-[240px]">
       {loading && !points.length ? <ChartSkeleton height={228} /> : !points.length ? <p role="status" className="py-20 text-sm text-muted text-center">{loading ? 'Loading block timestamps…' : 'Block interval data unavailable.'}</p> : <>

@@ -69,12 +69,12 @@ export default function ResearchPlot({result,chart}:{result:ResearchResult;chart
   <ResponsiveContainer width="100%" height={horizontal?Math.max(160,data.length*26+32):280}>
    <ComposedChart data={data} layout={horizontal?'vertical':'horizontal'} margin={{top:12,right:right?4:36,bottom:0,left:0}} barCategoryGap={data.length>20?'12%':'22%'}>
     <defs>{values.map((i,k)=><linearGradient key={i} id={`${gradient}-${k}`} x1="0" y1="0" x2="0" y2="1"><stop offset="0%" style={{stopColor:SERIES_COLORS[k],stopOpacity:stacked?0.5:0.32}}/><stop offset="100%" style={{stopColor:SERIES_COLORS[k],stopOpacity:stacked?0.18:0}}/></linearGradient>)}</defs>
-    <CartesianGrid vertical={horizontal} horizontal={!horizontal} strokeDasharray="2 6" stroke="var(--color-border)"/>
+    <CartesianGrid vertical={horizontal} horizontal={!horizontal} stroke="var(--color-border)"/>
     {horizontal?<>
      <XAxis type="number" tick={tick} tickLine={false} axisLine={false} tickFormatter={compact} domain={[0,'auto']}/>
-     <YAxis yAxisId="left" type="category" dataKey="x" tick={tick} tickLine={false} axisLine={{stroke:'var(--color-border)'}} width={labelWidth} interval={0} tickFormatter={xLabel}/>
+     <YAxis yAxisId="left" type="category" dataKey="x" tick={tick} tickLine={false} axisLine={false} width={labelWidth} interval={0} tickFormatter={xLabel}/>
     </>:<>
-    <XAxis dataKey="x" tick={tick} tickLine={false} axisLine={{stroke:'var(--color-border)'}} interval={chart.view!=='bar'?'preserveStartEnd':dense?'equidistantPreserveStart':0} minTickGap={dense?16:24} tickFormatter={xLabel} angle={crowded?-30:0} textAnchor={crowded?'end':'middle'} height={crowded?72:36}/>
+    <XAxis dataKey="x" tick={tick} tickLine={false} axisLine={false} interval={chart.view!=='bar'?'preserveStartEnd':dense?'equidistantPreserveStart':0} minTickGap={dense?16:24} tickFormatter={xLabel} angle={crowded?-30:0} textAnchor={crowded?'end':'middle'} height={crowded?72:36}/>
     {/* Bars start at zero; a level over time reads best on its own range. */}
     <YAxis yAxisId="left" tick={tick} tickLine={false} axisLine={false} width={52} tickFormatter={compact} domain={ordered&&!stacked?['auto','auto']:[0,'auto']}/>
     </>}
@@ -85,8 +85,8 @@ export default function ResearchPlot({result,chart}:{result:ResearchResult;chart
      if(chart.view==='bar')return <Bar key={i} {...common} fill={SERIES_COLORS[k]} radius={stacked&&k<values.length-1?0:horizontal?[0,3,3,0]:[3,3,0,0]} maxBarSize={horizontal?20:56} minPointSize={stacked?0:(value:number|undefined|null)=>value?2:0}>
       {series||mark&&!many?data.map((d,n)=><Cell key={n} fill={series?d.fill:primary} fillOpacity={mark&&!many&&mark.row!==n?0.42:1}/>):null}
      </Bar>;
-     if(chart.view==='area')return <Area key={i} {...common} type="monotone" stroke={SERIES_COLORS[k]} strokeWidth={2} fill={`url(#${gradient}-${k})`} activeDot={{r:4,strokeWidth:0}} connectNulls={false}/>;
-     return <Line key={i} {...common} type="monotone" stroke={SERIES_COLORS[k]} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:0}} connectNulls={false}/>;
+     if(chart.view==='area')return <Area key={i} {...common} type="linear" stroke={SERIES_COLORS[k]} strokeWidth={2} fill={`url(#${gradient}-${k})`} activeDot={{r:4,strokeWidth:0}} connectNulls={false}/>;
+     return <Line key={i} {...common} type="linear" stroke={SERIES_COLORS[k]} strokeWidth={2} dot={false} activeDot={{r:4,strokeWidth:0}} connectNulls={false}/>;
     })}
     {mark?.kind==='change'&&!horizontal?<ReferenceLine yAxisId="left" y={Number(mark.from.value)} stroke="var(--color-text-muted)" strokeDasharray="4 4" strokeOpacity={0.6} ifOverflow="extendDomain"/>:null}
     {mark?.kind==='change'&&!horizontal?<ReferenceDot yAxisId="left" x={data[mark.from.row].x} y={Number(mark.from.value)} r={4} fill="var(--color-surface-solid)" stroke="var(--color-text-muted)" strokeWidth={2}/>:null}

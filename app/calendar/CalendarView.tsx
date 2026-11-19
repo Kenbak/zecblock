@@ -66,7 +66,7 @@ export function CalendarView({ events, tip, tipTime, spacing, eras, generatedAt 
         {tip !== null && <p className="font-mono text-caption text-muted">Now at <Link href={`/block/${tip}`} prefetch={false} className="text-primary hover:text-brand-gold">block #{tip.toLocaleString('en-US')}</Link>{spacing ? ` · ${spacing}s blocks` : ''}</p>}
       </div>
       {next.length === 0 ? <p className="rounded-xl border border-dashed border-cipher-border p-4 text-sm text-muted">No upcoming milestones are scheduled yet.</p> :
-        <ol className="grid gap-3 md:grid-cols-3">{next.map(event => <li key={event.id} className={`flex flex-col rounded-xl border bg-cipher-surface p-4 ${KIND_BORDER[event.kind]}`}>
+        <ol className="grid gap-3 md:grid-cols-3">{next.map(event => <li key={event.id} className={`flex flex-col rounded-xl border bg-cipher-card p-4 ${KIND_BORDER[event.kind]}`}>
           <div className="flex items-center justify-between gap-2"><KindTag kind={event.kind} /><span className="font-mono text-caption text-muted"><HeightLink event={event} /></span></div>
           <h3 className="mt-3 text-sm font-semibold text-primary"><EventTitle event={event} /></h3>
           <p className="mt-1 flex-1 text-xs leading-relaxed text-secondary">{event.detail}</p>
@@ -130,7 +130,7 @@ function BlockRibbon({ events, anchors, tip, tipTime, spacing, eras }: { events:
     if (el && el.scrollWidth > el.clientWidth) el.scrollLeft = ((tip - lo) / (hi - lo)) * el.scrollWidth - el.clientWidth / 2;
   }, [tip, lo, hi]);
 
-  return <section aria-labelledby="block-ribbon" className="rounded-xl border border-cipher-border bg-cipher-surface">
+  return <section aria-labelledby="block-ribbon" className="rounded-xl border border-cipher-border bg-cipher-card">
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-cipher-border-subtle p-3 sm:p-4">
       <div>
         <h2 id="block-ribbon" className="font-mono text-xs uppercase tracking-wider text-muted">The chain, block by block</h2>

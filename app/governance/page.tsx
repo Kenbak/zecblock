@@ -18,7 +18,7 @@ const description = 'Follow Zcash coinholder votes and retroactive grant rounds,
 export const generateMetadata = () => buildPageMetadata({ title: `${title} | ZecBlock`, description, path: '/governance', index: true, networks: ['mainnet'] });
 
 function VoteCard({ vote }: { vote: Vote }) {
-  return <Link href={vote.href} className="group block rounded-xl border border-cipher-border bg-cipher-surface p-4 transition-colors hover:border-brand-gold/40 sm:p-5">
+  return <Link href={vote.href} className="group block rounded-xl border border-cipher-border bg-cipher-card p-4 transition-colors hover:border-brand-gold/40 sm:p-5">
     <div className="flex flex-wrap items-center justify-between gap-3"><h3 className="text-base font-semibold text-primary group-hover:text-brand-gold">{vote.title}</h3><Status state={vote.state} /></div>
     <p className="mt-2 line-clamp-2 max-w-3xl text-sm leading-relaxed text-secondary">{vote.description}</p>
     <div className="mt-4 flex flex-wrap items-center justify-between gap-2 font-mono text-xs text-muted"><span>{vote.round.proposals.length} questions · {vote.state === 'active' ? 'Closes' : 'Voting deadline'} {new Date(vote.round.vote_end_time * 1000).toLocaleDateString('en-GB', { timeZone: 'UTC', day: 'numeric', month: 'short', year: 'numeric' })}</span><span className="text-brand-gold">{vote.state === 'results' ? 'Explore results & verification' : 'View vote'} →</span></div>
@@ -42,7 +42,7 @@ export default async function GovernancePage() {
         {active.length ? <div className="space-y-3">{active.map(v => <VoteCard key={v.id} vote={v} />)}</div> : <p className="rounded-xl border border-dashed border-cipher-border px-4 py-4 text-sm text-muted">{catalog.unavailable ? 'Current voting status is unavailable.' : 'No active votes in the tracked rounds.'}</p>}
       </section>
       {(announced || upcoming.length > 0) && <section aria-labelledby="upcoming-votes"><h2 id="upcoming-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">Upcoming</h2><div className="space-y-3">
-        {announced && <div className="overflow-hidden rounded-xl border border-brand-gold/25 bg-cipher-surface">
+        {announced && <div className="overflow-hidden rounded-xl border border-brand-gold/25 bg-cipher-card">
           <div className="flex flex-wrap items-start justify-between gap-3 p-4 sm:p-5">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-2"><h3 className="text-base font-semibold text-primary"><Link href={`/governance/${GRANTS.slug}`} className="hover:text-brand-gold">{round.title}</Link></h3><Status label={PHASE_LABEL[grantPhase(round, now).phase]} /></div>
@@ -56,7 +56,7 @@ export default async function GovernancePage() {
       </div></section>}
       <section aria-labelledby="past-votes"><h2 id="past-votes" className="mb-3 font-mono text-xs uppercase tracking-wider text-muted">Past results</h2><div className="space-y-3">
         {past.map(v => <VoteCard key={v.id} vote={v} />)}
-        {!catalog.votes.some(v => v.id === NU7_ROUND_ID) && <Link href="/governance/nu7" className="block rounded-xl border border-cipher-border bg-cipher-surface p-5"><h3 className="text-base font-semibold text-primary">NU7 Coinholder Vote</h3><p className="mt-2 text-sm text-muted">Voting closed September 14, 2026. Open the results and verification page →</p></Link>}
+        {!catalog.votes.some(v => v.id === NU7_ROUND_ID) && <Link href="/governance/nu7" className="block rounded-xl border border-cipher-border bg-cipher-card p-5"><h3 className="text-base font-semibold text-primary">NU7 Coinholder Vote</h3><p className="mt-2 text-sm text-muted">Voting closed September 14, 2026. Open the results and verification page →</p></Link>}
       </div></section>
     </div>
     <Freshness catalog={catalog} />

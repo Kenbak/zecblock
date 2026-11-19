@@ -29,7 +29,7 @@ export function ChartSkeleton({ height = 300, className = '' }: { height?: numbe
 
 export function ChartCardSkeleton({ height = 300, title }: { height?: number; title?: string }) {
   return <div className="card card-static"><div className="card-body">
-    {title ? <p className="text-sm font-mono text-primary mb-4">{title}</p> : <Skeleton className="h-5 w-44 mb-4" />}
+    {title ? <p className="chart-title mb-4">{title}</p> : <Skeleton className="h-5 w-44 mb-4" />}
     <Skeleton className="h-4 w-96 mb-6" /><ChartSkeleton height={height} />
     <div className="mt-5 flex justify-center gap-5"><Skeleton className="h-3 w-24" /><Skeleton className="h-3 w-24" /></div>
   </div></div>;

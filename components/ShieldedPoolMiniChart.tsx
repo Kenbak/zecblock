@@ -141,7 +141,7 @@ export const ShieldedPoolMiniChart = memo(function ShieldedPoolMiniChart({ foote
         <div className="flex-1 min-h-0">
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height="100%">
             <AreaChart data={points} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} vertical={false} />
+              <CartesianGrid stroke={colors.gridStroke} vertical={false} />
               <XAxis
                 dataKey="date"
                 stroke={colors.axis}
@@ -152,10 +152,10 @@ export const ShieldedPoolMiniChart = memo(function ShieldedPoolMiniChart({ foote
                 axisLine={false}
               />
               <Tooltip content={<MiniTooltip colors={colors} />} />
-              <Area type="monotone" dataKey="ironwood" stackId="1" stroke={colors.ironwood} fill={colors.ironwood} fillOpacity={0.65} isAnimationActive={false} />
-              <Area type="monotone" dataKey="orchard" stackId="1" stroke={colors.orchard} fill={colors.orchard} fillOpacity={0.6} isAnimationActive={false} />
-              <Area type="monotone" dataKey="sapling" stackId="1" stroke={colors.sapling} fill={colors.sapling} fillOpacity={0.6} isAnimationActive={false} />
-              <Area type="monotone" dataKey="sprout" stackId="1" stroke={colors.sprout} fill={colors.sprout} fillOpacity={0.5} isAnimationActive={false} />
+              <Area type="linear" dataKey="ironwood" stackId="1" stroke={colors.ironwood} fill={colors.ironwood} fillOpacity={0.65} isAnimationActive={false} />
+              <Area type="linear" dataKey="orchard" stackId="1" stroke={colors.orchard} fill={colors.orchard} fillOpacity={0.6} isAnimationActive={false} />
+              <Area type="linear" dataKey="sapling" stackId="1" stroke={colors.sapling} fill={colors.sapling} fillOpacity={0.6} isAnimationActive={false} />
+              <Area type="linear" dataKey="sprout" stackId="1" stroke={colors.sprout} fill={colors.sprout} fillOpacity={0.5} isAnimationActive={false} />
             </AreaChart>
           </ResponsiveContainer>
         </div>

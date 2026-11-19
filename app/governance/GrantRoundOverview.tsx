@@ -29,7 +29,7 @@ export function GrantRoundStepper({ round, now, registered = false, header = tru
     { label: 'Coinholder vote', dates: `${day(s.votingOpensOn)} – ${day(s.votingClose)}` },
   ];
   const reviewable = catalogHref && (phase === 'between' || phase === 'review' || phase === 'awaiting-vote');
-  return <div className={header ? 'rounded-xl border border-cipher-border bg-cipher-surface' : ''}>
+  return <div className={header ? 'rounded-xl border border-cipher-border bg-cipher-card' : ''}>
     {header && <div className="flex flex-wrap items-center justify-between gap-3 p-4 sm:p-5">
       <div>
         <p className="font-mono text-caption uppercase tracking-wider text-muted">{round.quarter} · Coinholder-Directed Retroactive Grants</p>
@@ -76,7 +76,7 @@ export function GrantRoundStats({ round }: { round: GrantRound }) {
         <dd className="mt-1 line-clamp-1 text-caption text-muted">{note}</dd>
       </div>)}
     </dl>
-    <section aria-labelledby="requested-by-category" className="rounded-xl border border-cipher-border bg-cipher-surface p-4">
+    <section aria-labelledby="requested-by-category" className="rounded-xl border border-cipher-border bg-cipher-card p-4">
       <h2 id="requested-by-category" className="font-mono text-caption uppercase tracking-wider text-muted">Requested by category</h2>
       <ul className="mt-3 space-y-2">
         {totals.byCategory.map(c => <li key={c.category} className="grid grid-cols-[7.5rem_minmax(0,1fr)_4.5rem] items-center gap-3 text-xs sm:grid-cols-[10rem_minmax(0,1fr)_5rem]">
@@ -91,7 +91,7 @@ export function GrantRoundStats({ round }: { round: GrantRound }) {
 
 /** Eligibility preparation. Snapshot timing is never invented: it comes from the registered round. */
 export function GetReadyToVote({ round, snapshotHeight }: { round: GrantRound; snapshotHeight?: number }) {
-  return <section aria-labelledby="get-ready" className="mt-4 rounded-xl border border-brand-gold/25 bg-cipher-surface p-4 sm:p-5">
+  return <section aria-labelledby="get-ready" className="mt-4 rounded-xl border border-brand-gold/25 bg-cipher-card p-4 sm:p-5">
     <h2 id="get-ready" className="text-base font-semibold text-primary">Get ready to vote: shield your ZEC</h2>
     <div className="mt-3 grid gap-4 text-sm leading-relaxed text-secondary md:grid-cols-3">
       <p><span className="font-medium text-primary">Only shielded ZEC votes.</span> Voting weight comes from ZEC held in the Ironwood shielded pool at a snapshot block. Transparent ZEC does not count.</p>

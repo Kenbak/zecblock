@@ -184,7 +184,7 @@ export function ZodlClient({
       </div>
 
       {error && !data && !loading && (
-        <div role="status" className="rounded-xl border border-cipher-border bg-cipher-surface p-10 text-center mb-5">
+        <div role="status" className="rounded-xl border border-cipher-border bg-cipher-card p-10 text-center mb-5">
           <p className="text-sm text-secondary">The leaderboard couldn&apos;t be loaded. It will retry automatically.</p>
         </div>
       )}
@@ -198,7 +198,7 @@ export function ZodlClient({
             { label: 'Shielded', value: `${(summary.networkShieldedRatio * 100).toFixed(1)}%`, color: 'text-cipher-shielded' },
             { label: 'To exchange / bridge', value: `${(summary.networkOfframpRatio * 100).toFixed(1)}%`, color: '', style: { color: SEG.offramp.color } },
           ].map((s) => (
-            <div key={s.label} className="rounded-xl border border-cipher-border bg-cipher-surface p-4 min-w-0">
+            <div key={s.label} className="rounded-xl border border-cipher-border bg-cipher-card p-4 min-w-0">
               <div className={`text-base sm:text-xl font-semibold font-mono tabular-nums whitespace-nowrap ${s.color}`} style={(s as any).style}>{s.value}</div>
               <div className="text-caption text-muted uppercase tracking-wider mt-1 font-mono truncate">{s.label}</div>
             </div>
@@ -217,7 +217,7 @@ export function ZodlClient({
 
       {/* Leaderboard */}
       {data?.message ? (
-        <div className="rounded-xl border border-cipher-border bg-cipher-surface p-10 text-center">
+        <div className="rounded-xl border border-cipher-border bg-cipher-card p-10 text-center">
           <p className="text-sm text-secondary">{data.message}</p>
         </div>
       ) : (
@@ -232,7 +232,7 @@ export function ZodlClient({
             return (
               <div
                 key={p.pool}
-                className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-xl border border-cipher-border bg-cipher-surface px-4 py-3"
+                className="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-3 rounded-xl border border-cipher-border bg-cipher-card px-4 py-3"
               >
                 <div className="flex items-center gap-3 sm:w-[200px] sm:flex-shrink-0">
                   <div className={`w-6 text-sm font-mono font-semibold ${i < 3 ? 'text-cipher-yellow-bright' : 'text-muted'}`}>{i + 1}</div>
@@ -268,7 +268,7 @@ export function ZodlClient({
       )}
 
       {/* Methodology */}
-      <div className="mt-8 rounded-xl border border-cipher-border bg-cipher-surface p-5">
+      <div className="mt-8 rounded-xl border border-cipher-border bg-cipher-card p-5">
         <h3 className="text-xs font-mono font-semibold text-secondary uppercase tracking-wider mb-2">How we read it</h3>
         <p className="text-xs text-muted leading-relaxed">
           We attribute each coinbase reward to a pool by its payout address, then trace where those coins go when spent.

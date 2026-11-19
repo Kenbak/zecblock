@@ -268,7 +268,7 @@ export function NU7VoteClient({ initialData, resultsState, resultsContent, initi
 
       {/* Countdown + Context */}
       {!closed && (
-      <div className="rounded-2xl border border-cipher-border bg-cipher-surface overflow-hidden mb-8">
+      <div className="rounded-2xl border border-cipher-border bg-cipher-card overflow-hidden mb-8">
         <div className="flex items-center gap-2 border-b border-cipher-border-subtle px-4 py-2.5 sm:px-5">
           <span className="h-2 w-2 rounded-full bg-brand-gold animate-pulse" />
           <span className="text-caption font-mono uppercase tracking-wider text-secondary">
@@ -332,7 +332,7 @@ export function NU7VoteClient({ initialData, resultsState, resultsContent, initi
       )}
 
       {/* Key Dates — right after countdown */}
-      <div className="rounded-2xl border border-cipher-border bg-cipher-surface mb-8">
+      <div className="rounded-2xl border border-cipher-border bg-cipher-card mb-8">
         <div className="grid sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border-subtle">
           <DateCell
             label="Snapshot"
@@ -357,7 +357,7 @@ export function NU7VoteClient({ initialData, resultsState, resultsContent, initi
 
       {/* Published results already contain the full questions and options. */}
       {resultsState === 'published' ? (
-        <details className="mb-8 rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+        <details className="mb-8 rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
           <summary className="cursor-pointer text-sm font-semibold text-primary">Voting chain details</summary>
           <div className="mt-5"><ChainExplorerTab chainState={chainState} /></div>
         </details>
@@ -419,7 +419,7 @@ export function NU7VoteClient({ initialData, resultsState, resultsContent, initi
       </div>
 
       {/* Methodology */}
-      <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h3 className="text-xs font-mono font-semibold text-secondary uppercase tracking-wider mb-2">What ZecBlock shows</h3>
         <p className="text-xs text-muted leading-relaxed max-w-3xl">
           This page displays public vote parameters, published aggregate results, and live chain state from the Valar
@@ -447,7 +447,7 @@ function VoteTab({
       {/* Questions — takes 2 cols */}
       <div className="lg:col-span-2">
         <SectionLabel label="POLL_QUESTIONS" />
-        <div className="rounded-2xl border border-cipher-border bg-cipher-surface overflow-hidden">
+        <div className="rounded-2xl border border-cipher-border bg-cipher-card overflow-hidden">
           <div className="flex border-b border-cipher-border-subtle overflow-x-auto p-1 gap-1">
             {QUESTIONS.map((q, i) => (
               <button
@@ -474,7 +474,7 @@ function VoteTab({
         {/* Wallet support */}
         <div>
           <SectionLabel label="WALLET_SUPPORT" />
-          <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5">
+          <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5">
             <div className="space-y-3">
               {WALLETS.map(w => (
                 <div key={w.name} className="flex items-center justify-between">
@@ -492,7 +492,7 @@ function VoteTab({
         {/* Quick chain status */}
         <div>
           <SectionLabel label="CHAIN_STATUS" live />
-          <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5">
+          <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5">
             <div className="space-y-3">
               <StatusRow label="Height" value={chainState?.height?.toLocaleString() ?? '—'} mono />
               <StatusRow label="Validators" value={chainState?.validators?.length?.toString() ?? '—'} />
@@ -518,7 +518,7 @@ function VoteTab({
 function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
   if (!chainState) {
     return (
-      <div className="h-64 rounded-2xl border border-cipher-border bg-cipher-surface flex items-center justify-center">
+      <div className="h-64 rounded-2xl border border-cipher-border bg-cipher-card flex items-center justify-center">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-2 border-cipher-border border-t-cipher-gold rounded-full animate-spin" />
           <span className="text-xs font-mono text-muted">Connecting to zvote-1…</span>
@@ -536,7 +536,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
   return (
     <div className="space-y-8">
       {/* Chain overview — compact stats bar */}
-      <div className="rounded-2xl border border-cipher-border bg-cipher-surface overflow-hidden">
+      <div className="rounded-2xl border border-cipher-border bg-cipher-card overflow-hidden">
         <div className="flex items-center gap-2 border-b border-cipher-border-subtle px-5 py-2.5">
           <span className="h-2 w-2 rounded-full bg-cipher-green animate-pulse" />
           <span className="text-caption font-mono uppercase tracking-wider text-secondary">zvote-1</span>
@@ -563,7 +563,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
             Blocks with protocol transactions. Each voter generates multiple: a delegation proof, one ballot per question, and share reveals.
           </p>
           {chainState.voteActivity.blocksWithVotes.length > 0 ? (
-            <div className="rounded-2xl border border-cipher-border bg-cipher-surface">
+            <div className="rounded-2xl border border-cipher-border bg-cipher-card">
               <div className="flex items-center justify-between border-b border-cipher-border-subtle px-4 py-2.5">
                 <span className="text-caption font-mono text-muted">
                   Since page load · not a turnout count
@@ -607,7 +607,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
               </div>
             </div>
           ) : (
-            <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 text-center">
+            <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5 text-center">
               <p className="text-xs text-muted">No vote submissions found yet. Once voters submit ballots, their blocks will appear here.</p>
             </div>
           )}
@@ -620,7 +620,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
             <Tip text="Distributed Key Generation — validators jointly create an encryption key without anyone holding the full private key">DKG</Tip>
             {' '}splits decryption power across validators so no single party can read votes.
           </p>
-          <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5">
+          <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5">
             {chainState.ceremony ? (
               <div className="grid md:grid-cols-[1fr_1px_1fr] gap-5">
                 {/* Left: status + progress */}
@@ -692,7 +692,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
           <p className="text-caption text-muted -mt-2 mb-3">
             Each organization runs a <Tip text="A validator produces blocks, runs a vote server for wallets, and holds a share of the decryption key. They are all three roles at once.">validator + vote server</Tip>. Some also operate <Tip text="Private Information Retrieval servers let wallets prove eligibility without revealing which Zcash note they own.">PIR servers</Tip>.
           </p>
-          <div className="rounded-2xl border border-cipher-border bg-cipher-surface overflow-hidden">
+          <div className="rounded-2xl border border-cipher-border bg-cipher-card overflow-hidden">
             <div className="grid sm:grid-cols-2 lg:grid-cols-5 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border-subtle">
               {chainState.voteServers.map(s => {
                 const pirOp = chainState.pirEndpoints.some(p =>
@@ -723,7 +723,7 @@ function ChainExplorerTab({ chainState }: { chainState: ChainState | null }) {
         </div>
 
         {/* How it works — full width, compact */}
-        <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5">
+        <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5">
           <div className="flex flex-col sm:flex-row sm:items-center gap-4 sm:gap-8">
             <div className="text-caption font-mono text-muted uppercase tracking-wider shrink-0">How voting works</div>
             <div className="flex flex-wrap items-center gap-x-6 gap-y-2">

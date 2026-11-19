@@ -160,7 +160,7 @@ export function PrivacyRiskInline({ txid, variant = 'full', embedded = false }: 
   // No linkage found — the reassuring, low-key state.
   if (data.linkedTransactions.length === 0 || data.warningLevel === 'LOW') {
     const amountZec = (data.amount || 0).toFixed(4);
-    const flowVerb = data.flowType === 'shield' ? 'shielded' : 'unshielded';
+    const flowVerb = data.flowType === 'shield' ? 'shielded' : 'deshielded';
     const address = data.transparentAddresses?.[0];
 
     return (
@@ -183,7 +183,7 @@ export function PrivacyRiskInline({ txid, variant = 'full', embedded = false }: 
               <AddressDisplay address={address} className="text-caption" />
             </>
           )}
-          . No matching {data.flowType === 'shield' ? 'unshield' : 'shield'} with a similar amount and timing turned up
+          . No matching {data.flowType === 'shield' ? 'deshield' : 'shield'} with a similar amount and timing turned up
           on the other side of the pool, so there's nothing here for an outside observer to connect.
         </p>
       </div>
@@ -216,7 +216,7 @@ export function PrivacyRiskInline({ txid, variant = 'full', embedded = false }: 
         {currentAddress ? <AddressDisplay address={currentAddress} className="text-xs" /> : 'a transparent address'}
         {isDeshield ? '' : ' into the shielded pool'}.{' '}
         {timeDelta && <>{timeDelta.charAt(0).toUpperCase() + timeDelta.slice(1)}, </>}a very similar amount was{' '}
-        {isDeshield ? 'shielded' : 'unshielded'}{' '}
+        {isDeshield ? 'shielded' : 'deshielded'}{' '}
         {linkedAddress ? (
           <>
             {isDeshield ? 'from ' : 'to '}
@@ -292,7 +292,7 @@ export function PrivacyRiskInline({ txid, variant = 'full', embedded = false }: 
           <div className="mt-3 text-xs text-secondary leading-relaxed space-y-2">
             <p>
               Shielded transactions hide amounts and addresses — but the pool itself is shared by everyone. If you
-              shield and then unshield a similar amount within a short window, the amount and timing act as a
+              shield and then deshield a similar amount within a short window, the amount and timing act as a
               fingerprint an outside observer can match up, even without ever seeing inside the shielded pool.
             </p>
             <p className="text-muted">

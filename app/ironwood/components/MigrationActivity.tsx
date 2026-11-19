@@ -37,9 +37,11 @@ function mapActivityBuckets(activity: MigrationActivityData): VelocityBucket[] {
   const hourly = activity.granularity === 'hour';
   return activity.buckets.map((bucket) => {
     const date = new Date(bucket.bucketStart * 1000);
+    // Same day label as every other chart axis; the year keeps daily buckets unique.
+    const day = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
     const label = hourly
-      ? `${date.getUTCMonth() + 1}/${date.getUTCDate()} ${String(date.getUTCHours()).padStart(2, '0')}:00`
-      : `${date.getUTCFullYear()}-${String(date.getUTCMonth() + 1).padStart(2, '0')}-${String(date.getUTCDate()).padStart(2, '0')}`;
+      ? `${day}, ${String(date.getUTCHours()).padStart(2, '0')}:00`
+      : `${day}, ${date.getUTCFullYear()}`;
     return {
       label,
       ts: bucket.bucketStart * 1000,
@@ -171,13 +173,13 @@ export function MigrationActivity({
           view === 'cohorts' ? (
             <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={240}>
               <BarChart data={cohortData} margin={{ top: 8, right: 12, bottom: 28, left: 12 }}>
-                <XAxis
+                <XAxis tickLine={false} axisLine={false}
                   dataKey="boundary"
                   tick={{ fontSize: 12, fill: colors.axis }}
                   tickFormatter={(v: number) => v.toLocaleString()}
                   label={{ value: 'Block height', position: 'insideBottom', offset: -8, style: { fontSize: 12, fill: colors.axis, fontFamily: 'var(--font-geist-mono)' } }}
                 />
-                <YAxis
+                <YAxis tickLine={false} axisLine={false}
                   tick={{ fontSize: 12, fill: colors.axis }}
                   width={44}
                   domain={[0, yMax]}
@@ -208,7 +210,7 @@ export function MigrationActivity({
                     <stop offset="100%" stopColor={colors.ironwoodPool} stopOpacity={0.05} />
                   </linearGradient>
                 </defs>
-                <XAxis
+                <XAxis tickLine={false} axisLine={false}
                   dataKey="label"
                   tick={{ fontSize: 12, fill: colors.axis }}
                   {...CHART_DATE_AXIS}
@@ -216,7 +218,7 @@ export function MigrationActivity({
                   textAnchor="middle"
                   height={32}
                 />
-                <YAxis
+                <YAxis tickLine={false} axisLine={false}
                   tick={{ fontSize: 12, fill: colors.axis }}
                   width={50}
                   domain={[0, yMax]}
@@ -234,7 +236,7 @@ export function MigrationActivity({
                   }
                 />
                 <Area
-                  type="monotone"
+                  type="linear"
                   dataKey="volume"
                   stroke={colors.ironwoodPool}
                   strokeWidth={2}

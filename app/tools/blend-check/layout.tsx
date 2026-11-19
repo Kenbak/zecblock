@@ -2,7 +2,7 @@ import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Amount Frequency — Blend Check | ZecBlock',
-  description: 'Compare a ZEC amount with observed public shielding and unshielding flows. Amount frequency is a heuristic, not a privacy guarantee.',
+  description: 'Compare a ZEC amount with observed public shielding and deshielding flows. Amount frequency is a heuristic, not a privacy guarantee.',
   keywords: ['zcash', 'privacy', 'blend', 'amount', 'shielded', 'transaction', 'common'],
   path: '/tools/blend-check',
   networks: ['mainnet'],

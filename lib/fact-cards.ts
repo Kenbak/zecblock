@@ -61,7 +61,7 @@ export const FACT_CARDS: readonly FactCardDef[] = [
   { id: 'shielded-supply', title: 'Shielded share of supply', category: 'Privacy', networks: both, href: '/pools',
     tags: ['privacy', 'shielded', 'pools', 'ironwood', 'orchard', 'sapling', 'sprout', 'transparent', 'anonymity', 'supply'],
     description: 'How much issued ZEC sits in shielded pools, split by pool.' },
-  { id: 'shielded-transactions', title: 'Shielded transaction share', category: 'Privacy', networks: both, href: '/privacy#trends',
+  { id: 'shielded-transactions', title: 'Shielded transaction share', category: 'Privacy', networks: both, href: '/txs?view=activity',
     tags: ['privacy', 'shielded', 'transactions', 'adoption', 'usage', 'daily', 'anonymity'],
     description: 'Share of non-coinbase transactions over the last seven complete days that were shielded.' },
   { id: 'net-shielding', title: 'Net shielding', category: 'Privacy', networks: both, href: '/pools#flows',
@@ -536,7 +536,7 @@ export function netShieldingCard(network: CardNetwork, payload: unknown, now = n
     detail: `${formatDayRange(week[0].date, week.at(-1)!.date)} UTC · public amounts only`,
     visual: { kind: 'split', rows: [
       { label: 'Shielded', value: Number(shielded / ZAT), display: formatWholeCoins(shielded, unit), color: 'shielding' },
-      { label: 'Unshielded', value: Number(unshielded / ZAT), display: formatWholeCoins(unshielded, unit), color: 'deshielding' },
+      { label: 'Deshielded', value: Number(unshielded / ZAT), display: formatWholeCoins(unshielded, unit), color: 'deshielding' },
     ] },
     source: 'Public amounts crossing the shielded pool boundary',
   };

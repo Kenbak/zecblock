@@ -62,7 +62,7 @@ export const MiningSoftwareMiniChart = memo(function MiningSoftwareMiniChart({ f
             <div className="flex-1 min-h-0" aria-label="Daily share of observed blocks by self-reported software tag, over 30 days">
               <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 500, height: 180 }}>
                 <BarChart data={chart} barCategoryGap={0} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="3 5" />
+                  <CartesianGrid vertical={false} stroke={colors.gridStroke} />
                   <XAxis dataKey="date" tickFormatter={formatChartDate} minTickGap={40} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: colors.axis }} />
                   <YAxis domain={[0, 100]} ticks={[0, 50, 100]} width={38} tickFormatter={value => `${value}%`} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: colors.axis }} />
                   <ChartTooltip labelFormatter={label => `${label} · UTC day`} formatter={(value, name) => [`${Number(value).toFixed(2)}%`, SOFTWARE_LABELS[name as MiningSoftware] ?? name]} />

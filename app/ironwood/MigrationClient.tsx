@@ -289,14 +289,14 @@ export function MigrationClient({
       </div>
 
       {!loaded && !initialOverview ? (
-        <div className="mt-8 h-80 sm:h-[420px] rounded-2xl border border-cipher-border bg-cipher-surface flex items-center justify-center">
+        <div className="mt-8 h-80 sm:h-[420px] rounded-xl border border-cipher-border bg-cipher-card flex items-center justify-center">
           <div className="flex flex-col items-center gap-3">
             <div className="w-10 h-10 border-2 border-cipher-border border-t-cipher-yellow rounded-full animate-spin" />
             <span className="text-xs font-mono text-muted">Loading migration data…</span>
           </div>
         </div>
       ) : noData ? (
-        <div className="mt-8 rounded-xl border border-cipher-border bg-cipher-surface p-6 text-center">
+        <div className="mt-8 rounded-xl border border-cipher-border bg-cipher-card p-6 text-center">
           <h2 className="text-sm font-semibold text-primary">Migration data unavailable</h2>
           <p className="text-xs text-muted mt-2">
             ZecBlock could not load Ironwood data for this network. Try again shortly.

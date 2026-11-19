@@ -14,7 +14,7 @@ import { BlockFilters, type BlockFilterValues } from './BlockFilters';
 import { SOFTWARE_LABELS, classifyMiningSoftware, type MiningSoftware } from '@/lib/mining-software';
 import { getMiningSoftwareEmoji } from '@/lib/coinbase-client';
 import { Tooltip } from '@/components/Tooltip';
-import { CURRENCY, isTestnet } from '@/lib/config';
+import { CURRENCY, isCrosslink, isTestnet } from '@/lib/config';
 import { scheduledSeconds, type BlockSchedule } from '@/lib/block-timing';
 import { Tabs } from '@/components/ui/Tabs';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
@@ -423,13 +423,18 @@ export default function BlocksClient({
         <MetricCard size="compact"
           label="Avg Block Time"
           value={summary.avgBlockTime != null ? `${summary.avgBlockTime}s` : '—'}
-          hint={`Last ${isTestnet ? '500' : '1,000'} blocks · observed timestamps`}
+          hint={isCrosslink
+            ? `Last ${isTestnet ? '500' : '1,000'} blocks · observed timestamps`
+            : <>Last {isTestnet ? '500' : '1,000'} blocks · <Link href="/network/block-speed" className="underline underline-offset-4 hover:text-primary">Block Speed →</Link></>}
         />
         <MetricCard size="compact"
           label="Avg Block Fee (24h)"
           className="order-last col-span-2 sm:order-none sm:col-span-1"
           value={summary.avgBlockFee != null ? `${summary.avgBlockFee.toFixed(8)} ${CURRENCY}` : '—'}
-          hint={summary.avgBlockFee != null && zecPriceUsd != null ? `≈ $${(summary.avgBlockFee * zecPriceUsd).toFixed(2)}` : undefined}
+          hint={<>
+            {summary.avgBlockFee != null && zecPriceUsd != null && `≈ $${(summary.avgBlockFee * zecPriceUsd).toFixed(2)}`}
+            {!isCrosslink && <>{summary.avgBlockFee != null && zecPriceUsd != null && ' · '}<Link href="/mining?metric=txFees#economics" className="underline underline-offset-4 hover:text-primary">Fee trend →</Link></>}
+          </>}
         />
         <MetricCard size="compact"
           label="Txs Per Block"

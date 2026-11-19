@@ -12,7 +12,7 @@ export function AddressLoadingSkeleton({ initialMeta = null, address }: { initia
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-12">
     <div role="status" aria-live="polite" className="sr-only">Loading address activity{address ? ` for ${address}` : ''}…</div>
     <div className="mb-5 flex items-center justify-between" aria-hidden="true"><Skeleton className="h-7 w-48" /><Skeleton className="h-8 w-24" /></div>
-    <div className="mb-8 rounded-xl border border-cipher-border bg-cipher-surface overflow-hidden">
+    <div className="mb-8 rounded-xl border border-cipher-border bg-cipher-card overflow-hidden">
       <div className="grid lg:grid-cols-[1.2fr_1fr]">
         <div className="p-5 sm:p-7">
           <p className="text-xs font-mono text-muted uppercase tracking-wider">Public balance</p>

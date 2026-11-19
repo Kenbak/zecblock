@@ -107,3 +107,27 @@ export function buildZecBtcSnapshot(
     } : null,
   };
 }
+
+/**
+ * A vertical axis fitted to the shown values with round steps, so a move from 1.3% to
+ * 1.7% fills the chart instead of hugging a zero baseline. The ratio is a price, not
+ * a quantity, so the axis does not need to start at zero.
+ */
+export function ratioAxis(values: readonly (number | null)[], ticks = 5): { domain: [number, number]; ticks: number[] } | null {
+  const shown = values.filter((value): value is number => typeof value === 'number' && Number.isFinite(value) && value > 0);
+  if (!shown.length) return null;
+  const low = Math.min(...shown);
+  const high = Math.max(...shown);
+  // A flat series still gets a visible band around its value.
+  const span = Math.max(high - low, high * 0.1);
+  const raw = span / (ticks - 1);
+  const magnitude = 10 ** Math.floor(Math.log10(raw));
+  const step = [1, 2, 2.5, 5, 10].map(factor => factor * magnitude).find(candidate => candidate >= raw) ?? 10 * magnitude;
+  // A little room above and below so the line never sits on the chart's edge.
+  const start = Math.max(0, Math.floor((low - span * 0.08) / step) * step);
+  let end = Math.ceil((high + span * 0.08) / step) * step;
+  if (end === start) end = start + step;
+  const count = Math.round((end - start) / step);
+  const round = (value: number) => Number(value.toPrecision(12));
+  return { domain: [round(start), round(end)], ticks: Array.from({ length: count + 1 }, (_, index) => round(start + index * step)) };
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
-import { CartesianGrid, Line, LineChart, ResponsiveContainer, XAxis, YAxis } from 'recharts';
+import { CartesianGrid, Line, LineChart, ReferenceDot, ResponsiveContainer, XAxis, YAxis } from 'recharts';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { ChartTooltip } from '@/components/charts/ChartTooltip';
 import { SectionHeader } from '@/components/ui/SectionHeader';
@@ -9,7 +9,7 @@ import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { ChartSkeleton } from '@/components/ui/Skeleton';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
-import { btcPercentage, periodChange, type ZecBtcPeriod, type ZecBtcSnapshot } from '@/lib/zec-btc';
+import { btcPercentage, periodChange, ratioAxis, type ZecBtcPeriod, type ZecBtcSnapshot } from '@/lib/zec-btc';
 
 const PERIODS = [
   { key: '7d', label: '7D' }, { key: '30d', label: '30D' },
@@ -73,7 +73,7 @@ function useZecBtc(period: ZecBtcPeriod) {
 }
 
 export function ZecBtcCard() {
-  const [period, setPeriod] = useState<ZecBtcPeriod>('30d');
+  const [period, setPeriod] = useState<ZecBtcPeriod>('90d');
   const { data, quote, failed, now } = useZecBtc(period);
   const { theme } = useTheme();
   const colors = getChartColors(theme);
@@ -85,6 +85,11 @@ export function ZecBtcCard() {
   const first = valid[0];
   const last = valid.at(-1);
   const change = periodChange(valid);
+  const axis = ratioAxis(valid.map(point => point.percentage));
+  // The highest and lowest days in the shown range, marked on the line.
+  const high = valid.reduce<typeof valid[number] | undefined>((best, point) => !best || point.percentage! > best.percentage! ? point : best, undefined);
+  const low = valid.reduce<typeof valid[number] | undefined>((best, point) => !best || point.percentage! < best.percentage! ? point : best, undefined);
+  const extremes = high && low && high !== low && valid.length > 2 ? [{ point: high, label: 'High', position: 'top' as const }, { point: low, label: 'Low', position: 'bottom' as const }] : [];
   const quotePercentage = btcPercentage(quote?.btcPerZec);
   const quoteDelayed = failed || quote?.delayed || (quote && now - quote.fetchedAt > 60_000)
     || !quote?.observedAt || now - quote.observedAt > 300_000 || quote.observedAt > now + 60_000;
@@ -123,12 +128,14 @@ export function ZecBtcCard() {
             <LineChart data={points} margin={{ top: 12, right: 12, left: 0, bottom: 8 }}>
               <CartesianGrid vertical={false} stroke={colors.gridStroke} />
               <XAxis dataKey="timestamp" type="number" domain={['dataMin', 'dataMax']} minTickGap={55} tickFormatter={value => new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} tick={{ fill: colors.axis, fontSize: 12 }} axisLine={false} tickLine={false} />
-              <YAxis width={66} domain={[0, (maximum: number) => Math.max(5, Math.ceil(maximum))]} tickCount={6} tickFormatter={percentage} tick={{ fill: colors.axis, fontSize: 12 }} axisLine={false} tickLine={false} />
+              <YAxis width={66} domain={axis?.domain ?? ['auto', 'auto']} ticks={axis?.ticks} allowDataOverflow={false} tickFormatter={percentage} tick={{ fill: colors.axis, fontSize: 12 }} axisLine={false} tickLine={false} />
               <ChartTooltip labelFormatter={value => `${day(Number(value))} · 00:00 UTC`} formatter={value => [percentage(Number(value)), 'One ZEC / one BTC']} />
               <Line dataKey="percentage" name="ZEC / BTC" type="linear" stroke={colors.gold} strokeWidth={2} connectNulls={false} isAnimationActive={false} dot={({ cx, cy, index }: { cx?: number; cy?: number; index?: number }) => {
                 const isolated = index !== undefined && !points[index - 1]?.percentage && !points[index + 1]?.percentage;
                 return <circle key={index} cx={cx} cy={cy} r={isolated || points.length <= 8 ? 2.5 : 0} fill={colors.gold} strokeWidth={0} />;
               }} />
+              {extremes.map(({ point, label, position }) => <ReferenceDot key={label} x={point.timestamp} y={point.percentage!} r={3} fill={colors.gold} stroke="none" ifOverflow="visible"
+                label={{ value: `${label} ${percentage(point.percentage!)}`, position, offset: 8, fill: colors.axis, fontSize: 12 }} />)}
             </LineChart>
           </ResponsiveContainer>
           <ChartWatermark />

@@ -52,15 +52,52 @@ test('entities decode exactly once', () => {
   assert.equal(watch.htmlToText('<p>A &amp;lt;b&amp;gt; &amp; C &lt;tag&gt;</p>'), 'A &lt;b&gt; & C <tag>');
 });
 
-test('digest marks known and new items, escapes Markdown and stays under Telegram limits', () => {
+test('digest marks known and new items, escapes HTML and stays under Telegram limits', () => {
   const text = watch.formatDigest([{ title: 'Fee *drop*', kind: 'upgrade', source: 'github/zebra', url: 'https://x.test', tracked: false,
     dates: [{ date: '2026-12-17', at: null, label: 'Voting', known: true }], heights: [{ value: 3_590_000, excerpt: 'until height 3,590,000', known: false }] }]);
-  assert.match(text, /Fee \\\*drop\\\*/);
-  assert.match(watch.formatDigest([{ title: 'a\\_b', kind: 'k', source: 's', url: 'u', dates: [], heights: [] }]), /a\\\\\\_b/);
+  assert.match(text, /<b>Fee \*drop\*<\/b>/);
+  const hostile = watch.formatDigest([{ title: 'a <b>&</b> b', kind: 'k<', source: 's>', url: 'https://x.test/?a=1&b=<2>', dates: [{ date: '2026-12-01', label: '<i>x' }], heights: [{ value: 3_600_000, excerpt: '</b> at 3,600,000' }] }]);
+  // The only tags are the two bold pairs the digest writes itself; source text never adds one.
+  assert.deepEqual(hostile.match(/<[^>]*>/g), ['<b>', '</b>', '<b>', '</b>']);
+  assert.match(hostile, /a &lt;b&gt;&amp;&lt;\/b&gt; b/);
+  assert.match(hostile, /https:\/\/x\.test\/\?a=1&amp;b=&lt;2&gt;/);
   assert.match(text, /✓ 2026-12-17 — Voting/);
   assert.match(text, /\+ block #3,590,000/);
   const many = Array.from({ length: 80 }, (_, i) => ({ title: `T${i}`, kind: 'vote', source: 's', url: 'u', dates: [{ date: '2026-12-01', label: 'x'.repeat(60) }], heights: [] }));
   assert.ok(watch.formatDigest(many).length < 4096);
+});
+
+test('an X handle with an underscore reaches Telegram intact, in both forms', () => {
+  // Regression: legacy Markdown read the `_` in the bare URL as an unclosed italic and Telegram answered HTTP 400.
+  const candidate = { title: '@zodl_app: Vote *opens* Nov 24 [details]', kind: 'vote', source: 'x/@zodl_app', url: 'https://x.com/zodl_app/status/1990000000000000000', tracked: false, dates: [{ date: '2026-11-24', label: 'vote_opens', known: false }], heights: [] };
+  const html = watch.formatDigest([candidate]);
+  assert.match(html, /<b>@zodl_app: Vote \*opens\* Nov 24 \[details\]<\/b>/);
+  assert.match(html, /\n {2}https:\/\/x\.com\/zodl_app\/status\/1990000000000000000\n/);
+  assert.doesNotMatch(html, /\\/, 'no backslash escapes are written');
+  const plain = watch.formatDigest([candidate], { plain: true });
+  assert.doesNotMatch(plain, /[<>]|&amp;/);
+  assert.match(plain, /^Calendar watch · 1 candidate to review\n\n• @zodl_app: Vote \*opens\* Nov 24 \[details\]\n/);
+  assert.equal(plain, html.replace(/<\/?b>/g, ''));
+});
+
+test('a rejected message falls back to plain text; an outage still fails the run', async () => {
+  const report = [{ title: 'A & B', kind: 'vote', source: 's', url: 'https://x.test', tracked: false, dates: [{ date: '2026-12-01', label: 'x', known: false }], heights: [] }];
+  const rejected = status => Object.assign(new Error(`Signal Telegram rejected sendMessage (HTTP ${status})`), { status });
+  const warnings = [];
+  const logger = { info() {}, warn: m => warnings.push(m) };
+  const calls = [];
+  await job.deliverDigest(report, { env: {}, logger, sendReport: async (text, options) => { calls.push([text, options.parseMode]); if (options.parseMode) throw rejected(400); } });
+  assert.deepEqual(calls.map(c => c[1]), ['HTML', null]);
+  assert.match(calls[0][0], /<b>A &amp; B<\/b>/);
+  assert.match(calls[1][0], /• A & B\n/);
+  assert.equal(warnings.length, 1);
+  // Anything other than a rejected message is not retried and leaves the documents unseen.
+  let attempts = 0;
+  await assert.rejects(job.deliverDigest(report, { env: {}, logger, sendReport: async () => { attempts++; throw rejected(502); } }), /HTTP 502/);
+  await assert.rejects(job.deliverDigest(report, { env: {}, logger, sendReport: async () => { attempts++; throw new Error('Signal Telegram request failed or exceeded 15 seconds'); } }));
+  assert.equal(attempts, 2);
+  // A plain-text rejection also fails the run.
+  await assert.rejects(job.deliverDigest(report, { env: {}, logger, sendReport: async () => { throw rejected(400); } }), /HTTP 400/);
 });
 
 test('a run sends only new candidates once, then remembers them', async () => {

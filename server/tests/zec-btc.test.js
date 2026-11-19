@@ -326,3 +326,28 @@ test('compact route exposes only quote and source with explicit unavailable and 
     assert.deepEqual(await available.json(), { source: 'CoinGecko', quote });
   }
 });
+
+test('the ratio axis fits the shown values instead of starting at zero', () => {
+  // 30 days between 1.30% and 1.75%: the old 0–5% axis drew this as a flat line.
+  const fitted = model.ratioAxis([1.3, 1.45, null, 1.75]);
+  assert.deepEqual(fitted, { domain: [1.2, 1.8], ticks: [1.2, 1.4, 1.6, 1.8] });
+  // Every value sits inside the axis, with room above and below.
+  for (const values of [[0.78, 1.925], [1.41, 1.52], [4.2, 9.8], [0.002, 0.0021]]) {
+    const { domain, ticks } = model.ratioAxis(values);
+    assert.ok(domain[0] < Math.min(...values) && domain[1] > Math.max(...values), JSON.stringify(values));
+    assert.equal(ticks[0], domain[0]);
+    assert.equal(ticks.at(-1), domain[1]);
+    assert.ok(ticks.length >= 3 && ticks.length <= 7, JSON.stringify(ticks));
+  }
+  // A flat series still gets a band, and nothing to draw gives no axis.
+  assert.deepEqual(model.ratioAxis([1.45, 1.45]).domain, [1.4, 1.5]);
+  assert.equal(model.ratioAxis([]), null);
+  assert.equal(model.ratioAxis([null, 0, -1]), null);
+});
+
+test('the ZEC/BTC card opens on 90 days and uses the fitted axis', () => {
+  const card = fs.readFileSync('components/valuation/ZecBtcCard.tsx', 'utf8');
+  assert.match(card, /useState<ZecBtcPeriod>\('90d'\)/);
+  assert.match(card, /domain=\{axis\?\.domain/);
+  assert.doesNotMatch(card, /Math\.max\(5/);
+});

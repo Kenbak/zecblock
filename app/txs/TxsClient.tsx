@@ -659,7 +659,7 @@ const TYPE_FILTERS: { id: TxType; label: string }[] = [
 const FLOW_FILTERS: { id: FlowFilter; label: string }[] = [
   { id: 'all', label: 'All' },
   { id: 'shield', label: 'Shielding' },
-  { id: 'deshield', label: 'Unshielding' },
+  { id: 'deshield', label: 'Deshielding' },
   { id: 'fully_shielded', label: 'Fully Shielded' },
 ];
 

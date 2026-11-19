@@ -63,7 +63,7 @@ export const WALLET_READINESS: ReadinessEntry[] = [
   },
   {
     name: 'Brave Wallet', platform: 'v1.95.101 reviewed', status: 'limited', method: 'Full migration unconfirmed',
-    detail: 'The release adds a notice limiting Zcash to unshielding and transparent sends during the transition.',
+    detail: 'The release adds a notice limiting Zcash to deshielding and transparent sends during the transition.',
     sources: [
       { label: 'Release', href: 'https://github.com/brave/brave-browser/releases/tag/v1.95.101' },
       { label: 'Support notice', href: 'https://github.com/brave/brave-core/pull/39448/files' },

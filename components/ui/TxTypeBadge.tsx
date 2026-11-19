@@ -65,7 +65,7 @@ export const TX_CATEGORY_CONFIG: Record<TxCategory, { label: string; color: Badg
   // state; individual pool badges retain their own labeled identities.
   shielded: { label: 'SHIELDED', color: 'shielded', icon: <ShieldedIcon size={ICON_SIZE} /> },
   shielding: { label: 'SHIELDING', color: 'green', icon: <ShieldingIcon size={ICON_SIZE} /> },
-  unshielding: { label: 'UNSHIELDING', color: 'orange', icon: <UnshieldingIcon size={ICON_SIZE} /> },
+  unshielding: { label: 'DESHIELDING', color: 'orange', icon: <UnshieldingIcon size={ICON_SIZE} /> },
   // Neither gets a "meaningful" color — mixed has no single direction, and
   // transparent has no shielded activity to signal. Reserving muted for
   // both keeps every other color meaningful when it does appear.

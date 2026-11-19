@@ -238,7 +238,7 @@ export async function renderTransactionsPage(
             <p>
               This page lists every transaction as it is mined, with type badges for
               transparent, Sapling, Orchard, Ironwood, and coinbase activity, plus flow indicators for
-              shielding and unshielding movements. Filter by type, pool, flow direction, or
+              shielding and deshielding movements. Filter by type, pool, flow direction, or
               minimum amount to analyze specific transaction patterns.
             </p>
           </div>

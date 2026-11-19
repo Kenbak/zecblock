@@ -53,7 +53,7 @@ const categories: NavigationCategory[] = [
     { href: '/ironwood', label: 'Ironwood', desc: 'Adoption and migration', networks: standard },
     { href: '/privacy', label: 'Privacy Score', desc: 'Index of shielded usage', networks: standard },
     { href: '/privacy-risks', label: 'Privacy Risks', desc: 'Amount and timing patterns', networks: standard },
-    { href: '/turnstile', label: 'Turnstile Tracker', desc: 'Where unshielded ZEC goes', networks: standard, footerOnly: true, nested: true, parent: '/pools' },
+    { href: '/turnstile', label: 'Turnstile Tracker', desc: 'Where deshielded ZEC goes', networks: standard, footerOnly: true, nested: true, parent: '/pools' },
     { href: '/privacy/wallets', label: 'Wallet Signals', desc: 'Observable wallet patterns', networks: standard, footerOnly: true, nested: true, parent: '/privacy-risks' },
   ] },
   { id: 'network', label: 'Network', items: [

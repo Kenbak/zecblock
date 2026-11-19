@@ -536,7 +536,7 @@ export function netShieldingCard(network: CardNetwork, payload: unknown, now = n
     detail: `${formatDayRange(week[0].date, week.at(-1)!.date)} UTC · public amounts only`,
     visual: { kind: 'split', rows: [
       { label: 'Shielded', value: Number(shielded / ZAT), display: formatWholeCoins(shielded, unit), color: 'shielding' },
-      { label: 'Unshielded', value: Number(unshielded / ZAT), display: formatWholeCoins(unshielded, unit), color: 'deshielding' },
+      { label: 'Deshielded', value: Number(unshielded / ZAT), display: formatWholeCoins(unshielded, unit), color: 'deshielding' },
     ] },
     source: 'Public amounts crossing the shielded pool boundary',
   };

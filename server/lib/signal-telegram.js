@@ -22,13 +22,18 @@ async function request(method, body, { env = process.env, fetchImpl = globalThis
   }
   let payload;
   try { payload = await response.json(); } catch { throw new Error('Signal Telegram returned an invalid response'); }
-  if (!response.ok || payload?.ok !== true) throw new Error(`Signal Telegram rejected ${method} (HTTP ${response.status})`);
+  if (!response.ok || payload?.ok !== true) {
+    // The status lets a caller tell a rejected message (400) from an outage. Never attach the payload or URL.
+    throw Object.assign(new Error(`Signal Telegram rejected ${method} (HTTP ${response.status})`), { status: response.status });
+  }
   return payload.result;
 }
 
+/** `parseMode` defaults to Telegram's legacy Markdown; pass 'HTML', or null for plain text. */
 async function sendSignalReport(text, options = {}) {
   const {chatId} = telegramConfig(options.env);
-  await request('sendMessage', {chat_id:chatId, text, parse_mode:'Markdown', disable_web_page_preview:true}, options);
+  const parseMode = options.parseMode === undefined ? 'Markdown' : options.parseMode;
+  await request('sendMessage', {chat_id:chatId, text, ...(parseMode ? {parse_mode:parseMode} : {}), disable_web_page_preview:true}, options);
 }
 
 async function checkSignalTelegram(options = {}) {

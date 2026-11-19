@@ -58,7 +58,7 @@
     "verify:homepage:live": "node scripts/verify-homepage-live-api.mjs",
     "verify:homepage": "node scripts/verify-homepage-first-render.mjs",
     "test:nu7-results": "node --test server/tests/nu7-results.test.js",
-    "test:governance": "node --test server/tests/governance.test.js server/tests/governance-announcement-cache.test.js server/tests/governance-upstream.test.js server/tests/governance-next-cache.test.js server/tests/zcash-calendar.test.js server/tests/calendar-watch.test.js server/tests/x-pulse.test.js server/tests/bounded-json.test.js",
+    "test:governance": "node --test server/tests/governance.test.js server/tests/governance-announcement-cache.test.js server/tests/governance-upstream.test.js server/tests/governance-next-cache.test.js server/tests/vote-registrations.test.js server/tests/zcash-calendar.test.js server/tests/calendar-watch.test.js server/tests/x-pulse.test.js server/tests/bounded-json.test.js",
     "test:activity": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/activity-milestones.test.js server/tests/activity-postgres.test.js",
     "test:hashrate-postgres": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/hashrate-postgres.test.js",
     "test:analytics-history": "NODE_PATH=$PWD/server/api/node_modules node --test server/tests/analytics-history.test.js server/tests/analytics-history-routes.test.js server/tests/daily-prices.test.js server/tests/pool-basis-refresh.test.js",

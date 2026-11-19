@@ -35,7 +35,7 @@ export function ValuationChart({ title, description, data, series, format, loadi
         <><ResponsiveContainer width="100%" height={300} initialDimension={{width:500,height:300}}><ComposedChart data={plotted} margin={{top:24,right:12,left:0,bottom:4}}>
           <CartesianGrid vertical={false} stroke={c.gridStroke} />
           <XAxis dataKey="date" minTickGap={65} tickFormatter={d => new Date(String(d)).toLocaleDateString('en-US',{month:'short',...(multiYear?{year:'numeric' as const}:{day:'numeric' as const}),timeZone:'UTC'})} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
-          <YAxis domain={domain} width={64} tickFormatter={format} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
+          <YAxis domain={domain} width={64} tickFormatter={v => format(Number(v)).replace(/\.00(?=\D*$)/, "")} tick={{fill:c.axis,fontSize:12}} axisLine={false} tickLine={false} />
           <ChartTooltip itemStyle={{color:c.tooltipText}} labelFormatter={d => new Date(String(d)).toLocaleDateString('en-US',{year:'numeric',month:'short',day:'numeric',timeZone:'UTC'})} formatter={(value, name) => [format(Number(value)),String(name)]} />
           <ChartLegend formatter={label => <span className="text-muted">{label}</span>} />
           {reference && <ReferenceLine y={reference.value} stroke={c.referenceLine} strokeDasharray="4 4" label={{value:reference.label,fill:c.axis,fontSize:12,position:'insideTopRight'}} />}

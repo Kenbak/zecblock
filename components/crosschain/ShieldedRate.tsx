@@ -10,6 +10,7 @@ import {
 } from "recharts";
 import { ChartTooltip as Tooltip } from "@/components/charts/ChartTooltip";
 import { ChartCard } from "@/components/network/ChartCard";
+import { formatBucketLabel } from "@/lib/chart-dates";
 import { objectRowsCsv } from "@/components/charts/PanelShareControl";
 import { PeriodPillTags } from "@/components/ui/PeriodPillTags";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -197,7 +198,7 @@ export function ShieldedRate({ dashboardPeriod }: { dashboardPeriod: string }) {
         <ResponsiveContainer width="100%" height={220} minWidth={0}>
           <BarChart data={points} stackOffset="expand" margin={{ left: 0, right: 8 }} barCategoryGap={1}>
             <CartesianGrid stroke={colors.gridStroke} vertical={false} />
-            <XAxis tickLine={false} axisLine={false} dataKey="date" minTickGap={45} tick={{ fill: colors.axis, fontSize: 12 }} />
+            <XAxis tickLine={false} axisLine={false} dataKey="date" minTickGap={45} tickFormatter={formatBucketLabel} tick={{ fill: colors.axis, fontSize: 12 }} />
             <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${Math.round(v * 100)}%`} width={44} tick={{ fill: colors.axis, fontSize: 12 }} />
             <Tooltip
               cursor={{ fill: colors.barCursor }}

@@ -2059,6 +2059,9 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   .redacted-blocks > span { display: inline-block; width: 0.65em; text-align: center; }
   .recharts-text { font-family: var(--font-geist-mono); font-variant-numeric: tabular-nums; }
   .recharts-default-tooltip { box-shadow: none; font-family: var(--font-geist-mono); }
+  /* An axis label centred on the first or last point may reach past the plot; let it
+     run into the card's padding instead of being cut off. Series stay clipped to the plot. */
+  .recharts-surface { overflow: visible; }
   .chart-signature { text-align: right; font: 0.75rem/1.5 var(--font-geist-mono); color: var(--color-text-muted); padding-top: 8px; }
   @media (max-width: 640px) {
     .home-hero-band { padding: 36px 0 28px; }

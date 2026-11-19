@@ -428,7 +428,8 @@ function HashrateShareSection() {
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={formatDateLabelUTC}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
               <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}
@@ -474,7 +475,8 @@ function HashrateShareSection() {
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={formatDateLabelUTC}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
               <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}
@@ -675,7 +677,8 @@ function MinerBehaviorSection() {
                 dataKey="date"
                 stroke={colors.axis}
                 tick={{ fill: colors.axis, fontSize: 12 }}
-                tickFormatter={formatDateLabelUTC}
+                                minTickGap={32}
+tickFormatter={formatDateLabelUTC}
               />
               <YAxis tickLine={false} axisLine={false}
                 stroke={colors.axis}

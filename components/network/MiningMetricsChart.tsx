@@ -14,6 +14,24 @@ import { CURRENCY } from '@/lib/config';
 import { ChartCard } from './ChartCard';
 import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
+/** Short axis labels: whole units, no decimals, so they fit beside a phone-width plot. */
+function axisTick(metric: string, value: number): string {
+  if (!Number.isFinite(value) || value === 0) return '0';
+  const short = (n: number) => (Math.abs(n) >= 10 ? String(Math.round(n)) : String(Math.round(n * 10) / 10));
+  if (metric === 'solrate') {
+    if (value >= 1e12) return `${short(value / 1e12)} TSol/s`;
+    if (value >= 1e9) return `${short(value / 1e9)} GSol/s`;
+    if (value >= 1e6) return `${short(value / 1e6)} MSol/s`;
+    return `${short(value)} Sol/s`;
+  }
+  if (metric === 'difficulty') {
+    if (value >= 1e9) return `${short(value / 1e9)}B`;
+    if (value >= 1e6) return `${short(value / 1e6)}M`;
+    if (value >= 1e3) return `${short(value / 1e3)}K`;
+  }
+  return short(value);
+}
+
 type MetricKey = 'solrate' | 'difficulty' | 'blockTime' | 'txFees' | 'txCount';
 
 const METRICS: { key: MetricKey; label: string; color: string; format: (v: number) => string }[] = [
@@ -100,7 +118,8 @@ export function MiningMetricsChart() {
             <YAxis tickLine={false} axisLine={false}
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
-              tickFormatter={(v) => (active === 'difficulty' ? formatDifficulty(v) : active === 'solrate' ? formatHashrate(v) : String(Math.round(v * 100) / 100))}
+              width={68}
+              tickFormatter={(v) => axisTick(active, Number(v))}
             />
             <Tooltip
               contentStyle={{

@@ -524,7 +524,7 @@ function TrendsChart() {
                 tick={{ fontSize: 12, fill: colors.axis }}
                 tickLine={false}
                 axisLine={false}
-                interval="preserveStartEnd"
+                minTickGap={32}
               />
               <YAxis
                 yAxisId="left"
@@ -622,7 +622,8 @@ function TrendsChart() {
         />
         <MetricCard size="compact"
           label="Peak Day"
-          value={derived.peakDay ? `${formatDateShort(derived.peakDay.date)} — ${(derived.peakDay.shielded + derived.peakDay.transparent).toLocaleString()}` : '—'}
+          value={derived.peakDay ? (derived.peakDay.shielded + derived.peakDay.transparent).toLocaleString() : '—'}
+          hint={derived.peakDay ? formatDateShort(derived.peakDay.date) : undefined}
         />
       </div>
     </div>

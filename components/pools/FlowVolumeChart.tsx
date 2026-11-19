@@ -149,7 +149,7 @@ export function FlowVolumeChart() {
           stroke={colors.axis}
           tick={{ fill: colors.axis, fontSize: 12 }}
           tickFormatter={(v) => formatChartDate(String(v))}
-          interval="preserveStartEnd"
+          minTickGap={32}
         />
         <YAxis tickLine={false} axisLine={false}
           stroke={colors.axis}

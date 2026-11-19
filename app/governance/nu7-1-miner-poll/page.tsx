@@ -150,10 +150,15 @@ export default async function MinerPollPage() {
         {tally && (
           <section aria-labelledby="questions-heading" className="space-y-3">
             <div className="flex flex-wrap items-baseline justify-between gap-2">
-              <h2 id="questions-heading" className="font-mono text-xs uppercase tracking-wider text-muted">Results by question</h2>
-              {tally.observedBlocks < tally.totalBlocks && <p className="text-xs text-muted">Shares of the {fmt(tally.observedBlocks)} blocks mined so far · {fmt(tally.totalBlocks - tally.observedBlocks)} still to come</p>}
+              <h2 id="questions-heading" className="font-mono text-xs uppercase tracking-wider text-muted">{tally.observedBlocks > 0 ? 'Results by question' : 'The five questions'}</h2>
+              {tally.observedBlocks > 0 && tally.observedBlocks < tally.totalBlocks && <p className="text-xs text-muted">Shares of the {fmt(tally.observedBlocks)} blocks mined so far · {fmt(tally.totalBlocks - tally.observedBlocks)} still to come</p>}
             </div>
-            {MINER_POLL.questions.map((_, i) => <QuestionResult key={i} tally={tally} index={i} />)}
+            {tally.observedBlocks > 0
+              ? MINER_POLL.questions.map((_, i) => <QuestionResult key={i} tally={tally} index={i} />)
+              : <ol className="space-y-2 rounded-2xl border border-cipher-border bg-cipher-card p-5 text-sm text-secondary sm:p-6">
+                  {MINER_POLL.questions.map((q, i) => <li key={i}><span className="mr-2 font-mono text-xs text-muted">Q{i + 1}</span>{q.text}</li>)}
+                  <li className="pt-2 text-xs text-muted">Results appear here once block {fmt(MINER_POLL.startHeight)} is mined.</li>
+                </ol>}
           </section>
         )}
 

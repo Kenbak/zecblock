@@ -6,8 +6,14 @@ import { ApiError, readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { useEffect, useState } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Legend, ResponsiveContainer,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { getApiUrl } from '@/lib/api-config';
 import { useTheme } from '@/contexts/ThemeContext';
@@ -471,17 +477,17 @@ export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProp
         }));
 
         return (
-          <ChartCard title="DAILY_DESHIELDED_ZEC_BREAKDOWN" height={280} share={{ title: 'Daily deshielded ZEC breakdown', fileName: 'zecblock-daily-deshielded-zec', csv: () => objectRowsCsv(chartData) }}>
+          <ChartCard title="Daily deshielded ZEC breakdown" height={280} share={{ title: 'Daily deshielded ZEC breakdown', fileName: 'zecblock-daily-deshielded-zec', csv: () => objectRowsCsv(chartData) }}>
             <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>
               <AreaChart data={chartData}>
-                <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-                <XAxis
+                <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+                <XAxis tickLine={false} axisLine={false}
                   dataKey="dateLabel"
                   stroke={colors.axis}
                   tick={{ fill: colors.axis, fontSize: 12 }}
                   {...CHART_DATE_AXIS}
                 />
-                <YAxis
+                <YAxis tickLine={false} axisLine={false}
                   stroke={colors.axis}
                   tick={{ fill: colors.axis, fontSize: 12 }}
                   tickFormatter={v => formatZecCompact(v)}
@@ -506,13 +512,13 @@ export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProp
                     return [`${Number(value).toFixed(2)} ZEC`, labels[String(name)] || String(name)];
                   }}
                 />
-                <Legend wrapperStyle={{ fontSize: 12, paddingTop: 8 }} />
-                <Area type="monotone" dataKey="held" stackId="1" stroke={flowColors.held} fill={flowColors.held} fillOpacity={0.35} name="Still Held" />
-                <Area type="monotone" dataKey="reshielded" stackId="1" stroke={flowColors.reshielded} fill={flowColors.reshielded} fillOpacity={0.3} name="Reshielded" />
-                <Area type="monotone" dataKey="moved" stackId="1" stroke={flowColors.moved} fill={flowColors.moved} fillOpacity={0.25} name="Moved" hide={showDetail} />
-                <Area type="monotone" dataKey="transferred" stackId="1" stroke={flowColors.transferred} fill={flowColors.transferred} fillOpacity={0.2} name="Transferred" hide={!showDetail} />
-                <Area type="monotone" dataKey="bridge" stackId="1" stroke={flowColors.bridge} fill={flowColors.bridge} fillOpacity={0.3} name="To Bridge" hide={!showDetail} />
-                <Area type="monotone" dataKey="exchange" stackId="1" stroke={flowColors.exchange} fill={flowColors.exchange} fillOpacity={0.25} name="To Exchange" hide={!showDetail} />
+                <ChartLegend />
+                <Area type="linear" dataKey="held" stackId="1" stroke={flowColors.held} fill={flowColors.held} fillOpacity={0.35} name="Still Held" />
+                <Area type="linear" dataKey="reshielded" stackId="1" stroke={flowColors.reshielded} fill={flowColors.reshielded} fillOpacity={0.3} name="Reshielded" />
+                <Area type="linear" dataKey="moved" stackId="1" stroke={flowColors.moved} fill={flowColors.moved} fillOpacity={0.25} name="Moved" hide={showDetail} />
+                <Area type="linear" dataKey="transferred" stackId="1" stroke={flowColors.transferred} fill={flowColors.transferred} fillOpacity={0.2} name="Transferred" hide={!showDetail} />
+                <Area type="linear" dataKey="bridge" stackId="1" stroke={flowColors.bridge} fill={flowColors.bridge} fillOpacity={0.3} name="To Bridge" hide={!showDetail} />
+                <Area type="linear" dataKey="exchange" stackId="1" stroke={flowColors.exchange} fill={flowColors.exchange} fillOpacity={0.25} name="To Exchange" hide={!showDetail} />
               </AreaChart>
             </ResponsiveContainer>
           </ChartCard>

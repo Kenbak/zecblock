@@ -8,9 +8,9 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-  Legend,
   ResponsiveContainer,
 } from "recharts";
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from "@/components/charts/ChartTooltip";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors, getChartTooltipStyle } from "@/lib/chart-theme";
@@ -210,18 +210,16 @@ export function LatencyComparisonChart({
           margin={{ left: 8, right: 24 }}
         >
           <CartesianGrid
-            strokeDasharray="2 6"
-            stroke={colors.grid}
-            opacity={0.5}
+            stroke={colors.gridStroke}
             horizontal={false}
           />
-          <XAxis
+          <XAxis tickLine={false} axisLine={false}
             type="number"
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             tickFormatter={(v: number) => formatMinutes(v)}
           />
-          <YAxis
+          <YAxis tickLine={false} axisLine={false}
             type="category"
             dataKey="chain"
             stroke={colors.axis}
@@ -232,8 +230,7 @@ export function LatencyComparisonChart({
             content={<LatencyTooltip colors={colors} />}
             cursor={{ fill: colors.barCursor }}
           />
-          <Legend
-            wrapperStyle={{ fontSize: 12, paddingTop: 8 }}
+          <ChartLegend
             formatter={(value) =>
               value === "inboundMedian"
                 ? "Buy ZEC (inbound)"

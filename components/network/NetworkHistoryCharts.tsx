@@ -42,16 +42,16 @@ export function NetworkHistoryCharts({ initialData, initialFetchedAt }: { initia
   );
 
   return (
-    <ChartCard title="NODE_STORAGE_HISTORY" height={260} watermarkSize="sm" share={{ title: 'Zcash node storage history', fileName: 'zecblock-node-storage-history', csv: () => objectRowsCsv(sizePoints) }}>
+    <ChartCard title="Node storage history" height={260} watermarkSize="sm" share={{ title: 'Zcash node storage history', fileName: 'zecblock-node-storage-history', csv: () => objectRowsCsv(sizePoints) }}>
       <p className="text-caption text-muted mb-3">Last 30 days · Explorer node disk snapshots · GiB (1,024³ bytes). Storage depends on the node implementation.</p>
       {loading ? (
         <ChartSkeleton height={260} />
       ) : sizePoints.length > 0 ? (
         <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={260}>
           <LineChart data={sizePoints}>
-            <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-            <XAxis dataKey="time" stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} minTickGap={48} tickFormatter={value => new Date(value).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' })} />
-            <YAxis stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} tickFormatter={(v) => `${v.toFixed(0)} GiB`} domain={['auto', 'auto']} />
+            <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+            <XAxis tickLine={false} axisLine={false} dataKey="time" stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} minTickGap={48} tickFormatter={value => new Date(value).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' })} />
+            <YAxis tickLine={false} axisLine={false} stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} tickFormatter={(v) => `${v.toFixed(0)} GiB`} domain={['auto', 'auto']} />
             <Tooltip
               labelFormatter={value => new Date(String(value)).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}
               cursor={{ stroke: colors.cursor }}

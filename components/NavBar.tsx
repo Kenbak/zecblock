@@ -2,7 +2,6 @@
 
 import Link from 'next/link';
 import { BrandLogo } from '@/components/BrandLogo';
-import { ZiftMark } from '@/components/ask/ZiftMark';
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
 import { containDialogFocus } from '@/lib/dialog-focus';
@@ -12,9 +11,46 @@ import { DonateButton } from '@/components/DonateButton';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { NETWORK, NETWORK_LABEL, isMainnet, isCrosslink, MAINNET_URL, TESTNET_URL, CROSSLINK_URL } from '@/lib/config';
 
-import { getNavigation, getActiveNavigationHref } from '@/lib/navigation';
+import { getNavigation, getActiveNavigationHref, getHeaderActiveHref, getNestedNavigation, groupNavigationItems, PRIVATE_EXPLORER_URL } from '@/lib/navigation';
 
-const categories = getNavigation(NETWORK);
+// Icon-only header controls share one box so they line up with the theme and support buttons.
+const UTILITY_ICON = 'inline-flex items-center justify-center p-1.5 rounded-lg text-muted hover:text-primary transition-colors duration-150';
+
+/** The Private Explorer is its own site. The hat and glasses read as a hidden person. Mainnet only. */
+function PrivateExplorerLink({ onNavigate }: { onNavigate?: () => void }) {
+  if (!isMainnet) return null;
+  return (
+    <a href={PRIVATE_EXPLORER_URL} target="_blank" rel="noopener noreferrer" onClick={onNavigate}
+      aria-label="Private Explorer (opens in a new tab)" title="Private Explorer ↗" className={UTILITY_ICON}>
+      <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M3 11h18" />
+        <path d="M5 11V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v4" />
+        <circle cx="7" cy="17" r="3" />
+        <circle cx="17" cy="17" r="3" />
+        <path d="M10 17h4" />
+      </svg>
+    </a>
+  );
+}
+
+/** Shortcut to the tools hub, which the Resources menu also lists. */
+function ToolsLink({ current, onNavigate }: { current: boolean; onNavigate?: () => void }) {
+  return (
+    <Link href="/tools" onClick={onNavigate} aria-label="Tools" title="Tools" aria-current={current ? 'page' : undefined}
+      className={`${UTILITY_ICON} ${current ? '!text-primary bg-cipher-hover' : ''}`}>
+      <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round">
+        <path d="M21.75 6.75a4.5 4.5 0 0 1-4.884 4.484c-1.076-.091-2.264.071-2.95.904l-7.152 8.684a2.548 2.548 0 1 1-3.586-3.586l8.684-7.152c.833-.686.995-1.874.904-2.95a4.5 4.5 0 0 1 6.336-4.486l-3.276 3.276a3.004 3.004 0 0 0 2.25 2.25l3.276-3.276c.256.565.398 1.192.398 1.852Z" />
+        <path d="M4.867 19.125h.008v.008h-.008v-.008Z" />
+      </svg>
+    </Link>
+  );
+}
+
+// Grouped once: a menu with several groups renders one labelled column per group.
+const categories = getNavigation(NETWORK).map(category => ({ ...category, groups: groupNavigationItems(category.items) }));
+// Specialist pages stay one click away as small links under the destination they belong to.
+const nestedLinks = getNestedNavigation(NETWORK);
+const sitemap = getNavigation(NETWORK, 'footer');
 
 export function NavBar() {
   const [openDropdown, setOpenDropdown] = useState<string | null>(null);
@@ -27,7 +63,10 @@ export function NavBar() {
   const searchTriggerRef = useRef<HTMLButtonElement>(null);
   const mobileTriggerRef = useRef<HTMLButtonElement>(null);
   const pathname = usePathname();
-  const activeHref = getActiveNavigationHref(pathname, categories);
+  // A page that left the masthead (footer-only) keeps its parent destination lit.
+  const activeHref = getHeaderActiveHref(pathname, NETWORK);
+  // The exact page, so a nested link (not its parent) is the one announced as current.
+  const exactHref = getActiveNavigationHref(pathname, sitemap);
 
   const closeAll = useCallback(() => {
     setOpenDropdown(null);
@@ -170,17 +209,40 @@ export function NavBar() {
                   {openDropdown === cat.id && (
                     <div
                       id={`nav-panel-${cat.id}`}
-                      className={`absolute left-0 mt-2 max-h-[calc(100dvh-5rem)] overflow-y-auto overscroll-contain dropdown-menu rounded-lg shadow-xl border p-2 z-50 animate-scale-in origin-top-left ${
-                        cat.items.length > 7 ? 'w-[30rem] grid grid-cols-2 gap-0.5' : 'w-60'
-                      }`}
+                      className="absolute left-0 mt-2 flex max-h-[calc(100dvh-5rem)] gap-1 overflow-y-auto overscroll-contain dropdown-menu rounded-lg shadow-xl border p-2 z-50 animate-scale-in origin-top-left"
                     >
-                      {cat.items.map(item => (
-                        <Link key={item.href} href={item.href} onClick={closeAll}
-                          aria-current={activeHref === item.href ? 'page' : undefined}
-                          className={`flex flex-col min-w-0 px-3 py-2 dropdown-item rounded-md transition-colors duration-150 ${activeHref === item.href ? 'bg-cipher-hover !text-primary' : ''}`}>
-                          <span className="text-sm font-mono">{item.label}</span>
-                          <span className="text-caption text-muted leading-snug mt-0.5">{item.desc}</span>
-                        </Link>
+                      {cat.groups.map(group => (
+                        <div key={group.label ?? cat.id} role={group.label ? 'group' : undefined} aria-label={group.label}
+                          className={`shrink-0 ${cat.groups.length > 1 ? 'w-56' : 'w-60'}`}>
+                          {group.label && <p aria-hidden="true" className="type-label text-muted uppercase px-3 pt-1.5 pb-1">{group.label}</p>}
+                          {group.items.map(item => {
+                            const children = nestedLinks[item.href] ?? [];
+                            const childCurrent = children.some(child => child.href === exactHref);
+                            return (
+                              <div key={item.href}>
+                                <Link href={item.href} onClick={closeAll}
+                                  aria-current={activeHref === item.href && !childCurrent ? 'page' : undefined}
+                                  className={`flex flex-col min-w-0 px-3 py-2 dropdown-item rounded-md transition-colors duration-150 ${activeHref === item.href ? 'bg-cipher-hover !text-primary' : ''}`}>
+                                  <span className="text-sm font-mono">{item.label}</span>
+                                  <span className="text-caption text-muted leading-snug mt-0.5">{item.desc}</span>
+                                </Link>
+                                {children.length > 0 && (
+                                  <ul className="ml-3 mt-0.5 mb-1 border-l border-cipher-border pl-1">
+                                    {children.map(child => (
+                                      <li key={child.href}>
+                                        <Link href={child.href} onClick={closeAll} title={child.desc}
+                                          aria-current={exactHref === child.href ? 'page' : undefined}
+                                          className={`block px-2 py-1 text-caption font-mono dropdown-item rounded-md transition-colors duration-150 ${exactHref === child.href ? '!text-primary' : ''}`}>
+                                          {child.label}
+                                        </Link>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -189,20 +251,9 @@ export function NavBar() {
 
             </div>
 
-            {/* Keep SSR/client structure identical; homepage CSS hides compact search. */}
-            <div className="hidden xl:block w-44 2xl:w-60 shrink-0 nav-search-compact">
-              <button ref={searchTriggerRef} type="button" aria-label="Search Zcash" aria-haspopup="dialog" aria-expanded={searchOpen} aria-controls="navigation-search"
-                title="Search (⌘K / Ctrl+K)"
-                onClick={() => { setOpenDropdown(null); setSearchOpen(true); }}
-                className="flex h-9 w-full items-center gap-2 rounded-md border border-cipher-border bg-cipher-surface px-3 text-xs text-secondary transition-colors hover:border-glass-12 hover:text-primary">
-                <svg aria-hidden="true" className="h-3.5 w-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.5}><circle cx="10.5" cy="10.5" r="6.5" /><path strokeLinecap="round" d="m16 16 4.5 4.5" /></svg>
-                <span>Search</span><kbd aria-hidden="true" className="ml-auto font-mono text-caption text-muted">⌘K</kbd>
-              </button>
-            </div>
-
-            {/* Right: utilities */}
+            {/* Right: utilities. Zift has no link here: its launcher floats on every mainnet page
+                and the Resources menu lists it. */}
             <div className="flex items-center gap-1.5 sm:gap-2">
-              {isMainnet ? <Link href="/zift" aria-current={pathname === '/zift' ? 'page' : undefined} title="Zift: ask questions and run SQL on Zcash data" className="hidden xl:flex h-9 items-center gap-1.5 px-1 sm:px-2.5 text-xs font-mono text-secondary hover:text-primary hover:bg-cipher-hover rounded-md transition-colors"><ZiftMark size={14} /> Ask Zift</Link> : null}
               {/* Buy ZEC — mainnet only, desktop */}
               {isMainnet && (
                 <a
@@ -227,13 +278,13 @@ export function NavBar() {
               }}>
                 <button
                   type="button"
-                  id="nav-trigger-network"
+                  id="nav-trigger-network-switch"
                   aria-label={`Switch network. Current network: ${NETWORK_LABEL}`}
-                  aria-expanded={openDropdown === 'network'}
-                  aria-controls="nav-panel-network"
-                  onClick={() => toggleDropdown('network')}
+                  aria-expanded={openDropdown === 'network-switch'}
+                  aria-controls="nav-panel-network-switch"
+                  onClick={() => toggleDropdown('network-switch')}
                   className={`flex items-center gap-1.5 pl-2 pr-2.5 py-1.5 rounded-md transition-colors duration-150 ${
-                    openDropdown === 'network' ? 'text-primary bg-cipher-hover' : 'text-muted hover:text-primary'
+                    openDropdown === 'network-switch' ? 'text-primary bg-cipher-hover' : 'text-muted hover:text-primary'
                   }`}
                   title={isMainnet ? 'Mainnet' : isCrosslink ? 'Crosslink' : 'Testnet'}
                 >
@@ -255,8 +306,8 @@ export function NavBar() {
                   </span>
                 </button>
 
-                {openDropdown === 'network' && (
-                  <div id="nav-panel-network" className="absolute right-0 mt-1 w-36 dropdown-menu rounded-lg shadow-xl border p-2 z-50 animate-scale-in origin-top-right">
+                {openDropdown === 'network-switch' && (
+                  <div id="nav-panel-network-switch" className="absolute right-0 mt-1 w-36 dropdown-menu rounded-lg shadow-xl border p-2 z-50 animate-scale-in origin-top-right">
                     <a
                       href={MAINNET_URL}
                       aria-current={isMainnet ? 'true' : undefined}
@@ -288,8 +339,18 @@ export function NavBar() {
                 )}
               </div>
 
-              {/* Theme + Donate — desktop only */}
+              {/* Shortcuts, theme and support — desktop only. The drawer and footer carry the same links on small screens. */}
               <div className="hidden xl:flex items-center gap-1">
+                {/* Search opens a dialog, so the header shows its icon, not a field. The homepage has its own
+                    search box and hides this one in CSS; the markup stays identical for SSR and hydration. */}
+                <button ref={searchTriggerRef} type="button" aria-label="Search Zcash" aria-haspopup="dialog" aria-expanded={searchOpen} aria-controls="navigation-search"
+                  title="Search (⌘K / Ctrl+K)"
+                  onClick={() => { setOpenDropdown(null); setSearchOpen(true); }}
+                  className={`${UTILITY_ICON} nav-search-compact`}>
+                  <svg aria-hidden="true" className="h-4 w-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.75}><circle cx="10.5" cy="10.5" r="6.5" /><path strokeLinecap="round" d="m16 16 4.5 4.5" /></svg>
+                </button>
+                <PrivateExplorerLink />
+                <ToolsLink current={activeHref === '/tools'} />
                 <ThemeToggle />
                 <DonateButton compact />
               </div>
@@ -302,7 +363,7 @@ export function NavBar() {
                 aria-controls="mobile-navigation"
                 onClick={() => {
                   setOpenDropdown(null);
-                  setMobileAccordion(categories.find(cat => cat.items.some(item => item.href === activeHref))?.id ?? 'explore');
+                  setMobileAccordion(categories.find(cat => cat.items.some(item => item.href === activeHref))?.id ?? categories[0]?.id ?? null);
                   setMobileMenuOpen(true);
                 }}
                 className="xl:hidden inline-flex h-11 w-11 items-center justify-center rounded-md text-muted hover:text-primary transition duration-150"
@@ -338,7 +399,7 @@ export function NavBar() {
             </button>
           </div>
           <SearchBar compact onNavigate={() => setSearchOpen(false)} />
-          <p className="mt-3 text-xs text-muted">Find an address, transaction, block or Zcash name.</p>
+          <p className="mt-3 text-xs text-muted">Find a page, chart, address, transaction, block or Zcash name.</p>
         </div>
       </dialog>
 
@@ -378,7 +439,8 @@ export function NavBar() {
                     onClick={() => setMobileAccordion(prev => prev === cat.id ? null : cat.id)}
                     className="flex min-h-11 items-center justify-between w-full px-3 py-2.5 rounded-md transition-colors duration-150 text-left mobile-menu-item"
                   >
-                    <span className="text-caption font-mono text-muted tracking-widest uppercase">{cat.label}</span>
+                    {/* Menu name outranks the group sub-headings inside it, which keep the small uppercase label. */}
+                    <span className="text-sm font-mono font-medium text-primary">{cat.label}</span>
                     <svg aria-hidden="true"
                       className={`w-3.5 h-3.5 text-muted transition-transform duration-200 ${mobileAccordion === cat.id ? 'rotate-180' : ''}`}
                       fill="none"
@@ -391,17 +453,40 @@ export function NavBar() {
 
                   {mobileAccordion === cat.id && (
                     <div id={`mobile-panel-${cat.id}`} className="pb-2 animate-fade-in">
-                      {cat.items.map(item => (
-                        <Link
-                          key={item.href}
-                          href={item.href}
-                          onClick={closeAll}
-                          aria-current={activeHref === item.href ? 'page' : undefined}
-                          className={`flex flex-col px-3 py-3 ml-2 mobile-menu-item rounded-md transition-colors duration-150 ${activeHref === item.href ? 'bg-cipher-hover !text-primary' : ''}`}
-                        >
-                          <span className="text-sm font-mono">{item.label}</span>
-                          <span className="text-caption text-muted mt-0.5">{item.desc}</span>
-                        </Link>
+                      {cat.groups.map(group => (
+                        <div key={group.label ?? cat.id} role={group.label ? 'group' : undefined} aria-label={group.label}>
+                          {group.label && <p aria-hidden="true" className="type-label text-muted uppercase ml-2 px-3 pt-3 pb-1">{group.label}</p>}
+                          {group.items.map(item => {
+                            const children = nestedLinks[item.href] ?? [];
+                            const childCurrent = children.some(child => child.href === exactHref);
+                            return (
+                              <div key={item.href}>
+                                <Link
+                                  href={item.href}
+                                  onClick={closeAll}
+                                  aria-current={activeHref === item.href && !childCurrent ? 'page' : undefined}
+                                  className={`flex flex-col px-3 py-3 ml-2 mobile-menu-item rounded-md transition-colors duration-150 ${activeHref === item.href ? 'bg-cipher-hover !text-primary' : ''}`}
+                                >
+                                  <span className="text-sm font-mono">{item.label}</span>
+                                  <span className="text-caption text-muted mt-0.5">{item.desc}</span>
+                                </Link>
+                                {children.length > 0 && (
+                                  <ul className="ml-5 mb-1 border-l border-cipher-border pl-1">
+                                    {children.map(child => (
+                                      <li key={child.href}>
+                                        <Link href={child.href} onClick={closeAll}
+                                          aria-current={exactHref === child.href ? 'page' : undefined}
+                                          className={`flex min-h-11 items-center px-3 text-caption font-mono mobile-menu-item rounded-md transition-colors duration-150 ${exactHref === child.href ? '!text-primary' : ''}`}>
+                                          {child.label}
+                                        </Link>
+                                      </li>
+                                    ))}
+                                  </ul>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
                       ))}
                     </div>
                   )}
@@ -459,8 +544,10 @@ export function NavBar() {
                     </a>
                   </div>
 
-                  {/* Theme + Donate */}
+                  {/* Shortcuts, support and theme. Search stays as the field under the logo on small screens. */}
                   <div className="flex items-center justify-end gap-2">
+                    <PrivateExplorerLink onNavigate={closeAll} />
+                    <ToolsLink current={activeHref === '/tools'} onNavigate={closeAll} />
                     <DonateButton compact />
                     <ThemeToggle />
                   </div>

@@ -1,5 +1,6 @@
 'use client';
 import { formatDateUTC } from '@/lib/utils';
+import { recentShieldedShare, shieldedShare } from '@/lib/shielded-share';
 import { nonCoinbaseActivity, shieldedListParams } from '@/lib/transaction-list';
 import { readApiData } from '@/lib/api-client';
 import { ChartWatermark } from '@/components/ChartWatermark';
@@ -19,8 +20,15 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { usePaginatedList, type BasePaginationState } from '@/hooks/usePaginatedList';
 import {
-  ComposedChart, Area, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend,
+  ComposedChart,
+  Area,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useUrlState } from '@/lib/use-url-state';
 import { PanelShareControl } from '@/components/charts/PanelShareControl';
@@ -30,7 +38,7 @@ import { PanelShareControl } from '@/components/charts/PanelShareControl';
 type TxType = 'all' | 'shielded' | 'transparent' | 'coinbase';
 type FlowFilter = 'all' | 'shield' | 'deshield' | 'fully_shielded';
 type PoolFilter = 'all' | 'ironwood' | 'sapling' | 'orchard' | 'mixed';
-type ViewTab = 'recent' | 'trends';
+export type ViewTab = 'recent' | 'activity';
 
 
 interface ShieldedFlow {
@@ -469,11 +477,12 @@ function TrendsChart() {
   );
 
   const derived = useMemo(() => {
-    if (data.length === 0) return { totalTxs: 0, avgDaily: 0, peakDay: null };
+    if (data.length === 0) return { totalTxs: 0, avgDaily: 0, peakDay: null, share: null };
     const totalTxs = data.reduce((s, d) => s + d.shielded + d.transparent, 0);
     const avgDaily = Math.round(totalTxs / data.length);
     const peakDay = data.reduce((best, d) => (d.shielded + d.transparent) > (best.shielded + best.transparent) ? d : best, data[0]);
-    return { totalTxs, avgDaily, peakDay };
+    // The whole range as one ratio, not the mean of the daily percentages.
+    return { totalTxs, avgDaily, peakDay, share: shieldedShare(data) };
   }, [data]);
 
   const periodLabel = period === 'all' ? 'All Time' : period === '365' ? '1 Year' : `${period} Days`;
@@ -482,7 +491,7 @@ function TrendsChart() {
     <div>
       <div ref={panelRef} className="card p-4 sm:p-6">
         <div className="flex flex-wrap items-center justify-between gap-2 mb-4">
-          <h3 className="text-sm font-mono text-muted uppercase tracking-wider">Daily Transaction Volume</h3>
+          <h3 className="chart-title">Daily transaction volume</h3>
           <div className="flex flex-wrap items-center gap-2">
             <FilterGroup inline>
               {PERIOD_OPTIONS.map(p => (
@@ -509,12 +518,12 @@ function TrendsChart() {
         <div className="h-[320px]">
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height="100%">
             <ComposedChart data={chartData} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke={colors.grid} vertical={false} />
+              <CartesianGrid stroke={colors.gridStroke} vertical={false} />
               <XAxis
                 dataKey="date"
                 tick={{ fontSize: 12, fill: colors.axis }}
                 tickLine={false}
-                axisLine={{ stroke: colors.grid }}
+                axisLine={false}
                 interval="preserveStartEnd"
               />
               <YAxis
@@ -549,8 +558,7 @@ function TrendsChart() {
                   return [v.toLocaleString(), n === 'shielded' ? 'Shielded Txs' : 'Transparent Txs'];
                 }}
               />
-              <Legend
-                wrapperStyle={{ fontSize: 12, cursor: 'pointer' }}
+              <ChartLegend wrapperStyle={{ cursor: 'pointer' }}
                 onClick={(entry) => {
                   const key = (entry as { dataKey?: string }).dataKey;
                   if (key) setHidden(prev => ({ ...prev, [key]: !prev[key] }));
@@ -562,7 +570,7 @@ function TrendsChart() {
               />
               <Area
                 yAxisId="left"
-                type="monotone"
+                type="linear"
                 dataKey="transparent"
                 stackId="txs"
                 fill={colors.transparent}
@@ -573,7 +581,7 @@ function TrendsChart() {
               />
               <Area
                 yAxisId="left"
-                type="monotone"
+                type="linear"
                 dataKey="shielded"
                 stackId="txs"
                 fill={colors.shielded}
@@ -584,7 +592,7 @@ function TrendsChart() {
               />
               <Line
                 yAxisId="right"
-                type="monotone"
+                type="linear"
                 dataKey="shieldedPct"
                 stroke={colors.gold}
                 strokeWidth={2}
@@ -598,7 +606,12 @@ function TrendsChart() {
         <ChartWatermark />
       </div>
 
-      <div className="grid grid-cols-3 gap-3 mt-4">
+      <div className="grid grid-cols-2 gap-3 mt-4 sm:grid-cols-4">
+        <MetricCard size="compact"
+          label={`Shielded share (${periodLabel})`}
+          value={derived.share != null ? `${derived.share.toFixed(1)}%` : '—'}
+          hint="Of non-coinbase txs"
+        />
         <MetricCard size="compact"
           label={`Total (${periodLabel})`}
           value={derived.totalTxs.toLocaleString()}
@@ -617,6 +630,24 @@ function TrendsChart() {
 }
 
 // ─── Filter Definitions ───────────────────────────────────────────────────────
+
+/** A figure whose chart or detail lives elsewhere: the whole card links to that home. */
+function MetricLink({ href, label, value, hint, onOpen }: { href: string; label: string; value: string; hint: string; onOpen?: () => void }) {
+  return (
+    // `onOpen` handles a destination on this page (another tab) without a navigation;
+    // the href still works for a new tab, a copied link and crawlers.
+    <Link href={href} className="card card-compact flex flex-col"
+      onClick={onOpen ? (event) => {
+        if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) return;
+        event.preventDefault();
+        onOpen();
+      } : undefined}>
+      <span className="type-label text-muted uppercase mb-2">{label}</span>
+      <span className="type-metric type-metric-compact tabular-nums whitespace-nowrap text-primary">{value}</span>
+      <span className="text-caption text-muted mt-1">{hint} <span aria-hidden="true">→</span></span>
+    </Link>
+  );
+}
 
 const TYPE_FILTERS: { id: TxType; label: string }[] = [
   { id: 'all', label: 'All' },
@@ -663,6 +694,8 @@ export interface TxsClientProps {
   initialCursorId?: number | null;
   initialDirection?: 'next' | 'prev';
   initialUnavailable?: boolean;
+  /** Tab named by `?view=`, so the daily chart can be linked from other pages. */
+  initialView?: ViewTab;
 }
 
 export default function TxsClient({
@@ -679,12 +712,27 @@ export default function TxsClient({
   initialCursorId = null,
   initialDirection = 'next',
   initialUnavailable = false,
+  initialView = 'recent',
 }: TxsClientProps) {
   const [typeFilter, setTypeFilter] = useState<TxType>(initialType);
   const [flowFilter, setFlowFilter] = useState<FlowFilter>(initialFlowFilter);
   const [poolFilter, setPoolFilter] = useState<PoolFilter>(initialPoolFilter);
   const [minZec, setMinZec] = useState<number>(initialMinZec);
-  const [viewTab, setViewTab] = useState<ViewTab>('recent');
+  const [viewTab, setViewTabState] = useState<ViewTab>(initialView);
+  // The plain /txs address is served from a cached page that never sees the query,
+  // so the tab named in the address is also read here once the page is in the browser.
+  useEffect(() => {
+    if (new URLSearchParams(window.location.search).get('view') === 'activity') setViewTabState('activity');
+  }, []);
+  // The tab stays in the address, so the chart can be linked and shared.
+  const setViewTab = (next: ViewTab) => {
+    setViewTabState(next);
+    const params = new URLSearchParams(window.location.search);
+    if (next === 'recent') params.delete('view');
+    else params.set('view', next);
+    const search = params.toString();
+    window.history.replaceState(window.history.state, '', `${window.location.pathname}${search ? `?${search}` : ''}${window.location.hash}`);
+  };
 
   const isShielded = typeFilter === 'shielded';
 
@@ -698,9 +746,10 @@ export default function TxsClient({
 
   const [shieldedSummary, setShieldedSummary] = useState<{
     shieldedPct: number | null;
+    shieldedPct30d: number | null;
     avgPerDay: number | null;
     poolSize: string | null;
-  }>({ shieldedPct: null, avgPerDay: null, poolSize: null });
+  }>({ shieldedPct: null, shieldedPct30d: null, avgPerDay: null, poolSize: null });
 
   useEffect(() => {
     const base = getApiUrl();
@@ -717,7 +766,6 @@ export default function TxsClient({
       let totalTxs: number | null = null;
       let shieldedPctToday: number | null = null;
       let avgPerDay: number | null = null;
-      let poolSize: string | null = null;
       if (privacyRes.status === 'fulfilled' && privacyRes.value.ok) {
         const data = await readApiData(privacyRes.value);
         totalTxs = data.totals?.totalTx != null ? Number(data.totals.totalTx) : null;
@@ -729,12 +777,12 @@ export default function TxsClient({
         const pct = data.metrics?.shieldedPercentage != null ? Number(data.metrics.shieldedPercentage) : null;
         avgPerDay = data.metrics?.avgShieldedPerDay != null ? Math.round(Number(data.metrics.avgShieldedPerDay)) : null;
         const poolVal = data.shieldedPool?.currentSize;
-        poolSize = poolVal != null
+        const poolSize = poolVal != null
           ? Number(poolVal) >= 1_000_000
             ? `${(Number(poolVal) / 1_000_000).toFixed(2)}M ZEC`
             : `${Math.round(Number(poolVal)).toLocaleString()} ZEC`
           : null;
-        setShieldedSummary({ shieldedPct: pct, avgPerDay, poolSize });
+        setShieldedSummary({ shieldedPct: pct, shieldedPct30d: recentShieldedShare(data.trends?.daily), avgPerDay, poolSize });
       }
       setGeneralSummary({ totalTxs, txs24h, shieldedPctToday, txsPerBlock });
     });
@@ -781,8 +829,10 @@ export default function TxsClient({
 
   const viewTabs: { id: ViewTab; label: string }[] = [
     { id: 'recent', label: 'Recent Transactions' },
-    { id: 'trends', label: 'Trends' },
+    { id: 'activity', label: 'Daily Activity' },
   ];
+  // Home of the daily counts and the shielded share; the cards above link here.
+  const activityHref = isShielded ? '/txs?type=shielded&view=activity' : '/txs?view=activity';
 
   const pageTitle = activePage > 1
     ? `Zcash Transactions - Page ${activePage}`
@@ -813,21 +863,21 @@ export default function TxsClient({
               value={activeList.dataAvailable ? activeList.pagination.total.toLocaleString() : '—'}
               hint="Current shielded filters"
             />
-            <MetricCard size="compact"
-              label="Shielded · all time"
-              value={shieldedSummary.shieldedPct != null ? `${shieldedSummary.shieldedPct.toFixed(1)}%` : '—'}
-              hint="Of non-coinbase txs"
-            />
+            {shieldedSummary.shieldedPct30d != null ? (
+              <MetricLink onOpen={() => setViewTab('activity')} href={activityHref} label="Shielded · 30 days"
+                value={`${shieldedSummary.shieldedPct30d.toFixed(1)}%`}
+                hint={shieldedSummary.shieldedPct != null ? `All time ${shieldedSummary.shieldedPct.toFixed(1)}% · Chart` : 'Of non-coinbase txs · Chart'} />
+            ) : (
+              <MetricLink onOpen={() => setViewTab('activity')} href={activityHref} label="Shielded · all time"
+                value={shieldedSummary.shieldedPct != null ? `${shieldedSummary.shieldedPct.toFixed(1)}%` : '—'}
+                hint="Of non-coinbase txs · Chart" />
+            )}
             <MetricCard size="compact"
               label="Avg Shielded / Day"
               value={shieldedSummary.avgPerDay != null ? shieldedSummary.avgPerDay.toLocaleString() : '—'}
               hint="Last 30 days"
             />
-            <MetricCard size="compact"
-              label="Shielded Pool"
-              value={shieldedSummary.poolSize ?? '—'}
-              hint="Current pool balance"
-            />
+            <MetricLink href="/pools" label="Shielded Pool" value={shieldedSummary.poolSize ?? '—'} hint="Balances and history" />
           </>
         ) : (
           <>
@@ -841,11 +891,9 @@ export default function TxsClient({
               value={generalSummary.txs24h != null ? generalSummary.txs24h.toLocaleString() : '—'}
               hint="Excluding coinbase"
             />
-            <MetricCard size="compact"
-              label="Shielded · today (UTC)"
+            <MetricLink onOpen={() => setViewTab('activity')} href={activityHref} label="Shielded · today (UTC)"
               value={generalSummary.shieldedPctToday != null ? `${generalSummary.shieldedPctToday.toFixed(1)}%` : '—'}
-              hint="Of non-coinbase txs"
-            />
+              hint="Of non-coinbase txs · Chart" />
             <MetricCard size="compact"
               label="Txs Per Block · 24h"
               value={generalSummary.txsPerBlock != null ? generalSummary.txsPerBlock.toLocaleString(undefined, { maximumFractionDigits: 1 }) : '—'}
@@ -933,7 +981,7 @@ export default function TxsClient({
         </>
       )}
 
-      {viewTab === 'trends' && <TrendsChart />}
+      {viewTab === 'activity' && <TrendsChart />}
     </div>
   );
 }

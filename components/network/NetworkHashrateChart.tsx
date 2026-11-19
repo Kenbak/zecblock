@@ -67,7 +67,7 @@ export function NetworkHashrateChart() {
 
   return (
     <ChartCard
-      title="NETWORK_HASHRATE_TREND"
+      title="Network hashrate trend"
       share={{ title: `Zcash network hashrate (${window} estimate, ${period})`, fileName: `zecblock-hashrate-${period}-${window}`, csv: () => objectRowsCsv(points) }}
       height={280}
       watermarkSize="lg"
@@ -98,8 +98,8 @@ export function NetworkHashrateChart() {
       ) : (
         <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={260}>
           <LineChart data={points} margin={{ top: 8, right: 12, left: 0, bottom: 0 }}>
-            <CartesianGrid vertical={false} strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-            <XAxis
+            <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+            <XAxis tickLine={false} axisLine={false}
               dataKey="timestamp"
               minTickGap={40}
               padding={{ left: 12, right: 20 }}
@@ -108,12 +108,9 @@ export function NetworkHashrateChart() {
               domain={['dataMin', 'dataMax']}
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
-              tickFormatter={(d: number) => {
-                const date = new Date(d);
-                return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`;
-              }}
+              tickFormatter={(d: number) => new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}
             />
-            <YAxis
+            <YAxis tickLine={false} axisLine={false}
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
               tickFormatter={(v: number) => formatHashrate(v)}

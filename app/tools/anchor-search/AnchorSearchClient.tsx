@@ -102,7 +102,7 @@ export default function AnchorSearchClient() {
               ? 'bg-danger/5 border-danger/30'
               : result.found
                 ? 'bg-brand-gold/5 border-cipher-gold/30'
-                : 'bg-cipher-surface border-cipher-border'
+                : 'bg-cipher-card border-cipher-border'
           }`}>
             <div className="flex items-start gap-3">
               <span className="text-lg">
@@ -128,7 +128,7 @@ export default function AnchorSearchClient() {
               </h3>
               <div className="space-y-2">
                 {result.canonical.map((block) => (
-                  <div key={block.hash} className="p-3 bg-cipher-surface border border-cipher-border rounded-lg flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
+                  <div key={block.hash} className="p-3 bg-cipher-card border border-cipher-border rounded-lg flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4">
                     <Link href={`/block/${block.height}`} prefetch={false} className="text-cipher-gold hover:underline font-mono text-sm">
                       #{block.height.toLocaleString()}
                     </Link>
@@ -176,7 +176,7 @@ export default function AnchorSearchClient() {
           )}
 
           {!result.found && (
-            <div className="p-4 bg-cipher-surface border border-cipher-border rounded-lg">
+            <div className="p-4 bg-cipher-card border border-cipher-border rounded-lg">
               <p className="text-muted text-sm">
                 No blocks found with this anchor root. This could mean:
               </p>

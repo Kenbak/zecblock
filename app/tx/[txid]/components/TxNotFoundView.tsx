@@ -38,7 +38,7 @@ export function TxNotFoundView({
               </>
             ) : (
               <>
-                <div className="w-14 h-14 mx-auto mb-5 rounded-xl bg-cipher-surface border border-white/[0.04] flex items-center justify-center">
+                <div className="w-14 h-14 mx-auto mb-5 rounded-xl bg-cipher-card border border-white/[0.04] flex items-center justify-center">
                   <svg className="w-7 h-7 text-muted" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path
                       strokeLinecap="round"

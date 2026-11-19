@@ -101,7 +101,7 @@ const pageGuides = [
   },
   {
     id: 'tools', title: 'Choosing an explorer tool', url: '/tools',
-    text: 'Developer Tools links to transaction decoding, signed-transaction broadcasting, memo decryption, Blend Check, unit conversion and anchor-root search. Choose the tool that matches the job: Decode inspects public structure; Broadcast submits an already signed transaction; Decrypt Memo uses a viewing key locally in your browser.\n\nAsk explains the controls and public concepts. It does not operate these tools or read their form contents. Keep viewing keys, private keys and recovery phrases out of chat.',
+    text: 'The Tools page links to transaction decoding, signed-transaction broadcasting, memo decryption, the Private Explorer, Blend Check, the block time simulator, unit conversion and anchor-root search. Choose the tool that matches the job: Decode inspects public structure; Broadcast submits an already signed transaction; Decrypt Memo uses a viewing key locally in your browser.\n\nAsk explains the controls and public concepts. It does not operate these tools or read their form contents. Keep viewing keys, private keys and recovery phrases out of chat.',
     questions: { 'What is the difference between decoding and broadcasting?': 'Decoding inspects the structure of raw transaction data. Broadcasting submits an already signed transaction to a node for validation and possible relay. Inspecting a transaction does not submit it.' },
   },
   {

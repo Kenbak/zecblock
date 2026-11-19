@@ -196,9 +196,9 @@ export function ShieldedRate({ dashboardPeriod }: { dashboardPeriod: string }) {
       {points.length > 0 ? (
         <ResponsiveContainer width="100%" height={220} minWidth={0}>
           <BarChart data={points} stackOffset="expand" margin={{ left: 0, right: 8 }} barCategoryGap={1}>
-            <CartesianGrid stroke={colors.grid} strokeDasharray="2 6" vertical={false} />
-            <XAxis dataKey="date" minTickGap={45} tick={{ fill: colors.axis, fontSize: 12 }} />
-            <YAxis tickFormatter={(v: number) => `${Math.round(v * 100)}%`} width={44} tick={{ fill: colors.axis, fontSize: 12 }} />
+            <CartesianGrid stroke={colors.gridStroke} vertical={false} />
+            <XAxis tickLine={false} axisLine={false} dataKey="date" minTickGap={45} tick={{ fill: colors.axis, fontSize: 12 }} />
+            <YAxis tickLine={false} axisLine={false} tickFormatter={(v: number) => `${Math.round(v * 100)}%`} width={44} tick={{ fill: colors.axis, fontSize: 12 }} />
             <Tooltip
               cursor={{ fill: colors.barCursor }}
               formatter={(v: unknown, name: unknown) => [fmtZec(Number(v)), String(name)]}

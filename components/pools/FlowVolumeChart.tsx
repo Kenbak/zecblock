@@ -9,11 +9,10 @@ import {
   XAxis,
   YAxis,
   CartesianGrid,
-
-  Legend,
   ResponsiveContainer,
   ReferenceLine,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors, getChartTooltipStyle } from '@/lib/chart-theme';
@@ -144,23 +143,22 @@ export function FlowVolumeChart() {
   ) : (
     <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT}>
       <ComposedChart data={points} barSize={barSize} barGap={-barSize}>
-        <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-        <XAxis
+        <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+        <XAxis tickLine={false} axisLine={false}
           dataKey="date"
           stroke={colors.axis}
           tick={{ fill: colors.axis, fontSize: 12 }}
           tickFormatter={(v) => formatChartDate(String(v))}
           interval="preserveStartEnd"
         />
-        <YAxis
+        <YAxis tickLine={false} axisLine={false}
           stroke={colors.axis}
           tick={{ fill: colors.axis, fontSize: 12 }}
-          tickFormatter={(v) => formatZecCompact(Math.abs(v))}
+          tickFormatter={(v) => (Number(v) === 0 ? '0' : formatZecCompact(Math.abs(v)))}
           width={54}
         />
         <Tooltip content={<FlowTooltip colors={colors} />} />
-        <Legend
-          wrapperStyle={{ fontSize: 12, paddingTop: 8, cursor: 'pointer' }}
+        <ChartLegend wrapperStyle={{ cursor: 'pointer' }}
           onClick={(data) => {
             const key = String(data.dataKey ?? '');
             if (!key) return;
@@ -205,7 +203,7 @@ export function FlowVolumeChart() {
           hide={hiddenSeries.has('deshield')}
         />
         <Line
-          type="monotone"
+          type="linear"
           dataKey="net"
           stroke={colors.tooltipText}
           strokeWidth={2}

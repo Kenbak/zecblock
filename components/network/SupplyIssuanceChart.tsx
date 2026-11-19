@@ -26,7 +26,7 @@ export function SupplyIssuanceChart({ data, loading, error }: { data: EmissionRe
   const milestones = points.filter(p => p.halving != null && p.projected != null);
   const observedAt = data?.supplyObservedAt ? Date.parse(data.supplyObservedAt) : null;
   return <Card className="mb-5"><CardBody>
-    <SectionHeader label="SUPPLY_ISSUANCE" />
+    <SectionHeader card label="Supply issuance" />
     <dl className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
       {([['Issued supply', data?.circulating], ['Remaining to cap', data?.remaining], ['Estimated daily issuance', data?.dailyEmissionEstimate]] as const).map(([label, value]) =>
         <div key={label}><dt className="text-caption text-muted mb-1">{label}</dt><dd className="font-mono text-primary tabular-nums">{amount(value)} <span className="text-caption text-muted">{CURRENCY}</span></dd></div>)}
@@ -36,7 +36,7 @@ export function SupplyIssuanceChart({ data, loading, error }: { data: EmissionRe
     {loading && !points.length ? <ChartSkeleton height={280} /> : !points.length ? <p role="status" className="text-sm text-muted py-12 text-center">Supply history is unavailable.</p> : <>
       <ResponsiveContainer width="100%" height={280} initialDimension={{ width: 600, height: 280 }}>
         <ComposedChart data={points} margin={{ top: 26, right: 28, left: 0, bottom: 0 }}>
-          <CartesianGrid vertical={false} stroke={colors.grid} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis dataKey="time" type="number" domain={['dataMin', 'dataMax']} scale="time" ticks={ticks} tickFormatter={date} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} minTickGap={48} />
           <YAxis width={48} domain={[0, 21000000]} ticks={[0, 7000000, 14000000, 21000000]} tickFormatter={v => `${v / 1e6}M`} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} />
           <ChartTooltip labelFormatter={label => fullDate(Number(label))} formatter={(value, name) => [`${amount(Number(value))} ${CURRENCY}`, name]} />

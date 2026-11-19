@@ -8,7 +8,7 @@ export function HowToVote({ snapshotHeight }: { snapshotHeight?: number }) {
     <section
       id="how-to-vote"
       aria-labelledby="how-to-vote-title"
-      className="scroll-mt-48 rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-5"
+      className="scroll-mt-48 rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-5"
     >
       <h2 id="how-to-vote-title" className="text-base font-semibold text-primary">How to vote</h2>
       <p className="mt-1 text-sm text-secondary">When a poll is open, cast your vote in your wallet. Use ZecBlock to explore the proposals and results.</p>

@@ -74,7 +74,7 @@ export function AnonymitySetChart() {
           <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT}>
             <BarChart data={chartData} margin={PRIVACY_BAR_CHART_MARGIN}>
               <CartesianGrid vertical={false} stroke={colors.gridStroke} />
-              <XAxis
+              <XAxis tickLine={false} axisLine={false}
                 dataKey="label"
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 minTickGap={24}
@@ -83,7 +83,7 @@ export function AnonymitySetChart() {
                 interval="preserveStartEnd"
                 label={privacyXAxisTitle(`${CURRENCY} threshold`, colors.axis)}
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={formatCount}
                 width={52}

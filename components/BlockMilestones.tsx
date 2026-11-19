@@ -34,7 +34,7 @@ export function BlockMilestones({ height, future = false, spacing = 25 }: { heig
     return () => { live = false; };
   }, [height, future, spacing]);
   if (events.length === 0) return null;
-  return <section aria-label="Zcash milestones at this block" className="mb-6 rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-5">
+  return <section aria-label="Zcash milestones at this block" className="mb-6 rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-5">
     <ul className="space-y-3">
       {events.map(event => <li key={event.id} className="flex items-start gap-3">
         <span className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cipher-border text-brand-gold"><KindIcon kind={event.kind} className="h-4 w-4" /></span>

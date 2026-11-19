@@ -10,6 +10,7 @@ import {
   ReferenceLine,
 } from "recharts";
 import { useApiQuery } from "@/hooks/useApiQuery";
+import { formatBucketLabel } from "@/lib/chart-dates";
 import { useTheme } from "@/contexts/ThemeContext";
 import { getChartColors } from "@/lib/chart-theme";
 import { ChartTooltip } from "@/components/charts/ChartTooltip";
@@ -75,17 +76,17 @@ export function TimelineComparison({
             margin={{ left: 0, right: 8 }}
           >
             <CartesianGrid
-              stroke={colors.grid}
-              strokeDasharray="2 6"
+              stroke={colors.gridStroke}
               vertical={false}
             />
-            <XAxis
+            <XAxis tickLine={false} axisLine={false}
               dataKey="label"
+                tickFormatter={formatBucketLabel}
               padding={{ left: 12, right: 12 }}
               minTickGap={45}
               tick={{ fill: colors.axis, fontSize: 12 }}
             />
-            <YAxis
+            <YAxis tickLine={false} axisLine={false}
               width={65}
               tick={{ fill: colors.axis, fontSize: 12 }}
               tickFormatter={(v) =>

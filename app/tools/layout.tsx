@@ -1,9 +1,10 @@
 import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata = buildPageMetadata({
-  title: 'Zcash Developer Tools | ZecBlock',
-  description: 'Zcash developer tools to decode and broadcast transactions, decrypt shielded memos, compare public flow amounts, simulate block times, convert ZEC units and search anchor roots.',
+  title: 'Zcash Tools | ZecBlock',
+  description: 'Zcash tools to decode and broadcast transactions, decrypt shielded memos, compare public flow amounts, simulate block times, convert ZEC units and search anchor roots.',
   keywords: [
+    'zcash tools',
     'zcash developer tools',
     'zcash raw transaction',
     'zcash tx decoder',

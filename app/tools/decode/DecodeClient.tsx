@@ -239,7 +239,7 @@ export default function DecodeClient() {
       <PageHeader eyebrow="TOOLS" eyebrowHref="/tools" title="Decode Raw Transaction" subtitle="Parse a raw transaction hex into human-readable fields" />
 
       {/* Info */}
-      <div className="mb-6 flex items-start gap-3 rounded-lg border border-cipher-border bg-cipher-surface p-4 text-secondary">
+      <div className="mb-6 flex items-start gap-3 rounded-lg border border-cipher-border bg-cipher-card p-4 text-secondary">
         <svg className="w-5 h-5 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
         </svg>

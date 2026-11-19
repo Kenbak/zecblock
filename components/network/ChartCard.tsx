@@ -36,12 +36,8 @@ export function ChartCard({
       <CardBody className={fill ? 'h-full flex flex-col' : undefined}>
         <div className="flex items-start sm:items-center justify-between gap-2 sm:gap-3 mb-4 flex-wrap">
           <div className="flex items-center gap-2 min-w-0">
-            {icon ? (
-              <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>
-            ) : (
-              <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{'>'}</span>
-            )}
-            <h2 className="text-sm font-medium font-mono text-secondary lowercase tracking-tight truncate">{title}</h2>
+            {icon && <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>}
+            <h2 className="chart-title min-w-0">{title}</h2>
           </div>
           {(controls || share) && (
             <div className="flex flex-wrap items-center gap-2">

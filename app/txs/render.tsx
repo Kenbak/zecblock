@@ -139,7 +139,11 @@ export async function renderTransactionsPage(
   searchParams: Promise<SearchParams>,
   unavailablePolicy: UnavailablePolicy = 'shell',
 ) {
-  const request = parseTransactionsRequest(await searchParams);
+  const query = await searchParams;
+  const request = parseTransactionsRequest(query);
+  // `?view=activity` opens the Daily Activity tab, so its chart can be linked from other pages.
+  // It is a view of this page: the canonical address stays the one without it.
+  const initialView = firstValue(query.view) === 'activity' ? 'activity' : 'recent';
   const isShielded = request.type === 'shielded';
 
   let initialTxs: TransactionListItem[] = [];
@@ -200,7 +204,8 @@ export async function renderTransactionsPage(
         />
       )}
       <TxsClient
-        key={archiveKey}
+        key={`${archiveKey}:${initialView}`}
+        initialView={initialView}
         initialTxs={initialTxs}
         initialFlows={initialFlows as never[]}
         initialPagination={pagination}

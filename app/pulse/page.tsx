@@ -211,7 +211,7 @@ export default function PulsePage() {
       />
 
       {/* ─── KPI strip ──────────────────────────────────────── */}
-      <div className="mt-4 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-surface">
+      <div className="mt-4 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-card">
         <div className="flex items-center gap-2 border-b border-cipher-border-subtle px-4 py-2.5 sm:px-5">
           <span className="h-2 w-2 rounded-full bg-brand-gold animate-pulse" />
           <span className="font-mono text-caption uppercase tracking-wider text-secondary">
@@ -281,7 +281,7 @@ export default function PulsePage() {
       </div>
 
       {/* ─── Feed ───────────────────────────────────────────── */}
-      <div className="mt-6 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-surface">
+      <div className="mt-6 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-card">
         {loading ? (
           <div className="divide-y divide-cipher-border-subtle">
             {[...Array(6)].map((_, i) => (
@@ -349,7 +349,7 @@ export default function PulsePage() {
       {/* ─── Methodology ───────────────────────────────────── */}
       <section className="mt-14">
         <SectionHeader label="METHODOLOGY" />
-        <div className="mt-6 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-surface">
+        <div className="mt-6 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-card">
           <div className="grid divide-y divide-cipher-border-subtle sm:grid-cols-3 sm:divide-x sm:divide-y-0">
             <div className="px-5 py-4">
               <div className="font-mono text-caption uppercase tracking-wider text-muted">Detection</div>

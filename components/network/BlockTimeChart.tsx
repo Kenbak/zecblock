@@ -31,7 +31,7 @@ export function BlockTimeChart() {
   const latest = points.at(-1);
   const activation = data?.schedule?.nu7Height;
   const showActivation = activation != null && points.length > 0 && activation >= points[0].height && activation <= points[points.length - 1].height;
-  return <div ref={panelRef}><Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader label="BLOCK_INTERVAL" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2">
+  return <div ref={panelRef}><Card className="card-static p-4 sm:p-6"><CardBody><SectionHeader card label="Block interval" className="max-sm:flex-col max-sm:items-stretch" actions={<div className="flex gap-2 max-sm:mt-2">
     <PanelShareControl title={`Zcash average block interval (${period})`} fileName={`zecblock-block-interval-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!points.length} />
     <PeriodPillTags aria-label="Average block interval period" value={period} onChange={setPeriod}
       options={BLOCK_TIME_PERIODS.map(value => ({ key: value, label: value }))} />
@@ -40,7 +40,7 @@ export function BlockTimeChart() {
       {' · '}{latest?.targetSeconds != null ? `${latest.targetSeconds}s target` : 'Target unavailable'}</p>
     {points.length ? <ResponsiveContainer width="100%" height={270} initialDimension={{ width: 400, height: 270 }}>
       <LineChart data={points} margin={{ top: 12, right: 40, bottom: 12, left: 0 }}>
-        <CartesianGrid vertical={false} stroke={colors.grid} />
+        <CartesianGrid vertical={false} stroke={colors.gridStroke} />
         <XAxis dataKey="height" type="number" domain={['dataMin', 'dataMax']} tickFormatter={v => Number(v).toLocaleString()} minTickGap={55} padding={{ left: 16, right: 32 }} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} />
         <YAxis width={48} unit="s" tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} />
         <Tooltip labelFormatter={height => `Block ${Number(height).toLocaleString()}`}

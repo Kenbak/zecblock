@@ -17,7 +17,7 @@ export function ShieldedAddressView({ isUnified, uaComponents, uaLoading, copied
 }) {
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-12 space-y-6">
     <Badge color="shielded" icon={<Icons.Shield />}>{isUnified ? 'UNIFIED' : 'SHIELDED'}</Badge>
-    <section className="rounded-xl border border-cipher-border bg-cipher-surface p-5 sm:p-7" aria-label="Private address information">
+    <section className="rounded-xl border border-cipher-border bg-cipher-card p-5 sm:p-7" aria-label="Private address information">
       <div className="flex items-start gap-4">
         <span className="text-cipher-shielded mt-1" aria-hidden="true"><Icons.Shield /></span>
         <div><h2 className="text-xl font-semibold text-primary">Shielded activity is private</h2>

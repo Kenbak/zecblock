@@ -12,16 +12,16 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { Card, CardBody } from '@/components/ui/Card';
 import { AnonymitySetChart } from '@/components/privacy/AnonymitySetChart';
 import { ShieldingDistributionChart } from '@/components/privacy/ShieldingDistributionChart';
-import { PrivacyTrendsSection, type TrendChartView } from '@/components/privacy/PrivacyTrendsSection';
+import { PrivacyTrendsSection } from '@/components/privacy/PrivacyTrendsSection';
 import { formatRelativeUpdated } from '@/lib/privacy-trend-dates';
 import { PRIVACY_PERIODS, type Period } from '@/components/privacy/PeriodSelector';
 import { useUrlState } from '@/lib/use-url-state';
 
 const INPUTS = [
-  { key: 'usage', title: 'Shielded participation', window: '30 days', description: 'Shielded transactions as a share of shielded plus non-coinbase transparent transactions.' },
-  { key: 'quality', title: 'Fully shielded share', window: '30 days', description: 'Among shielded transactions, those with no transparent inputs or outputs, excluding coinbase.' },
-  { key: 'depth', title: 'Shielded supply', window: 'Snapshot', description: 'Supply held in shielded pools as a share of issued chain supply.' },
-  { key: 'hygiene', title: 'Reshielded volume', window: '90 days', description: 'Tracked reshielded ZEC divided by deshielded ZEC over the same window.' },
+  { key: 'usage', title: 'Shielded participation', window: 'Rolling 30 days', description: 'Shielded transactions as a share of shielded plus non-coinbase transparent transactions.', href: '/txs?view=activity' },
+  { key: 'quality', title: 'Fully shielded share', window: 'Rolling 30 days', description: 'Among shielded transactions, those with no transparent inputs or outputs, excluding coinbase.' },
+  { key: 'depth', title: 'Shielded supply', window: 'Snapshot', description: 'Supply held in shielded pools as a share of issued chain supply.', href: '/pools' },
+  { key: 'hygiene', title: 'Reshielded volume', window: '90 days', description: 'Tracked reshielded ZEC divided by deshielded ZEC over the same window.', href: '/turnstile' },
 ] as const;
 const RELATED = [
   { href: '/pools', title: 'Shielded pools', description: 'Pool balances, supply history and volume.' },
@@ -80,7 +80,6 @@ export default function PrivacyClient() {
   const [trendHistory, setTrendHistory] = useState<PrivacyStats['trends']['daily']>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [trendView, setTrendView] = useState<TrendChartView>('score');
   const [trendPeriod, setTrendPeriod] = useUrlState<Period>('trends', '30d', PRIVACY_PERIODS);
   const { theme } = useTheme();
 
@@ -111,12 +110,20 @@ export default function PrivacyClient() {
   useWebSocket({ onMessage: data => {
     if (data.type === 'privacy_stats') void refresh();
   } });
+  // The sections render once the data arrives, after the browser has given up on the
+  // address's #anchor. Finish that jump once, so links to #trends land on the chart.
+  const hasStats = stats !== null;
+  useEffect(() => {
+    if (!hasStats) return;
+    const id = window.location.hash.slice(1);
+    if (id) document.getElementById(id)?.scrollIntoView();
+  }, [hasStats]);
 
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
     <PageHeader eyebrow="PRIVACY_SCORE" title="Zcash Privacy Score" subtitle="Shielded participation, transaction patterns and supply. A network-level index of observed usage—not a rating of individual privacy." />
     <nav aria-label="Privacy page sections" className="flex flex-wrap gap-x-5 gap-y-3 font-mono text-caption text-muted mb-8">
       <a href="#score" className="hover:text-primary">Score & inputs</a>
-      <a href="#trends" className="hover:text-primary">Trends</a>
+      <a href="#trends" className="hover:text-primary">Score history</a>
       <a href="#distribution" className="hover:text-primary">Public amounts</a>
       <a href="#activity" className="hover:text-primary">Recent activity</a>
       <a href="#how-it-works" className="hover:text-primary">Methodology</a>
@@ -157,7 +164,7 @@ export default function PrivacyClient() {
                 <tbody className="divide-y divide-cipher-border">{INPUTS.map(input => {
                   const row = stats.metrics.scoreBreakdown?.[input.key];
                   return <tr key={input.key}>
-                    <th scope="row" className="px-3 py-4 text-left font-normal min-w-40"><span className="block text-primary font-mono">{input.title}</span><span className="block mt-1 text-muted">{input.window}</span></th>
+                    <th scope="row" className="px-3 py-4 text-left font-normal min-w-40"><span className="block text-primary font-mono">{'href' in input ? <Link href={input.href} className="underline decoration-cipher-border underline-offset-4 hover:decoration-current">{input.title}</Link> : input.title}</span><span className="block mt-1 text-muted">{input.window}</span></th>
                     <td className="px-3 py-4 text-muted min-w-56 max-w-md leading-relaxed">{input.description}</td>
                     <td className="px-3 py-4 text-right text-primary font-mono tabular-nums whitespace-nowrap">{row ? `${row.percent.toFixed(1)}%` : '—'}</td>
                     <td className="px-3 py-4 text-right text-secondary font-mono tabular-nums whitespace-nowrap">{row ? `${row.score.toFixed(1)} / ${row.max}` : '—'}</td>
@@ -165,13 +172,13 @@ export default function PrivacyClient() {
                 })}</tbody>
               </table>
             </div>
-            <p className="text-caption text-muted mt-5">The inputs combine 30-day activity, current supply and 90-day public flow tracking. Rounded contributions may differ slightly from the rounded total.</p>
+            <p className="text-caption text-muted mt-5">The inputs combine 30-day activity, current supply and 90-day public flow tracking. Rounded contributions may differ slightly from the rounded total. The 30-day inputs cover the 30 days up to the last hourly update, so they can sit a few tenths of a point from figures counted by calendar day elsewhere.</p>
           </div>
         </details>
       </section>
       <section id="trends" className="scroll-mt-36 mb-10">
-        <SectionHeader label="TRENDS" />
-        <PrivacyTrendsSection trendHistory={trendHistory.length > 0 ? trendHistory : stats.trends.daily} privacyScore={stats.metrics.privacyScore} lastBlockScanned={stats.lastBlockScanned} theme={theme} view={trendView} onViewChange={setTrendView} period={trendPeriod} onPeriodChange={setTrendPeriod} />
+        <SectionHeader label="SCORE_HISTORY" />
+        <PrivacyTrendsSection trendHistory={trendHistory.length > 0 ? trendHistory : stats.trends.daily} privacyScore={stats.metrics.privacyScore} lastBlockScanned={stats.lastBlockScanned} theme={theme} period={trendPeriod} onPeriodChange={setTrendPeriod} />
       </section>
       <section id="distribution" className="scroll-mt-36 mb-10">
         <SectionHeader label="PUBLIC_AMOUNT_PATTERNS" />

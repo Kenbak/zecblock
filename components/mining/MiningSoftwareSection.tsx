@@ -301,8 +301,7 @@ export function MiningSoftwareSection() {
                 >
                   <CartesianGrid
                     vertical={false}
-                    stroke={colors.grid}
-                    strokeDasharray="3 5"
+                    stroke={colors.gridStroke}
                   />
                   <XAxis
                     dataKey="date"

@@ -29,6 +29,8 @@
  *      device with one spelling: SCREAMING_SNAKE_CASE in source (the
  *      primitives apply the casing). "PRIVACY SCORE" and "Network" broke
  *      the convention and read as three different systems on one site.
+ *      A title inside a card (`<SectionHeader card …>`, ChartCard) is not a
+ *      section key: it is plain sentence case, like every chart title.
  *
  * Run: node scripts/check-design-tokens.mjs
  */
@@ -146,6 +148,7 @@ for (const dir of SCAN_DIRS) {
       ...[...src.matchAll(EYEBROW_LITERAL)].map((m) => ['eyebrow', m[1] ?? m[2] ?? m[3]]),
       ...[...src.matchAll(SECTION_LABEL_LITERAL)].map((m) => ['sectionLabel', m[1]]),
       ...[...src.matchAll(SECTION_HEADER_TAG)]
+        .filter((m) => !/<SectionHeader\s+card\b/.test(m[0]))
         .map((m) => NESTED_LABEL.exec(m[0]))
         .filter(Boolean)
         .map((m) => ['SectionHeader label', m[1] ?? m[2]]),

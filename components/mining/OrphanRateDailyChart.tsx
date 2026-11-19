@@ -18,7 +18,7 @@ const DAYS = 60;
 const MARKER_TEXT: Record<EventKind, string> = { capture: 'Capture began', observers: 'More observers', nu7: 'NU7' };
 
 function shortDate(date: string) {
-  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', timeZone: 'UTC' });
+  return new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 }
 
 function pct(rate: number | null) {
@@ -60,7 +60,7 @@ export function OrphanRateDailyChart() {
   return (
     <div className="mb-6">
       <div className="flex flex-wrap items-baseline justify-between gap-2 mb-2">
-        <h3 className="text-caption font-mono uppercase text-muted">Daily observed rate · last {DAYS} days</h3>
+        <h3 className="chart-title">Daily observed rate · last {DAYS} days</h3>
         <div className="flex flex-wrap gap-3 text-caption text-muted" aria-hidden>
           {[...new Set((data.events ?? []).map(e => e.kind))].map(kind => (
             <span key={kind} className="inline-flex items-center gap-1.5">
@@ -73,7 +73,7 @@ export function OrphanRateDailyChart() {
       <div className="h-56" role="img" aria-label={`Daily observed orphan rate for the last ${DAYS} UTC days${first ? `, from ${shortDate(first.date)}` : ''}. Markers show when capture began, when observer coverage expanded and NU7 activation.`}>
         <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 800, height: 224 }}>
           <BarChart data={points} margin={{ top: 18, right: 4, left: 0, bottom: 0 }} barCategoryGap={2}>
-            <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="3 5" />
+            <CartesianGrid vertical={false} stroke={colors.gridStroke} />
             <XAxis dataKey="date" minTickGap={55} tickLine={false} axisLine={false} tick={{ fontSize: 12, fill: colors.axis }} tickFormatter={shortDate} />
             <YAxis width={46} tickLine={false} axisLine={false} allowDecimals tick={{ fontSize: 12, fill: colors.axis }} tickFormatter={v => `${Number(v).toFixed(1)}%`} />
             <ChartTooltip

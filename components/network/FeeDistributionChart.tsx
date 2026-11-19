@@ -38,12 +38,12 @@ export function FeeDistributionChart({ initialData, initialFetchedAt }: { initia
   const last = [...points].reverse().find(p => p.median != null);
   const dateLabel = formatDateLabelUTC;
   return <div ref={panelRef} className="h-full"><Card className="h-full"><CardBody>
-    <SectionHeader label="OBSERVED_FEES" actions={<div className="flex flex-wrap items-center gap-1"><PeriodPillTags aria-label="Fee history range" value={period} onChange={setPeriod} options={PERIODS.map(value => ({ key: value, label: value.toUpperCase() }))} /><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
+    <SectionHeader card label="Observed fees" actions={<div className="flex flex-wrap items-center gap-1"><PeriodPillTags aria-label="Fee history range" value={period} onChange={setPeriod} options={PERIODS.map(value => ({ key: value, label: value.toUpperCase() }))} /><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
     <p className="text-caption text-muted mb-4">Daily median and 10th–90th percentile range. Observed fees, not a fee quote.</p>
     {loading && !usable ? <ChartSkeleton height={228} /> : !usable ? <p role="status" className="min-h-[240px] flex items-center justify-center text-sm text-muted">{loading || isRefreshing ? 'Loading observed fees…' : 'Fee history unavailable.'}</p> : <>
       <><ResponsiveContainer width="100%" height={228} initialDimension={{ width: 400, height: 228 }}>
         <ComposedChart data={points} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>
-          <CartesianGrid vertical={false} stroke={colors.grid} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis dataKey="date" tickFormatter={dateLabel} {...CHART_DATE_AXIS} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} />
           <YAxis width={56} tickCount={4} tickFormatter={v => Number(v).toLocaleString(undefined, { maximumFractionDigits: 2 })} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} domain={[0, 'auto']} />
           <Tooltip labelFormatter={label => new Date(String(label)).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric', timeZone: 'UTC' })}

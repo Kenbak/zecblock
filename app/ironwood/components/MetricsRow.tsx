@@ -150,7 +150,7 @@ export function MetricsRow({
   const orchardPct = hasMigrations ? `${migratedPct.toFixed(1)}%` : '0%';
 
   return (
-    <div className="mt-4 overflow-hidden rounded-2xl border border-cipher-border bg-cipher-surface">
+    <div className="mt-4 overflow-hidden rounded-xl border border-cipher-border bg-cipher-card">
       <div className="flex items-center gap-2 border-b border-cipher-border-subtle px-4 py-2.5 sm:px-5">
         <span className="h-2 w-2 rounded-full bg-cipher-green animate-pulse" />
         <span className="text-caption font-mono uppercase tracking-wider text-secondary">Ironwood live</span>

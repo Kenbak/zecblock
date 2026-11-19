@@ -66,7 +66,7 @@ test('line and area geometry leave missing points as gaps, with isolated observa
  assert.equal(g.paths[0].segments[1].length,1);assert.equal(g.paths[0].line.includes('L'),false);
 });
 test('stacked incomplete rows do not look like a sudden collapse',()=>{
- const c=CHART_CATALOG.find(c=>c.id==='supply');
+ const c={...CHART_CATALOG.find(c=>c.id==='supply'),stack:true};
  const g=chartGeometry(c,[{x:1,shielded:5,transparent:10},{x:2,shielded:null,transparent:10}]);
  assert.equal(g.paths[0].segments[0].length,1);assert.equal(g.paths[1].segments[0].length,1);
 });

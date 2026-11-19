@@ -25,8 +25,8 @@ export function ShareableCard({title,icon,children,sourceHeight=0,isLive=false,s
     return captureElementPng(cardRef.current);
   }, [exportData]);
   const shareUrl = sharePath ? new URL(sharePath, publicBase).href : shareText.match(/https?:\/\/\S+/)?.[0] || publicBase;
-  return <div className={className}><div ref={cardRef} className={`chart-branded relative h-full min-w-0 rounded-xl border border-cipher-border bg-cipher-surface flex flex-col ${compact?'p-4':'p-4 sm:p-6'}`}>
-    <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"><h2 className={`min-w-0 flex-1 text-sm font-semibold leading-snug text-primary${icon ? ' flex items-center gap-2' : ''}`}>{icon ? <><span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span><span>{title}</span></> : title}</h2>
+  return <div className={className}><div ref={cardRef} className={`chart-branded relative h-full min-w-0 rounded-xl border border-cipher-border bg-cipher-card flex flex-col ${compact?'p-4':'p-4 sm:p-6'}`}>
+    <div className="mb-3 flex flex-wrap items-center justify-between gap-x-3 gap-y-2"><h2 className={`chart-title min-w-0 flex-1${icon ? ' flex items-center gap-2' : ''}`}>{icon ? <><span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span><span>{title}</span></> : title}</h2>
       <ChartShareControl title={title} shareUrl={shareUrl} shareText={shareText} fileName={fileName} capture={capture} csvData={exportData} disabled={exportDisabled} expanded={expandedToolbar}/>
 
     </div>

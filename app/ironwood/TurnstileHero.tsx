@@ -283,10 +283,10 @@ export function TurnstileHero(props: TurnstileHeroProps) {
     <div className="mt-4">
       <div
         ref={cardRef}
-        className={`relative bg-cipher-surface ${
+        className={`relative ${
           isFullscreen
-            ? 'flex flex-col h-screen w-screen'
-            : 'rounded-2xl border border-cipher-border'
+            ? 'flex flex-col h-screen w-screen bg-cipher-surface'
+            : 'rounded-xl border border-cipher-border bg-cipher-card'
         }`}
       >
         {/* Header with title + share buttons */}

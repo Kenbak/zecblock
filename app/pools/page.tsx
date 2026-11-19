@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { PoolCurrencyProvider } from '@/components/pools/PoolCurrency';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PageHeader, SectionHeader } from '@/components/ui';
+import { PageSectionNav } from '@/components/PageSectionNav';
 import { HashLink } from '@/components/ui/HashLink';
 import { FlowVolumeChart } from '@/components/pools/FlowVolumeChart';
 import { PoolActivityChart } from '@/components/pools/PoolActivityChart';
@@ -135,9 +136,15 @@ export default function PoolsPage() {
         subtitle="Supply held in shielded pools, transaction activity, and the public flows moving ZEC in and out."
       />
 
-      <nav aria-label="Pool analytics sections" className="flex flex-wrap items-center gap-x-5 gap-y-3 text-caption font-mono text-muted border-b border-cipher-border pb-5 mb-8">
-        {SECTIONS.map(section => <a key={section.id} href={`#${section.id}`} className="hover:text-primary">{section.label}</a>)}
-      </nav>
+      <PageSectionNav
+        sections={SECTIONS}
+        ariaLabel="Pool analytics sections"
+        actions={
+          <Link href="/turnstile" className="rounded-sm py-1 text-caption font-mono text-secondary underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current">
+            Turnstile Tracker <span aria-hidden="true">→</span>
+          </Link>
+        }
+      />
 
       <section id="overview" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
         {/* Keeps older /pools#supply links landing on the supply chart. */}

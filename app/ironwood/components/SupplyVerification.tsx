@@ -136,7 +136,7 @@ export function SupplyVerification({
         {/* Right: Pool breakdown */}
         <div className="w-full min-w-0 sm:space-y-1 sm:pl-2 lg:pl-4">
           <div className="flex items-center justify-between mb-1.5 sm:mb-3 px-0.5">
-            <span className="text-xs font-semibold text-primary">Pool balances</span>
+            <a href="/pools" title="Balances over time on Shielded Pools" className="text-xs font-semibold text-primary underline decoration-cipher-border underline-offset-4 hover:decoration-current">Pool balances</a>
             {supplyMatch != null && (
               <div className="flex items-center gap-1.5">
                 <span className={`w-1.5 h-1.5 rounded-full ${supplyMatch ? 'bg-cipher-green animate-pulse' : 'bg-danger'}`} />

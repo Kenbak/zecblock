@@ -113,6 +113,19 @@ test('halving countdown fires within a day of each threshold with exact subsidy'
   assert.equal(story.evidence.beforeZat, '52083333');
   assert.equal(story.evidence.afterZat, '26041666');
   assert.match(story.content, /from 0\.52 to 0\.26 ZEC/);
+  // Same clock as /v1/network/halving: tip time plus target seconds to the halving.
+  const tip = tipFor(100);
+  const expected = new Date((T + sch.targetSeconds(schedule, tip.height, target)) * 1000).toISOString();
+  assert.equal(story.evidence.estimatedDate, expected);
+  assert.equal(story.evidence.dateBasis, 'consensus-target-spacing');
+  const day = `${['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][Number(expected.slice(5, 7)) - 1]} ${Number(expected.slice(8, 10))}, ${expected.slice(0, 4)}`;
+  assert.match(story.content, new RegExp(`about 100 days away, around ${day}\\.`));
+  assert.equal(story.evidence.card.qualifier, `Est. ${day} · 0.52 → 0.26 ZEC.`);
+  for (const days of [730, 365, 180, 30, 7, 1]) {
+    const longest = s.halvingCountdownStory({ schedule, tip: tipFor(days), ...sch });
+    assert.ok(longest, `${days}-day threshold still fires`);
+    assert.ok(longest.content.length <= 280, `${days}-day post fits: ${longest.content.length}`);
+  }
   assert.equal(s.halvingCountdownStory({ schedule, tip: { height: 3535800, timestamp: T }, ...sch }), null, '~756 days is between thresholds');
 });
 

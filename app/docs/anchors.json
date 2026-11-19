@@ -91,6 +91,7 @@
   "GET /v1/mining/rewards": "get-mining-rewards",
   "GET /v1/mining/miner-behavior": "get-mining-miner-behavior",
   "GET /v1/mining/zodl-leaderboard": "get-mining-zodl-leaderboard",
+  "GET /v1/mining/polls/nu7-1": "get-v1-mining-polls-nu7-1",
   "GET /v1/migration/overview": "get-migration-overview",
   "GET /v1/migration/cohorts": "get-migration-cohorts",
   "GET /v1/migration/denominations": "get-migration-denominations",

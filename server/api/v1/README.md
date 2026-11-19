@@ -1,7 +1,7 @@
 # ZecBlock API v1
 
 The frontend now uses `/v1` for explorer HTTP data, with one checked `{data, meta}`
-parser for browser and server consumers. The manifest has 142 entries: 137 adapters,
+parser for browser and server consumers. The manifest has 143 entries: 138 adapters,
 4 native name routes, and one superseded legacy blocks alias. No implemented
 capability is represented by a v1 stub. Production activation is a separate release.
 

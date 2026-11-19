@@ -306,6 +306,7 @@
   "GET /v1/mining/zodl-leaderboard": [
     "period"
   ],
+  "GET /v1/mining/polls/nu7-1": [],
   "GET /v1/migration/overview": [],
   "GET /v1/migration/cohorts": [],
   "GET /v1/migration/denominations": [],

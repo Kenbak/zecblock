@@ -88,6 +88,9 @@ export function calendarSources(options: { nu7Height?: number | null; halvingHei
     { id: 'devfund-poll-proposals', kind: 'deadline', title: 'Dev Fund poll: proposals close', detail: 'Deadline for proposals on ZCG’s share of the Dev Fund (23:59 UTC).', anchor: { at: '2026-11-08T23:59:00Z' }, href: devFund, external: true },
     { id: 'devfund-poll-open', kind: 'vote', title: 'Dev Fund poll: voting opens', detail: 'Coinholder and community-panel polls on ZCG’s share of the Dev Fund. Rough consensus would lead to NU7.1.', anchor: { at: '2026-11-16' }, href: devFund, external: true },
     { id: 'devfund-poll-close', kind: 'vote', title: 'Dev Fund poll: voting closes', detail: 'Polls close at 23:59 UTC; results follow shortly after.', anchor: { at: '2026-11-30T23:59:00Z' }, href: devFund, external: true },
+    // NU7.1 miner sentiment poll (Zcash Foundation pilot). Heights are authoritative.
+    { id: 'miner-poll-open', kind: 'vote', title: 'NU7.1 miner poll: voting opens', detail: 'Miners signal on the five NU7.1 questions with a ballot in each block they mine.', anchor: { height: 3_591_200 }, href: '/governance/nu7-1-miner-poll' },
+    { id: 'miner-poll-close', kind: 'vote', title: 'NU7.1 miner poll: voting closes', detail: 'Last block that counts; the result is final 100 blocks later.', anchor: { height: 3_629_650 }, href: '/governance/nu7-1-miner-poll' },
     // ZIP 2009 deployment: nodes report the lower fee to wallets from this block (wallet fee policy, not a consensus rule).
     { id: 'zip2009-fee', kind: 'milestone', title: 'Standard fee drops to 1,000 zatoshis', detail: 'Wallets move together from 5,000 to 1,000 zatoshis per logical action (ZIP 2009).', anchor: { height: 3_590_000 }, href: 'https://zips.z.cash/zip-2009', external: true },
     // ZIP 237 / ZIP 259: NSM begins reissuing part of the reserve on top of block rewards.

@@ -84,6 +84,7 @@ export const CORE_PATHS = [
   '/governance/retroactive-grants-q4-2026',
   '/governance/retroactive-grants-q3-2026',
   '/governance/nu7',
+  '/governance/nu7-1-miner-poll',
   '/calendar',
   '/turnstile',
   '/usage-clock',
@@ -255,7 +256,7 @@ export function getStaticSitemapEntries(
   newsletters: NewsletterIssue[],
 ): SitemapUrlEntry[] | null {
   if (slug === 'core') {
-    return CORE_PATHS.map((path) => ({ url: absoluteUrl(baseUrl, path), ...(path.startsWith('/governance') ? { lastModified: path === '/governance/nu7' ? '2026-09-15' : path === '/governance/retroactive-grants-q3-2026' ? '2026-09-18' : '2026-11-15', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/calendar' ? { lastModified: '2026-11-15', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/ironwood' ? { lastModified: '2026-09-17' } : {}), ...(path === '/zift' ? { lastModified: '2026-10-29', changeFrequency: 'weekly' as const, priority: 0.7 } : {}), ...(path === '/network/attestations' ? { lastModified: '2026-09-09', changeFrequency: 'hourly' as const, priority: 0.6 } : {}) }));
+    return CORE_PATHS.map((path) => ({ url: absoluteUrl(baseUrl, path), ...(path.startsWith('/governance') ? { lastModified: path === '/governance/nu7' ? '2026-09-15' : path === '/governance/nu7-1-miner-poll' ? '2026-11-19' : path === '/governance/retroactive-grants-q3-2026' ? '2026-09-18' : '2026-11-15', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/calendar' ? { lastModified: '2026-11-15', changeFrequency: 'daily' as const, priority: 0.6 } : {}), ...(path === '/ironwood' ? { lastModified: '2026-09-17' } : {}), ...(path === '/zift' ? { lastModified: '2026-10-29', changeFrequency: 'weekly' as const, priority: 0.7 } : {}), ...(path === '/network/attestations' ? { lastModified: '2026-09-09', changeFrequency: 'hourly' as const, priority: 0.6 } : {}) }));
   }
 
   if (slug === 'tools') {

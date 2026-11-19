@@ -133,11 +133,11 @@ export function generateTxSummary(
         <>
           {amount.toFixed(4)} {CURRENCY} moved from the public address{' '}
           <AddressWithLabel address={fromAddr} /> into the private shielded pool, making future
-          spending invisible while it stays fully shielded. Later unshielding amounts are public.
+          spending invisible while it stays fully shielded. Later deshielding amounts are public.
         </>
       );
     }
-    return `${amount.toFixed(4)} ${CURRENCY} moved from a public address into the private shielded pool, making future spending invisible while it stays fully shielded. Later unshielding amounts are public.`;
+    return `${amount.toFixed(4)} ${CURRENCY} moved from a public address into the private shielded pool, making future spending invisible while it stays fully shielded. Later deshielding amounts are public.`;
   }
 
   if (txType === 'UNSHIELDING') {

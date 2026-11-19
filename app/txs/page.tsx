@@ -23,8 +23,8 @@ export async function generateMetadata({ searchParams }: TransactionsPageProps):
     return buildPageMetadata({
       title: `Zcash Shielded Transactions${pageSuffix} | ZecBlock`,
       description: request.page > 1
-        ? `Browse Zcash shielded transaction archive page ${request.page}, including shielding and unshielding flows across privacy pools.`
-        : 'Browse shielded Zcash transactions and track shielding and unshielding flows across Ironwood, Orchard, and Sapling privacy pools.',
+        ? `Browse Zcash shielded transaction archive page ${request.page}, including shielding and deshielding flows across privacy pools.`
+        : 'Browse shielded Zcash transactions and track shielding and deshielding flows across Ironwood, Orchard, and Sapling privacy pools.',
       path: isStableArchive ? getArchiveCanonicalPath(request) : '/txs?type=shielded',
       index: isStableArchive && request.page === 1,
       keywords: ['zcash shielded transactions', 'zcash orchard', 'zcash sapling', 'shielded ZEC', 'zcash privacy'],

@@ -10,6 +10,7 @@ import {
   YAxis,
 } from "recharts";
 import { ChartTooltip } from "@/components/charts/ChartTooltip";
+import { formatBucketLabel } from "@/lib/chart-dates";
 import { ShareableCard } from "@/components/ShareableCard";
 import { getApiUrl } from "@/lib/api-config";
 import { ApiError, readApiData } from "@/lib/api-client";
@@ -301,8 +302,7 @@ export function MiningSoftwareSection() {
                 >
                   <CartesianGrid
                     vertical={false}
-                    stroke={colors.grid}
-                    strokeDasharray="3 5"
+                    stroke={colors.gridStroke}
                   />
                   <XAxis
                     dataKey="date"
@@ -310,12 +310,7 @@ export function MiningSoftwareSection() {
                     tickLine={false}
                     axisLine={false}
                     tick={{ fontSize: 12, fill: colors.axis }}
-                    tickFormatter={(value) =>
-                      new Date(`${value}T00:00:00Z`).toLocaleDateString(
-                        "en-GB",
-                        { day: "numeric", month: "short", timeZone: "UTC" },
-                      )
-                    }
+                    tickFormatter={formatBucketLabel}
                   />
                   <YAxis
                     domain={[0, 100]}

@@ -7,7 +7,7 @@ import { RiskScore, ScoreEvidence } from '@/components/privacy/RiskEvidence';
 
 export function RiskyTxCard({ tx }: { tx: RiskyTransaction }) {
   const cardId = `risk-${tx.shieldTxid.slice(0, 8)}-${tx.deshieldTxid.slice(0, 8)}`;
-  return <article id={cardId} className="rounded-xl border border-cipher-border bg-cipher-surface p-4 sm:p-5 scroll-mt-24">
+  return <article id={cardId} className="rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-5 scroll-mt-24">
     <header className="flex flex-wrap items-center justify-between gap-3 mb-4">
       <h3 className="text-sm font-medium text-primary">Potential round trip</h3>
       <RiskScore score={tx.score} level={tx.warningLevel} />

@@ -21,7 +21,7 @@ export default function AskChart({ points, evidence, view }: { points: EvidenceP
   return <div role="img" aria-label={`${evidence.unit} by ${ranking ? 'chain, top ten' : 'day'}; observations are available in the Table view.`} className="h-72 sm:h-80 w-full min-w-0">
     <ResponsiveContainer width="100%" height="100%" initialDimension={{ width: 600, height: 320 }}>
       <ComposedChart layout={ranking ? 'vertical' : 'horizontal'} data={data} margin={{ top: 16, right: 12, bottom: 8, left: 0 }}>
-        <CartesianGrid vertical={false} stroke={colors.grid} strokeDasharray="2 5" />
+        <CartesianGrid vertical={false} stroke={colors.gridStroke} />
         {ranking ? <>
           <XAxis type="number" tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} tickFormatter={value => Intl.NumberFormat('en-US', { notation: 'compact' }).format(value)} />
           <YAxis type="category" dataKey="date" width={90} tickLine={false} axisLine={false} interval={0} tick={{ fill: colors.axis, fontSize: 12 }} tickFormatter={formatChain} />

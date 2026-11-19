@@ -1,4 +1,4 @@
-import type { CatalogChart, ChartRow } from './chart-catalog';
+import { plotCatalogRows, type CatalogChart, type ChartRow } from './chart-catalog';
 
 /** Space markers across the window, retaining its last and isolated observations. */
 export function chartMarkerIndices(rows: ChartRow[], key: string): Set<number> {
@@ -17,7 +17,8 @@ export function chartMarkerIndices(rows: ChartRow[], key: string): Set<number> {
 
 export function chartGeometry(chart: CatalogChart, input: ChartRow[], width = 1020, height = 310) {
   const category = chart.axis === 'category';
-  const rows = category ? input.slice(0, 14) : input;
+  const plotted = plotCatalogRows(chart, input);
+  const rows = category ? plotted.slice(0, 14) : plotted;
   const values = rows.flatMap(row => chart.stack
     ? [chart.series.reduce((sum, s) => sum + (typeof row[s.key] === 'number' ? Math.max(0, Number(row[s.key])) : 0), 0), chart.series.reduce((sum, s) => sum + (typeof row[s.key] === 'number' ? Math.min(0, Number(row[s.key])) : 0), 0)]
     : chart.series.map(s => row[s.key]).filter((v): v is number => typeof v === 'number' && Number.isFinite(v)));

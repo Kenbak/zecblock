@@ -512,4 +512,4 @@ async function renderEditorial(story) {
   return file;
 }
 
-module.exports = { renderEditorial, seriesModel, chartValue, W, H, C, fmt };
+module.exports = { renderEditorial, seriesModel, chartValue, ensureFonts, chainNode, drawFooter, W, H, PAD, C, TONES, LOGO, fmt };

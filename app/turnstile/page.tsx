@@ -10,7 +10,8 @@ export default async function TurnstilePage({ searchParams }: {
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
       <PageHeader
-        eyebrow="TURNSTILE_TRACKER"
+        eyebrow="SHIELDED_POOLS"
+        eyebrowHref="/pools"
         title="Turnstile Tracker"
         subtitle="Where does deshielded ZEC go? Track whether it stays on a transparent address, gets reshielded, moves to an exchange, or transfers elsewhere."
       />
@@ -31,12 +32,6 @@ export default async function TurnstilePage({ searchParams }: {
             className="text-caption font-mono px-3 py-1.5 rounded-md border border-glass-6 text-muted hover:text-secondary hover:border-glass-12 hover:bg-glass-4 transition-colors"
           >
             Privacy Risks
-          </Link>
-          <Link
-            href="/pools"
-            className="text-caption font-mono px-3 py-1.5 rounded-md border border-glass-6 text-muted hover:text-secondary hover:border-glass-12 hover:bg-glass-4 transition-colors"
-          >
-            Full Pool Analytics →
           </Link>
         </div>
       </div>

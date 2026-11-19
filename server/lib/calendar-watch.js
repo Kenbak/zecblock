@@ -145,16 +145,23 @@ function knownCalendar(sources) {
   return { topics, dates, heights };
 }
 
-const escapeMarkdown = value => String(value).replace(/([\\_*`\[\]])/g, '\\$1');
+const escapeHtml = value => String(value).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 
-/** One Telegram message (Markdown) for a batch of candidates; trimmed under Telegram's limit. */
-function formatDigest(candidates, { max = 3500 } = {}) {
-  const lines = [`*Calendar watch* · ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} to review`];
+/**
+ * One Telegram message for a batch of candidates; trimmed under Telegram's limit.
+ * HTML, not Markdown: only & < > need escaping, so a handle or URL containing
+ * `_` or `*` (x.com/zodl_app/...) cannot open an unclosed entity. `plain` gives
+ * the same text with no markup, for a delivery fallback.
+ */
+function formatDigest(candidates, { max = 3500, plain = false } = {}) {
+  const esc = plain ? String : escapeHtml;
+  const bold = text => (plain ? text : `<b>${text}</b>`);
+  const lines = [`${bold('Calendar watch')} · ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} to review`];
   for (const c of candidates) {
-    const block = [`\n${c.tracked ? '↻' : '•'} *${escapeMarkdown(c.title)}*`, `${escapeMarkdown(c.kind)} · ${escapeMarkdown(c.source)}${c.tracked ? ' · tracked topic edited' : ''}`];
-    for (const d of c.dates.slice(0, 6)) block.push(`  ${d.known ? '✓' : '+'} ${escapeMarkdown(d.at ? `${d.at.slice(0, 16).replace('T', ' ')} UTC` : d.date)}${d.label ? ` — ${escapeMarkdown(d.label)}` : ''}`);
-    for (const h of c.heights.slice(0, 4)) block.push(`  ${h.known ? '✓' : '+'} block #${h.value.toLocaleString('en-US')} — ${escapeMarkdown(h.excerpt.slice(0, 160))}`);
-    block.push(`  ${c.url}`);
+    const block = [`\n${c.tracked ? '↻' : '•'} ${bold(esc(c.title))}`, `${esc(c.kind)} · ${esc(c.source)}${c.tracked ? ' · tracked topic edited' : ''}`];
+    for (const d of c.dates.slice(0, 6)) block.push(`  ${d.known ? '✓' : '+'} ${esc(d.at ? `${d.at.slice(0, 16).replace('T', ' ')} UTC` : d.date)}${d.label ? ` — ${esc(d.label)}` : ''}`);
+    for (const h of c.heights.slice(0, 4)) block.push(`  ${h.known ? '✓' : '+'} block #${h.value.toLocaleString('en-US')} — ${esc(h.excerpt.slice(0, 160))}`);
+    block.push(`  ${esc(c.url)}`);
     const next = [...lines, ...block].join('\n');
     if (next.length > max) { lines.push(`\n…and ${candidates.length - candidates.indexOf(c)} more (run the watcher with --preview)`); break; }
     lines.push(...block);

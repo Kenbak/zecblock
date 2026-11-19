@@ -2,7 +2,7 @@
 
 import { ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { getNavigation, getActiveNavigationHref } from '@/lib/navigation';
+import { getNavigation, getActiveNavigationHref, getFooterColumns, nestNavigationItems, type NavigationItem } from '@/lib/navigation';
 import { BrandLogo } from '@/components/BrandLogo';
 import Link from 'next/link';
 import { DonateButton } from '@/components/DonateButton';
@@ -12,6 +12,10 @@ import { NETWORK, isMainnet, MAINNET_URL, TESTNET_URL, CROSSLINK_URL } from '@/l
 const LINK_CLASS = 'footer-link inline-block py-1.5 text-caption font-mono';
 const SECONDARY_LINK_CLASS = 'inline-flex min-h-9 items-center text-caption font-mono text-secondary hover:text-primary hover:underline underline-offset-4 transition-colors';
 const categories = getNavigation(NETWORK, 'footer');
+// The footer is the full sitemap, including the pages the masthead leaves out, so every
+// page keeps a link on every page. One row of even columns; a page reached from another
+// one sits indented under it.
+const columns = getFooterColumns(NETWORK).map(column => ({ ...column, entries: nestNavigationItems(column.items) }));
 
 const SOCIAL_LINKS = [
   {
@@ -44,21 +48,30 @@ function FooterHeading({ children }: { children: ReactNode }) {
 export function Footer() {
   const pathname = usePathname();
   const activeHref = getActiveNavigationHref(pathname, categories);
+  const footerLink = (item: NavigationItem) => (
+    <Link href={item.href} className={`${LINK_CLASS} ${activeHref === item.href ? '!text-primary underline underline-offset-4' : ''}`}
+      aria-current={activeHref === item.href ? 'page' : undefined}>
+      {item.label}
+    </Link>
+  );
 
   return (
     <footer className="footer-container border-t border-cipher-border mt-12 sm:mt-16">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-10 sm:py-12">
-        <nav aria-label="Footer navigation" className={`grid grid-cols-2 gap-x-6 gap-y-8 ${categories.length === 3 ? 'sm:grid-cols-3' : 'sm:grid-cols-4'}`}>
-          {categories.map(category => (
-            <div key={category.id}>
-              <FooterHeading>{category.label}</FooterHeading>
+        <nav aria-label="Footer navigation" className="grid grid-cols-2 gap-x-6 gap-y-8 sm:grid-cols-3 lg:grid-cols-6">
+          {columns.map(column => (
+            <div key={column.id}>
+              {/* Same `> KEY` spelling as the page eyebrows: words joined by underscores. */}
+              <FooterHeading>{column.label.replace(/[^A-Za-z0-9]+/g, '_')}</FooterHeading>
               <ul className="flex flex-col">
-                {category.items.map(item => (
+                {column.entries.map(({ item, children }) => (
                   <li key={item.href}>
-                    <Link href={item.href} className={`${LINK_CLASS} ${activeHref === item.href ? '!text-primary underline underline-offset-4' : ''}`}
-                      aria-current={activeHref === item.href ? 'page' : undefined}>
-                      {item.label}
-                    </Link>
+                    {footerLink(item)}
+                    {children.length > 0 && (
+                      <ul className="mb-1.5 ml-0.5 flex flex-col border-l border-cipher-border pl-3">
+                        {children.map(child => <li key={child.href}>{footerLink(child)}</li>)}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>

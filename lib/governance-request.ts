@@ -19,7 +19,7 @@ export type GovernanceRequest = { status: 200 | 404 | 503 } | { status: 308; loc
 export async function resolveGovernanceRequest(pathname: string, network: string): Promise<GovernanceRequest> {
   if (network !== 'mainnet') return { status: 404 };
   const path = pathname.replace(/\/$/, '');
-  if (path === '/governance' || path === '/governance/nu7') return { status: 200 };
+  if (path === '/governance' || path === '/governance/nu7' || path === '/governance/nu7-1-miner-poll') return { status: 200 };
   const slug = path.slice('/governance/'.length);
   if (slug === NU7_ROUND_ID) return { status: 308, location: '/governance/nu7' };
   const grants = grantRoundBySlug(slug);

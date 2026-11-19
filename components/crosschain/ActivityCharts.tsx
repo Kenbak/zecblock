@@ -1,5 +1,6 @@
 "use client";
 import { useId, useState } from "react";
+import { formatBucketLabel } from "@/lib/chart-dates";
 import {
   BarChart,
   Bar,
@@ -9,9 +10,9 @@ import {
   YAxis,
   CartesianGrid,
   ResponsiveContainer,
-  Legend,
   ReferenceLine,
 } from "recharts";
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from "@/components/charts/ChartTooltip";
 import { ChartCard } from "@/components/network/ChartCard";
 import { useTheme } from "@/contexts/ThemeContext";
@@ -127,17 +128,17 @@ export function ActivityCharts({
               margin={{ left: 0, right: 8 }}
             >
               <CartesianGrid
-                stroke={colors.grid}
-                strokeDasharray="2 6"
+                stroke={colors.gridStroke}
                 vertical={false}
               />
-              <XAxis
+              <XAxis tickLine={false} axisLine={false}
                 dataKey="label"
+                tickFormatter={formatBucketLabel}
                 padding={{ left: 12, right: 12 }}
                 minTickGap={45}
                 tick={{ fill: colors.axis, fontSize: 12 }}
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 width={65}
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={(v) =>
@@ -163,7 +164,7 @@ export function ActivityCharts({
                 }
               />
               <ReferenceLine y={0} stroke={colors.axis} />
-              <Legend />
+              <ChartLegend />
               {view === "count" ? (
                 <Bar
                   dataKey="swaps"
@@ -229,7 +230,7 @@ export function ActivityCharts({
               layout="vertical"
               margin={{ left: 5, right: 12 }}
             >
-              <XAxis
+              <XAxis tickLine={false} axisLine={false}
                 type="number"
                 tick={{ fill: colors.axis, fontSize: 12 }}
                 tickFormatter={(v) =>
@@ -238,7 +239,7 @@ export function ActivityCharts({
                     : value(v, unit).replace(" ZEC", "")
                 }
               />
-              <YAxis
+              <YAxis tickLine={false} axisLine={false}
                 type="category"
                 dataKey="label"
                 width={78}

@@ -21,7 +21,7 @@ function eventTime(story) {
   if (story.type.startsWith('flow_') || story.type === 'migration') return Number(story.evidence.block_time) * 1000;
   if (story.type === 'swap') return Date.parse(story.evidence.swap_created_at);
   if (story.type === 'reorg') return Date.parse(story.evidence.detected_at);
-  if (story.type === 'activity_weekly') return Date.parse(`${story.evidence.period.endExclusive}T06:00:00Z`);
+  if (['activity_weekly', 'shield_heatmap'].includes(story.type)) return Date.parse(`${story.evidence.period.endExclusive}T06:00:00Z`);
   // Daily stories become eligible only as a newly completed reporting period,
   // after the six-hour data settling window. Their observations remain dated.
   const target = story.evidence.target || story.key.split(':').at(-1);
@@ -180,6 +180,39 @@ function flowStory(flow) {
 }
 
 const TXID = /^[a-f0-9]{64}$/;
+
+const WEEKDAYS = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+// Weekly heatmap of public shielding (transparent -> shielded flows) by UTC
+// day and hour. `slots` holds only hours with shielding: slot = hours since
+// Monday 00:00 UTC, zat = exact decimal zatoshi string, n = transactions.
+function heatmapStory({ start, endExclusive, slots }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) || addDays(start, 7) !== endExclusive || new Date(`${start}T00:00:00Z`).getUTCDay() !== 1) return null;
+  if (!Array.isArray(slots) || !slots.length) return null;
+  const cells = Array(168).fill('0'), counts = Array(168).fill(0);
+  for (const row of slots) {
+    const slot = Number(row.slot), n = Number(row.n);
+    if (!Number.isInteger(slot) || slot < 0 || slot > 167 || !/^\d+$/.test(String(row.zat)) || !Number.isSafeInteger(n) || n < 1) return null;
+    cells[slot] = String(BigInt(cells[slot]) + BigInt(row.zat));
+    counts[slot] += n;
+  }
+  const total = cells.reduce((sum, zat) => sum + BigInt(zat), 0n);
+  if (total <= 0n) return null;
+  let busiest = 0;
+  cells.forEach((zat, slot) => { if (BigInt(zat) > BigInt(cells[busiest])) busiest = slot; });
+  const day = WEEKDAYS[Math.floor(busiest / 24)], hour = `${String(busiest % 24).padStart(2, '0')}:00`;
+  const transactions = counts.reduce((a, b) => a + b, 0);
+  const range = f.rangeText(start, addDays(endExclusive, -1));
+  const peak = f.zecText(cells[busiest]);
+  const content = `${MARK} When ZEC was shielded last week (${range}, UTC).\n\n`
+    + `Busiest hour: ${day} ${hour} UTC, with ${peak} ZEC. ${f.zecText(total.toString())} ZEC was shielded in total across ${number(transactions)} transactions.\n\n${BASE}/pools`;
+  const card = { kicker: 'Shielding · Last week', hero: `${day.slice(0, 3)} ${hour}`, unit: 'UTC', tone: 'gold',
+    line: `was the busiest hour: ${peak} ZEC shielded.`, source: 'zecblock.com/pools', date: range,
+    visual: { kind: 'heatmap', cells, busiest } };
+  return candidate('shield_heatmap', `analysis:shield_heatmap:${start}`, content,
+    { period: { start, endExclusive }, cells, counts, totalZat: total.toString(), transactions, busiest, card,
+      editorial: { topic: 'shield_heatmap', lens: 'weekly_pattern', significance: 62 } });
+}
 
 // Indexed Maya/THORChain actions must carry a complete native-ZEC identity, so a
 // later post through another venue (or NEAR) can be recognized as the same
@@ -624,5 +657,5 @@ function select(candidates, history, now) {
   return { selected, skipped };
 }
 
-module.exports = { MIN_SWAP_USD, candidate, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory, swapZecTxids,
+module.exports = { MIN_SWAP_USD, candidate, heatmapStory, comparison, completeSeries, dailyActivity, weeklyActivity, flowStory, swapStory, swapZecTxids,
   migrationStory, reorgStory, crosschainStory, hashStory, signalStory, milestoneStories, poolDrainStories, select, editorialRank, eventTime, isNew };

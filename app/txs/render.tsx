@@ -139,7 +139,11 @@ export async function renderTransactionsPage(
   searchParams: Promise<SearchParams>,
   unavailablePolicy: UnavailablePolicy = 'shell',
 ) {
-  const request = parseTransactionsRequest(await searchParams);
+  const query = await searchParams;
+  const request = parseTransactionsRequest(query);
+  // `?view=activity` opens the Daily Activity tab, so its chart can be linked from other pages.
+  // It is a view of this page: the canonical address stays the one without it.
+  const initialView = firstValue(query.view) === 'activity' ? 'activity' : 'recent';
   const isShielded = request.type === 'shielded';
 
   let initialTxs: TransactionListItem[] = [];
@@ -200,7 +204,8 @@ export async function renderTransactionsPage(
         />
       )}
       <TxsClient
-        key={archiveKey}
+        key={`${archiveKey}:${initialView}`}
+        initialView={initialView}
         initialTxs={initialTxs}
         initialFlows={initialFlows as never[]}
         initialPagination={pagination}
@@ -233,7 +238,7 @@ export async function renderTransactionsPage(
             <p>
               This page lists every transaction as it is mined, with type badges for
               transparent, Sapling, Orchard, Ironwood, and coinbase activity, plus flow indicators for
-              shielding and unshielding movements. Filter by type, pool, flow direction, or
+              shielding and deshielding movements. Filter by type, pool, flow direction, or
               minimum amount to analyze specific transaction patterns.
             </p>
           </div>

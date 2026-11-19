@@ -17,4 +17,11 @@ test('validation only calls getMe/getChat; report is sent once to configured cha
  const calls=[];const fetchImpl=async(url,options)=>{calls.push([url.split('/').at(-1),JSON.parse(options.body)]);assert.ok(options.signal);return{ok:true,status:200,json:async()=>({ok:true,result:{}})};};
  await checkSignalTelegram({env,fetchImpl});assert.deepEqual(calls.map(x=>x[0]),['getMe','getChat']);
  await sendSignalReport('hello',{env,fetchImpl});assert.equal(calls[2][0],'sendMessage');assert.equal(calls[2][1].chat_id,'-123');assert.equal(calls[2][1].text,'hello');
+ assert.equal(calls[2][1].parse_mode,'Markdown');
+ await sendSignalReport('<b>x</b>',{env,fetchImpl,parseMode:'HTML'});assert.equal(calls[3][1].parse_mode,'HTML');
+ await sendSignalReport('x_y',{env,fetchImpl,parseMode:null});assert.equal('parse_mode' in calls[4][1],false);assert.equal(calls[4][1].text,'x_y');
+});
+test('a rejection carries its HTTP status and nothing else from the response',async()=>{
+ const fetchImpl=async()=>({ok:false,status:400,json:async()=>({ok:false,description:'Bad Request: can\'t parse entities'})});
+ await assert.rejects(sendSignalReport('x',{env,fetchImpl}),error=>error.status===400&&/HTTP 400/.test(error.message)&&!/parse entities/.test(error.message)&&!error.message.includes(env.TELEGRAM_BOT_TOKEN));
 });

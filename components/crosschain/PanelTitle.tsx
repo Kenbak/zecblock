@@ -15,12 +15,8 @@ export function PanelTitle({
   return (
     <div className={`flex items-start sm:items-center justify-between gap-2 sm:gap-3 flex-wrap ${className}`}>
       <div className="flex items-center gap-2 min-w-0">
-        {icon ? (
-          <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>
-        ) : (
-          <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{">"}</span>
-        )}
-        <h2 className="text-sm font-medium font-mono text-secondary lowercase tracking-tight truncate">{title}</h2>
+        {icon && <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>}
+        <h2 className="chart-title min-w-0">{title}</h2>
       </div>
       {controls}
     </div>
@@ -32,8 +28,7 @@ export function DisclosureSummary({ title }: { title: string }) {
   return (
     <summary className="flex cursor-pointer list-none items-center justify-between gap-3 [&::-webkit-details-marker]:hidden">
       <span className="flex items-center gap-2 min-w-0">
-        <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{">"}</span>
-        <span className="text-sm font-medium font-mono text-secondary lowercase tracking-tight">{title}</span>
+        <span className="chart-title">{title}</span>
       </span>
       <span className="text-muted transition-transform group-open:rotate-90" aria-hidden="true">›</span>
     </summary>

@@ -1,6 +1,6 @@
 # Automatic factual social analysis
 
-Updated 2026-10-28. This document specifies the editorial selection, cards and
+Updated 2026-11-18. This document specifies the editorial selection, cards and
 source-reply delivery contract. Exact deployed revisions and acceptance records
 are maintained separately in the private operations wiki.
 `server/bot/index.js` invokes `jobs/editorial.js`;
@@ -50,6 +50,37 @@ under three hours old. A failed balance lookup rolls back to a savepoint and
 records `context-unavailable`, without discarding a valid spot quote. Daily
 close milestones retain their dated `zec_price_daily` valuation; provider-valued
 cross-chain swaps retain their source USD. No public API or schema change.
+
+## Animated GIFs
+
+Since 2026-11-18 the orchestrator's render hook is `storyMedia` in
+`lib/landing-gif.js`. Animations post as X GIFs (`media_category: tweet_gif`:
+autoplay, loop, under 15 MB), encoded by `lib/gif-encoder.js` with one palette
+per GIF and no dithering. ffmpeg must be on the host.
+
+- Swaps and shield/deshield flows: a "where it lands" GIF. The ranking sample
+  (30 days per venue for swaps, 90 days per direction for flows) fills in as a
+  log-scale size histogram (8 bins per decade, at most 8 decades; smaller bins
+  join the first bar); the event drops in as a pin at its exact size, smaller
+  events dim, larger ones take the event colour, and the rank appears ("Top
+  x%", "N were bigger", or "Largest in N days"). The histogram is re-read from
+  the same rows the story was ranked against and must total its
+  `sample_count`; otherwise, or on any render failure, the still card is used.
+- Weekly shielding heatmap (`shield_heatmap`, key
+  `analysis:shield_heatmap:<Monday>`): public shield flows of the last
+  completed UTC week by day and hour, eligible from Monday 06:00 UTC once every
+  block in the week has all its transactions indexed. The busiest hour (most
+  ZEC) is the headline and is ringed. Shade is the square root of an hour's ZEC
+  relative to the 95th-percentile hour, capped at full. There is no still card;
+  without its GIF the post is text only.
+- Replays (`jobs/replay.js`): rendered as GIFs at 20 fps. Every new story posts
+  once, with no weekly or per-animation cap; the shared 20-minute pacing applies.
+  Steps are half a percent (shielded supply share, 30-day shielded transaction
+  share, issued share of the 21M cap), five points of mining software share,
+  $100M into ZEC via NEAR Intents, and a quarter of the leading power of ten for
+  hashrate. A week without a replay gets one from the animation posted longest
+  ago (key `replay:v2:<id>:week:<Monday>`). Render or upload failures stop after
+  three per evening; successful posts do not count toward that limit.
 
 ## ZecBlock image integration
 

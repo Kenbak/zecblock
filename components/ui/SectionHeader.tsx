@@ -87,6 +87,7 @@ export function SectionHeader({
   size = 'sm',
   className = '',
   labelAsHeading = true,
+  card = false,
 }: {
   /** Mono uppercase section label, e.g. "POOL_RANKING" */
   label: string;
@@ -105,6 +106,8 @@ export function SectionHeader({
    * must not add a second heading to the document outline.
    */
   labelAsHeading?: boolean;
+  /** The title of a chart or panel inside a card: plain sentence case, no chevron, like ChartCard. */
+  card?: boolean;
 }) {
   const Label = labelAsHeading ? 'h2' : 'div';
   return (
@@ -112,10 +115,10 @@ export function SectionHeader({
       <div className="flex items-center gap-2">
         {icon ? (
           <span className="flex h-5 w-5 shrink-0 items-center justify-center text-cipher-gold" aria-hidden="true">{icon}</span>
-        ) : (
+        ) : !card && (
           <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50" aria-hidden="true">{'>'}</span>
         )}
-        <Label className={`${labelAsHeading ? '' : 'section-header-label '}${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
+        <Label className={card ? 'chart-title' : `${labelAsHeading ? '' : 'section-header-label '}${LABEL_SIZE[size]} font-semibold font-mono text-primary uppercase tracking-wide`}>
           {label}
         </Label>
         {live && (

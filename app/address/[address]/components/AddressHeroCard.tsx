@@ -14,7 +14,7 @@ export function AddressHeroCard({ data, priceData, crossChain, totalTxCount }: {
 }) {
   const funding = data.firstFunding;
   return (
-    <section aria-label="Address overview" className="mb-8 rounded-xl border border-cipher-border bg-cipher-surface overflow-hidden">
+    <section aria-label="Address overview" className="mb-8 rounded-xl border border-cipher-border bg-cipher-card overflow-hidden">
       <div className="grid lg:grid-cols-[1.2fr_1fr]">
         <div className="p-5 sm:p-7">
           <p className="text-xs font-mono text-muted uppercase tracking-wider">Public balance</p>

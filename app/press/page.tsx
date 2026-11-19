@@ -214,7 +214,7 @@ export default function PressPage() {
         </p>
       </header>
 
-      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-primary mb-4">Logo</h2>
 
         <p className="mb-2 text-caption font-mono uppercase tracking-wider text-muted">Wordmark</p>
@@ -236,7 +236,7 @@ export default function PressPage() {
         ))}
       </section>
 
-      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-primary mb-4">Colors</h2>
         <div className="space-y-3">
           {COLORS.map((c) => (
@@ -254,7 +254,7 @@ export default function PressPage() {
         </div>
       </section>
 
-      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-primary mb-4">Typography</h2>
         <dl className="space-y-3 text-sm">
           <div>
@@ -268,7 +268,7 @@ export default function PressPage() {
         </dl>
       </section>
 
-      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <section className="mb-10 rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-primary mb-2">About ZecBlock</h2>
         <p className="text-xs font-mono text-muted mb-3">Copy-paste for articles, listings, and partner pages.</p>
         <blockquote className="rounded-lg border border-cipher-border/25 bg-glass-3/30 px-4 py-3 text-sm leading-relaxed text-secondary">
@@ -279,7 +279,7 @@ export default function PressPage() {
         </p>
       </section>
 
-      <section className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <section className="rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 className="text-sm font-semibold text-primary mb-4">Contact</h2>
         <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
           {CONTACTS.map((c) => (

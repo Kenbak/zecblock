@@ -14,7 +14,7 @@ import { BlockFilters, type BlockFilterValues } from './BlockFilters';
 import { SOFTWARE_LABELS, classifyMiningSoftware, type MiningSoftware } from '@/lib/mining-software';
 import { getMiningSoftwareEmoji } from '@/lib/coinbase-client';
 import { Tooltip } from '@/components/Tooltip';
-import { CURRENCY, isTestnet } from '@/lib/config';
+import { CURRENCY, isCrosslink, isTestnet } from '@/lib/config';
 import { scheduledSeconds, type BlockSchedule } from '@/lib/block-timing';
 import { Tabs } from '@/components/ui/Tabs';
 import { CoinbaseMessage } from '@/components/CoinbaseMessage';
@@ -77,7 +77,7 @@ function coinbaseColumns(blocks: Block[], trailingBlock: Block | null, schedule:
           {height.cell(block, index)}
           <div className="sm:hidden mt-2 space-y-2">
             <MinerIdentity block={block} />
-            <CoinbaseMessage hex={block.coinbase_hex} />
+            <CoinbaseMessage hex={block.coinbase_hex} height={block.height} />
             <p className="font-mono text-xs text-muted tabular-nums">
               {block.transaction_count.toLocaleString()} txs · {Number.isFinite(block.size) && block.size >= 0 ? `${(block.size / 1000).toFixed(1)} kB` : 'Size unavailable'}
             </p>
@@ -97,7 +97,7 @@ function coinbaseColumns(blocks: Block[], trailingBlock: Block | null, schedule:
       header: 'Coinbase message',
       className: 'hidden sm:table-cell w-full min-w-64 py-3',
       skeletonWidth: 'w-64',
-      cell: (block) => <CoinbaseMessage hex={block.coinbase_hex} />,
+      cell: (block) => <CoinbaseMessage hex={block.coinbase_hex} height={block.height} />,
     },
     { ...transactions, header: 'Transactions', className: 'hidden md:table-cell whitespace-nowrap' },
     { ...size, className: 'hidden lg:table-cell min-w-[10rem]' },
@@ -423,13 +423,18 @@ export default function BlocksClient({
         <MetricCard size="compact"
           label="Avg Block Time"
           value={summary.avgBlockTime != null ? `${summary.avgBlockTime}s` : '—'}
-          hint={`Last ${isTestnet ? '500' : '1,000'} blocks · observed timestamps`}
+          hint={isCrosslink
+            ? `Last ${isTestnet ? '500' : '1,000'} blocks · observed timestamps`
+            : <>Last {isTestnet ? '500' : '1,000'} blocks · <Link href="/network/block-speed" className="underline underline-offset-4 hover:text-primary">Block Speed →</Link></>}
         />
         <MetricCard size="compact"
           label="Avg Block Fee (24h)"
           className="order-last col-span-2 sm:order-none sm:col-span-1"
           value={summary.avgBlockFee != null ? `${summary.avgBlockFee.toFixed(8)} ${CURRENCY}` : '—'}
-          hint={summary.avgBlockFee != null && zecPriceUsd != null ? `≈ $${(summary.avgBlockFee * zecPriceUsd).toFixed(2)}` : undefined}
+          hint={<>
+            {summary.avgBlockFee != null && zecPriceUsd != null && `≈ $${(summary.avgBlockFee * zecPriceUsd).toFixed(2)}`}
+            {!isCrosslink && <>{summary.avgBlockFee != null && zecPriceUsd != null && ' · '}<Link href="/mining?metric=txFees#economics" className="underline underline-offset-4 hover:text-primary">Fee trend →</Link></>}
+          </>}
         />
         <MetricCard size="compact"
           label="Txs Per Block"

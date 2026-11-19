@@ -1,43 +1,43 @@
+import type { ReactNode } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/ui/SectionHeader';
+import { isMainnet } from '@/lib/config';
+import { PRIVATE_EXPLORER_URL } from '@/lib/navigation';
 import { getBaseUrl } from '@/lib/seo';
 
-// Icons
+/** One outline style for every tool: 24px grid, 1.5 stroke, drawn at 20px beside the title. */
+function ToolIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg className="h-5 w-5 shrink-0" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.5} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+      {children}
+    </svg>
+  );
+}
+
 const Icons = {
-  Code: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />
-    </svg>
-  ),
-  Bolt: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" />
-    </svg>
-  ),
-  Lock: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-    </svg>
-  ),
-  Calculator: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
-    </svg>
-  ),
-  Tree: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />
-    </svg>
-  ),
-  Shield: () => (
-    <svg className="w-5 h-5" aria-hidden="true" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="m12 3-8 3v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z" />
-      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h8m-4-4v8" />
-    </svg>
-  ),
+  Code: <path d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" />,
+  Bolt: <path d="M13 10V3L4 14h7v7l9-11h-7z" />,
+  Lock: <path d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />,
+  // Hat and glasses: the same hidden person as the Private Explorer icon in the header.
+  Hidden: <><path d="M3 11h18" /><path d="M5 11V7a3 3 0 0 1 3-3h8a3 3 0 0 1 3 3v4" /><circle cx="7" cy="17" r="3" /><circle cx="17" cy="17" r="3" /><path d="M10 17h4" /></>,
+  Shield: <><path d="m12 3-8 3v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z" /><path d="M8 12h8m-4-4v8" /></>,
+  Clock: <><circle cx="12" cy="12" r="9" /><path d="M12 7v5l3 2" /></>,
+  Calculator: <path d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />,
+  Tree: <path d="M4 5a1 1 0 011-1h14a1 1 0 011 1v2a1 1 0 01-1 1H5a1 1 0 01-1-1V5zM4 13a1 1 0 011-1h6a1 1 0 011 1v6a1 1 0 01-1 1H5a1 1 0 01-1-1v-6zM16 13a1 1 0 011-1h2a1 1 0 011 1v6a1 1 0 01-1 1h-2a1 1 0 01-1-1v-6z" />,
 };
 
-const tools = [
+interface Tool {
+  href: string;
+  title: string;
+  desc: string;
+  icon: ReactNode;
+  /** Opens another site in a new tab. */
+  external?: boolean;
+}
+
+// Eight tools fill two even rows of four on desktop. Every tool lives here and nowhere
+// else in the site chrome: the menus and the footer link to this page.
+const tools: Tool[] = [
   {
     href: '/tools/decode',
     title: 'Decode transaction',
@@ -56,6 +56,14 @@ const tools = [
     desc: 'Read Orchard and Ironwood memos with your viewing key. Decryption stays in your browser.',
     icon: Icons.Lock,
   },
+  // The Private Explorer covers mainnet only.
+  ...(isMainnet ? [{
+    href: PRIVATE_EXPLORER_URL,
+    title: 'Private Explorer',
+    desc: 'Look up any Zcash transaction, block or address without revealing which one.',
+    icon: Icons.Hidden,
+    external: true,
+  }] : []),
   {
     href: '/tools/blend-check',
     title: 'Blend Check',
@@ -66,7 +74,7 @@ const tools = [
     href: '/tools/block-time-simulator',
     title: 'Block time simulator',
     desc: 'See what a faster or slower Zcash block time would mean, from measured mainnet data.',
-    icon: Icons.Bolt,
+    icon: Icons.Clock,
   },
   {
     href: '/tools/unit-converter',
@@ -82,6 +90,24 @@ const tools = [
   },
 ];
 
+const CARD_CLASS = 'group flex h-full flex-col rounded-lg border border-cipher-border card-surface p-5 transition-colors hover:border-cipher-gold/40';
+
+function ToolCard({ tool }: { tool: Tool }) {
+  const body = (
+    <>
+      <span className="flex items-center gap-2.5">
+        <span className="text-muted transition-colors group-hover:text-brand-gold group-focus-visible:text-brand-gold"><ToolIcon>{tool.icon}</ToolIcon></span>
+        <h2 className="min-w-0 text-base font-medium text-primary">{tool.title}</h2>
+        <span aria-hidden="true" className="ml-auto text-muted transition-colors group-hover:text-brand-gold group-focus-visible:text-brand-gold">{tool.external ? '↗' : '→'}</span>
+      </span>
+      <p className="mt-3 text-sm leading-relaxed text-muted">{tool.desc}</p>
+    </>
+  );
+  return tool.external
+    ? <a href={tool.href} target="_blank" rel="noopener noreferrer" aria-label={`${tool.title} (opens in a new tab)`} className={CARD_CLASS}>{body}</a>
+    : <Link href={tool.href} className={CARD_CLASS}>{body}</Link>;
+}
+
 export default function ToolsPage() {
   const baseUrl = getBaseUrl();
   const schema = {
@@ -89,7 +115,7 @@ export default function ToolsPage() {
     '@type': 'CollectionPage',
     '@id': `${baseUrl}/tools#webpage`,
     url: `${baseUrl}/tools`,
-    name: 'Zcash Developer Tools',
+    name: 'Zcash Tools',
     description: 'Tools to inspect transactions, read shielded memos, compare amounts and debug wallets.',
     isPartOf: { '@id': `${baseUrl}/#website` },
     publisher: { '@id': 'https://zecblock.com/#organization' },
@@ -97,7 +123,7 @@ export default function ToolsPage() {
       '@type': 'ItemList',
       itemListElement: tools.map((tool, index) => ({
         '@type': 'ListItem', position: index + 1,
-        item: { '@type': 'WebPage', name: tool.title, description: tool.desc, url: `${baseUrl}${tool.href}` },
+        item: { '@type': 'WebPage', name: tool.title, description: tool.desc, url: tool.external ? tool.href : `${baseUrl}${tool.href}` },
       })),
     },
   };
@@ -107,26 +133,12 @@ export default function ToolsPage() {
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }} />
       <PageHeader
         eyebrow="TOOLS"
-        title="Developer tools"
+        title="Zcash tools"
         subtitle="Inspect transactions, read shielded memos and debug wallets."
       />
 
-      <ul aria-label="Zcash tools" className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {tools.map(tool => {
-          const Icon = tool.icon;
-          return (
-            <li key={tool.href}>
-              <Link href={tool.href} className="group block h-full rounded-lg border border-cipher-border card-surface p-5 sm:p-6 transition-colors hover:border-cipher-gold/40">
-                <div className="flex items-center justify-between gap-4 text-muted mb-5">
-                  <Icon />
-                  <span aria-hidden="true" className="transition-colors group-hover:text-brand-gold group-focus-visible:text-brand-gold">→</span>
-                </div>
-                <h2 className="text-base font-medium text-primary mb-2">{tool.title}</h2>
-                <p className="text-sm text-muted leading-relaxed max-w-sm">{tool.desc}</p>
-              </Link>
-            </li>
-          );
-        })}
+      <ul aria-label="Zcash tools" className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        {tools.map(tool => <li key={tool.href}><ToolCard tool={tool} /></li>)}
       </ul>
 
       <section aria-labelledby="api-heading" className="mt-8 sm:mt-10 border-t border-cipher-border pt-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-8">

@@ -8,10 +8,14 @@ import { useState } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import {
-  AreaChart, Area,
-  XAxis, YAxis, CartesianGrid,
-  ResponsiveContainer, Legend,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as RechartsTooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
@@ -151,15 +155,15 @@ export default function WalletsClient() {
                 </p>
                 <><ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={300}>
                   <AreaChart data={feeLanes.history} margin={{ right: 16, left: 0 }}>
-                    <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-                    <XAxis
+                    <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+                    <XAxis tickLine={false} axisLine={false}
                       dataKey="date"
                       {...CHART_DATE_AXIS}
                       stroke={colors.axis}
                       tickFormatter={formatDate}
                       tick={{ fontSize: 12 }}
                     />
-                    <YAxis
+                    <YAxis tickLine={false} axisLine={false}
                       stroke={colors.axis}
                       tick={{ fontSize: 12 }}
                       tickFormatter={(v: number) => v > 999 ? `${(v / 1000).toFixed(1)}k` : String(v)}
@@ -175,7 +179,7 @@ export default function WalletsClient() {
                       labelFormatter={(label) => formatDate(String(label))}
                     />
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="standard"
                       stackId="1"
                       stroke={colors.shielding}
@@ -184,7 +188,7 @@ export default function WalletsClient() {
                       name="Standard"
                     />
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="priority"
                       stackId="1"
                       stroke={colors.gold}
@@ -193,7 +197,7 @@ export default function WalletsClient() {
                       name="Priority"
                     />
                     <Area
-                      type="monotone"
+                      type="linear"
                       dataKey="non_standard"
                       stackId="1"
                       stroke={colors.deshielding}
@@ -201,7 +205,7 @@ export default function WalletsClient() {
                       fillOpacity={0.6}
                       name="Non-Standard"
                     />
-                    <Legend />
+                    <ChartLegend />
                   </AreaChart>
                 </ResponsiveContainer><ChartWatermark /></>
               </CardBody>

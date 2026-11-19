@@ -6,8 +6,8 @@
  * Entry point for the bot service. Manages cron scheduling:
  *  - Every 5 minutes: ranked flows, swaps, migrations and reorgs
  *  - Daily after 06:00 UTC: completed-day analysis and historical records
- *  - Evenings from 21:00 UTC: an animated replay when its data has a story,
- *    at most one a week (needs ffmpeg on the host)
+ *  - Evenings from 21:00 UTC: an animated GIF replay for each new story in
+ *    its data, and one in a quiet week (needs ffmpeg on the host)
  *
  * Configuration via environment variables:
  *  - DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASSWORD
@@ -21,7 +21,7 @@ const { XClient } = require('./lib/x-client');
 const { createCreditAlert } = require('./lib/x-credit-alert');
 const editorial = require('./jobs/editorial');
 const replay = require('./jobs/replay');
-const { renderEditorial } = require('./lib/zecblock-cards');
+const { storyMedia } = require('./lib/landing-gif');
 
 const pool = getPool({ max: 5, idleTimeoutMillis: 60000, connectionTimeoutMillis: 5000 });
 
@@ -47,6 +47,9 @@ const logger = {
   error: (...args) => console.error(new Date().toISOString(), '[ERROR]', ...args),
 };
 
+// Swaps and flows post as a "where it lands" GIF; other stories as still cards.
+const render = storyMedia({ reader, logger });
+
 let running = false;
 
 async function tick() {
@@ -54,15 +57,15 @@ async function tick() {
   running = true;
 
   try {
-    const result = await editorial.run(pool, xClient, { logger, reader, render: renderEditorial });
+    const result = await editorial.run(pool, xClient, { logger, reader, render });
     logger.info(`[Tick] Editorial run: ${result.results?.length || 0} selected posts`);
   } catch (err) {
     logger.error(`[Tick] Unhandled error: ${err.message}`);
   }
-  // The weekly video is independent of the editorial run: neither blocks the other.
+  // Replays are independent of the editorial run: neither blocks the other.
   try {
     const result = await replay.run(pool, xClient, { logger });
-    if (!['outside-window', 'no-story-today', 'weekly-cap'].includes(result.skipped)) logger.info(`[Tick] Replay: ${JSON.stringify(result)}`);
+    if (!['outside-window', 'no-story-today'].includes(result.skipped)) logger.info(`[Tick] Replay: ${JSON.stringify(result)}`);
   } catch (err) {
     logger.error(`[Tick] Replay error: ${err.message}`);
   } finally {

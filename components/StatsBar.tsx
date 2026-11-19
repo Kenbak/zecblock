@@ -8,6 +8,7 @@ import { HASHRATE_DESCRIPTION, type HashrateSnapshot } from '@/lib/hashrate';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useZecBtcQuote } from '@/hooks/useZecBtcQuote';
 import { btcPercentage } from '@/lib/zec-btc';
+import { recentShieldedShare, type ActivityDay } from '@/lib/shielded-share';
 
 interface StatsData {
   blockHeight: number | null;
@@ -19,6 +20,8 @@ interface StatsData {
   privacyScore: number | null;
   shieldedPool: number | null;
   shieldedPct: number | null;
+  /** Last 30 UTC days, from the same daily rows as the Daily Activity chart. */
+  shieldedPct30d: number | null;
   totalTxs: number | null;
   ironwoodPool: number | null;
   ironwoodPct: number | null;
@@ -62,7 +65,7 @@ const STAT_MENU_LABELS: Record<StatId, string> = {
   mempool: 'Mempool',
   totalTxs: 'Total TXs',
   shieldedPool: 'Shielded Pool',
-  shieldedPct: 'Shielded TXs · all time',
+  shieldedPct: 'Shielded TXs · 30d',
   ironwoodPool: 'Ironwood Pool',
   ironwoodPct: '% Migrated',
   privacyScore: 'Privacy Score',
@@ -128,6 +131,7 @@ export function StatsBar() {
     privacyScore: null,
     shieldedPool: null,
     shieldedPct: null,
+    shieldedPct30d: null,
     totalTxs: null,
     ironwoodPool: null,
     ironwoodPct: null,
@@ -162,10 +166,12 @@ export function StatsBar() {
       metrics?: { privacyScore?: number; shieldedPercentage?: number };
       shieldedPool?: { currentSize?: number };
       totals?: { totalTx?: number };
+      trends?: { daily?: ActivityDay[] };
     };
     metrics?: { privacyScore?: number; shieldedPercentage?: number };
     shieldedPool?: { currentSize?: number };
     totals?: { totalTx?: number };
+    trends?: { daily?: ActivityDay[] };
   }>('/v1/privacy/stats', undefined, {
     enabled: !isCrosslink,
     refreshInterval: 30_000,
@@ -288,6 +294,8 @@ export function StatsBar() {
       if (privacy?.metrics?.shieldedPercentage != null) {
         next.shieldedPct = privacy.metrics.shieldedPercentage;
       }
+      const recentShare = recentShieldedShare(privacy?.trends?.daily);
+      if (recentShare !== null) next.shieldedPct30d = recentShare;
       if (privacy?.shieldedPool?.currentSize != null) {
         next.shieldedPool = privacy.shieldedPool.currentSize;
       }
@@ -304,6 +312,7 @@ export function StatsBar() {
 
   const hasAnyData = stats.blockHeight !== null || stats.price !== null;
 
+  // Each figure links to the page that owns it, not to a general overview.
   const renderStat = (id: StatId): React.ReactNode => {
     switch (id) {
       case 'block':
@@ -312,11 +321,11 @@ export function StatsBar() {
         ) : null;
       case 'blockTime':
         return stats.avgBlockTime !== null ? (
-          <StatItem href="/network" label="Block Time">{stats.avgBlockTime}s</StatItem>
+          <StatItem href={isCrosslink ? '/network' : '/network/block-speed'} label="Block Time">{stats.avgBlockTime}s</StatItem>
         ) : null;
       case 'hashrate':
         return stats.hashrate ? (
-          <StatItem href="/network" label="Hashrate · 24h" title={`${HASHRATE_DESCRIPTION}${networkQuery.data?.mining?.hashrateEstimate ? ` As of ${networkQuery.data.mining.hashrateEstimate.asOf}` : ''}`}>{networkQuery.data?.mining?.hashrateEstimate ? networkQuery.data.mining.networkHashrate : '—'}</StatItem>
+          <StatItem href={isCrosslink ? '/network' : '/mining#metrics'} label="Hashrate · 24h" title={`${HASHRATE_DESCRIPTION}${networkQuery.data?.mining?.hashrateEstimate ? ` As of ${networkQuery.data.mining.hashrateEstimate.asOf}` : ''}`}>{networkQuery.data?.mining?.hashrateEstimate ? networkQuery.data.mining.networkHashrate : '—'}</StatItem>
         ) : null;
       case 'mempool':
         return stats.mempoolCount !== null ? (
@@ -341,8 +350,15 @@ export function StatsBar() {
           <StatItem href="/pools" label="Shielded Pool">{formatCompact(stats.shieldedPool)} {CURRENCY}</StatItem>
         ) : null;
       case 'shieldedPct':
+        // The 30-day share is the figure the linked chart opens on. All time is that
+        // chart's "All" range, shown only until the daily rows arrive.
+        if (stats.shieldedPct30d !== null) {
+          return (
+            <StatItem href="/txs?type=shielded&view=activity" label="Shielded TXs · 30d" title="Shielded transactions over the last 30 days (UTC) divided by non-coinbase transactions">{stats.shieldedPct30d.toFixed(1)}%</StatItem>
+          );
+        }
         return stats.shieldedPct !== null ? (
-          <StatItem href="/privacy" label="Shielded TXs · all time" title="All-time shielded transactions divided by non-coinbase transactions">{stats.shieldedPct.toFixed(1)}%</StatItem>
+          <StatItem href="/txs?type=shielded&view=activity&trend=all" label="Shielded TXs · all time" title="All-time shielded transactions divided by non-coinbase transactions">{stats.shieldedPct.toFixed(1)}%</StatItem>
         ) : null;
       case 'privacyScore':
         return stats.privacyScore !== null ? (
@@ -362,7 +378,7 @@ export function StatsBar() {
         ) : null;
       case 'price':
         return stats.price !== null ? (
-          <StatItem href="/network" label={CURRENCY}>
+          <StatItem href={isCrosslink ? '/network' : '/valuation'} label={CURRENCY}>
             <span className="flex items-center gap-1">
               <span>${stats.price.toFixed(2)}</span>
               {stats.change24h !== null && (

@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation';
 import { detectAddressType } from '@/lib/zcash';
 import { findAddressByLabel, searchAddressesByLabel, fetchOfficialLabels } from '@/lib/address-labels';
 import { isValidName } from '@/lib/zns';
-import { isMainnet, isCrosslink } from '@/lib/config';
+import { NETWORK, isMainnet, isCrosslink } from '@/lib/config';
+import type { SiteMatch } from '@/lib/site-search';
 import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';
 import { getApiUrl } from '@/lib/api-config';
 
@@ -14,6 +15,9 @@ const IRONWOOD_ACTIVATION = HISTORICAL_UPGRADES.find((upgrade) => upgrade.id ===
 const EXAMPLE_BLOCK = isCrosslink
   ? { height: 6, title: undefined }
   : { height: isMainnet ? IRONWOOD_ACTIVATION.mainnet : IRONWOOD_ACTIVATION.testnet, title: 'Ironwood activation block' };
+
+// A page every visitor of this network can open by typing its name.
+const EXAMPLE_PAGE = isCrosslink ? 'validators' : 'shielded pools';
 
 // Shortened ids as the explorer displays them: a bare prefix, or
 // "5b34c8b44d...ec9e77". The API applies the authoritative limits.
@@ -61,6 +65,10 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
   const [query, setQuery] = useState('');
   const [isFocused, setIsFocused] = useState(false);
   const [suggestions, setSuggestions] = useState<LabelSuggestion[]>([]);
+  // Pages, page sections and charts that match the words typed.
+  const [siteResults, setSiteResults] = useState<SiteMatch[]>([]);
+  const siteSearch = useRef<typeof import('@/lib/site-search') | null>(null);
+  const [siteSearchReady, setSiteSearchReady] = useState(false);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [labelsLoaded, setLabelsLoaded] = useState(false);
@@ -154,47 +162,50 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     }
   };
 
-  // Search for label suggestions as user types
-  useEffect(() => {
-    if (query.length >= 2) {
-      const addressType = detectAddressType(query);
-      const isNumber = !isNaN(Number(query));
-      const isHex = /^[a-fA-F0-9]+$/.test(query);
+  // The page index (menus, sections, charts) loads on first use, so it stays out of the first page load.
+  const loadSiteSearch = () => siteSearch.current
+    ? Promise.resolve(siteSearch.current)
+    : import('@/lib/site-search').then((module) => {
+      siteSearch.current = module;
+      setSiteSearchReady(true);
+      return module;
+    }).catch(() => null);
 
-      if (addressType === 'invalid' && !isNumber && !isHex) {
-        const results = searchAddressesByLabel(query);
-        setSuggestions(results.slice(0, 5));
-        setShowSuggestions(results.length > 0);
-        setSelectedIndex(-1);
-      } else {
-        setSuggestions([]);
-        setShowSuggestions(false);
-      }
-    } else {
+  // Suggest pages and labelled addresses as the visitor types words.
+  useEffect(() => {
+    const value = query.trim();
+    if (value.length > 0 && !siteSearch.current) void loadSiteSearch();
+    const isId = detectAddressType(value) !== 'invalid'
+      || !isNaN(Number(value))
+      // Eight hex characters can start a hash; a shorter run can be a word ("fee").
+      || /^[a-fA-F0-9]{8,}$/.test(value);
+    if (value.length < 2 || isId) {
+      setSiteResults([]);
       setSuggestions([]);
       setShowSuggestions(false);
-    }
-  }, [query, labelsLoaded]);
-
-  // Handle keyboard navigation in suggestions
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape' && idSearch.status !== 'idle') {
-      setIdSearch({ status: 'idle' });
       return;
     }
-    if (!showSuggestions || suggestions.length === 0) return;
+    const pages = siteSearch.current?.searchSite(value, NETWORK, 5) ?? [];
+    const labels = /^[a-fA-F0-9]+$/.test(value) ? [] : searchAddressesByLabel(value).slice(0, pages.length > 0 ? 3 : 5);
+    setSiteResults(pages);
+    setSuggestions(labels);
+    setShowSuggestions(pages.length + labels.length > 0);
+    setSelectedIndex(-1);
+    // The ready flag re-runs this once the index has loaded.
+  }, [query, labelsLoaded, siteSearchReady]);
 
-    if (e.key === 'ArrowDown') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev < suggestions.length - 1 ? prev + 1 : prev));
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault();
-      setSelectedIndex(prev => (prev > 0 ? prev - 1 : -1));
-    } else if (e.key === 'Enter' && selectedIndex >= 0) {
-      e.preventDefault();
-      selectSuggestion(suggestions[selectedIndex]);
-    } else if (e.key === 'Escape') {
-      setShowSuggestions(false);
+  // A page takes Enter ahead of the name lookup, so the name stays reachable as its own row.
+  const nameOption = siteResults[0]?.strong && isValidName(query.trim().toLowerCase()) ? query.trim().toLowerCase() : null;
+  const optionCount = siteResults.length + suggestions.length + (nameOption ? 1 : 0);
+
+  const openSite = (result: SiteMatch) => {
+    setShowSuggestions(false);
+    setQuery('');
+    if (result.external) {
+      onNavigate?.();
+      window.open(result.href, '_blank', 'noopener,noreferrer');
+    } else {
+      navigate(result.href);
     }
   };
 
@@ -202,6 +213,65 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     setShowSuggestions(false);
     setQuery('');
     navigate(`/address/${encodeURIComponent(suggestion.address)}`);
+  };
+
+  const openName = (name: string) => {
+    setShowSuggestions(false);
+    setQuery('');
+    navigate(`/name/${encodeURIComponent(name)}`);
+  };
+
+  // One list for the keyboard: pages first, then labelled addresses, then the name row.
+  const selectOption = (index: number) => {
+    if (index < siteResults.length) openSite(siteResults[index]);
+    else if (index < siteResults.length + suggestions.length) selectSuggestion(suggestions[index - siteResults.length]);
+    else if (nameOption) openName(nameOption);
+  };
+
+  // Handle keyboard navigation in suggestions
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape' && idSearch.status !== 'idle') {
+      setIdSearch({ status: 'idle' });
+      return;
+    }
+    if (!showSuggestions || optionCount === 0) return;
+
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev < optionCount - 1 ? prev + 1 : prev));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setSelectedIndex(prev => (prev > 0 ? prev - 1 : -1));
+    } else if (e.key === 'Enter' && selectedIndex >= 0) {
+      e.preventDefault();
+      selectOption(selectedIndex);
+    } else if (e.key === 'Escape') {
+      setShowSuggestions(false);
+    }
+  };
+
+  // Words, not an id: a label typed in full, then a page, then the looser lookups.
+  const resolveWords = async (value: string) => {
+    const lower = value.toLowerCase();
+    const exactLabel = searchAddressesByLabel(value).find(candidate => candidate.label.toLowerCase() === lower);
+    if (exactLabel) return navigate(`/address/${encodeURIComponent(exactLabel.address)}`);
+    const site = await loadSiteSearch();
+    // A page named by the query comes before the loose label match and the Zcash Name fallback.
+    const page = site?.bestSiteMatch(value, NETWORK);
+    if (page) return openSite(page);
+    const addressByLabel = findAddressByLabel(value);
+    if (addressByLabel) return navigate(`/address/${encodeURIComponent(addressByLabel)}`);
+    if (isValidName(lower)) return navigate(`/name/${encodeURIComponent(lower)}`);
+    const loose = site?.searchSite(value, NETWORK, 1)[0];
+    if (loose) return openSite(loose);
+    setIdSearch({ status: 'message', message: 'No matching page, address, transaction, block, label or name.' });
+  };
+
+  // A short run of hex letters is too short for an id, but it can be a word a page is named for.
+  const resolveShortHex = async (value: string) => {
+    const page = (await loadSiteSearch())?.bestSiteMatch(value, NETWORK);
+    if (page) return openSite(page);
+    setIdSearch({ status: 'message', message: 'Enter at least 8 characters of a transaction id or block hash.' });
   };
 
   // Close suggestions when clicking outside
@@ -251,22 +321,29 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     } else if (SHORT_ID_PATTERN.test(trimmedQuery)) {
       void resolveShortId(trimmedQuery);
     } else if (/^[a-fA-F0-9]+$/.test(trimmedQuery)) {
-      setIdSearch({ status: 'message', message: 'Enter at least 8 characters of a transaction id or block hash.' });
+      void resolveShortHex(trimmedQuery);
     } else {
-      const addressByLabel = findAddressByLabel(trimmedQuery);
-      if (addressByLabel) {
-        navigate(`/address/${encodeURIComponent(addressByLabel)}`);
-      } else if (isValidName(trimmedQuery.toLowerCase())) {
-        navigate(`/name/${encodeURIComponent(trimmedQuery.toLowerCase())}`);
-      } else {
-        setIdSearch({ status: 'message', message: 'No matching address, transaction, block, label or name.' });
-      }
+      void resolveWords(trimmedQuery);
     }
   };
 
   // Suggestions dropdown component
   const SuggestionsDropdown = () => {
-    if (!showSuggestions || suggestions.length === 0) return null;
+    if (!showSuggestions || optionCount === 0) return null;
+    const groupLabel = 'px-4 pt-3 pb-1 text-caption text-muted font-mono uppercase tracking-wider';
+    const rowClass = (index: number) => `w-full px-4 py-3 text-left flex items-center gap-3 transition duration-150 ${
+      index === selectedIndex ? 'suggestion-item-active' : 'suggestion-item'
+    }`;
+
+    const getSiteIcon = (kind: SiteMatch['kind']) => (
+      <svg className="w-4 h-4" aria-hidden="true" fill="none" stroke="currentColor" strokeWidth={1.75} strokeLinecap="round" strokeLinejoin="round" viewBox="0 0 24 24">
+        {kind === 'Chart'
+          ? <path d="M4 19V5m0 14h16M8 15l3-4 3 2 4-6" />
+          : kind === 'Section'
+            ? <path d="M9 4 7 20M17 4l-2 16M4 9h16M3 15h16" />
+            : <path d="M7 3h7l5 5v13H7zM14 3v5h5M10 13h6M10 17h6" />}
+      </svg>
+    );
 
     const getCategoryIcon = (category: string) => {
       const normalizedCategory = category.toLowerCase();
@@ -324,9 +401,37 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
     return (
       <div
         ref={suggestionsRef}
-        className="absolute top-full left-0 right-0 mt-2 suggestions-dropdown rounded-xl z-[200] overflow-hidden"
+        className="absolute top-full left-0 right-0 mt-2 suggestions-dropdown rounded-xl z-[200] max-h-[60vh] overflow-y-auto"
       >
-        {suggestions.map((suggestion, index) => {
+        {siteResults.length > 0 && <p className={groupLabel}>Pages</p>}
+        {siteResults.map((result, index) => (
+          <button
+            key={`${result.kind}-${result.href}`}
+            type="button"
+            onClick={() => openSite(result)}
+            className={rowClass(index)}
+          >
+            <span className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-glass-4 text-muted">
+              {getSiteIcon(result.kind)}
+            </span>
+            <span className="flex-1 min-w-0">
+              <span className="flex items-center gap-2">
+                <span className="font-medium text-sm truncate suggestion-label">{result.label}</span>
+                {/* A page shows the menu it sits in; a section or chart says what it is. */}
+                <span className="shrink-0 text-caption px-1.5 py-0.5 rounded font-mono uppercase bg-glass-4 text-muted">
+                  {result.kind === 'Page' ? result.context : result.kind}
+                </span>
+              </span>
+              <span className="block text-xs text-muted truncate mt-0.5">
+                {result.kind === 'Section' ? `${result.desc} · on ${result.context}` : result.desc}
+              </span>
+            </span>
+            <span aria-hidden="true" className="text-muted">{result.external ? '↗' : '→'}</span>
+          </button>
+        ))}
+        {siteResults.length > 0 && suggestions.length > 0 && <p className={groupLabel}>Labelled addresses</p>}
+        {suggestions.map((suggestion, labelIndex) => {
+          const index = siteResults.length + labelIndex;
           const category = suggestion.category || 'Custom';
           const style = getCategoryStyle(category);
 
@@ -335,9 +440,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
               key={suggestion.address}
               type="button"
               onClick={() => selectSuggestion(suggestion)}
-              className={`w-full px-4 py-3 text-left flex items-center gap-3 transition duration-150 ${
-                index === selectedIndex ? 'suggestion-item-active' : 'suggestion-item'
-              }`}
+              className={rowClass(index)}
             >
               {/* Icon */}
               <span className={`w-8 h-8 rounded-lg flex items-center justify-center ${style.bg}`}>
@@ -366,6 +469,19 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
             </button>
           );
         })}
+        {nameOption && (
+          <>
+            <p className={groupLabel}>Zcash Name</p>
+            <button type="button" onClick={() => openName(nameOption)} className={rowClass(siteResults.length + suggestions.length)}>
+              <span className="w-8 h-8 shrink-0 rounded-lg flex items-center justify-center bg-glass-4 text-muted font-mono text-sm" aria-hidden="true">@</span>
+              <span className="flex-1 min-w-0">
+                <span className="block font-medium text-sm truncate suggestion-label">{nameOption}</span>
+                <span className="block text-xs text-muted mt-0.5">Look up this Zcash Name</span>
+              </span>
+              <span aria-hidden="true" className="text-muted">→</span>
+            </button>
+          </>
+        )}
       </div>
     );
   };
@@ -420,14 +536,14 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
             {'>'}
           </div>
           <input
-            aria-label="Search by address, transaction, block, or name"
+            aria-label="Search by page, address, transaction, block, or name"
             ref={inputRef}
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
-            onFocus={() => query.length >= 2 && suggestions.length > 0 && setShowSuggestions(true)}
-            placeholder="Address, transaction, block or name"
+            onFocus={() => { void loadSiteSearch(); if (query.length >= 2 && optionCount > 0) setShowSuggestions(true); }}
+            placeholder="Page, address, transaction or block"
             className="w-full pl-7 pr-3 py-2 text-xs font-mono search-input"
           />
           <SuggestionsDropdown />
@@ -450,7 +566,7 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
           </div>
 
           <input
-            aria-label="Search by address, transaction, block, or name"
+            aria-label="Search by page, address, transaction, block, or name"
             ref={inputRef}
             type="text"
             value={query}
@@ -458,10 +574,11 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
             onKeyDown={handleKeyDown}
             onFocus={() => {
               setIsFocused(true);
-              if (query.length >= 2 && suggestions.length > 0) setShowSuggestions(true);
+              void loadSiteSearch();
+              if (query.length >= 2 && optionCount > 0) setShowSuggestions(true);
             }}
             onBlur={() => setIsFocused(false)}
-            placeholder="Search address, tx hash, block, or name..."
+            placeholder="Search a page, address, tx hash or block..."
             className={`w-full pl-10 sm:pl-12 pr-14 lg:pr-24 py-3 sm:py-3.5 text-data sm:text-sm font-mono
               search-input-hero border rounded-md text-primary
               placeholder:text-muted transition duration-300
@@ -512,6 +629,14 @@ export function SearchBar({ compact = false, subtitle, onNavigate }: SearchBarPr
           className="example-tag example-tag-default"
         >
           Block #{EXAMPLE_BLOCK.height}
+        </button>
+        {/* Shows that words find pages, not only ids. */}
+        <button
+          type="button"
+          onClick={() => { setQuery(EXAMPLE_PAGE); inputRef.current?.focus(); }}
+          className="example-tag example-tag-default"
+        >
+          {EXAMPLE_PAGE}
         </button>
         <button
           type="button"

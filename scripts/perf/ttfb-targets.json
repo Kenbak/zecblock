@@ -190,6 +190,12 @@
       "core": true
     },
     {
+      "id": "governance-nu7-1-miner-poll",
+      "routeGroup": "/governance/nu7-1-miner-poll",
+      "path": "/governance/nu7-1-miner-poll",
+      "core": true
+    },
+    {
       "id": "calendar",
       "routeGroup": "/calendar",
       "path": "/calendar",

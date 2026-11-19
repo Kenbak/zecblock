@@ -5702,7 +5702,7 @@ paths:
   /v1/network/halving:
     get:
       operationId: get_network_Halving
-      summary: Node-observed halving schedule and cadence-based estimates.
+      summary: Node-observed halving schedule with dates at consensus target spacing.
       tags:
         - network
       x-cipherscan-legacy-path: /api/network/halving
@@ -5711,7 +5711,7 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Node-observed halving schedule and cadence-based estimates.
+          description: Node-observed halving schedule with dates at consensus target spacing.
           content:
             application/json:
               schema:
@@ -6551,7 +6551,9 @@ paths:
   /v1/network/emission:
     get:
       operationId: get_network_Emission
-      summary: Observed chain supply and estimated daily subsidy.
+      summary: >-
+        Observed chain supply, scheduled daily subsidy at target spacing and a target-spacing supply
+        projection.
       tags:
         - network
       parameters:
@@ -6567,7 +6569,9 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Observed chain supply and estimated daily subsidy.
+          description: >-
+            Observed chain supply, scheduled daily subsidy at target spacing and a target-spacing
+            supply projection.
           content:
             application/json:
               schema:
@@ -12709,6 +12713,102 @@ paths:
       responses:
         '200':
           description: ZODL miner leaderboard.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - meta
+                properties:
+                  data:
+                    oneOf:
+                      - type: object
+                      - type: array
+                        items: {}
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          description: Validation error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Endpoint credential required or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '402':
+          description: >-
+            Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the
+            original challenge is also in problem.paymentRequired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Origin or ownership authorization denied.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Resource not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: JSON body exceeds 1 MB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: Rate limited (enforced by the legacy endpoint this proxies to).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: Upstream (legacy API) error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Source temporarily unavailable or still building.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: Upstream (legacy API) timeout.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /v1/mining/polls/nu7-1:
+    get:
+      operationId: get_mining_Polls_Nu7-1
+      summary: NU7.1 miner sentiment poll tally from coinbase Miner Data ballots.
+      tags:
+        - mining
+      x-cipherscan-legacy-path: /api/mining/polls/nu7-1
+      x-cipherscan-legacy-method: GET
+      x-cipherscan-classification: public
+      x-cipherscan-v1-status: adapter
+      responses:
+        '200':
+          description: NU7.1 miner sentiment poll tally from coinbase Miner Data ballots.
           content:
             application/json:
               schema:

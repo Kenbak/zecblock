@@ -74,6 +74,7 @@ test('implementation branding does not brand pattern-match rankings or erase con
     }) };
     if (name === 'recharts') return {};
     if (name === '@/components/charts/ChartTooltip') return { ChartTooltip: box };
+    if (name === '@/components/charts/ChartLegend') return { ChartLegend: box };
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };
     if (name === '@/components/ui/Card') return { Card: box, CardBody: box };
     if (name === '@/components/ui/SectionHeader') return { PageHeader: box };

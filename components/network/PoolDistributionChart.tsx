@@ -272,7 +272,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
     <SupplyChartFrame yLabel={currency === 'usd' ? 'USD at current price' : 'ZEC in pools'}>
       <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT} onResize={width => setChartWidth(width)}>
         <AreaChart data={chartData} margin={CHART_MARGIN}>
-          <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis
             dataKey="timestamp"
             type="number"
@@ -287,7 +287,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
             tickFormatter={dateAxis.format}
             interval="preserveStartEnd"
           />
-          <YAxis
+          <YAxis tickLine={false} axisLine={false}
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             tickFormatter={(v) => format(v, false)}
@@ -295,11 +295,11 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
             width={Y_AXIS_WIDTH}
           />
         <Tooltip content={<PoolsTooltip colors={colors} />} />
-        <Area isAnimationActive={false} type="monotone" dataKey="ironwood" stackId="1" stroke={colors.ironwood} fill={colors.ironwood} fillOpacity={0.65} name="Ironwood" hide={hiddenSeries.has('ironwood')} />
-        <Area isAnimationActive={false} type="monotone" dataKey="orchard" stackId="1" stroke={colors.orchard} fill={colors.orchard} fillOpacity={0.6} name="Orchard" hide={hiddenSeries.has('orchard')} />
-        <Area isAnimationActive={false} type="monotone" dataKey="sapling" stackId="1" stroke={colors.sapling} fill={colors.sapling} fillOpacity={0.6} name="Sapling" hide={hiddenSeries.has('sapling')} />
-        <Area isAnimationActive={false} type="monotone" dataKey="sprout" stackId="1" stroke={colors.sprout} fill={colors.sprout} fillOpacity={0.5} name="Sprout" hide={hiddenSeries.has('sprout')} />
-        <Area isAnimationActive={false} type="monotone" dataKey="transparent" stackId="1" stroke={colors.transparent} fill={colors.transparent} fillOpacity={0.35} name="Transparent" hide={hiddenSeries.has('transparent')} />
+        <Area isAnimationActive={false} type="linear" dataKey="ironwood" stackId="1" stroke={colors.ironwood} fill={colors.ironwood} fillOpacity={0.65} name="Ironwood" hide={hiddenSeries.has('ironwood')} />
+        <Area isAnimationActive={false} type="linear" dataKey="orchard" stackId="1" stroke={colors.orchard} fill={colors.orchard} fillOpacity={0.6} name="Orchard" hide={hiddenSeries.has('orchard')} />
+        <Area isAnimationActive={false} type="linear" dataKey="sapling" stackId="1" stroke={colors.sapling} fill={colors.sapling} fillOpacity={0.6} name="Sapling" hide={hiddenSeries.has('sapling')} />
+        <Area isAnimationActive={false} type="linear" dataKey="sprout" stackId="1" stroke={colors.sprout} fill={colors.sprout} fillOpacity={0.5} name="Sprout" hide={hiddenSeries.has('sprout')} />
+        <Area isAnimationActive={false} type="linear" dataKey="transparent" stackId="1" stroke={colors.transparent} fill={colors.transparent} fillOpacity={0.35} name="Transparent" hide={hiddenSeries.has('transparent')} />
       </AreaChart>
     </ResponsiveContainer>
     </SupplyChartFrame>
@@ -307,7 +307,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
     <SupplyChartFrame yLabel={currency === 'usd' ? 'USD at current price' : 'Chain supply (ZEC)'}>
       <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT} onResize={width => setChartWidth(width)}>
         <AreaChart data={chartData} margin={CHART_MARGIN}>
-          <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis
             dataKey="timestamp"
             type="number"
@@ -322,7 +322,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
             tickFormatter={dateAxis.format}
             interval="preserveStartEnd"
           />
-          <YAxis
+          <YAxis tickLine={false} axisLine={false}
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             tickFormatter={(v) => format(v, false)}
@@ -330,8 +330,8 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
             width={Y_AXIS_WIDTH}
           />
         <Tooltip content={<CompositionTooltip colors={colors} />} />
-        <Area isAnimationActive={false} type="monotone" dataKey="shielded" stackId="1" stroke={colors.shielded} fill={colors.shielded} fillOpacity={0.55} name="Shielded" />
-        <Area isAnimationActive={false} type="monotone" dataKey="transparent" stackId="1" stroke={colors.transparent} fill={colors.transparent} fillOpacity={0.35} name="Transparent" />
+        <Area isAnimationActive={false} type="linear" dataKey="shielded" stackId="1" stroke={colors.shielded} fill={colors.shielded} fillOpacity={0.55} name="Shielded" />
+        <Area isAnimationActive={false} type="linear" dataKey="transparent" stackId="1" stroke={colors.transparent} fill={colors.transparent} fillOpacity={0.35} name="Transparent" />
       </AreaChart>
     </ResponsiveContainer>
     </SupplyChartFrame>
@@ -339,7 +339,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
     <SupplyChartFrame yLabel="Shielded %">
       <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT} onResize={width => setChartWidth(width)}>
         <LineChart data={chartData} margin={CHART_MARGIN}>
-          <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis
             dataKey="timestamp"
             type="number"
@@ -354,7 +354,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
             tickFormatter={dateAxis.format}
             interval="preserveStartEnd"
           />
-          <YAxis
+          <YAxis tickLine={false} axisLine={false}
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             domain={[rateYMin, rateYMax]}
@@ -364,7 +364,7 @@ export function PoolDistributionChart({ initialData, initialFetchedAt }: { initi
         <Tooltip content={<RateTooltip colors={colors} />} />
         <Line
           isAnimationActive={false}
-          type="monotone"
+          type="linear"
           dataKey="shieldedPct"
           stroke={colors.shielded}
           strokeWidth={2.5}

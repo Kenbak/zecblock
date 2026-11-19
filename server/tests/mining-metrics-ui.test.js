@@ -12,7 +12,8 @@ function render(data, { active = 'solrate', loading = false, error = null, curre
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
-    if (name === 'react') return { useState: () => [active, () => {}] };
+    // The selected metric lives in the URL (?metric=) so other pages can link to one trend.
+    if (name === '@/lib/use-url-state') return { useUrlState: () => [active, () => {}] };
     if (name === 'recharts') return Object.fromEntries(['LineChart', 'Line', 'XAxis', 'YAxis', 'CartesianGrid', 'ResponsiveContainer'].map(key => [key, key]));
     if (name === '@/components/charts/ChartTooltip') return { ChartTooltip: 'Tooltip' };
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };

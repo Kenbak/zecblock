@@ -134,7 +134,7 @@ test('net shielding sums seven closed days exactly and names the direction', () 
   assert.equal(card.caption, 'net out of shielded pools over 7 days');
   assert.equal(card.detail, 'Oct 28 – Nov 3 UTC · public amounts only');
   assert.deepEqual(card.visual.rows.map(r => r.display), ['701 ZEC', '2,101 ZEC']);
-  assert.deepEqual(card.visual.rows.map(r => r.label), ['Shielded', 'Unshielded']);
+  assert.deepEqual(card.visual.rows.map(r => r.label), ['Shielded', 'Deshielded']);
   const inward = cards.netShieldingCard('testnet', { data: { points: points.map(p => ({ ...p, shield: 500 })) } }, NOW);
   assert.equal(inward.headline, '1,399 TAZ');
   assert.match(inward.caption, /^net into shielded pools/);

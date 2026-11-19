@@ -33,7 +33,7 @@ interface StabilityResponse {
 
 const DAY_MS = 86_400_000;
 const signed = (value: number) => `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(1)}%`;
-const utcDay = (ms: number) => { const date = new Date(ms); return `${date.getUTCMonth() + 1}/${date.getUTCDate()}`; };
+const utcDay = (ms: number) => new Date(ms).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' });
 
 function ComparisonTile({ label, before, after }: { label: string; before: string; after: string }) {
   return (
@@ -80,7 +80,7 @@ export function DifficultyStabilityChart() {
   return (
     <div id="difficulty-stability" className="scroll-mt-36">
       <ChartCard
-        title="DIFFICULTY_STABILITY"
+        title="Difficulty stability"
         height={280}
         watermarkSize="lg"
         share={{ title: 'Zcash difficulty swings before and since NU7', fileName: 'zecblock-difficulty-stability', csv: () => objectRowsCsv(data?.points ?? []) }}
@@ -115,12 +115,12 @@ export function DifficultyStabilityChart() {
             <div role="img" aria-label={`Difficulty deviation from the 24-hour median. Before NU7 it ranged from ${signed(before.largestDropPct)} to ${signed(before.largestRisePct)}. Since NU7 it has ranged from ${signed(after.largestDropPct)} to ${signed(after.largestRisePct)}.`}>
               <ResponsiveContainer initialDimension={{ width: 500, height: 280 }} width="100%" height={280}>
                 <ComposedChart data={chartRows} margin={{ top: 20, right: 28, left: 0, bottom: 0 }}>
-                  <CartesianGrid vertical={false} strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-                  <XAxis
+                  <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+                  <XAxis tickLine={false} axisLine={false}
                     dataKey="timestamp" type="category" ticks={dayTicks} minTickGap={40}
                     stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} tickFormatter={utcDay}
                   />
-                  <YAxis stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} width={56} tickFormatter={(v: number) => `${v > 0 ? '+' : ''}${v}%`} />
+                  <YAxis tickLine={false} axisLine={false} stroke={colors.axis} tick={{ fill: colors.axis, fontSize: 12 }} width={56} tickFormatter={(v: number) => `${v > 0 ? '+' : ''}${v}%`} />
                   <ReferenceLine y={0} stroke={colors.axis} strokeWidth={1} />
                   <ReferenceLine x={activationMs} stroke={colors.referenceLine} strokeDasharray="4 4" label={{ value: 'NU7', position: 'top', fill: colors.axis, fontSize: 12 }} />
                   <Tooltip

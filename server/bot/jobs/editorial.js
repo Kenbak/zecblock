@@ -123,6 +123,10 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
             excludedKeys: history.filter(p => ['posted','posting','uncertain'].includes(p.status)).map(p => p.dedup_key),
           })]] : []),
         ['activity', () => collectors.activityCandidates(reader,now,includeWeekly)],
+        // Weekly shielding heatmap: the same completed week, once (its key is per week).
+        ...(collectors.heatmapCandidates && Date.parse(`${completedWeekEnd(now)}T06:00:00Z`) >= Date.parse(activatedAt)
+          && !history.some(p => p.dedup_key === `analysis:shield_heatmap:${week}`)
+          ? [['heatmap', () => collectors.heatmapCandidates(reader,now)]] : []),
         ['hashrate', () => collectors.hashrateCandidate(reader,now)],
         ['signals', () => collectors.signalCandidates(reader,now)],
         // Routine cross-chain totals remain available as source data. Only

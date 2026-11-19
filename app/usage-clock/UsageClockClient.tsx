@@ -515,7 +515,7 @@ export function UsageClockClient({
       {/* ===================== HERO: dial + thesis ===================== */}
       <div className="grid grid-cols-1 lg:grid-cols-[1.05fr_0.95fr] gap-5 items-start">
         {/* Dial */}
-        <div className="rounded-xl border border-cipher-border p-4 sm:p-5 flex flex-col bg-cipher-surface">
+        <div className="rounded-xl border border-cipher-border p-4 sm:p-5 flex flex-col bg-cipher-card">
           <div className={styles.cardHeading}><h2>Daily activity</h2><span>Selected hour · UTC</span></div>
           <div className="max-w-[340px] w-full mx-auto">
             <RadialClock
@@ -561,7 +561,7 @@ export function UsageClockClient({
 
         <div className="min-w-0 space-y-5">
       {/* ===================== GEOGRAPHIC PANEL (demoted) ===================== */}
-      <div className="rounded-xl border border-cipher-border overflow-hidden relative bg-cipher-surface">
+      <div className="rounded-xl border border-cipher-border overflow-hidden relative bg-cipher-card">
         <div className="px-4 py-2.5 border-b border-cipher-border/60 flex items-center justify-between gap-3 flex-wrap">
           <span className="text-caption font-mono font-semibold text-secondary uppercase tracking-wider">Sun &amp; network · {String(currentHour).padStart(2, '0')}:00 UTC {playing ? '· playing' : '· paused'}</span>
           <div className="flex items-center gap-3 text-caption font-mono">
@@ -601,8 +601,8 @@ export function UsageClockClient({
       </div>
 
         {/* Correlation */}
-        <div className="rounded-xl border border-cipher-border bg-cipher-surface p-4 flex flex-col">
-          <h2 className="text-xs font-mono font-semibold text-secondary uppercase tracking-wider mb-2">Daylight correlation</h2>
+        <div className="rounded-xl border border-cipher-border bg-cipher-card p-4 flex flex-col">
+          <h2 className="chart-title mb-2">Daylight correlation</h2>
           <div className="text-2xl font-semibold font-mono text-cipher-shielded">{hasCorrelation ? `${correlation >= 0 ? '+' : ''}${correlation.toFixed(2)}` : '—'}</div>
           <p className="text-caption text-muted mt-2 leading-relaxed">
             Pearson correlation between hourly transactions and the share of observed nodes in daylight. Ranges from −1 to +1; it does not establish a cause or a user location.
@@ -615,7 +615,7 @@ export function UsageClockClient({
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mt-5 items-start">
         {/* Thesis + the headline differentiator */}
-        <div className="rounded-xl border border-cipher-border bg-cipher-surface p-5 flex flex-col">
+        <div className="rounded-xl border border-cipher-border bg-cipher-card p-5 flex flex-col">
           <h2 className="text-base font-semibold text-primary">Timing &amp; node geography</h2>
           <p className="text-xs text-secondary leading-relaxed mt-2">
             Compare a modeled timing mix with observed node locations. Timing weights describe how well three daily profiles fit the activity curve; they do not locate users.
@@ -651,9 +651,9 @@ export function UsageClockClient({
           <ChartWatermark />
         </div>
         {/* Residual */}
-        <div className="rounded-xl border border-cipher-border bg-cipher-surface p-5">
+        <div className="rounded-xl border border-cipher-border bg-cipher-card p-5">
           <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
-            <h2 className="text-xs font-mono font-semibold text-secondary uppercase tracking-wider">Activity vs. baseline</h2>
+            <h2 className="chart-title">Activity vs. baseline</h2>
             <div className="flex items-center gap-3 text-caption font-mono">
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cipher-orange" /> <span className="text-muted">above baseline</span></span>
               <span className="flex items-center gap-1"><span className={styles.belowKey} /> <span className="text-muted">below baseline</span></span>
@@ -667,8 +667,8 @@ export function UsageClockClient({
             <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height="100%">
               <BarChart data={residualBars} margin={{ top: 4, right: 4, left: 0, bottom: 0 }}>
                 <ReferenceLine y={0} stroke="var(--color-text-muted)" strokeOpacity={0.5} />
-                <XAxis dataKey="label" tick={{ fontSize: 12, fontFamily: 'var(--font-geist-mono), monospace' }} stroke="var(--color-text-muted)" interval={2} tickFormatter={(l) => `${l}h`} />
-                <YAxis
+                <XAxis tickLine={false} axisLine={false} dataKey="label" tick={{ fontSize: 12, fontFamily: 'var(--font-geist-mono), monospace' }} stroke="var(--color-text-muted)" interval={2} tickFormatter={(l) => `${l}h`} />
+                <YAxis tickLine={false} axisLine={false}
                   tick={{ fontSize: 12, fontFamily: 'var(--font-geist-mono), monospace' }}
                   stroke="var(--color-text-muted)"
                   width={64}
@@ -688,9 +688,9 @@ export function UsageClockClient({
       </div>
 
       {/* Weekday/hour totals */}
-      <div className="mt-5 rounded-xl border border-cipher-border bg-cipher-surface p-5">
+      <div className="mt-5 rounded-xl border border-cipher-border bg-cipher-card p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
-          <h2 className="text-xs font-mono font-semibold text-secondary uppercase tracking-wider">Seven days, twenty-four hours</h2>
+          <h2 className="chart-title">Seven days, twenty-four hours</h2>
           <span className="text-caption font-mono text-muted">Low → high · UTC</span>
         </div>
         <div className="overflow-x-auto">

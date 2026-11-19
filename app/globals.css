@@ -34,6 +34,9 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   --color-cipher-bg: var(--color-bg);
   --color-cipher-elevated: var(--color-elevated);
   --color-cipher-surface: var(--color-surface);
+  /* The card fill, for a card built from utilities instead of `.card`, so both look the same.
+     Opaque `cipher-surface` stays for inputs, menus and anything that floats over content. */
+  --color-cipher-card: var(--card-surface);
   --color-cipher-surface-solid: var(--color-surface-solid);
   --color-cipher-hover: var(--color-hover);
   --color-cipher-active: var(--color-active);
@@ -658,7 +661,8 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
     backdrop-filter: var(--card-blur);
     -webkit-backdrop-filter: var(--card-blur);
     border: 1px solid var(--card-border);
-    border-radius: var(--radius-lg);
+    /* 12px, like the compact, glass and featured variants and every hand-built card. */
+    border-radius: var(--radius-xl);
     padding: var(--space-6);
     overflow: visible;
     min-width: 0;
@@ -670,6 +674,29 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   .card:hover:not(.card-static) {
     border-color: var(--card-border-hover);
     box-shadow: var(--card-shadow-hover), var(--card-highlight);
+  }
+
+  /* A card built from utilities (`bg-cipher-card` with its own border and radius) takes
+     the same elevation as `.card`, so the two cannot be told apart. */
+  .bg-cipher-card {
+    box-shadow: var(--card-shadow), var(--card-highlight);
+    transition: border-color 250ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 250ms cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .bg-cipher-card:hover:not(.card-static) {
+    box-shadow: var(--card-shadow-hover), var(--card-highlight);
+  }
+
+  /* One title for every chart and card panel: plain sentence case. Section labels above
+     a group of cards keep the mono chevron style, so the two levels read differently. */
+  .chart-title {
+    font-family: var(--font-geist-sans), system-ui, sans-serif;
+    font-size: var(--text-sm);
+    font-weight: 600;
+    line-height: 1.375;
+    letter-spacing: 0;
+    text-transform: none;
+    color: var(--color-text-primary);
   }
 
   /* Card variants - used by legacy code and Card component */
@@ -2032,6 +2059,9 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   .redacted-blocks > span { display: inline-block; width: 0.65em; text-align: center; }
   .recharts-text { font-family: var(--font-geist-mono); font-variant-numeric: tabular-nums; }
   .recharts-default-tooltip { box-shadow: none; font-family: var(--font-geist-mono); }
+  /* An axis label centred on the first or last point may reach past the plot; let it
+     run into the card's padding instead of being cut off. Series stay clipped to the plot. */
+  .recharts-surface { overflow: visible; }
   .chart-signature { text-align: right; font: 0.75rem/1.5 var(--font-geist-mono); color: var(--color-text-muted); padding-top: 8px; }
   @media (max-width: 640px) {
     .home-hero-band { padding: 36px 0 28px; }

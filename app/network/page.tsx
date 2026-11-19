@@ -65,7 +65,7 @@ export default async function NetworkPage() {
       fetchedAt, stats, health, nodeLocations, nodeStats, recentBlocks, feeDistribution, halving, blockSpeed,
       emission: emission ? {
         circulating: emission.circulating, remaining: emission.remaining,
-        dailyEmissionEstimate: emission.dailyEmissionEstimate, supplyObservedAt: emission.supplyObservedAt,
+        dailyEmissionEstimate: emission.dailyEmissionEstimate, targetSpacingSeconds: emission.targetSpacingSeconds, supplyObservedAt: emission.supplyObservedAt,
         cadence: emission.cadence, supplyHistory: dailySupplyHistory(emission.supplyHistory ?? []), projection: emission.projection,
       } : null,
     }} />

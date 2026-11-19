@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useUrlState } from '@/lib/use-url-state';
 import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, ResponsiveContainer,
 } from 'recharts';
@@ -14,13 +14,32 @@ import { CURRENCY } from '@/lib/config';
 import { ChartCard } from './ChartCard';
 import { objectRowsCsv } from '@/components/charts/PanelShareControl';
 
+/** Short axis labels: whole units, no decimals, so they fit beside a phone-width plot. */
+function axisTick(metric: string, value: number): string {
+  if (!Number.isFinite(value) || value === 0) return '0';
+  const short = (n: number) => (Math.abs(n) >= 10 ? String(Math.round(n)) : String(Math.round(n * 10) / 10));
+  if (metric === 'solrate') {
+    if (value >= 1e12) return `${short(value / 1e12)} TSol/s`;
+    if (value >= 1e9) return `${short(value / 1e9)} GSol/s`;
+    if (value >= 1e6) return `${short(value / 1e6)} MSol/s`;
+    return `${short(value)} Sol/s`;
+  }
+  if (metric === 'difficulty') {
+    if (value >= 1e9) return `${short(value / 1e9)}B`;
+    if (value >= 1e6) return `${short(value / 1e6)}M`;
+    if (value >= 1e3) return `${short(value / 1e3)}K`;
+  }
+  return short(value);
+}
+
 type MetricKey = 'solrate' | 'difficulty' | 'blockTime' | 'txFees' | 'txCount';
 
 const METRICS: { key: MetricKey; label: string; color: string; format: (v: number) => string }[] = [
-  { key: 'solrate', label: 'Solrate', color: 'gold', format: (v) => formatHashrate(v) },
+  // The API field is `solrate` (solutions per second, Zcash's name for hashrate); the site says hashrate.
+  { key: 'solrate', label: 'Hashrate', color: 'gold', format: (v) => formatHashrate(v) },
   { key: 'difficulty', label: 'Difficulty', color: 'yellow', format: (v) => formatDifficulty(v) },
   { key: 'blockTime', label: 'Block time', color: 'green', format: (v) => `~${Math.round(v)}s` },
-  { key: 'txFees', label: 'TX fees', color: 'purple', format: (v) => `${v.toFixed(6)} ${CURRENCY}` },
+  { key: 'txFees', label: 'Block fees', color: 'purple', format: (v) => `${v.toFixed(6)} ${CURRENCY}` },
   { key: 'txCount', label: 'TX count', color: 'gold', format: (v) => v.toFixed(1) },
 ];
 
@@ -31,10 +50,13 @@ interface MiningMetricsData {
   solrateMethod?: string;
 }
 
+const METRIC_KEYS = METRICS.map(m => m.key);
+
 export function MiningMetricsChart() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const [active, setActive] = useState<MetricKey>('solrate');
+  // In the URL so another page can link straight to one metric's trend, e.g. /mining?metric=txFees#economics.
+  const [active, setActive] = useUrlState<MetricKey>('metric', 'solrate', METRIC_KEYS);
   const window = MINING_METRICS_WINDOW;
 
   const { data, loading, error } = useApiQuery<MiningMetricsData>(
@@ -48,6 +70,8 @@ export function MiningMetricsChart() {
   const stroke = metric.color === 'gold' ? colors.gold : metric.color === 'yellow' ? colors.yellow : metric.color === 'green' ? colors.orchard : colors.purple;
   const hasValues = points.some((point) => point[active] != null && Number.isFinite(point[active]));
   const elapsedSolrate = active === 'solrate' && data?.solrateMethod === 'difficulty-work-over-elapsed-v1';
+  // The page's main hashrate chart uses 24-hour and 7-day windows, so this one names its own window.
+  const trendName = active === 'solrate' ? `${metric.label} ${window} block` : metric.label;
   const emptyMessage = loading ? 'Loading mining metrics…'
     : error ? 'Mining metrics are temporarily unavailable.'
       : `No complete ${window}-block window is available for ${metric.label.toLowerCase()}.`;
@@ -75,26 +99,27 @@ export function MiningMetricsChart() {
         })}
       </div>
 
-      <ChartCard title={`${metric.label.toUpperCase().replace(/\s+/g, '_')}_TREND`} height={280} watermarkSize="lg" share={{ title: `Zcash ${metric.label.toLowerCase()} trend`, fileName: `zecblock-${metric.label.toLowerCase().replace(/\s+/g, '-')}`, csv: () => objectRowsCsv(points) }}>
+      <ChartCard title={`${trendName} trend`} height={280} watermarkSize="lg" share={{ title: `Zcash ${trendName.toLowerCase()} trend`, fileName: `zecblock-${trendName.toLowerCase().replace(/\s+/g, '-')}`, csv: () => objectRowsCsv(points) }}>
         <p className="text-caption text-muted mb-3">{elapsedSolrate
-          ? `${window}-block estimates use total difficulty and elapsed header time; unavailable values remain gaps.`
+          ? `${window}-block estimates use total difficulty and elapsed header time; unavailable values remain gaps. This is the same measure as the 24-hour estimate at the top of the page over a shorter window, so it moves more.`
           : `${window}-block trailing averages. Timing uses block-header timestamps; unavailable values remain gaps.`}</p>
         {error && hasValues && <p role="status" className="text-caption text-muted mb-3">Refresh unavailable. Showing the last received mining metrics.</p>}
         {!hasValues ? <div role="status" className="flex h-[280px] items-center justify-center text-caption text-muted">{emptyMessage}</div> :
         <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>
           <LineChart data={points}>
-            <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-            <XAxis
+            <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+            <XAxis tickLine={false} axisLine={false}
               dataKey="height"
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
               tickFormatter={(h) => Number(h).toLocaleString('en-US')}
               minTickGap={32}
             />
-            <YAxis
+            <YAxis tickLine={false} axisLine={false}
               stroke={colors.axis}
               tick={{ fill: colors.axis, fontSize: 12 }}
-              tickFormatter={(v) => (active === 'difficulty' ? formatDifficulty(v) : active === 'solrate' ? formatHashrate(v) : String(Math.round(v * 100) / 100))}
+              width={68}
+              tickFormatter={(v) => axisTick(active, Number(v))}
             />
             <Tooltip
               contentStyle={{

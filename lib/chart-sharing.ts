@@ -20,7 +20,7 @@ export function chartRanges(chart?: CatalogChart): readonly ChartRange[] {
   return chart?.ranges ?? CHART_RANGES;
 }
 export function normalizeChartRange(value: unknown, chart?: CatalogChart): ChartRange {
-  return chartRanges(chart).includes(value as ChartRange) ? value as ChartRange : '30d';
+  return chartRanges(chart).includes(value as ChartRange) ? value as ChartRange : chart?.defaultRange ?? '30d';
 }
 export function chartRangeRows(chart: CatalogChart, rows: ChartRow[], range: ChartRange): ChartRow[] {
   if (chart.axis || range === 'all' || !rows.length) return rows;

@@ -12,7 +12,7 @@ export function VoteResults({ results }: { results: Results }) {
   const thresholdMet = results.proposals.some(p => p.options.reduce((s, o) => s + o.total_value, 0) * ZEC_PER_VOTE_UNIT >= 1_000_000);
   return (
     <section className="space-y-6 mb-8" aria-labelledby="results-heading">
-      <div className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+      <div className="rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
         <h2 id="results-heading" className="text-xl font-semibold text-primary mb-2">{published ? 'Published results' : results.state === 'pending' ? 'Awaiting final results' : 'Results temporarily unavailable'}</h2>
         <p className="text-sm text-secondary">{published
           ? 'Published by the voting-chain API. ZecBlock has not independently verified this tally.'
@@ -70,7 +70,7 @@ export function VoteResults({ results }: { results: Results }) {
         const leaders = p.options.filter(o => highest > 0 && o.total_value === highest);
         const orderedOptions = [...p.options].sort((a, b) =>
           Number(b.total_value === highest) - Number(a.total_value === highest) || a.index - b.index);
-        return <article key={p.id} className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6">
+        return <article key={p.id} className="rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6">
           <div className="flex flex-wrap items-baseline justify-between gap-2 mb-4">
             <h3 className="text-base font-semibold text-primary">Q{p.id} — {p.title}</h3>
             <p className="text-xs font-mono text-muted">{zec(total)} ZEC participating</p>
@@ -105,7 +105,7 @@ export function VoteResults({ results }: { results: Results }) {
           </details>
         </article>;
       })}
-      <section id="verify-results" className="rounded-2xl border border-cipher-border bg-cipher-surface p-5 sm:p-6" aria-labelledby="verify-heading">
+      <section id="verify-results" className="rounded-2xl border border-cipher-border bg-cipher-card p-5 sm:p-6" aria-labelledby="verify-heading">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <h2 id="verify-heading" className="text-lg font-semibold text-primary">Verify the tally</h2>
           <a className="text-sm text-secondary hover:text-primary underline underline-offset-4" href="https://tally.valargroup.org">Node setup guide ↗</a>

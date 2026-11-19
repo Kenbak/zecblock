@@ -81,7 +81,7 @@ export function NetworkAccounting() {
     if (expectedChain === null) return null;
     return <section id="nu7-accounting" className="network-section mt-5" aria-label="NSM and fee accounting">
       <Card className="card-static"><CardBody>
-        <SectionHeader label="NSM_FEES" />
+        <SectionHeader card label="NSM and fees" />
         <p className="text-sm text-secondary max-w-3xl">The Network Sustainability Mechanism tracks value removed from circulation in a separate reserve for later reissuance.</p>
         <dl className="grid grid-cols-1 sm:grid-cols-3 gap-5 mt-5">
           {[
@@ -110,7 +110,7 @@ export function NetworkAccounting() {
   const bucketLabel = selected ? selected.bucketSeconds < 3600 ? `${selected.bucketSeconds/60}-minute` : selected.bucketSeconds < 86400
     ? `${Number((selected.bucketSeconds/3600).toFixed(1))}-hour` : `${Number((selected.bucketSeconds/86400).toFixed(1))}-day` : '';
   return <section id="nu7-accounting" className="network-section mt-5" aria-label="NU7 network accounting"><Card className="card-static"><CardBody>
-    <SectionHeader label="NSM_FEES" actions={block && <Link href={`/block/${block.height}`} prefetch={false}
+    <SectionHeader card label="NSM and fees" actions={block && <Link href={`/block/${block.height}`} prefetch={false}
       title={`Latest indexed canonical block ${block.height.toLocaleString('en-US')}`}
       className="inline-flex items-center gap-1 rounded-full border border-cipher-border px-2.5 py-1 text-caption text-muted font-mono hover:text-primary">
       Block #{block.height.toLocaleString('en-US')} <span aria-hidden="true">↗</span>
@@ -145,7 +145,7 @@ export function NetworkAccounting() {
         options={(Object.keys(metricLabels) as (keyof typeof metricLabels)[]).map(key => ({ key, label: metricLabels[key] }))} />
       {hasValues ? <ResponsiveContainer width="100%" height={280} initialDimension={{ width: 400, height: 280 }}>
         <ComposedChart data={points} margin={{ top: 12, right: 24, bottom: 12, left: 0 }} barCategoryGap="15%">
-          <CartesianGrid vertical={false} stroke={colors.grid} />
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
           <XAxis dataKey="chartTimestamp" type="number" domain={['dataMin', 'dataMax']} tickFormatter={v => utc(Number(v), period === '1d')}
             minTickGap={45} padding={{ left: 12, right: 32 }} tick={{ fill: colors.axis, fontSize: 12 }} tickLine={false} axisLine={false} />
           <YAxis width={metric === 'reserve' ? 112 : 78} domain={metric === 'reserve' ? ['auto', 'auto'] : [0, 'auto']}

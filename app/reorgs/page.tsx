@@ -240,7 +240,7 @@ export default function ForkWatchPage() {
               <h3 className="font-mono text-primary mb-2">First seen &amp; reporting</h3>
               <p>{BLOCK_FIRST_SEEN_EXPLANATION}</p>
               <p className="mt-3">Node operators can report their tip hash. A different block at the same height is recorded as a potential fork.</p>
-              <div tabIndex={0} role="region" aria-label="Competing-tip report request example" className="mt-3 max-w-full overflow-x-auto rounded-lg border border-cipher-border bg-cipher-surface p-4">
+              <div tabIndex={0} role="region" aria-label="Competing-tip report request example" className="mt-3 max-w-full overflow-x-auto rounded-lg border border-cipher-border bg-cipher-card p-4">
                 <code className="mb-2 block font-mono text-xs text-cipher-gold">POST {API_URL}/v1/uncles/reports</code>
                 <pre className="font-mono text-xs text-muted">{`{
   "height": 3363000,

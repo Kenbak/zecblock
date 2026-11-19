@@ -5,7 +5,7 @@ export type ShieldFlowType = 'shielded' | 'shielding' | 'unshielding' | 'mixed' 
 export const SHIELD_FLOW_LABELS: Record<ShieldFlowType, string> = {
   shielded: 'Shielded',
   shielding: 'Shielding',
-  unshielding: 'Unshielding',
+  unshielding: 'Deshielding',
   mixed: 'Mixed',
   migration: 'Migration',
 };

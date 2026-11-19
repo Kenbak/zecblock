@@ -41,7 +41,7 @@ export function AddressGraph({ address }: { address: string }) {
     <button type="button" className="mt-4 rounded border border-cipher-border px-4 py-2 text-sm text-primary hover:bg-cipher-hover" onClick={() => setAttempt(value => value + 1)}>Try again</button>
   </div>;
   const clusterOmitted = Math.max(0, (data.cluster?.memberCount ?? 1) - 1 - data.peers.length);
-  return <section aria-label="Address connections" className="rounded-xl border border-cipher-border bg-cipher-surface overflow-hidden">
+  return <section aria-label="Address connections" className="rounded-xl border border-cipher-border bg-cipher-card overflow-hidden">
     <div className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 className="text-base font-semibold text-primary">Explore address connections</h2>

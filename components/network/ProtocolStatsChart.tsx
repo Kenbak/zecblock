@@ -3,8 +3,15 @@ import { ChartSkeleton } from '@/components/ui/Skeleton';
 
 import { useState, useMemo } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Legend, Brush,
+  AreaChart,
+  Area,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  ResponsiveContainer,
+  Brush,
 } from 'recharts';
+import { ChartLegend } from '@/components/charts/ChartLegend';
 import { ChartTooltip as Tooltip } from '@/components/charts/ChartTooltip';
 import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
@@ -82,7 +89,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
 
     return filtered.map(p => ({
       ...p,
-      label: new Date(p.month).toLocaleDateString('en-US', { month: 'short', year: '2-digit', timeZone: 'UTC' }),
+      label: new Date(p.month).toLocaleDateString('en-US', { month: 'short', year: 'numeric', timeZone: 'UTC' }),
     }));
   }, [rawData, period]);
 
@@ -99,7 +106,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
 
   if (loading) {
     return (
-      <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls}>
+      <ChartCard title="Protocol growth" height={280} watermarkSize="sm" controls={controls}>
         <ChartSkeleton height={280} />
       </ChartCard>
     );
@@ -107,7 +114,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
 
   if (!data.length) {
     return (
-      <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls}>
+      <ChartCard title="Protocol growth" height={280} watermarkSize="sm" controls={controls}>
         <div className="flex items-center justify-center h-[280px] text-xs text-muted">
           No monthly protocol buckets overlap this range
         </div>
@@ -116,7 +123,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
   }
 
   return (
-    <ChartCard title="PROTOCOL_GROWTH" height={280} watermarkSize="sm" controls={controls} share={{ title: `Zcash protocol growth (${period})`, fileName: `zecblock-protocol-growth-${period}`, csv: () => objectRowsCsv(data) }}>
+    <ChartCard title="Protocol growth" height={280} watermarkSize="sm" controls={controls} share={{ title: `Zcash protocol growth (${period})`, fileName: `zecblock-protocol-growth-${period}`, csv: () => objectRowsCsv(data) }}>
       {current && (
         <div className="mb-3">
           <div className="flex gap-4 flex-wrap">
@@ -166,14 +173,14 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
       <p className="text-caption text-muted mb-3">Monthly buckets overlapping the selected UTC window; 30D can include partial months.</p>
       <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={240}>
         <AreaChart data={data}>
-          <CartesianGrid strokeDasharray="2 6" stroke={colors.grid} opacity={0.5} />
-          <XAxis
+          <CartesianGrid vertical={false} stroke={colors.gridStroke} />
+          <XAxis tickLine={false} axisLine={false}
             dataKey="label"
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             interval="preserveStartEnd"
           />
-          <YAxis
+          <YAxis tickLine={false} axisLine={false}
             stroke={colors.axis}
             tick={{ fill: colors.axis, fontSize: 12 }}
             tickFormatter={formatMillions}
@@ -185,8 +192,7 @@ export function ProtocolStatsChart({ initialData, initialFetchedAt }: { initialF
             labelStyle={{ color: 'var(--color-text-muted)', fontFamily: 'var(--font-geist-mono)', fontSize: 12 }}
             formatter={(value) => formatMillions(Number(value))}
           />
-          <Legend
-            wrapperStyle={{ fontSize: 12, fontFamily: 'var(--font-geist-mono)' }}
+          <ChartLegend
           />
           {view === 'commitments' ? (
             <>

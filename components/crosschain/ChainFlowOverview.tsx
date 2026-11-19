@@ -133,11 +133,10 @@ export function ChainFlowOverview({
                 margin={{ left: 0, right: 12, top: 8, bottom: 8 }}
               >
                 <CartesianGrid
-                  stroke={colors.grid}
-                  strokeDasharray="2 6"
+                  stroke={colors.gridStroke}
                   horizontal={false}
                 />
-                <XAxis
+                <XAxis tickLine={false} axisLine={false}
                   type="number"
                   domain={[-extent, extent]}
                   ticks={[-extent, -extent / 2, 0, extent / 2, extent]}

@@ -16,7 +16,7 @@ const LazyCrosslinkChainGraph = dynamic(
     ssr: false,
     loading: () => (
       <div
-        className="h-[540px] w-full rounded-2xl border border-cipher-border bg-cipher-surface animate-pulse"
+        className="h-[540px] w-full rounded-2xl border border-cipher-border bg-cipher-card animate-pulse"
         role="status"
         aria-live="polite"
       >

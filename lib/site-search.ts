@@ -52,7 +52,7 @@ const ALIASES: Record<string, string[]> = {
   '/zodl': ['hodl', 'selling'],
   '/network/block-speed': ['block time', 'blocktime', 'block interval'],
   '/network/upgrades': ['upgrade', 'network upgrade', 'nu5', 'nu6', 'nu7'],
-  '/governance': ['vote', 'voting', 'poll', 'polls', 'zip'],
+  '/governance': ['vote', 'voting', 'poll', 'polls', 'zip', 'miner poll', 'nu7.1'],
   '/calendar': ['events', 'dates'],
   '/charts': ['chart', 'graph', 'graphs'],
   '/cards': ['card', 'share image', 'embed'],

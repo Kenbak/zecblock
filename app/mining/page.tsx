@@ -772,7 +772,7 @@ export default function MiningPage() {
           </div>
         </div></details>
       </section>
-      <nav aria-label="Related mining analysis" className="grid sm:grid-cols-2 lg:grid-cols-4 gap-3">{[{href:'/network#issuance',title:'Issuance & halving',text:'Block subsidy and the remaining schedule.'},{href:'/zodl',title:'Miner reward destinations',text:'Observe the first move of mined rewards.'},{href:'/reorgs',title:'Forks & orphaned blocks',text:'Inspect observed reorgs and competing blocks.'},{href:'/network/nodes',title:'Node explorer',text:'Reachability, clients and geographic coverage.'}].map(l=><Link key={l.href} href={l.href} className="border border-cipher-border rounded-lg p-4 hover:bg-glass-3"><span className="text-sm font-mono">{l.title} →</span><span className="block mt-2 text-xs text-muted">{l.text}</span></Link>)}</nav>
+      <nav aria-label="Related mining analysis" className="grid sm:grid-cols-2 lg:grid-cols-5 gap-3">{[{href:'/governance/nu7-1-miner-poll',title:'NU7.1 miner poll',text:'How pools answer the NU7.1 questions, block by block.'},{href:'/network#issuance',title:'Issuance & halving',text:'Block subsidy and the remaining schedule.'},{href:'/zodl',title:'Miner reward destinations',text:'Observe the first move of mined rewards.'},{href:'/reorgs',title:'Forks & orphaned blocks',text:'Inspect observed reorgs and competing blocks.'},{href:'/network/nodes',title:'Node explorer',text:'Reachability, clients and geographic coverage.'}].map(l=><Link key={l.href} href={l.href} className="border border-cipher-border rounded-lg p-4 hover:bg-glass-3"><span className="text-sm font-mono">{l.title} →</span><span className="block mt-2 text-xs text-muted">{l.text}</span></Link>)}</nav>
     </div>
   );
 }

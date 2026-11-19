@@ -68,6 +68,7 @@ const crosslinkRouter = require('./routes/crosslink');
 const reorgsRouter = require('./routes/reorgs');
 const poolsRouter = require('./routes/pools');
 const miningRouter = require('./routes/mining');
+const minerPollsRouter = require('./routes/miner-polls');
 const analyticsRouter = require('./routes/analytics');
 const migrationRouter = require('./routes/migration');
 const sitemapsRouter = require('./routes/sitemaps');
@@ -454,6 +455,7 @@ app.use(reorgsRouter);
 app.use(poolsRouter);
 
 // Mining routes: /api/mining/*
+app.use(minerPollsRouter);
 app.use(miningRouter);
 app.use(analyticsRouter);
 

@@ -114,10 +114,12 @@ function BlockRewardBreakdown({
 
 function CoinbaseTagValue({
   hex,
+  height,
   clientEmoji,
   clientInfo,
 }: {
   hex: string | null | undefined;
+  height: number;
   clientEmoji: CoinbaseClientEmoji | null;
   clientInfo: CoinbaseClientInfo;
 }) {
@@ -131,7 +133,7 @@ function CoinbaseTagValue({
           </span>
         </div>
       )}
-      <CoinbaseMessage hex={hex} />
+      <CoinbaseMessage hex={hex} height={height} />
       {hex && (
         <details className="mt-3">
           <summary className="cursor-pointer text-caption font-mono text-muted hover:text-secondary">Raw hex ({Math.floor(hex.length / 2)} bytes)</summary>
@@ -215,7 +217,7 @@ export function BlockFactsCard({
         </div>
 
         <FactBox className="mt-3" label="Coinbase Message" tooltip="Optional data embedded by the miner in the coinbase transaction. Text and software markers are self-reported; non-printable bytes appear as dots. Raw hex preserves the original bytes.">
-          <CoinbaseTagValue hex={data.coinbaseHex} clientEmoji={coinbaseClientEmoji} clientInfo={coinbaseClientInfo} />
+          <CoinbaseTagValue hex={data.coinbaseHex} height={data.height} clientEmoji={coinbaseClientEmoji} clientInfo={coinbaseClientInfo} />
         </FactBox>
 
         <div className="mt-3">

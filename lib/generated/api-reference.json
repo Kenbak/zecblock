@@ -4594,6 +4594,20 @@
   },
   {
     "method": "GET",
+    "path": "/v1/mining/polls/nu7-1",
+    "description": "NU7.1 miner sentiment poll tally from coinbase Miner Data ballots.",
+    "category": "mining",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Counts follow the draft Miner Sentiment Polling ZIP: one vote per canonical block in heights 3591200-3629650, percentages relative to all 38451 blocks. Only coinbase script ballots are parsed; memoUncheckedBlocks counts blocks with shielded coinbase outputs and no script ballot, whose memo ballots are not decrypted. state is upcoming, open, confirming (end height mined, under 100 confirmations) or final. Counts can change with reorgs until final.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
     "path": "/v1/migration/overview",
     "description": "Sapling→Orchard/Ironwood migration overview.",
     "category": "migration",

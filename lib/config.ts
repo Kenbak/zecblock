@@ -77,6 +77,22 @@ export const NETWORK_UPGRADES: Record<number, NetworkUpgrade> = {
     linkText: 'View vote details →',
     badge: 'SNAPSHOT',
   },
+  3591200: {
+    name: 'NU7.1 Miner Poll — Voting Opens',
+    zip: '',
+    description: 'First block of the NU7.1 miner sentiment poll. From here to block 3,629,650, each block counts with the ballot in its coinbase.',
+    link: '/governance/nu7-1-miner-poll',
+    linkText: 'See the miner poll tally →',
+    badge: 'POLL',
+  },
+  3629650: {
+    name: 'NU7.1 Miner Poll — Voting Closes',
+    zip: '',
+    description: 'Last block of the NU7.1 miner sentiment poll. The tally is final once this block has 100 confirmations.',
+    link: '/governance/nu7-1-miner-poll',
+    linkText: 'See the miner poll tally →',
+    badge: 'POLL',
+  },
   4134000: {
     name: 'Ironwood (NU6.3)',
     zip: 'ZIP-258',

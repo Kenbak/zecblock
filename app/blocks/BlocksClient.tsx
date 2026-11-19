@@ -77,7 +77,7 @@ function coinbaseColumns(blocks: Block[], trailingBlock: Block | null, schedule:
           {height.cell(block, index)}
           <div className="sm:hidden mt-2 space-y-2">
             <MinerIdentity block={block} />
-            <CoinbaseMessage hex={block.coinbase_hex} />
+            <CoinbaseMessage hex={block.coinbase_hex} height={block.height} />
             <p className="font-mono text-xs text-muted tabular-nums">
               {block.transaction_count.toLocaleString()} txs · {Number.isFinite(block.size) && block.size >= 0 ? `${(block.size / 1000).toFixed(1)} kB` : 'Size unavailable'}
             </p>
@@ -97,7 +97,7 @@ function coinbaseColumns(blocks: Block[], trailingBlock: Block | null, schedule:
       header: 'Coinbase message',
       className: 'hidden sm:table-cell w-full min-w-64 py-3',
       skeletonWidth: 'w-64',
-      cell: (block) => <CoinbaseMessage hex={block.coinbase_hex} />,
+      cell: (block) => <CoinbaseMessage hex={block.coinbase_hex} height={block.height} />,
     },
     { ...transactions, header: 'Transactions', className: 'hidden md:table-cell whitespace-nowrap' },
     { ...size, className: 'hidden lg:table-cell min-w-[10rem]' },

@@ -56,7 +56,7 @@ jobs:
             "$RUNNER_TEMP/attestation-app" "$RUNNER_TEMP/attestation-result" "$EVIDENCE_URL"
       - name: Retain evidence for review (never activate a baseline)
         if: always()
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: attestation-${{ inputs.endpoint }}-${{ github.run_id }}
           retention-days: 30

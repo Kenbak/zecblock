@@ -159,6 +159,21 @@ function buildCandidates(documents, known, seen, { now = Date.now(), tip = null 
   return candidates;
 }
 
+/**
+ * Send the digest as HTML. If Telegram rejects the message itself (HTTP 400),
+ * send the same text unformatted: an undelivered digest is retried every run
+ * and blocks every other candidate until its source ages out.
+ */
+async function deliverDigest(report, { env, logger, sendReport }) {
+  try {
+    await sendReport(formatDigest(report), { env, parseMode: 'HTML' });
+  } catch (error) {
+    if (error?.status !== 400) throw error;
+    logger.warn('[calendar-watch] Telegram rejected the formatted digest (HTTP 400); sending plain text');
+    await sendReport(formatDigest(report, { plain: true }), { env, parseMode: null });
+  }
+}
+
 async function run({ preview = false, now = Date.now(), fetchImpl = globalThis.fetch, logger = console, env = process.env, root = path.resolve(__dirname, '../..'), send } = {}) {
   const stateFile = env.CALENDAR_WATCH_STATE || '/var/lib/cipherscan-calendar-watch/state.json';
   const state = preview ? { seen: {} } : readState(stateFile);
@@ -174,8 +189,7 @@ async function run({ preview = false, now = Date.now(), fetchImpl = globalThis.f
   const report = candidates.filter(c => c.report);
   if (preview) return { report, skipped: candidates.length - report.length };
   if (report.length) {
-    const deliver = send ?? (async text => require('../lib/signal-telegram').sendSignalReport(text, { env }));
-    await deliver(formatDigest(report));
+    await deliverDigest(report, { env, logger, sendReport: send ?? require('../lib/signal-telegram').sendSignalReport });
   }
   // Remember every reviewed document only after a successful delivery.
   for (const c of candidates) state.seen[c.key] = new Date(now).toISOString();
@@ -203,4 +217,4 @@ if (require.main === module) {
     .catch(error => { console.error(`[calendar-watch] ${error.message}`); process.exitCode = 1; });
 }
 
-module.exports = { run, buildCandidates, readXToken };
+module.exports = { run, buildCandidates, deliverDigest, readXToken };

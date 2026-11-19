@@ -46,6 +46,7 @@ export function FutureBlockView({
   const currentHeight = lastVerifiedSnapshot?.height ?? initialCurrentHeight;
   const upgrade = getFutureBlockUpgrade(targetHeight, network, lastVerifiedSnapshot);
   const announced = upgrade?.authority === 'announcement';
+  const governance = upgrade?.kind === 'governance';
   const blocksRemaining = Math.max(0, targetHeight - currentHeight);
   const estimate = estimateBlockArrival(snapshot, targetHeight);
   const arrivalDate = estimateBlockArrivalDate(snapshot, targetHeight);
@@ -111,7 +112,7 @@ export function FutureBlockView({
     <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6 sm:py-8 animate-fade-in">
       {/* Header */}
       <div className="mb-6">
-        <span className="text-caption font-mono text-muted tracking-wider">{upgrade ? 'Network upgrade' : 'Upcoming block'} · Zcash {NETWORK === 'testnet' ? 'testnet' : NETWORK === 'crosslink' ? 'Crosslink testnet' : 'mainnet'}</span>
+        <span className="text-caption font-mono text-muted tracking-wider">{governance ? 'Governance' : upgrade ? 'Network upgrade' : 'Upcoming block'} · Zcash {NETWORK === 'testnet' ? 'testnet' : NETWORK === 'crosslink' ? 'Crosslink testnet' : 'mainnet'}</span>
         <div className="flex flex-wrap items-center gap-3 mt-1">
           <h1 className="type-page font-mono text-primary">
             {announced ? 'NU7 Mainnet Preview' : upgrade?.name === 'NU7 activation' ? 'NU7 Activation' : 'Zcash Block'} #{targetHeight.toLocaleString('en-US')}
@@ -123,7 +124,7 @@ export function FutureBlockView({
           )}
         </div>
         <p className="mt-3 text-xs sm:text-sm text-secondary">
-          {announced ? 'Preview the announced NU7 mainnet block and its approximate arrival.' : error ? 'We’re having trouble getting the latest block.' : upgrade ? 'Follow the countdown to the next network upgrade.' : 'This block is still ahead. Follow its progress below.'}
+          {announced ? 'Preview the announced NU7 mainnet block and its approximate arrival.' : error ? 'We’re having trouble getting the latest block.' : governance ? 'Follow the countdown to this governance milestone.' : upgrade ? 'Follow the countdown to the next network upgrade.' : 'This block is still ahead. Follow its progress below.'}
         </p>
       </div>
 
@@ -217,7 +218,7 @@ export function FutureBlockView({
               <dd className="font-mono text-primary tabular-nums"><Link href={`/block/${currentHeight}`} prefetch={false} className="hover:text-cipher-gold transition-colors">#{currentHeight.toLocaleString('en-US')}</Link></dd>
             </div>
             <div>
-              <dt className="text-sm text-secondary mb-2">{announced ? 'Announced block' : upgrade ? 'Activation block' : 'Upcoming block'}</dt>
+              <dt className="text-sm text-secondary mb-2">{announced ? 'Announced block' : governance ? 'Milestone block' : upgrade ? 'Activation block' : 'Upcoming block'}</dt>
               <dd className="font-mono text-primary tabular-nums">#{targetHeight.toLocaleString('en-US')}</dd>
             </div>
           </dl>
@@ -232,7 +233,7 @@ export function FutureBlockView({
       </Card>}
       <p className="text-center text-xs sm:text-sm text-muted leading-relaxed">
         {estimate ? `Timing is based on ${estimate.basis} and updates every 30 seconds. ` : ''}
-        {announced ? 'The announced date is approximate; activation still requires a supporting node release. ' : upgrade ? 'The upgrade starts at its activation block. ' : ''}The arrival time may change as blocks are mined.
+        {announced ? 'The announced date is approximate; activation still requires a supporting node release. ' : upgrade && !governance ? 'The upgrade starts at its activation block. ' : ''}The arrival time may change as blocks are mined.
       </p>
     </div>
   );

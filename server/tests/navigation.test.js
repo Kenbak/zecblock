@@ -71,10 +71,10 @@ test('the masthead stays a shortlist: at most four menus and no list longer than
       }
     }
   }
-  // The last menu holds analytics, developer and learning pages, so it is not called Data.
-  const resources = getNavigation('mainnet').find(category => category.id === 'resources');
-  assert.equal(resources.label, 'Resources');
-  assert.deepEqual(groupNavigationItems(resources.items).map(group => group.label), ['Analytics', 'Developers', 'Learn']);
+  // The last menu mixes analytics, developer and learning pages, so it is called More; its groups name them.
+  const more = getNavigation('mainnet').find(category => category.id === 'more');
+  assert.equal(more.label, 'More');
+  assert.deepEqual(groupNavigationItems(more.items).map(group => group.label), ['Analytics', 'Developers', 'Learn']);
   const privacy = getNavigation('mainnet').find(category => category.id === 'privacy');
   assert.deepEqual(groupNavigationItems(privacy.items).map(group => group.label), [undefined]);
   // Mining, the forks it produces and block speed sit together, on every network that has them.

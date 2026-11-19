@@ -33,7 +33,7 @@ function PrivateExplorerLink({ onNavigate }: { onNavigate?: () => void }) {
   );
 }
 
-/** Shortcut to the tools hub, which the Resources menu also lists. */
+/** Shortcut to the tools hub, which the More menu also lists. */
 function ToolsLink({ current, onNavigate }: { current: boolean; onNavigate?: () => void }) {
   return (
     <Link href="/tools" onClick={onNavigate} aria-label="Tools" title="Tools" aria-current={current ? 'page' : undefined}
@@ -252,7 +252,7 @@ export function NavBar() {
             </div>
 
             {/* Right: utilities. Zift has no link here: its launcher floats on every mainnet page
-                and the Resources menu lists it. */}
+                and the More menu lists it. */}
             <div className="flex items-center gap-1.5 sm:gap-2">
               {/* Buy ZEC — mainnet only, desktop */}
               {isMainnet && (

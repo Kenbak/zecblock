@@ -71,7 +71,7 @@ const categories: NavigationCategory[] = [
     { href: '/governance', label: 'Governance', desc: 'Votes, schedules and results', networks: mainnet, group: 'Protocol' },
     { href: '/calendar', label: 'Calendar', desc: 'Upgrades, votes and key blocks', networks: mainnet, group: 'Protocol' },
   ] },
-  { id: 'resources', label: 'Resources', items: [
+  { id: 'more', label: 'More', items: [
     { href: '/charts', label: 'Charts', desc: 'Every chart, by topic', group: 'Analytics' },
     { href: '/cards', label: 'Data Cards', desc: 'Live images to post or embed', networks: standard, group: 'Analytics' },
     { href: '/valuation', label: 'Price & Valuation', desc: 'Price and modeled metrics', networks: standard, group: 'Analytics' },

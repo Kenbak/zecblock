@@ -8,6 +8,8 @@ import { grantPhase, grantRoundBySlug } from '@/lib/grant-rounds';
 import { GrantRoundStepper, GrantRoundStats, GetReadyToVote } from '../GrantRoundOverview';
 import { GrantProposalCatalog } from '../GrantProposalCatalog';
 import { NU7_ROUND_ID } from '@/lib/nu7-vote-results';
+import { roundSubmissions } from '@/lib/vote-submissions';
+import { getLiveRegistrations } from '@/lib/vote-registrations-data';
 import { GovernanceShell, Status, Freshness, SourceNote } from '../GovernanceUI';
 import { ProposalList } from '../ProposalList';
 import { HowToVote } from '../HowToVote';
@@ -73,11 +75,17 @@ export default async function VotePage({ params }: Props) {
   const published = vote.state === 'results';
   const curated = grantRoundOf(vote.round);
   const snapshotHash = roundHex(vote.round.snapshot_blockhash);
+  const open = vote.state === 'active';
+  // Finalized rounds use reviewed, pinned counts; others are read from the chain and omitted when not established.
+  const pinned = published ? roundSubmissions(vote.id) : null;
+  const registrations = pinned ? pinned.delegations
+    : open || vote.state === 'tallying' || published ? await getLiveRegistrations(vote.id, vote.round.proposals.length, open) : null;
   const command = `svoted query vote verify-tally ${vote.id} \\\n  --node tcp://localhost:26657 --output json`;
   return <GovernanceShell title={vote.title} description={vote.description} path={vote.href}>
     <div className="rounded-xl border border-cipher-border bg-cipher-card p-4 sm:p-5">
       <div className="flex flex-wrap items-center justify-between gap-3"><Status state={vote.state} /><p className="font-mono text-xs text-secondary">Voting deadline: {new Date(vote.round.vote_end_time * 1000).toLocaleString('en-GB', { timeZone: 'UTC', dateStyle: 'medium', timeStyle: 'short' })} UTC</p></div>
       <p className="mt-3 text-sm text-secondary">{published ? 'The published tally matches the API summary for every registered option. Independent verification instructions are below.' : vote.state === 'active' ? 'Voting is open. Use an officially supported wallet to cast your vote. Choices remain encrypted until tallying completes.' : vote.state === 'tallying' ? 'Voting has closed. The tally is being prepared; no final results are available yet.' : vote.state === 'failed' ? 'The voting ceremony failed or the tally timed out. This round has no complete published result.' : vote.state === 'upcoming' ? 'The voting round is registered and preparing to open.' : 'A complete matching tally is not available. Partial or inconsistent totals are not shown as final results.'}</p>
+      {registrations ? <p className="mt-3 text-sm text-secondary"><span className="font-mono text-primary">{registrations.toLocaleString('en-US')}</span> voting registrations {open ? 'so far' : 'were recorded on the voting chain'}. A wallet registers once per bundle of up to five notes, so this is an upper limit on wallets, not a count of people.</p> : null}
       {curated && <p className="mt-3 text-xs text-muted">{curated.ballotNote} Approval requires the program’s decision rules. The team behind this explorer has applications in this round; every proposal receives the same presentation.</p>}
       <a href="https://voting.valargroup.org" target="_blank" rel="noopener noreferrer" className="mt-3 inline-block text-sm text-brand-gold hover:underline">Official voting site ↗</a>
     </div>

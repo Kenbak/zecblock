@@ -1,11 +1,14 @@
 import { CopyableValue, CopyableCommand } from '../CopyableValue';
-import { getParticipationStats, NU7_SNAPSHOT_SUPPLY, NU7_ROUND_ID, NU7_SUMMARY_URL, NU7_TALLY_URL, NU7_VERIFY_COMMAND, ZEC_PER_VOTE_UNIT, type VoteResults as Results } from '@/lib/nu7-vote-results';
+import { getParticipationStats, NU7_RESULTS_BASE, NU7_SNAPSHOT_SUPPLY, NU7_ROUND_ID, NU7_SUMMARY_URL, NU7_TALLY_URL, NU7_VERIFY_COMMAND, ZEC_PER_VOTE_UNIT, type VoteResults as Results } from '@/lib/nu7-vote-results';
+import { roundSubmissions } from '@/lib/vote-submissions';
 
 const zec = (units: number) => (units * ZEC_PER_VOTE_UNIT).toLocaleString('en-US', { maximumFractionDigits: 3 });
 
 export function VoteResults({ results }: { results: Results }) {
   const published = results.state === 'published';
   const participation = getParticipationStats(results);
+  const submissions = participation ? roundSubmissions(NU7_ROUND_ID) : null;
+  const count = (n: number) => n.toLocaleString('en-US');
   const thresholdMet = results.proposals.some(p => p.options.reduce((s, o) => s + o.total_value, 0) * ZEC_PER_VOTE_UNIT >= 1_000_000);
   return (
     <section className="space-y-6 mb-8" aria-labelledby="results-heading">
@@ -16,7 +19,7 @@ export function VoteResults({ results }: { results: Results }) {
           : 'A complete finalized tally could not be confirmed. This does not mean zero votes were cast. Reload this page or check the source links below.'}</p>
         <a href="#verify-results" className="inline-block text-sm text-brand-gold underline mt-3">Verify this tally independently</a>
         {participation && <>
-          <dl className="grid grid-cols-2 sm:grid-cols-3 gap-3 my-4">
+          <dl className={`grid grid-cols-2 ${submissions ? 'lg:grid-cols-4' : 'sm:grid-cols-3'} gap-3 my-4`}>
             <div className="rounded-xl bg-glass-3 p-3">
               <dt className="text-xs text-muted">ZEC per question</dt>
               <dd className="text-xl font-mono font-semibold text-primary mt-1">~{(participation.maxZec / 1_000_000).toFixed(2)}M</dd>
@@ -27,12 +30,25 @@ export function VoteResults({ results }: { results: Results }) {
               <dd className="text-xl font-mono font-semibold text-primary mt-1">{(participation.snapshotZec / 1_000_000).toFixed(2)}M ZEC</dd>
               <p className="text-xs text-muted mt-1">Block {NU7_SNAPSHOT_SUPPLY.height.toLocaleString('en-US')}</p>
             </div>
-            <div className="col-span-2 sm:col-span-1 rounded-xl bg-brand-gold/5 border border-brand-gold/20 p-3">
+            <div className={`${submissions ? '' : 'col-span-2 sm:col-span-1 '}rounded-xl bg-brand-gold/5 border border-brand-gold/20 p-3`}>
               <dt className="text-xs text-muted">Share of snapshot pool supply</dt>
               <dd className="text-xl font-mono font-semibold text-brand-gold mt-1">{participation.minShare.toFixed(1)}–{participation.maxShare.toFixed(1)}%</dd>
               <p className="text-xs text-muted mt-1">Range across the five questions</p>
             </div>
+            {submissions && <div className="rounded-xl bg-glass-3 p-3">
+              <dt className="text-xs text-muted">Voting registrations</dt>
+              <dd className="text-xl font-mono font-semibold text-primary mt-1">{count(submissions.delegations)}</dd>
+              <p className="text-xs text-muted mt-1">At most this many wallets</p>
+            </div>}
           </dl>
+          {submissions && <details className="text-xs text-secondary mb-2">
+            <summary className="cursor-pointer text-muted">How many wallets voted?</summary>
+            <div className="mt-3 space-y-3">
+              <p>Before voting, a wallet registers its notes on the voting chain in bundles of up to five. This round recorded {count(submissions.delegations)} registrations{submissions.votes ? <>, then {count(submissions.votes)} encrypted votes across the five questions</> : null} and {count(submissions.revealedShares)} revealed vote shares.</p>
+              <p>A wallet holding more than five notes can register more than once, so {count(submissions.delegations)} is an upper limit on wallets. It is not a count of people: one person can use several wallets, and one wallet can hold funds for many. Ballots are private, so no exact voter count exists.</p>
+              <p>Counted from voting-chain transactions on Nov 18, 2026. Cross-check: the round’s <a className="text-primary underline underline-offset-4" href={`${NU7_RESULTS_BASE}/commitment-tree/${NU7_ROUND_ID}/latest`}>commitment tree</a> holds {count(submissions.treeLeaves)} entries, one per registration and two per vote.</p>
+            </div>
+          </details>}
           <details className="text-xs text-secondary">
             <summary className="cursor-pointer text-muted">Snapshot comparison &amp; verification</summary>
             <div className="mt-3 space-y-3">

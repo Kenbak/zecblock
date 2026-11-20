@@ -26,6 +26,7 @@ COPY server/api/ ./
 COPY server/lib/ ../lib/
 COPY server/signals/ ../signals/
 COPY server/data/attestation-endpoints.json ../data/attestation-endpoints.json
+COPY server/data/wallet-servers.json ../data/wallet-servers.json
 COPY lib/ask/ /app/lib/ask/
 COPY lib/attestation-status.js /app/lib/attestation-status.js
 COPY lib/canary-status.js /app/lib/canary-status.js

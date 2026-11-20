@@ -150,6 +150,7 @@
   "POST /v1/scan/lightwalletd": "post-scan-lightwalletd",
   "GET /v1/network/attestations": "network-attestations",
   "GET /v1/network/attestations/:id": "network-attestation",
+  "GET /v1/network/wallet-servers": "network-wallet-servers",
   "GET /v1/mining/software": "mining-software",
   "GET /v1/network/accounting": "network-accounting",
   "GET /v1/network/block-time": "network-block-time",

@@ -158,3 +158,11 @@ Original assets retrieved unchanged 2026-10-28:
 token/chain marks. Dash and Monad no longer borrow Dogecoin or Ethereum logos.
 Unknown chain identities keep the existing neutral/text fallback. Native MON
 uses a single Monad mark; bridged tokens retain their own token and chain marks.
+
+## Wallet server operator marks
+
+Retrieved unchanged on 2026-11-19 to identify operators on `/network/wallet-servers`.
+An identity cue beside the visible operator name, not an endorsement in either direction.
+
+- `wallet-servers/fastz.svg`: fastz.cash mark from its status page, https://status.fastz.cash/assets/favicon.svg (889 bytes, SHA-256 `c1c5816901e0e1e5814c861339d108cf1515659eabbfea249cb68d5ec9d237f6`).
+- zec.rocks: no mark stored. Its homepage uses a text wordmark with no image or favicon, and its GitHub organization avatar is GitHub's generated default. The page shows a neutral initial instead.

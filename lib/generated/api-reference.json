@@ -117,6 +117,7 @@
             "about",
             "press",
             "attestations",
+            "wallet_servers",
             "privacy_policy",
             "terms",
             "privacy",
@@ -1073,6 +1074,20 @@
         }
       }
     ],
+    "requestBody": null
+  },
+  {
+    "method": "GET",
+    "path": "/v1/network/wallet-servers",
+    "description": "Registered public wallet servers with ZecBlock's own gRPC observations: reachability, reported tip, agreement with the canonical index, software and one response time. Mainnet only.",
+    "category": "network",
+    "query": [],
+    "listKey": null,
+    "zatoshiFields": [],
+    "note": "Observations come from one ZecBlock server, refresh at most once a minute and carry checkedAt; treat one older than staleAfterSeconds as not current. tipDelta is blocks relative to reference.height and null when the index was unavailable. chain is canonical, different or unknown for the reported tip hash. responseMs is one request on an open connection from that server, not a sync benchmark.",
+    "ownershipToken": false,
+    "pagination": null,
+    "parameters": [],
     "requestBody": null
   },
   {

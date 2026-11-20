@@ -59,6 +59,7 @@ const categories: NavigationCategory[] = [
   { id: 'network', label: 'Network', items: [
     { href: '/network', label: 'Network Overview', desc: 'Supply, halving, fees and activity', group: 'Live network' },
     { href: '/network/nodes', label: 'Nodes', desc: 'Node map, peers and software', group: 'Live network' },
+    { href: '/network/wallet-servers', label: 'Wallet Servers', desc: 'Public sync servers, checked live', networks: mainnet, group: 'Live network' },
     { href: '/validators', label: 'Validators', desc: 'Finalizers and staking information', networks: crosslink, group: 'Live network' },
     { href: '/bootstrap', label: 'Node Bootstrap', desc: 'Snapshots and node setup', networks: crosslink, group: 'Live network' },
     // Orphans are a mining outcome and block time drives them, so these three sit together.

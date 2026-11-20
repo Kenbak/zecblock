@@ -2156,9 +2156,11 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
   .network-detail-toggle { padding: 1.25rem 1.5rem; }
   .network-related-links { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1.5rem; }
   .network-related-links--four { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .network-related-links--five { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 @media (min-width: 1024px) {
   .network-related-links--four { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .network-related-links--five { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 }
 
 /* Attribution stays out of charts and legends on screen; image exports temporarily reveal it. */

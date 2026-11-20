@@ -82,6 +82,12 @@
       "core": true
     },
     {
+      "id": "network-wallet-servers",
+      "routeGroup": "/network/wallet-servers",
+      "path": "/network/wallet-servers",
+      "core": true
+    },
+    {
       "id": "network-block-speed",
       "routeGroup": "/network/block-speed",
       "path": "/network/block-speed",

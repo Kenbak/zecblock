@@ -81,7 +81,7 @@ test('the masthead stays a shortlist: at most four menus and no list longer than
   const groups = network => groupNavigationItems(getNavigation(network).find(category => category.id === 'network').items)
     .map(group => [group.label, group.items.map(item => item.href)]);
   assert.deepEqual(groups('mainnet'), [
-    ['Live network', ['/network', '/network/nodes']],
+    ['Live network', ['/network', '/network/nodes', '/network/wallet-servers']],
     ['Mining & forks', ['/mining', '/reorgs', '/network/block-speed']],
     ['Protocol', ['/network/upgrades', '/governance', '/calendar']],
   ]);
@@ -180,7 +180,7 @@ test('the footer is one row of even columns that keeps every link and indents ch
   // One row at desktop width: the grid has six tracks, so a seventh column would wrap.
   assert.match(fs.readFileSync('components/Footer.tsx', 'utf8'), /lg:grid-cols-6/);
   assert.deepEqual(columns.map(column => [column.label, column.items.length]), [
-    ['Explorer', 5], ['Privacy', 6], ['Network', 9], ['Analytics', 6], ['Developers', 2], ['Learn', 4],
+    ['Explorer', 5], ['Privacy', 6], ['Network', 10], ['Analytics', 6], ['Developers', 2], ['Learn', 4],
   ]);
   assert.deepEqual(columns.find(column => column.label === 'Developers').items.map(item => item.href), ['/docs', '/tools']);
   for (const network of ['mainnet', 'testnet', 'crosslink']) {

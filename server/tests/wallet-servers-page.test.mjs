@@ -72,9 +72,11 @@ test('mainnet page server-renders one heading, every registered name and complet
   for (const endpoint of data.operators.flatMap((operator) => operator.endpoints)) assert.ok(html.includes(`${endpoint.host}:443`), endpoint.host);
   assert.ok(html.includes('rpc.fastz.cash:443'));
   assert.ok(html.includes('href="/block/3591214"'));
-  assert.ok(html.includes('href="https://status.fastz.cash/"'));
   assert.ok(!html.includes('private-service.internal'));
-  assert.ok(html.includes('https://api.zecblock.com/v1/network/wallet-servers'));
+  // Exact attribute values, not substrings: the public API link, and nothing on the private origin.
+  const hrefs = new Set([...html.matchAll(/href="([^"]*)"/g)].map((match) => match[1]));
+  assert.ok(hrefs.has('https://api.zecblock.com/v1/network/wallet-servers'));
+  assert.ok(hrefs.has('https://status.fastz.cash/'));
   for (const href of ['/network', '/network/attestations', '/network/nodes']) assert.ok(html.includes(`href="${href}"`), href);
   assert.equal(page.metadata.robots.index, true);
   assert.equal(page.metadata.robots.follow, true);

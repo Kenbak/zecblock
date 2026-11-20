@@ -65,6 +65,31 @@ function loadNetworkProxy(network) {
   return exports;
 }
 
+test('the mainnet-only wallet server page returns a real 404 elsewhere before loading can stream', async () => {
+  for (const network of ['mainnet', 'testnet', 'crosslink-testnet']) {
+    const { proxy, config } = loadNetworkProxy(network);
+    assert.ok(config.matcher.includes('/network/wallet-servers/:path*'), 'the page must reach Proxy before its parent loading boundary can stream');
+    for (const route of ['/network/wallet-servers', '/network/wallet-servers/', '/network/wallet-servers?x=1']) {
+      const response = await proxy(new NextRequest(`https://explorer.example${route}`));
+      if (network === 'mainnet') {
+        assert.equal(response.status, 200, `${network} ${route}`);
+        assert.equal(response.headers.get('x-middleware-next'), '1');
+        continue;
+      }
+      assert.equal(response.status, 404, `${network} ${route}`);
+      assert.equal(response.headers.get('Cache-Control'), 'no-store');
+      assert.equal(response.headers.get('X-Robots-Tag'), 'noindex, follow');
+      const html = await response.text();
+      assert.match(html, /<title>Page not found \| ZecBlock<\/title>/);
+      assert.match(html, /Wallet server checks are available on mainnet/);
+      assert.equal((html.match(/<h1>/g) || []).length, 1);
+    }
+    // A sibling whose name only starts the same way is not caught.
+    assert.equal((await proxy(new NextRequest('https://explorer.example/network/wallet-servers-other'))).status, 200, network);
+    assert.equal((await proxy(new NextRequest('https://explorer.example/network'))).status, 200, `${network} Network hub remains available`);
+  }
+});
+
 test('Crosslink standard-network detail pages return a real 404 before loading can stream', async () => {
   const routes = ['/network/block-speed', '/network/block-speed/', '/network/block-speed/image', '/network/block-speed/image?share=1', '/network/upgrades', '/network/upgrades/', '/network/upgrades/unknown?view=1'];
   for (const network of ['mainnet', 'testnet', 'crosslink-testnet', 'crosslink']) {

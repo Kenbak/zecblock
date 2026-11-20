@@ -6,7 +6,7 @@ import { useWebSocket } from '@/hooks/useWebSocket';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader, SectionHeader } from '@/components/ui/SectionHeader';
-import { isCrosslink, CURRENCY } from '@/lib/config';
+import { isCrosslink, isMainnet, CURRENCY } from '@/lib/config';
 import type { HashrateSnapshot } from '@/lib/hashrate';
 import { blockAgeLabel, observationStatus } from '@/lib/network-overview';
 import type { HalvingInfo } from '@/components/network/HalvingPanel';
@@ -220,12 +220,13 @@ export default function NetworkClient({ initialData }: { initialData: NetworkPag
       </Card>
       <nav aria-labelledby="network-related-heading" className="mt-8">
         <h2 id="network-related-heading" className="type-label text-muted uppercase mb-3">Explore further</h2>
-        <div className={`network-related-links${isCrosslink ? '' : ' network-related-links--four'}`}>
+        <div className={`network-related-links${isCrosslink ? '' : isMainnet ? ' network-related-links--five' : ' network-related-links--four'}`}>
           {[
             { href: '/mining#metrics', title: 'Mining', description: 'Hashrate, pools and miner rewards' },
             { href: '/pools#supply', title: 'Shielded pools', description: 'Supply distribution and pool flows' },
             { href: '/rich-list#transparent-breakdown', title: 'Transparent balances', description: 'Address categories and script types' },
             ...(!isCrosslink ? [{ href: '/network/attestations', title: 'Indexer attestations', description: 'Zero Indexer enclave and software checks' }] : []),
+            ...(isMainnet ? [{ href: '/network/wallet-servers', title: 'Wallet servers', description: 'Public sync servers checked against our index' }] : []),
           ].map(({ href, title, description }) => <Link key={href} href={href} className="network-related-link">
             <span className="flex items-baseline justify-between gap-3 font-mono text-sm text-secondary"><span>{title}</span><span aria-hidden="true" className="text-muted">→</span></span>
             <span className="block text-caption text-muted mt-1">{description}</span>

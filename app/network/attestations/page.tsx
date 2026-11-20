@@ -1,3 +1,4 @@
+import Link from 'next/link';
 import { readApiData } from '@/lib/api-client';
 import { notFound } from 'next/navigation';
 import { PageHeader } from '@/components/ui/SectionHeader';
@@ -45,6 +46,7 @@ export default async function AttestationsPage() {
     <nav aria-label="Attestation page sections" className="flex flex-wrap gap-x-6 gap-y-3 border-b border-cipher-border pb-5 mb-6 text-caption font-mono text-muted">
       <a href="#endpoint-observations" className="hover:text-primary">Endpoints</a>
       <a href="#attestation-method" className="hover:text-primary">Methodology</a>
+      {network === 'mainnet' ? <Link href="/network/wallet-servers" className="hover:text-primary">Wallet servers</Link> : null}
       <a href={`${publicApiUrl}/v1/network/attestations`} className="sm:ml-auto hover:text-primary">JSON API ↗</a>
     </nav>
     <AttestationsClient initialData={initialData} initialNow={initialNow} network={network} apiUrl={publicApiUrl} />

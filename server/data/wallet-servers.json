@@ -1,0 +1,40 @@
+{
+  "mainnet": [
+    {
+      "id": "fastz",
+      "name": "fastz.cash",
+      "operator": "Zcash Labs",
+      "operatorUrl": "https://zcashlabs.com",
+      "statusUrl": "https://status.fastz.cash/",
+      "logo": "/brands/wallet-servers/fastz.svg",
+      "endpoints": [
+        { "id": "fastz-rpc", "host": "rpc.fastz.cash", "port": 443, "scope": "global", "label": "Global" },
+        { "id": "fastz-na", "host": "na.fastz.cash", "port": 443, "scope": "area", "label": "North America" },
+        { "id": "fastz-eu", "host": "eu.fastz.cash", "port": 443, "scope": "area", "label": "Europe" },
+        { "id": "fastz-ap", "host": "ap.fastz.cash", "port": 443, "scope": "area", "label": "Asia Pacific" },
+        { "id": "fastz-usw", "host": "usw.fastz.cash", "port": 443, "scope": "region", "lat": 45.52, "lon": -122.99, "label": "Hillsboro, Oregon" },
+        { "id": "fastz-la", "host": "la.fastz.cash", "port": 443, "scope": "region", "lat": 34.05, "lon": -118.24, "label": "Los Angeles" },
+        { "id": "fastz-use", "host": "use.fastz.cash", "port": 443, "scope": "region", "lat": 38.9, "lon": -77.5, "label": "Virginia" },
+        { "id": "fastz-sa", "host": "sa.fastz.cash", "port": 443, "scope": "region", "lat": -23.55, "lon": -46.63, "label": "São Paulo" },
+        { "id": "fastz-lon", "host": "lon.fastz.cash", "port": 443, "scope": "region", "lat": 51.51, "lon": -0.13, "label": "London" },
+        { "id": "fastz-de", "host": "de.fastz.cash", "port": 443, "scope": "region", "lat": 50.11, "lon": 8.68, "label": "Frankfurt" },
+        { "id": "fastz-sg", "host": "sg.fastz.cash", "port": 443, "scope": "region", "lat": 1.35, "lon": 103.82, "label": "Singapore" },
+        { "id": "fastz-jp", "host": "jp.fastz.cash", "port": 443, "scope": "region", "lat": 34.69, "lon": 135.5, "label": "Osaka" }
+      ]
+    },
+    {
+      "id": "zecrocks",
+      "name": "zec.rocks",
+      "operator": "Zec.rocks",
+      "operatorUrl": "https://zec.rocks",
+      "statusUrl": "https://status.zec.rocks/",
+      "endpoints": [
+        { "id": "zecrocks-global", "host": "zec.rocks", "port": 443, "scope": "global", "label": "Global" },
+        { "id": "zecrocks-na", "host": "na.zec.rocks", "port": 443, "scope": "area", "lat": 55, "lon": -100, "approximate": true, "label": "North America" },
+        { "id": "zecrocks-sa", "host": "sa.zec.rocks", "port": 443, "scope": "area", "lat": -10, "lon": -58, "approximate": true, "label": "South America" },
+        { "id": "zecrocks-eu", "host": "eu.zec.rocks", "port": 443, "scope": "area", "lat": 41, "lon": 20, "approximate": true, "label": "Europe" },
+        { "id": "zecrocks-ap", "host": "ap.zec.rocks", "port": 443, "scope": "area", "lat": 22, "lon": 100, "approximate": true, "label": "Asia Pacific" }
+      ]
+    }
+  ]
+}

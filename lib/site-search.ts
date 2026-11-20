@@ -46,6 +46,7 @@ const ALIASES: Record<string, string[]> = {
   '/privacy/wallets': ['fingerprint'],
   '/network': ['network stats', 'statistics', 'issuance'],
   '/network/nodes': ['node', 'zebra', 'zcashd'],
+  '/network/wallet-servers': ['lightwalletd', 'ztreamer', 'fastz', 'zec.rocks', 'indexer', 'light wallet'],
   '/validators': ['finalizer', 'stake'],
   '/bootstrap': ['sync'],
   '/mining': ['miner', 'miners', 'difficulty'],

@@ -3,7 +3,7 @@ import Image from 'next/image';
 import type { ReactNode } from 'react';
 import { PageHeader } from '@/components/ui/SectionHeader';
 import { PageSectionNav } from '@/components/PageSectionNav';
-import { getBaseUrl } from '@/lib/seo';
+import { getBaseUrl, getNetwork } from '@/lib/seo';
 import styles from './learn.module.css';
 import { PrivacyTerminal } from './PrivacyTerminal';
 
@@ -250,6 +250,7 @@ export default function LearnPage() {
         <ResourceList items={[
           { name: 'Zcash Names', description: 'Learn about human-readable Zcash names and join the project’s waitlist.', href: 'https://www.zcashnames.com/waitlist' },
           { name: 'Network nodes', description: 'See observed peers and the software they run.', href: '/network/nodes' },
+          ...(getNetwork() === 'mainnet' ? [{ name: 'Wallet servers', description: 'Check the public servers light wallets sync from.', href: '/network/wallet-servers' }] : []),
           { name: 'Charts', description: 'Explore and share Zcash network data.', href: '/charts' },
           { name: 'Weekly newsletter', description: 'Catch up on Zcash and network developments.', href: '/newsletter' },
         ]} />

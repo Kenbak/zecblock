@@ -56,6 +56,7 @@ const blocksRouter = require('./routes/blocks');
 const transactionsRouter = require('./routes/transactions');
 const networkRouter = require('./routes/network');
 const { createAttestationRouter } = require('./routes/attestations');
+const { createWalletServersRouter } = require('./routes/wallet-servers');
 const crosschainRouter = require('./routes/crosschain');
 const wrappedZecRouter = require('./routes/wrapped-zec');
 const statsRouter = require('./routes/stats');
@@ -427,6 +428,7 @@ app.use(transactionsRouter);
 // Network routes: /api/network/*
 app.use(networkRouter);
 app.use(createAttestationRouter());
+app.use(createWalletServersRouter());
 
 // Cross-chain routes: /api/crosschain/*
 app.use(crosschainRouter);

@@ -6,6 +6,7 @@
   ],
   "GET /v1/network/attestations": [],
   "GET /v1/network/attestations/:id": [],
+  "GET /v1/network/wallet-servers": [],
   "GET /v1/network/grpc-status": [],
   "GET /v1/system/health": [],
   "GET /v1/system/health/deep": [],

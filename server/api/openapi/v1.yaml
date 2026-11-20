@@ -406,6 +406,7 @@ paths:
                     - about
                     - press
                     - attestations
+                    - wallet_servers
                     - privacy_policy
                     - terms
                     - privacy
@@ -1792,6 +1793,108 @@ paths:
           description: >-
             One registered Zero Indexer endpoint and its latest observation. Unknown registry IDs
             return 404.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - meta
+                properties:
+                  data:
+                    oneOf:
+                      - type: object
+                      - type: array
+                        items: {}
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          description: Validation error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Endpoint credential required or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '402':
+          description: >-
+            Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the
+            original challenge is also in problem.paymentRequired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Origin or ownership authorization denied.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Resource not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: JSON body exceeds 1 MB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: Rate limited (enforced by the legacy endpoint this proxies to).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: Upstream (legacy API) error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Source temporarily unavailable or still building.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: Upstream (legacy API) timeout.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+  /v1/network/wallet-servers:
+    get:
+      operationId: get_network_Wallet-servers
+      summary: >-
+        Registered public wallet servers with ZecBlock's own gRPC observations: reachability,
+        reported tip, agreement with the canonical index, software and one response time. Mainnet
+        only.
+      tags:
+        - network
+      x-cipherscan-legacy-path: /api/network/wallet-servers
+      x-cipherscan-legacy-method: GET
+      x-cipherscan-classification: public
+      x-cipherscan-v1-status: adapter
+      responses:
+        '200':
+          description: >-
+            Registered public wallet servers with ZecBlock's own gRPC observations: reachability,
+            reported tip, agreement with the canonical index, software and one response time.
+            Mainnet only.
           content:
             application/json:
               schema:

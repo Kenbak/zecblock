@@ -38,8 +38,8 @@ test('halving copy names the target-time basis for the date and era progress', (
   const html = renderToStaticMarkup(React.createElement(HalvingPanel, { halving: { ...unavailable, halvingStatus: 'available',
     halvingBlock: 6132390, blocksRemaining: 2542945, eraProgress: 49.5, estimatedSeconds: 63573625, estimatedDate: '2028-11-24T10:20:25.000Z' } }));
   assert.match(html, /Nov 24, 2028/);
-  assert.match(html, /consensus target block time/);
-  assert.match(html, /measured in target time, not block count/);
+  // Since NU7 the era is measured in target time; a block count would read very differently.
+  assert.match(html, /Date and era progress use target block time, not block count/);
   assert.doesNotMatch(html, /recent block timing/);
 });
 

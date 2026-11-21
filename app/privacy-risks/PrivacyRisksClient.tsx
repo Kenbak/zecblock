@@ -133,9 +133,9 @@ export default function PrivacyRisksClient() {
     <section id="risk-methodology" className="scroll-mt-24 border-t border-cipher-border pt-8 space-y-5">
       <h2 className="text-lg font-semibold text-primary">How to read this analysis</h2>
       <div className="grid md:grid-cols-3 gap-6 text-sm text-secondary leading-relaxed">
-        <div><h3 className="text-primary font-medium mb-2">1. Public observations</h3><p>Amounts and timestamps come from public shielding and deshielding events. The explorer cannot see individual transfers or balances inside a shielded pool.</p></div>
+        <div><h3 className="text-primary font-medium mb-2">1. Public observations</h3><p>Amounts and times of ZEC entering and leaving shielded pools.</p></div>
         <div><h3 className="text-primary font-medium mb-2">2. Candidate relationships</h3><p>Round-trip scoring considers amount similarity, timing, rarity and competing candidates. Batch scoring considers repeated amounts, timing and candidate shielding events.</p></div>
-        <div><h3 className="text-primary font-medium mb-2">3. Inspect the evidence</h3><p>Open the score inputs and compare the public addresses and transactions. For batches, explore the graph. Dashed connections are inferred. A high score does not establish identity, ownership or an exact flow of funds.</p></div>
+        <div><h3 className="text-primary font-medium mb-2">3. Inspect the evidence</h3><p>Open the score inputs and compare the public addresses and transactions. For batches, explore the graph; dashed connections are inferred.</p></div>
       </div>
       <details className="rounded-xl border border-cipher-border p-5">
         <summary className="cursor-pointer text-sm text-secondary">Observed common amounts · {period.toUpperCase()}</summary>

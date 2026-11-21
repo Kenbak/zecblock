@@ -39,7 +39,7 @@ export function FeeDistributionChart({ initialData, initialFetchedAt }: { initia
   const dateLabel = formatDateLabelUTC;
   return <div ref={panelRef} className="h-full"><Card className="h-full"><CardBody>
     <SectionHeader card label="Observed fees" actions={<div className="flex flex-wrap items-center gap-1"><PeriodPillTags aria-label="Fee history range" value={period} onChange={setPeriod} options={PERIODS.map(value => ({ key: value, label: value.toUpperCase() }))} /><PanelShareControl title={`Zcash observed transaction fees (${period})`} fileName={`zecblock-fees-${period}`} csv={() => objectRowsCsv(points)} panelRef={panelRef} disabled={!usable} /></div>} />
-    <p className="text-caption text-muted mb-4">Daily median and 10th–90th percentile range. Observed fees, not a fee quote.</p>
+    <p className="text-caption text-muted mb-4">Daily median, with the 10th–90th percentile range.</p>
     {loading && !usable ? <ChartSkeleton height={228} /> : !usable ? <p role="status" className="min-h-[240px] flex items-center justify-center text-sm text-muted">{loading || isRefreshing ? 'Loading observed fees…' : 'Fee history unavailable.'}</p> : <>
       <><ResponsiveContainer width="100%" height={228} initialDimension={{ width: 400, height: 228 }}>
         <ComposedChart data={points} margin={{ top: 18, right: 8, left: 0, bottom: 0 }}>

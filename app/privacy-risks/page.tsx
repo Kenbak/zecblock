@@ -15,7 +15,7 @@ export default function PrivacyRisksPage() {
   return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }} />
     <PageHeader eyebrow="PRIVACY_ANALYSIS" title="Zcash Privacy Risk Analysis" subtitle="Explore public amount and timing patterns around shielded activity. Inspect the evidence behind each candidate link." />
-    <p className="mb-8 max-w-4xl text-sm text-secondary leading-relaxed">These observations do not reveal transfers inside shielded pools or establish common ownership. Scores rank heuristic signals; they are not probabilities that a link is correct.</p>
+    <p className="mb-8 max-w-4xl text-sm text-secondary leading-relaxed">Scores rank patterns in public data. A high score is a lead to check, not proof that two transactions are linked.</p>
     <Suspense fallback={<RiskResultsSkeleton />}><PrivacyRisksClient /></Suspense>
   </div>;
 }

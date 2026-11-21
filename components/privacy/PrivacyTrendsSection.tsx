@@ -103,7 +103,7 @@ export function PrivacyTrendsSection({
         className="mb-4 flex flex-wrap items-center justify-between gap-3"
         data-html2canvas-ignore="true"
       >
-        <p className="text-caption leading-relaxed text-muted">Privacy Score over time. Step changes may reflect formula updates.</p>
+        <p className="text-caption leading-relaxed text-muted">Steps in the line can come from formula updates.</p>
         <PeriodSelector value={period} onChange={onPeriodChange} />
       </div>
 

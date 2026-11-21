@@ -378,7 +378,7 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
               ) : null;
             })()}
           </div>
-          <p className="text-caption text-muted mt-3">Map markers include located IPs only. Map and totals can reflect different observation times.</p>
+          <p className="text-caption text-muted mt-3">Markers show nodes with a known location.</p>
         </div>
       )}
     </div>

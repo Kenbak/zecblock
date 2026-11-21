@@ -188,7 +188,7 @@ export function NodeMap({ initialLocations, initialStats, initialFetchedAt }: No
             </div>
             <div>
               <h2 className="text-base sm:text-lg font-semibold text-primary">Network Node Map</h2>
-              <p className="text-caption sm:text-xs text-muted">Observed active IPs · discovery coverage can change</p>
+              <p className="text-caption sm:text-xs text-muted">Observed active IPs</p>
             </div>
           </div>
 

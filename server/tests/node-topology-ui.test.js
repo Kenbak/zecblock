@@ -138,7 +138,7 @@ test('advertised targets remain distinct from active observations and unavailabl
   const page = text(graph.tree);
   assert.ok(page.includes('2 observed active IPs · 1 advertised only · 1 advertisement links'));
   assert.ok(page.includes('Advertised only'));
-  assert.ok(page.includes('do not establish remote connections'));
+  assert.ok(page.includes('Links show address advertisements, not confirmed connections.'));
   assert.ok(!page.includes('Not recently observed'));
   const scene = visit(graph.tree, item => typeof item.type === 'function' && item.type.name === 'Scene')[0];
   scene.props.onPin(scene.props.nodes.find(item => !item.reachable)); graph.render();

@@ -17,7 +17,7 @@ export function UnifiedAddressViewer({ uaComponents, uaLoading, copiedText, onCo
     { key: 'orchard' as const, present: uaComponents.has_orchard, address: null },
   ].filter(receiver => receiver.present) : [];
   return <section aria-label="Unified address receivers" className="rounded-xl border border-cipher-border bg-cipher-card overflow-hidden">
-    <div className="p-5 sm:p-6"><h2 className="text-base font-semibold text-primary">Address receivers</h2><p className="mt-2 text-sm text-muted">Decoded locally from the address. Receiver details do not reveal shielded activity.</p></div>
+    <div className="p-5 sm:p-6"><h2 className="text-base font-semibold text-primary">Address receivers</h2><p className="mt-2 text-sm text-muted">Decoded locally from the address.</p></div>
     {uaLoading ? <p role="status" className="px-5 sm:px-6 pb-6 text-sm text-muted">Decoding receivers…</p> : !uaComponents ? <p role="status" className="px-5 sm:px-6 pb-6 text-sm text-muted">Receiver decoding is unavailable. This does not mean the address is empty or has no shielded receivers.</p> : <div className="divide-y divide-cipher-border border-t border-cipher-border">
       {receivers.map(receiver => <div key={receiver.key} className="grid sm:grid-cols-[150px_minmax(0,1fr)] gap-4 p-5 sm:p-6">
         <div><TxTypeBadge category={receiver.key} /></div>

@@ -272,7 +272,6 @@ export default function NodesClient() {
                   </tbody>
                 </table>}
               </div>
-              <p className="text-caption text-muted mt-4 pt-4 border-t border-cipher-border">Counts refer to observed active nodes. A version string is self-reported.</p>
             <ChartWatermark /></CardBody>
           </Card>
           {/* Upgrade Readiness */}
@@ -478,7 +477,7 @@ export default function NodesClient() {
             </div>
           )}
           {!loading && nodes.length > 0 && <div className="flex flex-wrap items-center justify-between gap-4 border-t border-cipher-border mt-4 pt-5">
-            <p className="text-caption text-muted">— means unavailable. Peers are observed graph relationships.</p>
+            <p className="text-caption text-muted">— means unavailable.</p>
             <DirectoryPagination page={page} total={total} pageSize={PAGE_SIZE} onChange={setPage} />
           </div>}
         </CardBody>

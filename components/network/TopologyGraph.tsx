@@ -629,7 +629,7 @@ export function TopologyGraph({ active = true, onShowGeography }: { active?: boo
           </tbody>
         </table>
       </div>}
-      <p className="text-caption text-muted mt-3">Drag to orbit · scroll to zoom · select a node to inspect. Links run from a verified advertiser to an advertised address; they do not establish remote connections. Advertised-only addresses are shown smaller. Positions are topological, not geographic.</p>
+      <p className="text-caption text-muted mt-3">Drag to orbit · scroll to zoom · select a node to inspect. Links show address advertisements, not confirmed connections. Advertised-only addresses are shown smaller.</p>
     </div>
   );
 }

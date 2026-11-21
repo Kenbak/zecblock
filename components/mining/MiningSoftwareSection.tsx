@@ -128,8 +128,7 @@ export function MiningSoftwareSection() {
             Mining software tags
           </h2>
           <p className="mt-1 text-sm text-muted">
-            Share of blocks carrying a software tag, rather than a census of
-            the software miners run.
+            Share of blocks carrying a software tag.
           </p>
         </div>
         <div className="flex flex-wrap gap-2">

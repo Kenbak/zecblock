@@ -60,6 +60,6 @@ export function BlockCadenceChart({ initialData, initialFetchedAt, chainHeight, 
     </div>
     {lag > 0 && <p role="status" className="text-caption text-warning mt-3">Sample is {lag.toLocaleString()} blocks behind the network summary.</p>}
     {error && <p role="status" className="text-caption text-warning mt-3">Block sample could not refresh. Last received data is shown when available.</p>}
-    {points.some(p => p.seconds == null || p.seconds < 0) && <p className="text-caption text-muted mt-3">Missing predecessors leave gaps. Negative intervals reflect non-monotonic block timestamps.</p>}
+    {points.some(p => p.seconds == null || p.seconds < 0) && <p className="text-caption text-muted mt-3">Negative intervals mean a block’s timestamp is earlier than the one before it.</p>}
   <ChartWatermark /></CardBody></Card>;
 }

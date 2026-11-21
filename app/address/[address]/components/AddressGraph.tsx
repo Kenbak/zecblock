@@ -45,7 +45,7 @@ export function AddressGraph({ address }: { address: string }) {
     <div className="p-5 sm:p-6">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div><h2 className="text-base font-semibold text-primary">Explore address connections</h2>
-          <p className="mt-2 text-sm text-muted max-w-2xl">Inspect public transaction associations and inferred clusters. These connections do not establish identity or ownership.</p></div>
+          <p className="mt-2 text-sm text-muted max-w-2xl">These connections do not establish identity or ownership.</p></div>
         <PeriodPillTags aria-label="Connection type" value={mode}
           onChange={value => { setMode(value); setSelectedId(null); setQuery(''); }}
           options={(['recent', 'cluster'] as const).map(value => ({ key: value, label: value === 'recent' ? 'Recent connections' : 'Co-spend cluster' }))} />

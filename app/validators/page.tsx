@@ -211,7 +211,7 @@ export default function ValidatorsPage() {
 
           <p className="text-caption font-mono text-muted">
             Observed by this node. Percentages use stake in the {data.finalizerCount}-member voting roster.
-            A missing vote at this height does not establish that a finalizer is offline.
+            A missing vote does not mean a finalizer is offline.
           </p>
         </div>
       ) : data ? (

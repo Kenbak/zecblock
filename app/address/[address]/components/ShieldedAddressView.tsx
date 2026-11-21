@@ -22,7 +22,6 @@ export function ShieldedAddressView({ isUnified, uaComponents, uaLoading, copied
         <span className="text-cipher-shielded mt-1" aria-hidden="true"><Icons.Shield /></span>
         <div><h2 className="text-xl font-semibold text-primary">Shielded activity is private</h2>
           <p className="mt-3 text-sm text-secondary max-w-3xl leading-relaxed">An address alone does not reveal its shielded balance, transactions or counterparties. The explorer cannot calculate a total balance for this {isUnified ? 'Unified Address' : 'shielded address'}.</p>
-          {isUnified && <p className="mt-3 text-sm text-muted max-w-3xl leading-relaxed">A Unified Address can include transparent and shielded receivers. Public activity for a transparent receiver is available separately and does not include shielded funds.</p>}
         </div>
       </div>
       <dl className="grid sm:grid-cols-2 gap-5 border-t border-cipher-border mt-6 pt-5 text-sm">

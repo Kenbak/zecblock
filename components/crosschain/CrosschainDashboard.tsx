@@ -92,9 +92,6 @@ export function CrosschainDashboard({
         <p className="text-sm text-muted mt-2">
           {error || "The analytics service has not returned a snapshot."}
         </p>
-        <p className="text-sm text-muted mt-2">
-          No zero-volume figures are inferred from an unavailable index.
-        </p>
       </div></div>
     );
   const s = data.summary,
@@ -371,7 +368,7 @@ export function CrosschainDashboard({
           {venue === 'near' ? <p className="text-xs text-muted">
             {c.source === "legacy-success-index"
               ? "This view currently covers completed swaps only; other outcome counts are unavailable. "
-              : "Latest observed outcomes; older status changes appear after reconciliation. "}
+              : ""}
             Unfunded pending-deposit quotes are excluded.
           </p> : null}
           <OutcomeBreakdown data={data} />
@@ -394,8 +391,7 @@ export function CrosschainDashboard({
           </p>
         )}
         <p className="text-xs text-muted">
-          Token supplies are separate contract observations, not swap volumes or
-          a proof of reserves. Their sum is not a measure of unique backing.
+          Token supplies are not swap volumes or proof of reserves.
         </p>
       </section>
       <details className="card group">

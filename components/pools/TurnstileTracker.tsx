@@ -464,7 +464,7 @@ export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProp
           </p>
           {(period === 'all' || period === '1y') && (
             <p className="text-caption text-muted font-mono mt-2 leading-relaxed italic">
-              Note: cumulative volume — the same ZEC can be deshielded and reshielded multiple times, so totals may exceed circulating supply.
+              Cumulative volume: the same ZEC can cross more than once, so totals may exceed circulating supply.
             </p>
           )}
         </CardBody>

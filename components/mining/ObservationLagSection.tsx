@@ -95,8 +95,7 @@ export function ObservationLagSection() {
               ]} rows={selected.pools} rowKey={pool => pool.name} />}
           </>}
           <p className="text-caption text-muted mt-4">
-            Gap = first ZecBlock receipt − header timestamp; header times have one-second precision. Median and p90 need at least {data.minSample} observed blocks.
-            Pool labels use public coinbase data; Unknown remains included.{' '}
+            Gap = first ZecBlock receipt − header timestamp. Median and p90 need at least {data.minSample} observed blocks.{' '}
             {data.collectionStart ? `Observations began ${utc(data.collectionStart)} UTC; earlier blocks are unobserved.` : 'No observations have been recorded yet.'}
             {' '}Snapshot {utc(data.asOf)} UTC.
           </p>

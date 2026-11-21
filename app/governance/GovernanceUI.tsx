@@ -31,7 +31,7 @@ export function Freshness({ catalog }: { catalog: Catalog }) {
 
 export function SourceNote() {
   return <div className="mt-8 border-t border-cipher-border pt-4 text-xs leading-relaxed text-muted">
-    <p>ZecBlock displays reviewed rounds and rounds endorsed by ZODL on the Valar voting chain. API publication does not mean ZecBlock has independently verified a tally.</p>
+    <p>ZecBlock displays reviewed rounds and rounds endorsed by ZODL on the Valar voting chain.</p>
     <p className="mt-1">Votes are cast through supported wallets. ZecBlock never handles votes or keys.</p>
   </div>;
 }

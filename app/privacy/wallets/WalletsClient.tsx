@@ -151,7 +151,7 @@ export default function WalletsClient() {
                   Fee patterns over time
                 </h3>
                 <p className="text-xs text-muted mb-3">
-                  {feeLanes.history.length ? `Latest observation: ${feeLanes.history.map(row => row.date).sort().at(-1)?.slice(0, 10)} (UTC). Daily samples; today may be incomplete.` : 'Fee history unavailable.'}
+                  {feeLanes.history.length ? `Latest observation: ${feeLanes.history.map(row => row.date).sort().at(-1)?.slice(0, 10)} (UTC). Today may be incomplete.` : 'Fee history unavailable.'}
                 </p>
                 <><ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={300}>
                   <AreaChart data={feeLanes.history} margin={{ right: 16, left: 0 }}>
@@ -336,7 +336,7 @@ function FeeDistribution({ data, period }: { data: FeeLaneData; period: Period }
         ))}
       </dl>
       <p className="border-t border-cipher-border px-4 py-3 sm:px-5 text-caption text-muted leading-relaxed">
-        Shared fees do not identify a wallet or measure an anonymity set.
+        Shared fees do not identify a wallet.
       </p>
     </div>
   );

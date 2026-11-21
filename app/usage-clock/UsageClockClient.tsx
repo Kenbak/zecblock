@@ -605,7 +605,7 @@ export function UsageClockClient({
           <h2 className="chart-title mb-2">Daylight correlation</h2>
           <div className="text-2xl font-semibold font-mono text-cipher-shielded">{hasCorrelation ? `${correlation >= 0 ? '+' : ''}${correlation.toFixed(2)}` : '—'}</div>
           <p className="text-caption text-muted mt-2 leading-relaxed">
-            Pearson correlation between hourly transactions and the share of observed nodes in daylight. Ranges from −1 to +1; it does not establish a cause or a user location.
+            Pearson correlation between hourly transactions and the share of observed nodes in daylight. Ranges from −1 to +1.
             {!hasCorrelation && ' Unavailable without varying activity and node daylight observations.'}
 
           </p>
@@ -618,7 +618,7 @@ export function UsageClockClient({
         <div className="rounded-xl border border-cipher-border bg-cipher-card p-5 flex flex-col">
           <h2 className="text-base font-semibold text-primary">Timing &amp; node geography</h2>
           <p className="text-xs text-secondary leading-relaxed mt-2">
-            Compare a modeled timing mix with observed node locations. Timing weights describe how well three daily profiles fit the activity curve; they do not locate users.
+            Compare a modeled timing mix with observed node locations.
 
           </p>
 

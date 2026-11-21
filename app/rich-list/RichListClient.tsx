@@ -352,7 +352,7 @@ export default function RichListClient({
       {/* Note */}
       <div className="mt-8 text-center animate-fade-in-up stagger-4">
         <p className="text-caption text-muted font-mono">
-          Transparent addresses only &middot; Shielded balances are private by design
+          Transparent addresses only
         </p>
       </div>
     </div>

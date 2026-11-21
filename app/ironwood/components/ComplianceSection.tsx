@@ -243,7 +243,7 @@ export function FamiliesTab({
       <div className="mt-4 border-t border-cipher-border/20 pt-3 text-caption text-muted leading-relaxed">
         <p>
           Fingerprints identify <em>compatible construction software</em>, not individual wallet
-          owners. Wallets sharing the same SDK are indistinguishable within a family.
+          owners.
         </p>
         <p className="mt-1.5">
           <strong className="text-primary">ZODL / Vizor:</strong> Unpadded Ironwood bundle (I:1), bucketed expiry,

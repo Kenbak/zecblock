@@ -161,7 +161,7 @@ export default function AttestationsClient({ initialData, initialNow, network, a
         <dt className="type-label text-muted sm:mb-3">{item.label}</dt><dd className="type-metric font-mono text-primary tabular-nums">{data?.available ? item.value : '—'}</dd><p className="col-span-2 text-caption text-muted mt-2">{item.note}</p>
       </div>)}
     </dl>
-    <p className="text-caption text-muted mb-8">Valid enclave evidence and a matching connection do not confirm the software release. Each check is reported separately.</p>
+    <p className="text-caption text-muted mb-8">Valid enclave evidence and a matching connection do not confirm the software release.</p>
     {query.error || !data?.available ? <p role="status" className="mb-5 text-sm text-cipher-yellow">{data?.available ? 'Could not refresh observations. Retained results expire after 15 minutes.' : 'Observations are currently unavailable. No endpoint is being reported as verified.'}</p> : null}
     <section id="endpoint-observations" className="scroll-mt-36">
     <SectionHeader label="ENDPOINT_OBSERVATIONS" actions={<p className="text-caption text-muted">Primary · 5 min <span className="mx-2">/</span> Canary · 1 min</p>} />

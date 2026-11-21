@@ -35,26 +35,16 @@ export default function NodesPage() {
               {getNetwork() === 'mainnet' ? <>
               This page combines connections reported by our Zcash node with recent
               crawler responses that serve a known Zcash mainnet checkpoint header, deduplicated by IP address.
-              Crawlers verify the header hash after the protocol handshake; a port or software
-              name alone does not establish chain identity. Peer observations expire after
-              15 minutes; crawler handshakes and header checks expire after one hour.
-              The header check establishes the chain through that checkpoint, not current sync status
-              or independent validation of every block. This is the active network we observe, not a complete count of
-              all nodes or independent operators. Client names and versions are self-reported.
-              Local-peer inclusion relies on our node's connection report; those IPs have not
-              necessarily passed the crawler header check.
-              </> : <>This page shows peers observed by our network infrastructure, deduplicated by IP address. It is not a complete global census or a count of independent operators. Client names and versions are self-reported.</>}
+              This is the active network we observe, not a count of every node.
+              </> : <>This page shows peers observed by our network infrastructure, deduplicated by IP address. It is not a count of every node.</>}
             </p>
             <p>
-              DNS and gossiped addresses alone do not count as active.
-              {getNetwork() === 'mainnet' ? ' Graph links show fresh address advertisements from crawler sources with Zcash checkpoint proof; advertised targets are not independently verified active nodes or confirmed remote connections. Links disappear when their evidence expires. Derived connectivity scores remain unavailable.' : ' Graph links show advertised peer relationships, not confirmed remote connections.'}
+              {getNetwork() === 'mainnet' ? 'Graph links show address advertisements, not confirmed connections.' : 'Graph links show advertised peer relationships, not confirmed remote connections.'}
               {getNetwork() === 'mainnet' ? ' Average handshake time covers crawler verifications, not live-peer ping times.' : ''}
             </p>
             <p>
               Node locations are rounded to 1-degree precision to protect operator privacy.
-              No IP addresses or exact coordinates are exposed. Tor classification identifies
-              known exit IPs or hidden-service destinations; it does not count every Tor node
-              or every connection routed through Tor. Unlocated IPs do not appear on the map.
+              No IP addresses or exact coordinates are exposed.
               This product includes GeoLite2 data
               created by MaxMind, available from{' '}
               <a href="https://www.maxmind.com" className="text-primary hover:underline" rel="noopener noreferrer" target="_blank">

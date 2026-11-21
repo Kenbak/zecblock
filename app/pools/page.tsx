@@ -74,7 +74,7 @@ function RecentLargeFlows() {
             </Link>
           }
         />
-        <p className="mb-5 text-xs leading-relaxed text-muted">Latest indexed shielding and deshielding flows of at least 10 ZEC. Fully shielded amounts are private and are not included.</p>
+        <p className="mb-5 text-xs leading-relaxed text-muted">Latest indexed shielding and deshielding flows of at least 10 ZEC.</p>
         <DataTable
           loading={status === 'loading'}
           skeletonRows={10}

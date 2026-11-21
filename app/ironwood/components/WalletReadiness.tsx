@@ -56,7 +56,7 @@ export function WalletReadiness() {
         <ReadinessList entries={MIGRATION_LIBRARIES} label="Migration SDKs and libraries" />
       </details>
       <p className="text-caption text-muted leading-relaxed border-t border-cipher-border pt-4 mt-2">
-        Availability is not a ZIP-318 compliance audit. Immediate or full-balance transfers expose the amount crossing between pools.
+        Immediate or full-balance transfers expose the amount crossing between pools.
       </p>
     </section>
   );

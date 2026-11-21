@@ -144,7 +144,7 @@ export default function PrivacyClient() {
               <div className="sm:border-l border-cipher-border sm:pl-8">
                 <h3 className="text-sm font-semibold text-primary">Four inputs, one weighted index</h3>
                 <p className="mt-2 max-w-2xl text-sm text-secondary leading-relaxed">The score combines shielded participation, fully shielded transaction share, shielded supply and tracked reshielding. Expand the score inputs below to inspect each observation and its contribution.</p>
-                <p className="mt-3 text-caption text-muted">The index describes aggregate usage. It does not estimate the probability that an individual transaction is private.</p>
+                <p className="mt-3 text-caption text-muted">Measures network-wide usage, not the privacy of a single transaction.</p>
               </div>
             </div>
           </CardBody>
@@ -182,7 +182,7 @@ export default function PrivacyClient() {
       </section>
       <section id="distribution" className="scroll-mt-36 mb-10">
         <SectionHeader label="PUBLIC_AMOUNT_PATTERNS" />
-        <p className="text-sm text-muted mb-5 max-w-3xl">Public amounts at shielding and deshielding boundaries provide context. These charts do not measure the anonymity of a wallet or expose fully shielded amounts.</p>
+        <p className="text-sm text-muted mb-5 max-w-3xl">Public amounts as ZEC enters and leaves shielded pools.</p>
         <div className="grid grid-cols-1 gap-5 xl:grid-cols-2"><AnonymitySetChart /><ShieldingDistributionChart /></div>
       </section>
       <section id="activity" className="scroll-mt-36 mb-10">

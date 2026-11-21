@@ -64,7 +64,7 @@ export function AnonymitySetChart() {
     <PrivacyFlowCard
       title="Flows above an amount"
       description={<>Counts of public shielding and deshielding flows at or above each {CURRENCY} threshold
-            ({period === 'all' ? 'full history' : `last ${period}`}). Thresholds overlap; this is not a measured anonymity set.</>}
+            ({period === 'all' ? 'full history' : `last ${period}`}).</>}
       controls={<PeriodSelector value={period} onChange={setPeriod} />}
     >
       {loading ? (

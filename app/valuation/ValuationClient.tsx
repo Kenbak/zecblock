@@ -51,12 +51,12 @@ export default function ValuationClient() {
   const agePoints=ageQuery.data?.period===expectedPeriod?ageQuery.data.points:[];const dormPoints=dormQuery.data?.period===expectedPeriod?dormQuery.data.points:[];
   const pools=poolsQuery.data;const shieldedPct=pools?.current&&positive(pools.current.chainSupply)&&finite(pools.current.shielded)?pools.current.shielded/pools.current.chainSupply*100:null;
   const criteria=[
-    {label:'Market activity',value:show(q?.volume24hUsd,v=>`${usd(v)} reported 24h volume`),detail:'CoinGecko aggregate trading volume. This measures reported turnover, not order-book depth or net buying.'},
-    {label:'Market trend',value:trend===null?'Unavailable':`${pct(trend)} vs 200-day average`,detail:'Current quote compared with 200 consecutive daily observations. Trend describes momentum, not fair value.'},
-    {label:'Modeled cost basis',value:show(premium,v=>`${v.toFixed(2)}× estimated basis`),detail:`Current quote / modeled realized price from ${date(s?.date)}. Includes a shielded-flow estimate; disabled when inputs are stale.`},
-    {label:'Spending behavior',value:s?.soprSource==='transparent_spends'?show(s.sopr,v=>`${v.toFixed(3)} SOPR`):'Actual SOPR unavailable',detail:'Use observed transparent spends. A shielded pool cost-basis ratio is not a spent-output profit ratio.'},
-    {label:'Adoption & supply',href:'/pools',value:show(shieldedPct,v=>`${v.toFixed(1)}% of issued ZEC shielded`),detail:'An aggregate usage/supply observation. It does not establish market demand or justify a target price.'},
-    {label:'Search attention',value:searchQuery.data?.snapshot?'Weekly CSV · unscored':'Not connected · unscored',detail:'Historical search attention, when available. Incomplete weeks are excluded; a reliable refresh feed and historical validation are needed before assigning a weight.'},
+    {label:'Market activity',value:show(q?.volume24hUsd,v=>`${usd(v)} reported 24h volume`),detail:'Trading volume across exchanges, from CoinGecko.'},
+    {label:'Market trend',value:trend===null?'Unavailable':`${pct(trend)} vs 200-day average`,detail:'Current price compared with its 200-day average.'},
+    {label:'Modeled cost basis',value:show(premium,v=>`${v.toFixed(2)}× estimated basis`),detail:`Current price divided by the modeled realized price from ${date(s?.date)}.`},
+    {label:'Spending behavior',value:s?.soprSource==='transparent_spends'?show(s.sopr,v=>`${v.toFixed(3)} SOPR`):'Actual SOPR unavailable',detail:'From transparent outputs spent each day.'},
+    {label:'Adoption & supply',href:'/pools',value:show(shieldedPct,v=>`${v.toFixed(1)}% of issued ZEC shielded`),detail:'Share of issued ZEC held in shielded pools.'},
+    {label:'Search attention',value:searchQuery.data?.snapshot?'Weekly CSV · unscored':'Not connected · unscored',detail:'Weekly Google Trends interest in “zcash”.'},
   ];
   return <>
     <PageSectionNav sections={SECTIONS} ariaLabel="Valuation sections" />
@@ -70,7 +70,7 @@ export default function ValuationClient() {
       </div>}
       <div className="grid sm:grid-cols-3 gap-4 mt-4"><MetricCard label="Reported market cap" value={show(q?.marketCapUsd,usd)} hint="CoinGecko circulating-supply definition" /><MetricCard label="Reported volume · 24h" value={show(q?.volume24hUsd,usd)} hint={fresh?"CoinGecko aggregate trading volume":"Last available quote context"} /><MetricCard label="Volume / market cap" value={positive(q?.marketCapUsd)&&finite(q?.volume24hUsd)?(q.volume24hUsd/q.marketCapUsd*100).toFixed(1)+"%":"—"} hint="Reported 24h turnover ratio" /></div>
       <div className="card card-static mt-5"><div className="card-body">
-        <div className="grid md:grid-cols-[240px_minmax(0,1fr)] gap-6 pb-6"><div><p className="text-caption font-mono text-muted mb-2">VALUATION CONTEXT</p><h2 className="text-xl font-semibold">Read the signals together</h2></div><p className="text-sm text-secondary leading-relaxed">These datasets describe price, estimated cost basis and observable behavior. They do not establish that ZEC is overvalued or undervalued. A valuation verdict requires tested thresholds, independent signals and sufficient historical coverage.</p></div>
+        <div className="grid md:grid-cols-[240px_minmax(0,1fr)] gap-6 pb-6"><div><p className="text-caption font-mono text-muted mb-2">VALUATION CONTEXT</p><h2 className="text-xl font-semibold">Read the signals together</h2></div><p className="text-sm text-secondary leading-relaxed">Market context and modeled cost basis, not a buy or sell signal.</p></div>
         <details className="group border-t border-cipher-border"><summary className="flex justify-between gap-4 cursor-pointer list-none py-4 rounded-sm hover:text-primary text-sm font-mono text-secondary">Signal criteria &amp; current readings<span aria-hidden="true" className="group-open:rotate-90">›</span></summary><div className="pb-3 space-y-0">{criteria.map(r=><div key={r.label} className="grid md:grid-cols-[190px_240px_minmax(0,1fr)] gap-2 md:gap-5 border-t border-cipher-border py-5"><h3 className="text-xs font-mono text-primary">{r.label}</h3><p className="text-xs font-mono text-secondary">{r.href?<Link href={r.href} className="underline decoration-cipher-border underline-offset-4 hover:text-primary hover:decoration-current">{r.value}</Link>:r.value}</p><p className="text-xs text-muted leading-relaxed">{r.detail}</p></div>)}</div></details>
       </div></div>
     </section>

@@ -296,6 +296,8 @@ test('every mainnet navigation destination has a reviewed, page-specific Ask gui
   assert.equal(new Set(knowledgeIds).size, knowledgeIds.length);
   const destinations = getNavigation('mainnet', 'footer').flatMap(section => section.items);
   for (const { href } of destinations) {
+    // Off-site menu links (the Private Explorer) are separate sites without Zift.
+    if (!href.startsWith('/')) continue;
     const page = describePage(href);
     assert.ok(pageIds.includes(page.id), href);
     if (href !== '/zift') assert.notEqual(page.topic, 'explorer', href);

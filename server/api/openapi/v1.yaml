@@ -387,12 +387,14 @@ paths:
                     - mining
                     - reorgs
                     - charts
+                    - cards
                     - turnstile
                     - privacy_risks
                     - wallet_signals
                     - valuation
                     - usage_clock
                     - governance
+                    - calendar
                     - tools
                     - decode
                     - broadcast
@@ -400,6 +402,7 @@ paths:
                     - blend_check
                     - unit_converter
                     - anchor_search
+                    - block_time_simulator
                     - docs
                     - learn
                     - newsletter

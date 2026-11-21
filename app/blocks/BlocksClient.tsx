@@ -466,7 +466,7 @@ export default function BlocksClient({
         })}
         footer={view === 'coinbase'
           ? <p className="px-4 py-3 text-xs text-muted">Miner-provided messages and software markers · non-printable bytes shown as dots.</p>
-          : <p className="hidden lg:block px-4 py-3 text-xs text-muted">Interval bars: 0–5 min · tick = target at that height · ← timestamp earlier than previous block. Intervals use block timestamps, not arrival times.</p>}
+          : <p className="hidden lg:block px-4 py-3 text-xs text-muted">Interval bars: 0–5 min · tick = target at that height · ← timestamp earlier than previous block.</p>}
         rows={blocks}
         rowKey={(block) => block.height}
         loading={loading}

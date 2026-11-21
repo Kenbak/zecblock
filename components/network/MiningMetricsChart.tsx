@@ -101,8 +101,8 @@ export function MiningMetricsChart() {
 
       <ChartCard title={`${trendName} trend`} height={280} watermarkSize="lg" share={{ title: `Zcash ${trendName.toLowerCase()} trend`, fileName: `zecblock-${trendName.toLowerCase().replace(/\s+/g, '-')}`, csv: () => objectRowsCsv(points) }}>
         <p className="text-caption text-muted mb-3">{elapsedSolrate
-          ? `${window}-block estimates use total difficulty and elapsed header time; unavailable values remain gaps. This is the same measure as the 24-hour estimate at the top of the page over a shorter window, so it moves more.`
-          : `${window}-block trailing averages. Timing uses block-header timestamps; unavailable values remain gaps.`}</p>
+          ? `${window}-block estimates from total difficulty and elapsed header time: the 24-hour measure at the top of the page over a shorter window, so it moves more.`
+          : `${window}-block trailing averages.`}</p>
         {error && hasValues && <p role="status" className="text-caption text-muted mb-3">Refresh unavailable. Showing the last received mining metrics.</p>}
         {!hasValues ? <div role="status" className="flex h-[280px] items-center justify-center text-caption text-muted">{emptyMessage}</div> :
         <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={280}>

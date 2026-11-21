@@ -181,7 +181,7 @@ export default function SimulatorClient() {
             {o.label} <span className="text-muted">· {o.detail}</span>
           </button>)}
         </div>
-        <p className="text-caption text-muted mt-2">The amount tiers are one proposed policy, not a standard; wallets today wait 10 blocks for every amount, as ZIP 315 recommends. Wallets and services pick their own depth.</p>
+        <p className="text-caption text-muted mt-2">The amount tiers are one proposed policy, not a standard; wallets today wait 10 blocks for every amount, as ZIP 315 recommends.</p>
       </div>
     </Card>
 
@@ -231,7 +231,7 @@ export default function SimulatorClient() {
 
     <section aria-labelledby="chains-heading">
       <h2 id="chains-heading" className="type-section text-primary mb-2">Compared with other chains</h2>
-      <p className="text-sm text-muted mb-4 max-w-3xl">Protocol block targets. Chains settle differently, so only clear, documented waits are compared.</p>
+      <p className="text-sm text-muted mb-4 max-w-3xl">Protocol block targets.</p>
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="card-static p-4 sm:p-6"><h3 className="type-label text-muted uppercase mb-4">Block time (log scale)</h3><ChainList seconds={seconds} /></Card>
         <Card className="card-static p-4 sm:p-6"><h3 className="type-label text-muted uppercase mb-4">Usual wait until done</h3><WaitList result={result} /></Card>

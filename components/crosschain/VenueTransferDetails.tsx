@@ -53,7 +53,7 @@ export function VenueTransferDetails({ record }: { record: VenueProviderRecord }
       <div><dt className="text-muted">ZEC amount basis</dt><dd className="break-words mt-1">{record.zecAmountBasis === "sum-of-reported-native-zec-payouts" ? "Sum of reported Zcash payouts" : record.zecAmountBasis === "midgard-reported-native-zec-input" ? "Provider-reported Zcash input" : "No single external ZEC amount"}</dd></div>
     </dl>
     {record.refundKind === "partial" ? <p className="text-muted">The summary shows the returned source asset. Related payout legs remain listed below; this refund is not another successful swap.</p> : null}
-    <p className="text-muted">Every reported input and output appears below. Successful streaming swaps can include partial refunds; affiliate outputs are marked. Provider observations are not independent proof of chain finality.</p>
+    <p className="text-muted">Successful streaming swaps can include partial refunds; affiliate outputs are marked.</p>
     <ul className="space-y-4">{[...record.inputs, ...record.outputs].map((leg, index) => <TransactionLeg key={`${leg.side}-${index}`} leg={leg} />)}</ul>
   </div>;
 }

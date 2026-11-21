@@ -37,7 +37,7 @@ export function CrossChainTable({ crossChain }: { crossChain: CrossChainActivity
       <span>{crossChain.entryCount} in <span className="text-muted">/</span> {crossChain.exitCount} out</span>
     </div>
     <DataTable columns={columns} rows={rows} rowKey={swap => swap.id} size="comfortable" empty={<p className="p-8 text-sm text-center text-muted">No bridge records available.</p>}
-      footer={<p className="px-4 py-3 text-xs text-muted">This is the set returned by the bridge index, not a complete history of all cross-chain activity. USD values come from bridge records.</p>} />
+      footer={<p className="px-4 py-3 text-xs text-muted">Indexed bridge records only, not all cross-chain activity.</p>} />
     {totalPages > 1 && <nav aria-label="Bridge pagination" className="flex flex-wrap items-center justify-between gap-3 py-2">
       <p className="text-xs text-muted">{(current - 1) * pageSize + 1}–{Math.min(current * pageSize, crossChain.swaps.length)} of {crossChain.swaps.length} records</p>
       <div className="flex items-center gap-3 text-xs font-mono">

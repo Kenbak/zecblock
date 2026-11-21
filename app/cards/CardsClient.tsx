@@ -35,7 +35,7 @@ function CardTile({ card, site }: { card: FactCardDef; site: string }) {
         ? <img ref={img} src={src} alt={`${card.title}: ${card.description}`} width={1200} height={675} loading="lazy"
           className={`h-full w-full transition-opacity ${state === 'ready' ? 'opacity-100' : 'opacity-0'}`}
           onLoad={() => setState('ready')} onError={() => setState('unavailable')} />
-        : <p className="absolute inset-0 flex items-center justify-center p-6 text-center text-caption text-muted">Live data for this card is unavailable right now. Nothing is shown rather than a guess.</p>}
+        : <p className="absolute inset-0 flex items-center justify-center p-6 text-center text-caption text-muted">Live data for this card is unavailable right now.</p>}
     </div>
     <div className="flex flex-1 flex-col gap-2 px-1 pt-3 pb-1">
       <div className="flex items-start justify-between gap-3">

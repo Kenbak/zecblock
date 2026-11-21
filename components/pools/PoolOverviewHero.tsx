@@ -104,7 +104,7 @@ export function PoolOverviewHero({ data }: { data: PoolOverviewData }) {
       mode={point ? 'scrub' : 'live'} scrubDateLabel={point ? dateLabel : null}
       onScrub={index => setSelectedDate(history[index].date)} onLive={() => setSelectedDate(null)} />
     {history.length < 2 && <p className="mt-5 border-t border-cipher-border pt-4 text-caption text-muted" role="status">{loading ? 'Loading historical snapshots…' : error ? 'Historical snapshots are temporarily unavailable.' : 'Not enough complete historical snapshots to enable the timeline.'}</p>}
-    <p className="mt-3 text-caption leading-relaxed text-muted">Pool balances are public aggregates; they do not reveal individual shielded balances. <a href="#methodology" className="underline underline-offset-4 hover:text-primary">Data &amp; definitions</a></p>
+    <p className="mt-3 text-caption leading-relaxed text-muted"><a href="#methodology" className="underline underline-offset-4 hover:text-primary">Data &amp; definitions</a></p>
   </ShareableCard>;
 }
 

@@ -613,8 +613,8 @@ function MinerBehaviorSection() {
         </div>
         <p className="text-xs text-secondary mt-1 font-sans">
           Spending of attributed miner payout outputs, grouped by the date the reward was earned. A movement means
-          an output was spent; it does not prove a sale. Amounts reflect current indexed spending when refreshed, rather than spending on the reward date. Unattributed payouts are excluded. The{' '}
-          <Link href="/zodl" className="text-cipher-gold hover:underline">ZODL leaderboard</Link> breaks each pool&apos;s spending down by destination (shielded vs. exchange vs. transparent), showing observed transfers rather than proving sales.
+          an output was spent; it does not prove a sale. The{' '}
+          <Link href="/zodl" className="text-cipher-gold hover:underline">ZODL leaderboard</Link> breaks each pool&apos;s spending down by destination (shielded vs. exchange vs. transparent).
         </p>
       </div>
 

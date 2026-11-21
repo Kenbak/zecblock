@@ -232,8 +232,8 @@ export function FutureBlockView({
         </CardBody>
       </Card>}
       <p className="text-center text-xs sm:text-sm text-muted leading-relaxed">
-        {estimate ? `Timing is based on ${estimate.basis} and updates every 30 seconds. ` : ''}
-        {announced ? 'The announced date is approximate; activation still requires a supporting node release. ' : upgrade && !governance ? 'The upgrade starts at its activation block. ' : ''}The arrival time may change as blocks are mined.
+        {estimate ? `Timing is based on ${estimate.basis}. ` : ''}
+        {announced ? 'The announced date is approximate. ' : ''}The arrival time may change as blocks are mined.
       </p>
     </div>
   );

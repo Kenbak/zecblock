@@ -22,6 +22,7 @@ test('curated address-label aliases resolve to existing local entity assets', ()
     ['Coinbase Prime Custody', 'coinbase'],
     ['Grayscale Zcash Trust', 'grayscale'],
     ['Hyperunit Hot Wallet', 'hyperunit'],
+    ['Hyperunit Deposit', 'hyperunit'],
     ['Kucoin Cold Wallet', 'kucoin'],
     ['NEAR Intent Bridge', 'near-intents'],
   ]) {

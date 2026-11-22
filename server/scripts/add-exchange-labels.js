@@ -92,6 +92,18 @@ const NEW_LABELS = [
   { address: 't2HifwjUj9uyxr9bknR8LFuQbc98c3vkXtu', label: 'FPF / Zcash Community Grants (Testnet)', category: 'funding-stream', description: 'ZIP-214 FPF/ZCG funding-stream payout address (testnet)' },
 ];
 
+// Hyperunit per-user deposit addresses: each one only ever sweeps its full
+// balance into the Hyperunit hot wallet. Method and evidence are in the file.
+const HYPERUNIT_DEPOSITS = require('./data/hyperunit-deposit-addresses.json');
+for (const address of HYPERUNIT_DEPOSITS.addresses) {
+  NEW_LABELS.push({
+    address,
+    label: HYPERUNIT_DEPOSITS.label,
+    category: HYPERUNIT_DEPOSITS.category,
+    description: 'Hyperunit deposit address (sweeps only into the Hyperunit hot wallet)',
+  });
+}
+
 async function main() {
   const client = await pool.connect();
   try {

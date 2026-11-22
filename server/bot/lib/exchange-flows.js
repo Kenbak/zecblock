@@ -243,9 +243,9 @@ function netFlow(events, endS, entity = null) {
 
 // ─── Story ──────────────────────────────────────────────────────────────────
 
-// Owner-approved bars: at least 1,000 ZEC and in the top 1% of the same
+// Owner-approved bars (floor lowered to 500 ZEC on 2026-11-22): at least 500 ZEC and in the top 1% of the same
 // direction across labelled exchanges over 30 days (>= 100 comparable events).
-const MIN_ZAT = 1000n * 100000000n;
+const MIN_ZAT = 500n * 100000000n;
 const MAX_TAIL_PCT = 1;
 const MIN_SAMPLE = 100;
 const TXID = /^[a-f0-9]{64}$/;

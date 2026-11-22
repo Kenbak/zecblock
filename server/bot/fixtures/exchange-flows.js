@@ -37,12 +37,13 @@ const rows = {
   ],
 };
 
-/** Deterministic history: `count` events per direction spread over the 30 days before `end`, sizes 1–999 ZEC. */
+/** Deterministic history: `count` events per direction spread over the 30 days before `end`, log-spread 1–398 ZEC (mostly small, like real exchange traffic). */
 function history(end, count = 400) {
   const events = [];
   for (let i = 0; i < count; i++) {
     for (const direction of ['deposit', 'withdrawal']) {
-      const zec = 1 + ((i * 7919 + (direction === 'deposit' ? 13 : 71)) % 999);
+      const u = ((i * 0.6180339887 + (direction === 'deposit' ? 0.13 : 0.71)) % 1);
+      const zec = Math.max(1, Math.floor(10 ** (2.6 * u)));
       events.push({ txid: (direction === 'deposit' ? 'a' : 'b') + String(i).padStart(63, '0'), entity: ['binance', 'kraken', 'coinbase', 'hyperunit'][i % 4],
         direction, amountZat: String(zec * 1e8), blockHeight: 3500000 + i, blockTime: end - 1 - Math.floor(i * 30 * 86400 / count), counterparty: 'transparent' });
     }

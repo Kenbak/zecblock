@@ -13,12 +13,14 @@ function render(data, { network = 'mainnet', error = null, historyData = undefin
     compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
   }).outputText, { exports, require(name) {
     if (name === 'react/jsx-runtime') return { jsx, jsxs: jsx };
-    if (name === 'react') return { useState: value => [value === 'fees' ? metric : value === '30d' ? period : value, () => {}] };
+    if (name === 'react') return { useRef: () => ({ current: null }), useState: value => [value === 'fees' ? metric : value === '30d' ? period : value, () => {}] };
     if (name === '@/lib/use-url-state') return { useUrlState: (key, fallback) => [fallback === '30d' ? period : fallback, () => {}] };
     if (name === 'recharts') return Object.fromEntries(['ComposedChart','Bar','Line','XAxis','YAxis','ResponsiveContainer','CartesianGrid'].map(key => [key,key]));
     if (name === 'next/link') return { default: 'a' };
     if (name === '@/components/ui/SectionHeader') return { SectionHeader: 'SectionHeader' };
     if (name === '@/components/ui/PeriodPillTags') return { PeriodPillTags: 'PeriodPillTags' };
+    if (name === '@/components/charts/PanelShareControl') return { PanelShareControl: () => null };
+    if (name === '@/lib/accounting-csv') return { accountingCsv: () => null };
     if (name === '@/components/charts/ChartTooltip') return { ChartTooltip: 'Tooltip' };
     if (name === '@/contexts/ThemeContext') return { useTheme: () => ({ theme: 'dark' }) };
     if (name === '@/lib/chart-theme') return { getChartColors: () => ({ gold: '#d4a44a' }) };

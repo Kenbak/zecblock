@@ -4,7 +4,7 @@ import { CHART_DATE_AXIS } from '@/lib/chart-theme';
 import { ChartWatermark } from '@/components/ChartWatermark';
 import { PageLoadingBody } from '@/components/ui/PageLoading';
 
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import {
@@ -22,6 +22,7 @@ import { getChartColors } from '@/lib/chart-theme';
 import { Card, CardBody } from '@/components/ui/Card';
 import { PageHeader } from '@/components/ui/SectionHeader';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
+import { PanelShareControl, objectRowsCsv } from '@/components/charts/PanelShareControl';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { WalletImplementationLogo } from '@/components/WalletImplementationLogo';
 import { useUrlState } from '@/lib/use-url-state';
@@ -91,6 +92,8 @@ export default function WalletsClient() {
   const loading = feeQuery.loading || fingerprintQuery.loading || feeQuery.isRefreshing || fingerprintQuery.isRefreshing;
   const error = feeQuery.error && fingerprintQuery.error ? 'Wallet analysis is temporarily unavailable.' : null;
   const usageData = buildUsageEstimates(fingerprints);
+  const feeChartRef = useRef<HTMLDivElement>(null);
+  const matchesRef = useRef<HTMLDivElement>(null);
 
   if (loading && !feeLanes) {
     return (
@@ -147,9 +150,14 @@ export default function WalletsClient() {
             {/* Stacked area chart */}
             <Card variant="standard" className="mb-6">
               <CardBody>
-                <h3 className="text-sm font-medium text-secondary mb-4">
-                  Fee patterns over time
-                </h3>
+                <div ref={feeChartRef}>
+                <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                  <h3 className="text-sm font-medium text-secondary">
+                    Fee patterns over time
+                  </h3>
+                  <PanelShareControl title={`Zcash shielded fee patterns (${period})`} fileName={`zecblock-fee-patterns-${period}`}
+                    csv={() => objectRowsCsv(feeLanes.history)} panelRef={feeChartRef} disabled={!feeLanes.history.length} />
+                </div>
                 <p className="text-xs text-muted mb-3">
                   {feeLanes.history.length ? `Latest observation: ${feeLanes.history.map(row => row.date).sort().at(-1)?.slice(0, 10)} (UTC). Today may be incomplete.` : 'Fee history unavailable.'}
                 </p>
@@ -208,6 +216,7 @@ export default function WalletsClient() {
                     <ChartLegend />
                   </AreaChart>
                 </ResponsiveContainer><ChartWatermark /></>
+                </div>
               </CardBody>
             </Card>
 
@@ -230,7 +239,13 @@ export default function WalletsClient() {
         </p>
 
         {usageData && fingerprints && (
-          <div className="rounded-lg border border-cipher-border overflow-hidden">
+          <div ref={matchesRef} className="rounded-lg border border-cipher-border overflow-hidden">
+            <div className="flex justify-end px-4 pt-3 sm:px-5">
+              <PanelShareControl title={`Zcash wallet pattern matches (${period})`} fileName={`zecblock-wallet-pattern-matches-${period}`}
+                csv={() => ({ headers: ['pattern', 'confidence', 'matching_transactions', 'shielded_transactions_in_period', 'period'],
+                  rows: usageData.map(entry => [entry.name, entry.confidence, entry.value, fingerprints.totalShielded, period]) })}
+                panelRef={matchesRef} disabled={!usageData.length} />
+            </div>
             <dl className="grid sm:grid-cols-3 border-b border-cipher-border bg-glass-3 divide-y sm:divide-y-0 sm:divide-x divide-cipher-border">
               {[
                 { label: `Shielded transactions · ${period}`, value: fingerprints.totalShielded },

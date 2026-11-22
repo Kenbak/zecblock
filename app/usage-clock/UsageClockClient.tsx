@@ -6,6 +6,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { PageHeader } from '@/components/ui/SectionHeader';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
+import { PanelShareControl } from '@/components/charts/PanelShareControl';
 import styles from './usage-clock.module.css';
 import { feature } from 'topojson-client';
 import {
@@ -339,6 +340,8 @@ export function UsageClockClient({
   const [retry, setRetry] = useState(0);
   const [mapError, setMapError] = useState(false);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const residualRef = useRef<HTMLDivElement>(null);
+  const heatRef = useRef<HTMLDivElement>(null);
 
   const decl = useMemo(() => declinationDeg(), []);
 
@@ -651,10 +654,14 @@ export function UsageClockClient({
           <ChartWatermark />
         </div>
         {/* Residual */}
-        <div className="rounded-xl border border-cipher-border bg-cipher-card p-5">
+        <div ref={residualRef} className="rounded-xl border border-cipher-border bg-cipher-card p-5">
           <div className="flex items-start justify-between gap-3 flex-wrap mb-1">
             <h2 className="chart-title">Activity vs. baseline</h2>
             <div className="flex items-center gap-3 text-caption font-mono">
+              <PanelShareControl title={`Zcash activity vs. node-weighted baseline (${period})`} fileName={`zecblock-usage-baseline-${period}`}
+                csv={() => ({ headers: ['hour_utc', 'observed_share_pct', 'baseline_share_pct', 'difference_pt', 'period'],
+                  rows: residualBars.map(d => [d.hour, d.actual, d.predicted, d.residual, period]) })}
+                panelRef={residualRef} disabled={!hasNodes || !hasActivity} />
               <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cipher-orange" /> <span className="text-muted">above baseline</span></span>
               <span className="flex items-center gap-1"><span className={styles.belowKey} /> <span className="text-muted">below baseline</span></span>
             </div>
@@ -688,10 +695,16 @@ export function UsageClockClient({
       </div>
 
       {/* Weekday/hour totals */}
-      <div className="mt-5 rounded-xl border border-cipher-border bg-cipher-card p-5">
+      <div ref={heatRef} className="mt-5 rounded-xl border border-cipher-border bg-cipher-card p-5">
         <div className="flex items-center justify-between gap-3 flex-wrap mb-3">
           <h2 className="chart-title">Seven days, twenty-four hours</h2>
-          <span className="text-caption font-mono text-muted">Low → high · UTC</span>
+          <div className="flex items-center gap-3">
+            <span className="text-caption font-mono text-muted">Low → high · UTC</span>
+            <PanelShareControl title={`Zcash transactions by weekday and hour (${period})`} fileName={`zecblock-usage-heatmap-${period}`}
+              csv={() => ({ headers: ['weekday', 'hour_utc', 'transactions', 'period'],
+                rows: heat.grid.flatMap((row, ri) => row.map((v, hi) => [DOW_LABELS[ri], hi, v, period])) })}
+              panelRef={heatRef} disabled={!hasActivity} />
+          </div>
         </div>
         <div className="overflow-x-auto">
           <div className="min-w-[460px]">

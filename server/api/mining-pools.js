@@ -31,8 +31,11 @@ const POOL_BY_ADDRESS = {
   // --- ViaBTC-Solo ---
   // ~7% hashrate (Aug 2026). ViaBTC's solo mining service.
   // Previously mislabeled as NiceHash — corrected via zecminingpool.com cross-reference.
+  // Same company as ViaBTC: the label stays distinct, the operator is shared
+  // so concentration figures count the company once.
   't1SEgZvXCu3ceE42qrq5pCeSq7HbLjX8NJv': {
     name: 'ViaBTC-Solo',
+    operator: 'ViaBTC',
     url: 'https://www.viabtc.com',
     region: 'US/CN',
   },
@@ -194,6 +197,16 @@ const POOL_BY_ADDRESS = {
   // unidentified. Keep unattributed until ownership is corroborated;
   // an empty tag is not evidence of Binance.
 
+  // --- Print Crypto ---
+  // Every block from this payout carries the coinbase tag "/Print Crypto/",
+  // from its first block 3547300 through 3599314 (245 blocks to 22 Nov 2026).
+  // zcashmining.net attributes the same 110 seven-day blocks to "printcrypto".
+  't1W9ciLkpeRiXt8VXhcbyrppa3Un7Ka3n8t': {
+    name: 'Print Crypto',
+    url: null,
+    region: null,
+  },
+
   // --- MySoloPool ---
   // Corroborated by block 3479731 (address + Mysolopool.com tag) and
   // 3431985 (same payout address before the tag was set). PR #72 / issue #73.
@@ -260,6 +273,10 @@ const POOL_BY_TAG = {
   zecminingpool: { name: 'ZEC Mining Pool', url: 'https://zecminingpool.com', region: null, attribution: 'coinbase-tag' },
   foundry: { name: 'Foundry USA', url: 'https://foundrydigital.com', region: null, attribution: 'coinbase-tag' },
   luxor: { name: 'Luxor', url: 'https://luxor.tech', region: null, attribution: 'coinbase-tag' },
+  printcrypto: { name: 'Print Crypto', url: null, region: null, attribution: 'coinbase-tag' },
+  // Solo service: each block pays the finder's own address, so only the tag
+  // names it (blocks 3585906, 3587184, 3592285).
+  minersscience: { name: 'miners.science', url: null, region: null, attribution: 'coinbase-tag' },
 };
 // One ordered pattern registry keeps SQL filters and JS labels identical.
 // Match complete observed markers, not generic worker text or software emoji.
@@ -271,6 +288,8 @@ const TAG_PATTERNS = Object.entries({
   zecminingpool: 'zecminingpool.com',
   foundry: 'Foundry Zcash Pool #PrivacyMatters',
   luxor: '/Mined by Luxor/',
+  printcrypto: '/Print Crypto/',
+  minersscience: '/miners.science/',
 }).map(([tag, marker]) => [tag, `^(?:[0-9a-f]{2})*${Buffer.from(marker).toString('hex')}(?:[0-9a-f]{2})*$`]);
 function getPoolTag(coinbaseHex) {
   if (typeof coinbaseHex !== 'string') return null;
@@ -294,4 +313,42 @@ function getPoolInfo(address, coinbaseHex) {
   return (address ? POOL_BY_ADDRESS[address] : null) || POOL_BY_TAG[getPoolTag(coinbaseHex)] || null;
 }
 
-module.exports = { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolName, getPoolInfo, getPoolTag, getPoolTagSql };
+// Pool label -> company. A label without an explicit operator is its own
+// operator. Unknown blocks have no operator: they may be many miners.
+const OPERATOR_BY_POOL = Object.fromEntries(Object.values(POOL_BY_ADDRESS)
+  .filter(p => p.name && p.operator).map(p => [p.name, p.operator]));
+function getPoolOperator(poolName) {
+  if (!poolName || poolName === 'Unknown') return null;
+  return OPERATOR_BY_POOL[poolName] || poolName;
+}
+
+/**
+ * Groups per-pool block counts by operator. `totalBlocks` includes unknown
+ * blocks, so shares and the Nakamoto coefficient are of all blocks. The
+ * coefficient is the fewest operators that together find more than half of
+ * all blocks; null when attributed operators cannot reach that.
+ */
+function summarizeOperators(pools, totalBlocks) {
+  const byOperator = new Map();
+  let unattributedBlocks = 0;
+  for (const p of pools) {
+    const operator = getPoolOperator(p.name);
+    if (!operator) { unattributedBlocks += p.blocks; continue; }
+    const row = byOperator.get(operator) || { name: operator, blocks: 0, pools: [] };
+    row.blocks += p.blocks;
+    row.pools.push(p.name);
+    byOperator.set(operator, row);
+  }
+  const operators = [...byOperator.values()]
+    .map(o => ({ ...o, share: totalBlocks > 0 ? o.blocks / totalBlocks : 0, pools: o.pools.sort() }))
+    .sort((a, b) => b.blocks - a.blocks || a.name.localeCompare(b.name));
+  let nakamotoCoefficient = null;
+  let running = 0;
+  for (let i = 0; i < operators.length; i++) {
+    running += operators[i].blocks;
+    if (totalBlocks > 0 && running * 2 > totalBlocks) { nakamotoCoefficient = i + 1; break; }
+  }
+  return { operators, unattributedBlocks, nakamotoCoefficient };
+}
+
+module.exports = { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolName, getPoolInfo, getPoolTag, getPoolTagSql, getPoolOperator, summarizeOperators };

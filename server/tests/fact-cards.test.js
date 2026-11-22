@@ -113,6 +113,13 @@ test('mining and hashrate ignore unknown leaders and open windows', () => {
   const pools = cards.miningPoolsCard('mainnet', { data: { totalBlocks: 100, pools: [{ name: 'Unknown', blocks: 40 }, { name: 'ViaBTC', blocks: 30 }] } });
   assert.equal(pools.headline, '30.0%');
   assert.match(pools.caption, /ViaBTC/);
+  // Operator totals win over per-label rows: ViaBTC's two labels outrank Foundry.
+  const operators = cards.miningPoolsCard('mainnet', { data: { totalBlocks: 100, unattributedBlocks: 5,
+    pools: [{ name: 'Foundry USA', blocks: 30 }, { name: 'ViaBTC', blocks: 25 }, { name: 'ViaBTC-Solo', blocks: 20 }],
+    operators: [{ name: 'ViaBTC', blocks: 45, pools: ['ViaBTC', 'ViaBTC-Solo'] }, { name: 'Foundry USA', blocks: 30, pools: ['Foundry USA'] }] } });
+  assert.equal(operators.headline, '45.0%');
+  assert.match(operators.caption, /ViaBTC$/);
+  assert.deepEqual(operators.visual.rows.map(r => r.label), ['ViaBTC', 'Foundry USA', 'Unknown']);
   const points = [{ hashrate: 30e9, windowEnd: '2026-11-03T00:00:00Z' }, { hashrate: 1e9, windowEnd: '2026-11-05T00:00:00Z' }];
   assert.equal(cards.hashrateCard('mainnet', { data: { points } }, NOW).headline, '30.0 GSol/s');
 });

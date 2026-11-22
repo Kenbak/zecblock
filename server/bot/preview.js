@@ -20,7 +20,7 @@ async function exchangeGifs(dir) {
   const deposit = x.classifyRows(fx.rows.hyperunitDeposit()).events[0];
   const withdrawal = x.classifyRows(fx.rows.krakenWithdrawal()).events[0];
   // Fixture history: real deposit/withdrawal shapes ranked against a synthetic 30-day sample.
-  for (const [name, event] of [['exchange-deposit', { ...deposit, amountZat: '120200000000' }], ['exchange-withdrawal', withdrawal]]) {
+  for (const [name, event] of [['exchange-deposit', deposit], ['exchange-withdrawal', withdrawal]]) {
     const events = [...fx.history(event.blockTime), event];
     const story = x.exchangeFlowStory({ ...event, ...x.rankEvent(event, events), net: x.netFlow(events, event.blockTime, event.entity), price_usd: 500 });
     if (!story) throw new Error(`${name}: fixture did not qualify`);

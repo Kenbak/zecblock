@@ -112,9 +112,10 @@ test('copy and card: one fact, attribution stated, link to the zecblock tx page,
   assert.equal(custody.evidence.card.kicker, 'Custody · Withdrawal');
 });
 
-test('bars: 1,000 ZEC floor, top 1%, at least 100 comparable events, unknown entities never post', () => {
+test('bars: 500 ZEC floor, top 1%, at least 100 comparable events, unknown entities never post', () => {
   const base = { ...x.classifyRows(fx.rows.krakenWithdrawal()).events[0] };
-  assert.equal(story({ ...base, amountZat: '99999999999' }), null, 'below 1,000 ZEC');
+  assert.equal(story({ ...base, amountZat: '49999999999' }), null, 'below 500 ZEC');
+  assert.ok(story(x.classifyRows(fx.rows.hyperunitDeposit()).events[0]), 'the real 602 ZEC Hyperunit deposit qualifies');
   const thin = x.exchangeFlowStory({ ...base, ...x.rankEvent(base, fx.history(base.blockTime, 50)) });
   assert.equal(thin, null, 'too few comparable events');
   const common = x.exchangeFlowStory({ ...base, amountZat: '100000000000', ...x.rankEvent({ ...base, amountZat: '990' + '00000000' },

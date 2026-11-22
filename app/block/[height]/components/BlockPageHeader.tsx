@@ -1,4 +1,8 @@
+'use client';
+
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
+import { useEffect } from 'react';
 import { ExportButton } from '@/components/ExportButton';
 import { Badge, StatusBadge } from '@/components/ui/Badge';
 import { NetworkIcon } from '@/components/icons/common';
@@ -11,31 +15,77 @@ const ClockIcon = () => (
   </svg>
 );
 
-/** Small pill nav button — replaces a bare arrow icon crammed next to the title. Same border/hover treatment as ExportButton (no gold tint), not a bespoke style of its own. */
-function BlockNavPill({ height, hash, direction }: { height: number; hash?: string; direction: 'prev' | 'next' }) {
-  const disabled = !hash;
+/** Target of a ←/→ press that already owns arrow keys (text entry, tabs, sliders, menus, maps). */
+const ARROW_KEY_OWNERS =
+  'input, textarea, select, [contenteditable=""], [contenteditable="true"], [role="tab"], [role="slider"], [role="listbox"], [role="menu"], [role="menubar"], [role="grid"], [role="radiogroup"], canvas';
+
+/**
+ * Previous/next block buttons on the title row — the first thing someone
+ * stepping through the chain reaches for, so they sit at title height
+ * (40px, styled like Export) rather than as small pills on the badge row.
+ * ←/→ on the keyboard do the same, except where the focused element uses
+ * arrow keys itself.
+ */
+function BlockNavButtons({ data }: { data: BlockData }) {
+  const router = useRouter();
+  const prev = data.previousBlockHash ? data.height - 1 : null;
+  const next = data.nextBlockHash ? data.height + 1 : null;
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
+      if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight') return;
+      const target = event.target;
+      if (target instanceof Element && target.closest(ARROW_KEY_OWNERS)) return;
+      const height = event.key === 'ArrowLeft' ? prev : next;
+      if (height === null) return;
+      event.preventDefault();
+      router.push(`/block/${height}`);
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [prev, next, router]);
+
+  const navButton = (direction: 'prev' | 'next', height: number) => {
+    const label = direction === 'prev' ? 'Previous' : 'Next';
+    const enabled = direction === 'prev' ? prev !== null : next !== null;
+    const className = `inline-flex items-center gap-1.5 h-10 px-3 shrink-0 rounded-md border border-cipher-border text-sm font-mono tabular-nums transition-colors ${
+      direction === 'next' ? 'flex-row-reverse' : ''
+    }`;
+    const content = (
+      <>
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={direction === 'prev' ? 'M15 19l-7-7 7-7' : 'M9 5l7 7-7 7'} />
+        </svg>
+        #{height.toLocaleString()}
+      </>
+    );
+    if (!enabled) {
+      return (
+        <span aria-hidden="true" className={`${className} text-muted opacity-40`}>
+          {content}
+        </span>
+      );
+    }
+    return (
+      <Link
+        href={`/block/${height}`}
+        prefetch={false}
+        aria-label={`${label} block #${height.toLocaleString()}`}
+        aria-keyshortcuts={direction === 'prev' ? 'ArrowLeft' : 'ArrowRight'}
+        title={`${label} block (${direction === 'prev' ? '←' : '→'})`}
+        className={`${className} text-secondary hover:text-primary hover:bg-cipher-hover`}
+      >
+        {content}
+      </Link>
+    );
+  };
+
   return (
-    <Link
-      href={disabled ? '#' : `/block/${height}`} prefetch={false}
-      aria-disabled={disabled}
-      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md border text-xs font-mono transition-colors ${
-        disabled
-          ? 'border-cipher-border text-muted cursor-not-allowed pointer-events-none'
-          : 'border-cipher-border text-secondary hover:text-primary hover:bg-cipher-hover'
-      }`}
-    >
-      {direction === 'prev' && (
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-        </svg>
-      )}
-      #{height.toLocaleString()}
-      {direction === 'next' && (
-        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
-        </svg>
-      )}
-    </Link>
+    <nav aria-label="Adjacent blocks" className="flex items-center gap-2 shrink-0">
+      {navButton('prev', data.height - 1)}
+      {navButton('next', data.height + 1)}
+    </nav>
   );
 }
 
@@ -50,22 +100,21 @@ export function BlockPageHeader({
     <div className="mb-6 animate-fade-in-up">
       <span className="text-caption font-mono text-muted tracking-wider">&gt; BLOCK_DETAILS</span>
 
-      {/* Identity: just the title, nothing competing with it on the line.
-          A 3xl heading next to small pill buttons (whichever ones) always
-          read as mismatched weight — separating "what this page is" from
-          "things to click" onto their own rows fixes that regardless of
-          which controls end up on which row. */}
-      <h1
-        className={`type-page mt-1 font-mono ${data.isOrphaned ? 'text-cipher-orange' : 'text-primary'}`}
-      >
-        {data.isOrphaned ? 'Orphaned Zcash Block' : 'Zcash Block'} #{data.height.toLocaleString()}
-      </h1>
+      {/* Title (left) + prev/next block buttons (right, above Export so the
+          header's right edge reads as one control column). 40px tall so they
+          carry the heading's weight; on narrow screens they wrap under the
+          title, left-aligned, rather than squeezing it. */}
+      <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-3 mt-1">
+        <h1
+          className={`type-page font-mono ${data.isOrphaned ? 'text-cipher-orange' : 'text-primary'}`}
+        >
+          {data.isOrphaned ? 'Orphaned Zcash Block' : 'Zcash Block'} #{data.height.toLocaleString()}
+        </h1>
+        {!data.isOrphaned && <BlockNavButtons data={data} />}
+      </div>
 
-      {/* Facts (left) + controls (right), one row directly above the facts
-          card — nothing between the badges and the card they describe.
-          Nav pills sit right next to Export on the right since they're the
-          same visual weight class (both bordered, button-styled), instead
-          of pairing either one against the title or against the badges. */}
+      {/* Facts (left) + Export (right), one row directly above the facts
+          card — nothing between the badges and the card they describe. */}
       <div className="flex flex-wrap items-center justify-between gap-3 mt-3">
         <div className="flex flex-wrap items-center gap-2">
           <Badge color="muted" icon={<NetworkIcon />} variant="subtle">
@@ -81,8 +130,6 @@ export function BlockPageHeader({
 
         {!data.isOrphaned && (
           <div className="flex items-center gap-2">
-            <BlockNavPill height={data.height - 1} hash={data.previousBlockHash} direction="prev" />
-            <BlockNavPill height={data.height + 1} hash={data.nextBlockHash} direction="next" />
             <ExportButton
               data={{
                 height: data.height,

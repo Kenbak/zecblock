@@ -17,6 +17,8 @@ const INSIGHTS_ACTIVATION_KEY = 'analysis:insights:activation:v1';
 // Maya/THORChain swap posts start from their own deployment, never replaying
 // swaps created before venue support existed.
 const VENUE_SWAPS_ACTIVATION_KEY = 'analysis:venue_swaps:activation:v1';
+// Exchange deposit/withdrawal posts start from their own deployment too.
+const EXCHANGE_ACTIVATION_KEY = 'analysis:exchange_flows:activation:v1';
 const venueOf = story => story.type === 'swap' ? story.evidence?.venue || 'near' : null;
 
 async function activationTime(pool, dryRun, now, key = ACTIVATION_KEY) {
@@ -86,6 +88,8 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
     const insightsActivatedAt = collectors.insightCandidates
       ? await activationTime(pool,xClient.dryRun,now,INSIGHTS_ACTIVATION_KEY) : null;
     const venueSwapsActivatedAt = await activationTime(pool,xClient.dryRun,now,VENUE_SWAPS_ACTIVATION_KEY);
+    const exchangeActivatedAt = collectors.exchangeFlowCandidates
+      ? await activationTime(pool,xClient.dryRun,now,EXCHANGE_ACTIVATION_KEY) : null;
     const { rows: history } = await pool.query(`SELECT post_type,dedup_key,status,created_at,metadata
       FROM social_post_outbox WHERE created_at >= $1::timestamptz-interval '90 days'
         AND post_type<>'source_reply'`, [now.toISOString()]);
@@ -106,6 +110,7 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
     };
     if (pacing) await collect('reorg', () => collectors.reorgCandidates(reader,now));
     else await collect('live', () => collectors.liveCandidates(reader,now));
+    if (!pacing && exchangeActivatedAt) await collect('exchange_flows', () => collectors.exchangeFlowCandidates(reader,now));
     // NU7 is live is time-critical and may break pacing; other NU7 stories wait their turn.
     if (collectors.nu7Candidates) await collect('nu7', async () => {
       const result = await collectors.nu7Candidates(reader,now);
@@ -140,7 +145,8 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
         if (!history.some(p => p.dedup_key === key)) await collect(name,fn,key);
       }
     }
-    const eligible = c => isNew(c,activatedAt) && (!['maya','thorchain'].includes(venueOf(c)) || isNew(c,venueSwapsActivatedAt));
+    const eligible = c => isNew(c,activatedAt) && (!['maya','thorchain'].includes(venueOf(c)) || isNew(c,venueSwapsActivatedAt))
+      && (c.type !== 'exchange_flow' || isNew(c,exchangeActivatedAt));
     const fresh = candidates.filter(eligible);
     decisions.push(...candidates.filter(c=>!eligible(c)).map(c=>({key:c.key,reason:'before-activation'})));
     const selection = select(fresh,history,now);
@@ -171,4 +177,4 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
   }
 }
 
-module.exports = { run, publish, activationTime, VENUE_SWAPS_ACTIVATION_KEY };
+module.exports = { run, publish, activationTime, VENUE_SWAPS_ACTIVATION_KEY, EXCHANGE_ACTIVATION_KEY };

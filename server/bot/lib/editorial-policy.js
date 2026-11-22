@@ -18,7 +18,7 @@ function candidate(type, key, content, evidence, score = 0) {
 function eventTime(story) {
   // Stories with their own observed instant (NU7) carry it explicitly.
   if (story.evidence?.eventAt) return Date.parse(story.evidence.eventAt);
-  if (story.type.startsWith('flow_') || story.type === 'migration') return Number(story.evidence.block_time) * 1000;
+  if (story.type.startsWith('flow_') || story.type === 'migration' || story.type === 'exchange_flow') return Number(story.evidence.block_time) * 1000;
   if (story.type === 'swap') return Date.parse(story.evidence.swap_created_at);
   if (story.type === 'reorg') return Date.parse(story.evidence.detected_at);
   if (['activity_weekly', 'shield_heatmap'].includes(story.type)) return Date.parse(`${story.evidence.period.endExclusive}T06:00:00Z`);
@@ -522,7 +522,7 @@ const clamp = (value, min = 0, max = 100) => Number.isFinite(value) ? Math.max(m
 const evidenceOf = story => story.evidence || story.metadata || {};
 const typeOf = story => story.type || story.post_type;
 const isFlow = story => /^flow_(shield|deshield)$/.test(typeOf(story));
-const movementFamily = story => isFlow(story) || ['swap', 'migration', 'crosschain_daily', 'pool_trend'].includes(typeOf(story));
+const movementFamily = story => isFlow(story) || ['swap', 'migration', 'crosschain_daily', 'pool_trend', 'exchange_flow'].includes(typeOf(story));
 const isEditorialHistory = story => typeOf(story) !== 'source_reply' && evidenceOf(story).deliveryRole !== 'source_reply';
 
 function editorialTopic(story) {
@@ -569,6 +569,9 @@ function editorialRank(story, history, now) {
   } else if (type === 'swap') {
     const rarity = Number.isFinite(e.tailPct) ? clamp(1 - e.tailPct, 0, 1) : 0;
     significance = 45 + 12 * rarity + Math.min(18, 10 * Math.log10(Math.max(1, Number(e.source_amount_usd) / 50000 || 1)));
+  } else if (type === 'exchange_flow') {
+    const rarity = Number.isFinite(e.tailPct) ? clamp(1 - e.tailPct, 0, 1) : 0;
+    significance = 45 + 12 * rarity + Math.min(18, 8 * Math.log10(Math.max(1, Number(e.amount_zat) / 1e8 / 1000 || 1)));
   } else if (type === 'network_signal') significance = 50 + Math.min(25, change / 2) + Math.min(10, sigma * 2);
   else if (type === 'hashrate') {
     const growth = e.previousPeak > 0 ? 100 * (e.point?.hashrate / e.previousPeak - 1) : 0;
@@ -600,6 +603,9 @@ function editorialRank(story, history, now) {
 // the size and rarity bars decide what is worth posting, and the job posts one
 // story per run with 20 minutes between posts. Other story types keep their
 // own caps. No quota needs filling: an empty selection is valid.
+const EXCHANGE_COOLDOWN_MS = 3 * 3600000;
+const EXCHANGE_DAILY_CAP = 4;
+
 function select(candidates, history, now) {
   const today = now.toISOString().slice(0, 10);
   const eligibleHistory = history.filter(isEditorialHistory);
@@ -616,6 +622,17 @@ function select(candidates, history, now) {
       const txids = new Set(swapZecTxids(c));
       if (txids.size && eligibleHistory.some(p => typeOf(p) === 'swap' && ['posted', 'posting', 'uncertain'].includes(p.status)
         && swapZecTxids(p).some(t => txids.has(t)))) reason = 'swap-overlap-already-posted';
+    }
+    // One transaction is one story: an exchange deposit straight out of a
+    // shielded pool is also a deshield, and either may have posted already.
+    if (!reason && (c.type === 'exchange_flow' || isFlow(c)) && /^[a-f0-9]{64}$/.test(c.evidence.txid || '')
+      && recent.some(p => (typeOf(p) === 'exchange_flow' || isFlow(p)) && evidenceOf(p).txid === c.evidence.txid)) reason = 'same-transaction-already-posted';
+    if (!reason && c.type === 'exchange_flow') {
+      // Per exchange and direction: one post per three hours; across exchanges: four a day.
+      if (recent.some(p => typeOf(p) === 'exchange_flow' && evidenceOf(p).entity === c.evidence.entity
+        && evidenceOf(p).direction === c.evidence.direction && now - new Date(p.created_at) >= 0
+        && now - new Date(p.created_at) < EXCHANGE_COOLDOWN_MS)) reason = 'exchange-cooldown';
+      else if (dayPosts.length >= EXCHANGE_DAILY_CAP) reason = 'exchange-daily-cap';
     }
     if (!reason && ['hashrate','network_signal'].includes(c.type)) {
       const comparable = same.filter(p => c.type !== 'network_signal' || p.metadata?.metric === c.evidence.metric);

@@ -10,6 +10,7 @@ const { poolMilestoneStories } = require('./pool-activity-milestones');
 const { insightCandidates } = require('./editorial-insights');
 const nu7Source = require('./nu7-source');
 const nu7Stories = require('./nu7-stories');
+const exchangeFlows = require('./exchange-flows');
 
 // Flows already represent net movement across pools. Never subtract an
 // unrelated Orchard withdrawal from an Ironwood deposit as a "migration".
@@ -345,9 +346,32 @@ async function nu7Candidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
   return rest;
 }
 
+// Large exchange deposits and withdrawals from the last hour, ranked against the
+// rolling 30-day classified history (kept in memory, see exchange-flows.js).
+// A failed or stale price only drops the USD figure.
+const exchangeHistory = exchangeFlows.createHistory();
+async function exchangeFlowCandidates(pool, now, { history = exchangeHistory, fetchPrice = fetchSpotPrice, refresh } = {}) {
+  await assertMainnetFresh(pool, now);
+  const view = await history.refresh(pool, now, refresh);
+  const decisions = [];
+  const recent = view.events.filter(e => e.blockTime >= view.to - 3600 && exchangeFlows.postable(e.entity)
+    && BigInt(e.amountZat) >= exchangeFlows.MIN_ZAT);
+  if (!recent.length) return { candidates: [], decisions };
+  const { quote, unavailable } = await fetchPrice();
+  if (unavailable) decisions.push({ key: 'exchange-price', reason: 'price-unavailable', detail: unavailable });
+  const candidates = [];
+  for (const event of recent) {
+    const story = exchangeFlows.exchangeFlowStory({ ...event, ...exchangeFlows.rankEvent(event, view.events),
+      net: exchangeFlows.netFlow(view.events, view.to, event.entity), price_usd: quote?.usd ?? null, price_quote: quote });
+    if (story) candidates.push(story);
+    else decisions.push({ key: `exchange_flow:${event.direction}:${event.entity}:${event.txid}`, reason: 'exchange-baseline-or-significance' });
+  }
+  return { candidates, decisions };
+}
+
 async function poolActivityCandidates(pool, now, options) {
   const target = addDays(now.toISOString().slice(0, 10), -1);
   return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
 }
 
-module.exports = { heatmapCandidates, venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, VALID_VENUE_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };
+module.exports = { exchangeFlowCandidates, heatmapCandidates, venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, VALID_VENUE_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

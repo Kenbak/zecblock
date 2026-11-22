@@ -79,6 +79,7 @@
   "GET /v1/network/fee-distribution": "get-network-fee-distribution",
   "GET /v1/network/block-activity": "get-network-block-activity",
   "GET /v1/analytics/usage-clock": "get-analytics-usage-clock",
+  "GET /v1/exchange-flows/daily": "exchange-flows-daily",
   "GET /v1/privacy/blend-check": "blend-check",
   "GET /v1/privacy/blend-check/split": "blend-check-split",
   "GET /v1/shielded-pools/overview": "pools-overview",

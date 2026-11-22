@@ -76,6 +76,7 @@ const sitemapsRouter = require('./routes/sitemaps');
 const transparentRouter = require('./routes/transparent');
 const valuationRouter = require('./routes/valuation');
 const pulseRouter = require('./routes/pulse');
+const exchangeFlowsRouter = require('./routes/exchange-flows');
 const signalsRouter = require('../signals/api');
 
 // Import privacy linkage functions
@@ -469,6 +470,7 @@ app.use(sitemapsRouter);
 app.use(transparentRouter);
 app.use(valuationRouter);
 app.use(pulseRouter);
+app.use(exchangeFlowsRouter);
 
 // Private trading signals: /api/signals/* (service-key protected)
 app.use('/api/signals', signalsRouter);

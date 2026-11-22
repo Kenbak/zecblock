@@ -140,43 +140,61 @@ test('selection: per-exchange cooldown, daily cap, and one story per transaction
   assert.equal(policy.eventTime(s), s.evidence.block_time * 1000);
 });
 
-test('history: full read first, then a two-hour overlap that replaces reorganised events', async () => {
-  const h = x.createHistory();
-  const labels = { addresses: ['a'], entities: ['kraken'], fingerprint: 'f1' };
-  const reads = [];
-  const ev = (txid, t) => ({ txid, entity: 'kraken', direction: 'deposit', amountZat: '1', blockTime: t });
-  const now = new Date('2026-11-22T12:00:00Z'), nowS = now / 1000;
-  let batch = [ev('a'.repeat(64), nowS - 5000), ev('b'.repeat(64), nowS - 1000)];
-  const opts = { load: async () => labels, read: async (_db, _l, from, to) => { reads.push([from, to]); return { events: batch.filter(e => e.blockTime >= from && e.blockTime < to), skipped: {} }; } };
-  const first = await h.refresh({}, now, opts);
-  assert.equal(first.full, true); assert.equal(first.events.length, 2);
-  assert.equal(reads[0][1] - reads[0][0], 31 * 86400);
-  // The second block was reorganised away; a new one arrived.
-  batch = [ev('a'.repeat(64), nowS - 5000), ev('c'.repeat(64), nowS + 100)];
-  const later = new Date(now.getTime() + 300000);
-  const second = await h.refresh({}, later, opts);
-  assert.equal(second.full, false);
-  assert.equal(reads[1][0], first.to - 7200);
-  assert.deepEqual(second.events.map(e => e.txid[0]), ['a', 'c']);
-  labels.fingerprint = 'f2';
-  assert.equal((await h.refresh({}, later, opts)).full, true, 'a label change rebuilds the window');
-});
+// A store backed by an in-memory event list, with the same contract as exchange-flow-store.
+function memoryStore(events, { status = 'ok', reason = null, throughTime } = {}) {
+  return {
+    status: async () => ({ status, reason, state: { through_time: throughTime } }),
+    recentEvents: async (_db, from, to, min) => events.filter(e => e.blockTime >= from && e.blockTime <= to && BigInt(e.amountZat) >= min),
+    rankStored: async (_db, event) => x.rankEvent(event, events),
+    netStored: async (_db, end, entity) => x.netFlow(events, end, entity),
+  };
+}
 
-test('collector: ranks the last hour, prices once, reports what did not qualify', async () => {
+test('collector: ranks the last hour from stored rows, prices once, reports what did not qualify', async () => {
   const now = new Date((1795371364 + 600) * 1000);
   const deposit = { ...x.classifyRows(fx.rows.hyperunitDeposit()).events[0], amountZat: '120200000000' };
   const small = { ...deposit, txid: '1'.repeat(64), amountZat: '100000000000', blockTime: deposit.blockTime - 5 };
   const events = [...fx.history(deposit.blockTime), small, deposit].sort((a, b) => a.blockTime - b.blockTime);
-  const history = { refresh: async () => ({ to: now / 1000 - 120, events }) };
+  const store = memoryStore(events, { throughTime: now / 1000 });
   const db = { query: async () => ({ rows: [{ name: 'zcash_explorer_mainnet', timestamp: now / 1000 - 30 }] }) };
   let priced = 0;
-  const result = await data.exchangeFlowCandidates(db, now, { history, fetchPrice: async () => { priced++; return { quote: { usd: 500 } }; } });
+  const result = await data.exchangeFlowCandidates(db, now, { store, fetchPrice: async () => { priced++; return { quote: { usd: 500 } }; } });
   assert.equal(priced, 1);
   assert.equal(result.candidates.length, 2, 'both clear the bars against a 1–999 ZEC history');
   assert.match(result.candidates[1].content, /\$601K/);
-  const none = await data.exchangeFlowCandidates(db, now, { history: { refresh: async () => ({ to: now / 1000, events: fx.history(now / 1000) }) },
+  const none = await data.exchangeFlowCandidates(db, now, { store: memoryStore(fx.history(now / 1000), { throughTime: now / 1000 }),
     fetchPrice: async () => { throw new Error('should not price'); } });
   assert.deepEqual(none, { candidates: [], decisions: [] });
+  // Never past what the job has written: an event after through_time waits.
+  const behind = await data.exchangeFlowCandidates(db, now, { store: memoryStore(events, { throughTime: deposit.blockTime - 1 }),
+    fetchPrice: async () => ({ quote: { usd: 500 } }) });
+  assert.deepEqual(behind.candidates.map(c => c.evidence.txid), [small.txid]);
+});
+
+test('collector: stale or unavailable stored data never posts', async () => {
+  const now = new Date((1795371364 + 600) * 1000);
+  const db = { query: async () => ({ rows: [{ name: 'zcash_explorer_mainnet', timestamp: now / 1000 - 30 }] }) };
+  const deposit = { ...x.classifyRows(fx.rows.hyperunitDeposit()).events[0], amountZat: '120200000000' };
+  for (const [status, reason] of [['stale', 'labels-changed'], ['stale', 'behind-tip'], ['unavailable', 'not-built']]) {
+    const r = await data.exchangeFlowCandidates(db, now, { store: memoryStore([...fx.history(deposit.blockTime), deposit], { status, reason, throughTime: now / 1000 }),
+      fetchPrice: async () => { throw new Error('should not price'); } });
+    assert.deepEqual(r, { candidates: [], decisions: [{ key: 'exchange-flows', reason: `exchange-flows-${status}`, detail: reason }] });
+  }
+});
+
+test('store helpers: label diff, daily query validation', () => {
+  const store = require('../lib/exchange-flow-store');
+  const a = x.labelSet(['t1a', 't1b', 't1c'], ['kraken', 'binance', 'other:x']);
+  const b = x.labelSet(['t1a', 't1c', 't1d'], ['kraken', 'gemini', 'hyperunit']);
+  assert.deepEqual(store.changedAddresses(a, b), ['t1b', 't1c', 't1d']);
+  assert.deepEqual(store.changedAddresses(a, a), []);
+  assert.notEqual(a.version, b.version);
+  assert.match(a.version, /^c1:[0-9a-f]{16}$/);
+  const now = Date.parse('2026-11-22T12:00:00Z');
+  assert.deepEqual(store.parseDailyQuery({}, now), { entity: 'all', from: '2026-08-25', to: '2026-11-22' });
+  assert.deepEqual(store.parseDailyQuery({ entity: 'kraken', from: '2026-11-01', to: '2026-11-02' }, now), { entity: 'kraken', from: '2026-11-01', to: '2026-11-02' });
+  for (const bad of [{ entity: 'other:x' }, { entity: 'nope' }, { from: '2026-02-30' }, { to: '20261101' }, { from: '2026-11-03', to: '2026-11-02' }, { from: '2010-01-01', to: '2026-01-01' }])
+    assert.throws(() => store.parseDailyQuery(bad, now), store.ExchangeFlowQueryError);
 });
 
 test('editorial run: exchange flows wait for their own activation watermark', async () => {
@@ -228,6 +246,8 @@ test('still card renders the exchange logo', async () => {
 });
 
 test('FLOW_ROWS bounds history by height and time, checks canonical blocks, and uses parameters only', () => {
+  for (const sql of [x.FLOW_ROWS_BY_HEIGHT, x.FLOW_ROWS_BY_TXIDS]) { assert.match(sql, /b\.hash = t\.block_hash/); assert.doesNotMatch(sql, /\$\{|\/\*TIME\*\//); }
+  assert.match(x.FLOW_ROWS_BY_HEIGHT, /at\.block_height BETWEEN \$3 AND \$4/);
   assert.match(x.FLOW_ROWS, /unnest\(\$1::text\[\], \$2::text\[\]\)/);
   assert.match(x.FLOW_ROWS, /b\.hash = t\.block_hash/);
   assert.match(x.FLOW_ROWS, /at\.block_height >= \(SELECT height FROM start\)/);

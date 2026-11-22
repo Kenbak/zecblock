@@ -261,6 +261,11 @@
     "period"
   ],
   "GET /v1/network/block-activity": [],
+  "GET /v1/exchange-flows/daily": [
+    "entity",
+    "from",
+    "to"
+  ],
   "GET /v1/analytics/usage-clock": [
     "period"
   ],

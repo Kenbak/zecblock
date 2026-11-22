@@ -11388,6 +11388,138 @@ paths:
             application/problem+json:
               schema:
                 $ref: '#/components/schemas/Problem'
+  /v1/exchange-flows/daily:
+    get:
+      operationId: get_exchange-flows_Daily
+      summary: >-
+        Daily deposits, withdrawals and net flow of labelled exchange and custody wallets, per
+        entity or across all named entities. UTC days, exact zatoshis.
+      tags:
+        - analytics
+      parameters:
+        - name: entity
+          in: query
+          required: false
+          schema:
+            type: string
+            enum:
+              - all
+              - binance
+              - kraken
+              - coinbase
+              - coinbase_prime
+              - gemini
+              - grayscale
+              - kucoin
+              - hyperunit
+            default: all
+          description: Named entity id, or all for the sum across named entities.
+        - name: from
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: First UTC day, inclusive. Default 89 days before to. At most 4000 days.
+        - name: to
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
+          description: Last UTC day, inclusive. Default today.
+      x-cipherscan-legacy-path: /api/exchange-flows/daily
+      x-cipherscan-legacy-method: GET
+      x-cipherscan-classification: public
+      x-cipherscan-v1-status: adapter
+      responses:
+        '200':
+          description: >-
+            Daily deposits, withdrawals and net flow of labelled exchange and custody wallets, per
+            entity or across all named entities. UTC days, exact zatoshis.
+          content:
+            application/json:
+              schema:
+                type: object
+                required:
+                  - data
+                  - meta
+                properties:
+                  data:
+                    oneOf:
+                      - type: object
+                      - type: array
+                        items: {}
+                  meta:
+                    $ref: '#/components/schemas/Meta'
+        '400':
+          description: Validation error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '401':
+          description: Endpoint credential required or invalid.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '402':
+          description: >-
+            Payment required. Protocol challenges remain in Payment-Required / WWW-Authenticate; the
+            original challenge is also in problem.paymentRequired.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '403':
+          description: Origin or ownership authorization denied.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '404':
+          description: Resource not found.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '413':
+          description: JSON body exceeds 1 MB.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '429':
+          description: Rate limited (enforced by the legacy endpoint this proxies to).
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '500':
+          description: Internal error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '502':
+          description: Upstream (legacy API) error.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '503':
+          description: Source temporarily unavailable or still building.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
+        '504':
+          description: Upstream (legacy API) timeout.
+          content:
+            application/problem+json:
+              schema:
+                $ref: '#/components/schemas/Problem'
   /v1/analytics/usage-clock:
     get:
       operationId: get_analytics_Usage-clock

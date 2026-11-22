@@ -2929,12 +2929,14 @@ paths:
               - Molepool
               - MySoloPool
               - NiceHash
+              - Print Crypto
               - Private Miner B
               - Sluicey Pool
               - 'Unidentified #5'
               - ViaBTC
               - ViaBTC-Solo
               - ZEC Mining Pool
+              - miners.science
               - unattributed
             default: all
             description: Mining-pool payout-address attribution, independent of software markers.
@@ -12285,7 +12287,9 @@ paths:
   /v1/mining/pool-distribution:
     get:
       operationId: get_mining_Pool-distribution
-      summary: Mining pool hashrate distribution.
+      summary: >-
+        Blocks per mining pool, with operator totals (brands of one company combined) and the
+        operator Nakamoto coefficient.
       tags:
         - mining
       parameters:
@@ -12301,7 +12305,9 @@ paths:
       x-cipherscan-v1-status: adapter
       responses:
         '200':
-          description: Mining pool hashrate distribution.
+          description: >-
+            Blocks per mining pool, with operator totals (brands of one company combined) and the
+            operator Nakamoto coefficient.
           content:
             application/json:
               schema:

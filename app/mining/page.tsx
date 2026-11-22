@@ -69,10 +69,28 @@ interface PoolDist {
   totalFeesZat: string;
 }
 
+/** One company; `pools` lists its brands (ViaBTC and ViaBTC-Solo). */
+interface OperatorDist {
+  name: string;
+  blocks: number;
+  share: number;
+  pools: string[];
+}
+
+interface DistributionResponse {
+  totalBlocks: number;
+  pools: PoolDist[];
+  operators?: OperatorDist[];
+  unattributedBlocks?: number;
+  nakamotoCoefficient?: number | null;
+}
+
 interface PoolRank {
   rank: number;
   address: string | null;
   name: string;
+  /** Company behind the pool; differs from `name` for brands like ViaBTC-Solo. */
+  operator?: string | null;
   url: string | null;
   region: string | null;
   blocks: number;
@@ -129,8 +147,7 @@ function PeriodSelector({ value, onChange }: { value: Period; onChange: (p: Peri
 function DistributionSection() {
   const { theme } = useTheme();
   const [period, setPeriod] = useUrlState<Period>('distribution', '30d', PERIODS);
-  const [data, setData] = useState<PoolDist[]>([]);
-  const [total, setTotal] = useState(0);
+  const [dist, setDist] = useState<DistributionResponse | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -138,27 +155,36 @@ function DistributionSection() {
     let cancelled = false;
     setLoading(true);
     fetch(`${getApiUrl()}/v1/mining/pool-distribution?period=${period}`)
-      .then(r => r.ok ? readApiData(r) : null)
+      .then(r => r.ok ? readApiData<DistributionResponse>(r) : null)
       .then(res => {
         if (cancelled) return;
-        if (res?.pools) {
-          setData(res.pools);
-          setTotal(res.totalBlocks);
-        }
+        if (res?.pools) setDist(res);
         setLoading(false);
       })
       .catch(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [period]);
 
-  // Group small shares into Other; the full ranking remains available below.
+  // Count each company once: an API without operator totals falls back to
+  // one row per pool. Small shares are grouped as Other; the per-pool
+  // ranking remains available below.
+  const total = dist?.totalBlocks ?? 0;
+  const byOperator = Array.isArray(dist?.operators);
+  const rows: { name: string; value: number; pools: string[] }[] = byOperator
+    ? [
+        ...dist!.operators!.map(o => ({ name: o.name, value: o.blocks, pools: o.pools })),
+        ...((dist!.unattributedBlocks ?? 0) > 0 ? [{ name: 'Unknown', value: dist!.unattributedBlocks!, pools: [] }] : []),
+      ].sort((a, b) => b.value - a.value)
+    : (dist?.pools ?? []).map(p => ({ name: p.name, value: p.blocks, pools: [p.name] }));
   const threshold = 0.02;
-  const mainPools = data.filter(p => p.share >= threshold);
-  const otherBlocks = data.filter(p => p.share < threshold).reduce((s, p) => s + p.blocks, 0);
+  const mainRows = rows.filter(r => total > 0 && r.value / total >= threshold);
+  const otherBlocks = rows.filter(r => !(total > 0 && r.value / total >= threshold)).reduce((s, r) => s + r.value, 0);
   const distributionData = [
-    ...mainPools.map(p => ({ name: p.name, value: p.blocks })),
-    ...(otherBlocks > 0 ? [{ name: 'Other', value: otherBlocks }] : []),
+    ...mainRows,
+    ...(otherBlocks > 0 ? [{ name: 'Other', value: otherBlocks, pools: [] }] : []),
   ];
+  const largest = byOperator ? dist!.operators![0] : undefined;
+  const nakamoto = dist?.nakamotoCoefficient ?? null;
 
   return (
     <section id="distribution" className="scroll-mt-36 mb-12 animate-fade-in-up stagger-2">
@@ -168,9 +194,15 @@ function DistributionSection() {
           <ChartSkeleton height={360} />
         ) : (
           <div>
-            <p className="text-xs text-muted mb-6">Share of {total.toLocaleString()} observed blocks in {period}, attributed by coinbase payout. Small pools are grouped as Other.</p>
+            <p className="text-xs text-muted mb-6">Share of {total.toLocaleString()} observed blocks in {period}, attributed by coinbase payout{byOperator ? ', with brands of the same company counted together' : ''}. Small {byOperator ? 'operators' : 'pools'} are grouped as Other.</p>
+            {largest && total > 0 && (
+              <p className="text-xs text-secondary mb-6">
+                Largest operator: <span className="font-mono text-primary">{largest.name}</span> with {(largest.blocks / total * 100).toFixed(1)}% of blocks.
+                {nakamoto != null && <> {nakamoto === 1 ? 'One operator finds' : `${nakamoto} operators together find`} more than half of all blocks.</>}
+              </p>
+            )}
             {distributionData.length === 0 ? <p className="py-12 text-xs text-muted">No pool observations available.</p> : <div className="space-y-5">{distributionData.map(p => <div key={p.name}>
-              <div className="flex items-baseline justify-between gap-4 mb-2"><span className="text-xs font-mono text-primary truncate">{p.name}</span><span className="text-xs font-mono text-secondary shrink-0">{total>0?(p.value/total*100).toFixed(1):0}% <span className="text-muted ml-3">{p.value.toLocaleString()} blocks</span></span></div>
+              <div className="flex items-baseline justify-between gap-4 mb-2"><span className="text-xs font-mono text-primary truncate">{p.name}{p.pools.some(n => n !== p.name) && <span className="text-muted font-normal"> · incl. {p.pools.filter(n => n !== p.name).join(', ')}</span>}</span><span className="text-xs font-mono text-secondary shrink-0">{total>0?(p.value/total*100).toFixed(1):0}% <span className="text-muted ml-3">{p.value.toLocaleString()} blocks</span></span></div>
               <div className="h-2 rounded-full bg-cipher-hover overflow-hidden"><div className="h-full rounded-full" style={{width:`${total>0?p.value/total*100:0}%`,backgroundColor:categoryColor(p.name,theme)}} /></div>
             </div>)}</div>}
           </div>
@@ -216,10 +248,10 @@ function RankingSection() {
                   type="csv"
                   data={ranking}
                   filename={`zecblock-pool-ranking-${period}`}
-                  csvHeaders={['Rank', 'Pool', 'Payout address', 'Region', 'Blocks', 'Share (fraction of blocks)', 'Average block interval (s)', 'Total fees (ZEC)']}
+                  csvHeaders={['Rank', 'Pool', 'Payout address', 'Region', 'Blocks', 'Share (fraction of blocks)', 'Average block interval (s)', 'Total fees (ZEC)', 'Operator']}
                   csvMapper={(pool: PoolRank) => [
                     String(pool.rank), pool.name, pool.address ?? '', pool.region ?? '', String(pool.blocks), String(pool.share),
-                    String(pool.avgBlockInterval ?? ''), zatToZecString(pool.totalFeesZat),
+                    String(pool.avgBlockInterval ?? ''), zatToZecString(pool.totalFeesZat), pool.operator ?? '',
                   ]}
                 />
               )}
@@ -250,6 +282,9 @@ function RankingSection() {
                         <span className="font-mono text-xs text-primary font-medium">{pool.name}</span>
                         {pool.region && (
                           <span className="text-caption font-mono text-muted px-1 py-0.5 bg-glass-3 rounded">{pool.region}</span>
+                        )}
+                        {pool.operator && pool.operator !== pool.name && (
+                          <span className="text-caption text-muted">by {pool.operator}</span>
                         )}
                       </div>
                     ),

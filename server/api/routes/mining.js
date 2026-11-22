@@ -9,7 +9,7 @@ const { softwareHistory, SoftwareQueryError } = require('../lib/mining-software'
 
 const express = require('express');
 const router = express.Router();
-const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName } = require('../mining-pools');
+const { POOL_BY_ADDRESS, POOL_BY_TAG, getPoolTagSql, getPoolName, getPoolOperator, summarizeOperators } = require('../mining-pools');
 const { logSafeError } = require('../lib/safe-log');
 const { orphanRates } = require('../lib/orphan-rates');
 const { observationLag } = require('../lib/observation-lag');
@@ -125,7 +125,7 @@ router.get('/api/mining/observation-lag', async (req, res) => {
 router.get('/api/mining/pool-distribution', async (req, res) => {
   try {
     const period = req.query.period || '7d';
-    const cacheKey = `mining:history-v3:pool-dist:${period}`;
+    const cacheKey = `mining:history-v4:pool-dist:${period}`;
 
     const cached = await getFromCache(cacheKey);
     if (cached) return res.json(cached);
@@ -164,6 +164,7 @@ router.get('/api/mining/pool-distribution', async (req, res) => {
       .map(p => ({
         address: p.address,
         name: p.name,
+        operator: getPoolOperator(p.name),
         blocks: p.blocks,
         share: totalBlocks > 0 ? p.blocks / totalBlocks : 0,
         totalFeesZat: p.totalFeesZat.toString(),
@@ -174,6 +175,8 @@ router.get('/api/mining/pool-distribution', async (req, res) => {
       period,
       totalBlocks,
       pools,
+      // Brands of one company (ViaBTC and ViaBTC-Solo) counted together.
+      ...summarizeOperators(pools, totalBlocks),
       generatedAt: new Date().toISOString(),
     };
 
@@ -192,7 +195,7 @@ router.get('/api/mining/pool-distribution', async (req, res) => {
 router.get('/api/mining/pool-ranking', async (req, res) => {
   try {
     const period = req.query.period || '7d';
-    const cacheKey = `mining:history-v3:pool-rank:${period}`;
+    const cacheKey = `mining:history-v4:pool-rank:${period}`;
 
     const cached = await getFromCache(cacheKey);
     if (cached) return res.json(cached);
@@ -263,6 +266,7 @@ router.get('/api/mining/pool-ranking', async (req, res) => {
         rank: idx + 1,
         address: p.address,
         name: p.name,
+        operator: getPoolOperator(p.name),
         url: p.url,
         region: p.region,
         blocks: p.blocks,

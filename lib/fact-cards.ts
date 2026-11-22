@@ -426,7 +426,13 @@ export function hashrateCard(network: CardNetwork, payload: unknown, now = new D
 export function miningPoolsCard(network: CardNetwork, payload: unknown): FactCard | null {
   const data = unwrap(payload);
   if (!data || !finite(data.totalBlocks) || data.totalBlocks <= 0 || !Array.isArray(data.pools)) return null;
-  const pools = data.pools.filter((row): row is { name: string; blocks: number } => isRecord(row) && typeof row.name === 'string' && finite(row.blocks))
+  // Prefer operator totals so one company's brands (ViaBTC, ViaBTC-Solo)
+  // count once; older responses only have pools.
+  const operatorRows = Array.isArray(data.operators) ? [
+    ...data.operators,
+    ...(finite(data.unattributedBlocks) && data.unattributedBlocks > 0 ? [{ name: 'Unknown', blocks: data.unattributedBlocks }] : []),
+  ] : null;
+  const pools = (operatorRows ?? data.pools).filter((row): row is { name: string; blocks: number } => isRecord(row) && typeof row.name === 'string' && finite(row.blocks))
     .sort((a, b) => b.blocks - a.blocks);
   const leader = pools.find(pool => pool.name !== 'Unknown');
   if (!leader) return null;

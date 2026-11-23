@@ -210,15 +210,17 @@ const binOf = zat => Math.floor(Math.log10(Number(zat) / 1e8) * BINS_PER_DECADE)
 
 /**
  * Rank an event against every postable-entity event of the same direction in
- * the 30 days before it. The histogram is built from exactly those rows, so the
- * GIF and the "top x%" claim cannot disagree.
+ * the 30 days up to and including its own block (other events of the same block
+ * count; only the event itself is left out). The histogram is built from exactly
+ * those rows, so the GIF and the "top x%" claim cannot disagree.
  */
 function rankEvent(event, events) {
   const start = event.blockTime - WINDOW_DAYS * DAY_S, amount = BigInt(event.amountZat);
   let n = 0, greater = 0, equal = 0;
   const bins = new Map();
   for (const e of events) {
-    if (e.direction !== event.direction || !postable(e.entity) || e.blockTime >= event.blockTime || e.blockTime < start) continue;
+    if (e.direction !== event.direction || !postable(e.entity) || e.blockTime > event.blockTime || e.blockTime < start) continue;
+    if (e.txid === event.txid && e.entity === event.entity) continue;
     const zat = BigInt(e.amountZat);
     if (zat <= 0n) continue;
     n++;

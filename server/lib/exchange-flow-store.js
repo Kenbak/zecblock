@@ -322,7 +322,8 @@ async function netStored(db, endS, entity = null) {
 // ─── Daily API read ─────────────────────────────────────────────────────────
 
 class ExchangeFlowQueryError extends Error {
-  constructor(message, status = 400, extra = {}) { super(message); this.status = status; Object.assign(this, extra); }
+  // publicMessage is always one of the fixed strings below, safe to return to clients.
+  constructor(message, status = 400, extra = {}) { super(message); this.publicMessage = message; this.status = status; Object.assign(this, extra); }
 }
 const MAX_DAYS = 4000;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;

@@ -31,7 +31,7 @@ router.get('/api/exchange-flows/daily', async (req, res) => {
   } catch (error) {
     if (error instanceof ExchangeFlowQueryError) {
       if (error.status === 503) res.set('Retry-After', '300');
-      return res.status(error.status).json({ success: false, error: error.message, ...(error.reason ? { reason: error.reason } : {}) });
+      return res.status(error.status).json({ success: false, error: error.publicMessage, ...(error.reason ? { reason: error.reason } : {}) });
     }
     logSafeError('Exchange flow history failed:', error);
     res.status(500).json({ success: false, error: 'Exchange flow history unavailable' });

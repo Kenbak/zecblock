@@ -71,7 +71,7 @@ export const PAGE_ABOUT: Record<string, HomeAbout> = {
   },
   '/turnstile': {
     heading: 'About the Turnstile Tracker',
-    intro: ['ZEC that leaves a shielded pool lands on a transparent address. The Turnstile Tracker follows it and shows whether it stays there, is reshielded, moves to an exchange or bridge, or transfers elsewhere.'],
+    intro: ['ZEC that leaves a shielded pool lands on a transparent address. The Turnstile Tracker follows it and shows whether it stays there, is reshielded, moves to an exchange or bridge, or transfers elsewhere. The data updates every 5 minutes.'],
     items: [],
   },
   '/privacy': {

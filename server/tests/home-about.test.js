@@ -113,3 +113,14 @@ test('each page keeps one About: the older explainer blocks were folded in', () 
   // Pulse explains its metrics and thresholds itself.
   assert.equal(PAGE_ABOUT['/pulse'], undefined);
 });
+
+// The turnstile job runs every five minutes in production; every place that
+// states the refresh frequency must say the same (it once said hourly and daily).
+test('turnstile wording matches the production refresh schedule', () => {
+  assert.match(read('server/deploy/crontab.production'), /^\*\/5 \* \* \* \* .*node refresh-turnstile\.js'/m);
+  for (const file of ['app/turnstile/layout.tsx', 'components/pools/TurnstileTracker.tsx', 'lib/llms/docs.ts', 'lib/page-about.ts']) {
+    const text = read(file);
+    assert.match(text, /every 5 minutes/, file);
+    assert.doesNotMatch(text.split('\n').filter(line => /turnstile|Turnstile|deshield/.test(line) || file.includes('Turnstile')).join('\n'), /Updated (hourly|daily)/, file);
+  }
+});

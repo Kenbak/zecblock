@@ -460,7 +460,7 @@ export function TurnstileTracker({ initialPeriod = '30d' }: TurnstileTrackerProp
           <p className="text-xs text-secondary font-sans mt-6 leading-relaxed">
             Tracks what happens after ZEC leaves a shielded pool — held, reshielded, transferred, bridged cross-chain, or sent to exchanges.
             {lastUpdated && ` Updated ${new Date(lastUpdated).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })} at ${new Date(lastUpdated).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })}.`}
-            {!lastUpdated && ' Updated daily.'}
+            {!lastUpdated && ' Updated every 5 minutes.'}
           </p>
           {(period === 'all' || period === '1y') && (
             <p className="text-caption text-muted font-mono mt-2 leading-relaxed italic">

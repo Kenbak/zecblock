@@ -17,6 +17,7 @@ const ENTITY_LOGOS: Readonly<Record<string, string>> = {
   'coinbase cold wallet': '/brands/entities/coinbase.png',
   'coinbase prime custody': '/brands/entities/coinbase.png',
   'grayscale zcash trust': '/brands/entities/grayscale.png',
+  'hyperunit deposit': '/brands/entities/hyperunit.png',
   'hyperunit hot wallet': '/brands/entities/hyperunit.png',
   'kucoin cold wallet': '/brands/entities/kucoin.png',
   'near intent bridge': '/brands/entities/near-intents.png',

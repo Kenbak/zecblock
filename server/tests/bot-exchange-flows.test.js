@@ -76,6 +76,24 @@ test('rank: same direction, postable entities, prior 30 days only; histogram is 
   assert.equal(r.distribution.bins.reduce((a, b) => a + b.n, 0), 400);
 });
 
+test('rank: other events in the same block count, the ranked event itself does not', () => {
+  const end = 1795371364, events = fx.history(end);
+  const ev = (txid, zec) => ({ txid, entity: 'hyperunit', direction: 'deposit', amountZat: String(BigInt(zec) * 100000000n), blockHeight: 3600000, blockTime: end, counterparty: 'transparent' });
+  const small = ev('1'.repeat(64), 600), big = ev('2'.repeat(64), 2000);
+  events.push(small, big);
+  const story = row => x.exchangeFlowStory({ ...row, ...x.rankEvent(row, events), net: x.netFlow(events, end, row.entity), price_usd: 500 });
+  const r = x.rankEvent(small, events);
+  assert.equal(r.sample_count, 401, 'history plus the 2,000 ZEC deposit from the same block');
+  assert.equal(r.greater_count, 1);
+  // 2/402 ≈ 0.5% would pass the 1% tail; prove the copy no longer says "largest".
+  const s = story(small);
+  assert.ok(!s || !/largest/i.test(s.content), 'a same-block larger deposit rules out "largest"');
+  assert.match(story(big).content, /The largest deposit/);
+  // Alone in its block, the 600 ZEC deposit is still the largest.
+  const alone = x.exchangeFlowStory({ ...small, ...x.rankEvent(small, events.filter(e => e !== big)), price_usd: 500 });
+  assert.match(alone.content, /The largest deposit/);
+});
+
 test('24h net flow is exact zatoshis per entity and across exchanges', () => {
   const e = (entity, direction, zat, t) => ({ entity, direction, amountZat: zat, blockTime: t, txid: 'a'.repeat(64) });
   const events = [e('kraken', 'deposit', '100000000001', 1000), e('kraken', 'withdrawal', '30000000000', 1001),

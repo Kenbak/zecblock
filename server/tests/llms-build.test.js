@@ -33,7 +33,9 @@ const entries = [...llmsTxt.matchAll(/^- \[([^\]]+)\]\(https:\/\/zecblock\.com(\
 const byMarkdownPath = new Map(entries.map(entry => [entry.markdownPath, entry]));
 const docFile = markdownPath => `llms-md/${markdownPath.slice(1, -3)}.body`;
 
-const decode = value => value.replace(/&amp;/g, '&').replace(/&quot;/g, '"').replace(/&#x27;|&#39;/g, "'").replace(/&lt;/g, '<').replace(/&gt;/g, '>');
+// One pass, so an encoded ampersand is never decoded twice.
+const ENTITIES = { '&amp;': '&', '&quot;': '"', '&#x27;': "'", '&#39;': "'", '&lt;': '<', '&gt;': '>' };
+const decode = value => value.replace(/&(?:amp|quot|#x27|#39|lt|gt);/g, entity => ENTITIES[entity]);
 const stripSuffix = title => title.replace(/\s*\|\s*ZecBlock$/, '');
 
 test('llms.txt follows the format: H1, summary blockquote, H2 file lists, Optional last', () => {

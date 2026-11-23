@@ -7,6 +7,7 @@ import { SlidersIcon } from '@/components/icons/common';
 import { HASHRATE_DESCRIPTION, type HashrateSnapshot } from '@/lib/hashrate';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useZecBtcQuote } from '@/hooks/useZecBtcQuote';
+import { GovernanceBanner } from '@/components/GovernanceBanner';
 import { btcPercentage } from '@/lib/zec-btc';
 import { recentShieldedShare, type ActivityDay } from '@/lib/shielded-share';
 
@@ -459,6 +460,7 @@ export function StatsBar() {
             className={`${scrollFadeClass} flex-1 min-w-0 flex items-center overflow-x-auto overscroll-x-contain [-webkit-overflow-scrolling:touch] no-scrollbar`}
           >
             <div className="flex items-center gap-3 sm:gap-4 pr-4">
+              <GovernanceBanner />
               {visibleItems.map(({ id, node }, i) => (
                 <span key={id} className="flex items-center gap-3 sm:gap-4">
                   {node}

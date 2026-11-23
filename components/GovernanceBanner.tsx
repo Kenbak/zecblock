@@ -8,14 +8,13 @@ import type { AnnouncementSnapshot } from '@/lib/governance-announcement';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ANNOUNCED_MAINNET_NU7, readUpgradeSnapshot, getPendingNu7Upgrade, estimateBlockArrival, formatUpgradeTime } from '@/lib/network-upgrades';
 
-// `initial` is the server's snapshot, so a live announcement is in the first
-// HTML and does not push the page down after hydration. The client still
-// refreshes it and enforces its expiry.
-export function GovernanceBanner({ initial = null }: { initial?: AnnouncementSnapshot | null } = {}) {
-  const [announcement, setAnnouncement] = useState<Announcement | null>(initial?.announcement ?? null);
+// Rendered as the first item of the stats bar, whose height is fixed, so an
+// announcement arriving after load never pushes the page down. The data stays
+// client-side: static pages keep their build-once caching.
+export function GovernanceBanner() {
+  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const dismissedKeys = useRef(new Set<string>());
-  const ref = useRef<HTMLDivElement>(null);
   const { data, error } = useApiQuery<unknown>('/v1/network/stats', undefined, { enabled: !isCrosslink, refreshInterval: 30_000 });
   const network = NETWORK === 'crosslink' ? 'crosslink-testnet' : NETWORK;
   const lastVerifiedSnapshot = readUpgradeSnapshot(data, network);
@@ -47,8 +46,6 @@ export function GovernanceBanner({ initial = null }: { initial?: AnnouncementSna
     const controller = new AbortController();
     let inFlight = false;
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
-    // A cached page may carry a snapshot whose window has already closed.
-    if (initial?.nextChangeAt != null && initial.nextChangeAt <= Date.now()) setAnnouncement(null);
     const refresh = async () => {
       if (document.visibilityState !== 'visible' || inFlight) return;
       inFlight = true;
@@ -87,48 +84,28 @@ export function GovernanceBanner({ initial = null }: { initial?: AnnouncementSna
     const timer = setInterval(() => void refresh(), 60_000);
     document.addEventListener('visibilitychange', refresh);
     return () => { controller.abort(); clearInterval(timer); clearTimeout(expiryTimer); document.removeEventListener('visibilitychange', refresh); };
-    // The server snapshot only seeds the first render; refreshes own it after.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  useEffect(() => {
-    const element = ref.current;
-    if (!visible || !element) { document.documentElement.style.setProperty('--app-ironwood-height', '0px'); return; }
-    const sync = () => document.documentElement.style.setProperty('--app-ironwood-height', `${element.offsetHeight}px`);
-    sync();
-    const observer = new ResizeObserver(sync); observer.observe(element);
-    return () => { observer.disconnect(); document.documentElement.style.setProperty('--app-ironwood-height', '0px'); };
-  }, [visible]);
   if (!visible || !displayed) return null;
   const rich = !pending && announcement && (announcement.snapshotHeight !== undefined || announcement.hint) ? announcement : null;
   const snapshotHeightNow = snapshot?.height ?? null;
   const snapshotEta = rich?.snapshotHeight !== undefined && snapshot ? estimateBlockArrival(snapshot, rich.snapshotHeight) : null;
-  return <div ref={ref} role="region" aria-label={announced ? 'NU7 announced mainnet upgrade' : pending ? 'NU7 activation countdown' : 'Governance announcement'} className="ironwood-banner sticky top-[calc(var(--app-nav-height,4rem)+var(--app-stats-height,2.75rem))] z-40 border-b border-cipher-border/50 backdrop-blur-xl">
-    <div className="relative mx-auto flex min-h-12 max-w-7xl items-center justify-center px-4 pr-12 py-2.5 sm:px-12">
-      <Link href={displayed.href} prefetch={false} className={pending ? 'group flex items-center gap-3' : rich ? 'group block' : 'text-center font-mono text-xs text-brand-gold hover:underline'}>
-        {pending ? <>
-          <span aria-hidden="true" className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-cipher-gold/20 bg-cipher-gold/10 text-cipher-gold">
-            <svg className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-          </span>
-          <span className="flex flex-col gap-0.5 sm:flex-row sm:items-center sm:gap-4">
-            <span className="text-sm font-medium text-primary group-hover:text-cipher-gold transition-colors">{displayed.text}</span>
-            <span className="text-xs text-secondary">
-              {announced ? <>Block <span className="tabular-nums">#{pending.height.toLocaleString('en-US')}</span> · </> : null}
-              {blocksRemaining === null ? 'Live progress unavailable' : <><span className="tabular-nums">{blocksRemaining.toLocaleString('en-US')}</span> {blocksRemaining === 1 ? 'block' : 'blocks'} to go</>}
-            </span>
-          </span>
-          <svg aria-hidden="true" className="h-4 w-4 shrink-0 text-cipher-gold transition-transform group-hover:translate-x-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M5 12h14m-6-6 6 6-6 6" /></svg>
-        </> : rich ? <span className="flex flex-col items-center gap-0.5 text-center font-sans sm:flex-row sm:gap-3">
-          <span className="text-xs font-medium text-brand-gold group-hover:underline sm:text-sm">{rich.text}</span>
-          <span className="flex flex-wrap items-center justify-center gap-x-3 text-xs text-secondary">
-            {rich.snapshotHeight !== undefined && snapshotHeightNow !== null && (rich.snapshotHeight > snapshotHeightNow
-              ? <span className="whitespace-nowrap"><span className="tabular-nums text-primary">{(rich.snapshotHeight - snapshotHeightNow).toLocaleString('en-US')}</span> blocks to go{snapshotEta ? ` · ≈ ${formatUpgradeTime(snapshotEta.seconds)}` : ''}</span>
-              : <span>Snapshot taken · voting opens soon</span>)}
-            {rich.hint && <><span className="text-muted sm:hidden">Shield ZEC to vote</span><span className="hidden text-muted sm:inline">{rich.hint}</span></>}
-            <span className="text-brand-gold" aria-hidden="true">→</span>
-          </span>
-        </span> : <>{displayed.text} →</>}
+  const label = announced ? 'NU7 announced mainnet upgrade' : pending ? 'NU7 activation countdown' : 'Governance announcement';
+  const detail = pending
+    ? <>{announced ? <>Block <span className="tabular-nums">#{pending.height.toLocaleString('en-US')}</span> · </> : null}
+        {blocksRemaining === null ? 'Live progress unavailable' : <><span className="tabular-nums">{blocksRemaining.toLocaleString('en-US')}</span> {blocksRemaining === 1 ? 'block' : 'blocks'} to go</>}</>
+    : rich?.snapshotHeight !== undefined && snapshotHeightNow !== null
+      ? (rich.snapshotHeight > snapshotHeightNow
+        ? <><span className="tabular-nums">{(rich.snapshotHeight - snapshotHeightNow).toLocaleString('en-US')}</span> blocks to go{snapshotEta ? ` · ≈ ${formatUpgradeTime(snapshotEta.seconds)}` : ''}</>
+        : 'Snapshot taken · voting opens soon')
+      : null;
+  return <span role="region" aria-label={label} className="flex shrink-0 items-center gap-3 sm:gap-4">
+    <span className="flex items-center gap-1 whitespace-nowrap font-mono text-xs sm:text-data">
+      <Link href={displayed.href} prefetch={false} className="text-brand-gold hover:underline">
+        {displayed.text}{detail ? <span className="text-secondary"> · {detail}</span> : null}
+        {rich?.hint ? <span className="hidden text-muted lg:inline"> · {rich.hint}</span> : null} →
       </Link>
-      <button aria-label={announced ? 'Dismiss NU7 announcement' : pending ? 'Dismiss NU7 activation countdown' : 'Dismiss governance announcement'} className="absolute right-3 flex h-8 w-8 items-center justify-center text-muted hover:text-primary" onClick={() => { dismissedKeys.current.add(displayed.key); try { sessionStorage.setItem(`governance:${displayed.key}`, '1'); } catch { /* In-memory fallback. */ } setDismissed(displayed.key); }}>×</button>
-    </div>
-  </div>;
+      <button aria-label={announced ? 'Dismiss NU7 announcement' : pending ? 'Dismiss NU7 activation countdown' : 'Dismiss governance announcement'} className="flex h-6 w-6 items-center justify-center text-muted hover:text-primary" onClick={() => { dismissedKeys.current.add(displayed.key); try { sessionStorage.setItem(`governance:${displayed.key}`, '1'); } catch { /* In-memory fallback. */ } setDismissed(displayed.key); }}>×</button>
+    </span>
+    <span aria-hidden="true" className="h-3 border-l border-cipher-border mx-0.5 sm:mx-0" />
+  </span>;
 }

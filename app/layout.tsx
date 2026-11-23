@@ -8,12 +8,10 @@ import { StatsBar } from "@/components/StatsBar";
 import { Footer } from "@/components/Footer";
 import { MaintenanceBanner } from "@/components/MaintenanceBanner";
 import { ChainSyncBanner } from "@/components/ChainSyncBanner";
-import { GovernanceBanner } from "@/components/GovernanceBanner";
 import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { getBaseUrl, getNetwork, getSiteCopy } from "@/lib/seo";
 import { HOME_FEED_PREFERENCE_BOOTSTRAP } from '@/lib/home-feed-preferences';
-import { getGovernanceBannerSeed } from '@/lib/governance-banner-seed';
 import "./globals.css";
 
 const geistSans = localFont({
@@ -95,9 +93,7 @@ const siteJsonLd = {
   ],
 };
 
-async function AppContent({ children }: { children: React.ReactNode }) {
-  // Server-rendered so a live poll banner does not appear after load and push the page down.
-  const governance = getNetwork() === 'mainnet' ? await getGovernanceBannerSeed() : null;
+function AppContent({ children }: { children: React.ReactNode }) {
   return (
     <>
       <a
@@ -110,7 +106,6 @@ async function AppContent({ children }: { children: React.ReactNode }) {
       <ChainSyncBanner />
       <NavBar />
       <StatsBar />
-      <GovernanceBanner initial={governance} />
       <main id="main-content" tabIndex={-1} className="min-h-screen">{children}</main>
       <Footer />
       <Suspense fallback={null}><AskWidget /></Suspense>

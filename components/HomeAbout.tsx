@@ -24,6 +24,7 @@ export function AboutSection({ about, size = 'sm', className = '' }: { about: Ab
     <section aria-label={about.heading} className={`about-section border-t border-cipher-border ${className}`}>
       <SectionHeader label={about.heading} icon={<InfoSectionIcon />} size={size} />
       <p className="type-prose text-secondary max-w-3xl font-sans"><Parts parts={about.intro} /></p>
+      {about.more?.map((paragraph, i) => <p key={i} className="type-prose text-secondary max-w-3xl font-sans mt-3"><Parts parts={paragraph} /></p>)}
       {about.items.length > 0 && (
         <div className="mt-8 grid grid-cols-1 gap-x-10 gap-y-7 md:grid-cols-2 lg:grid-cols-3">
           {about.items.map(item => (

@@ -8,7 +8,8 @@ import type { HomeAbout } from './home-about';
 export const PAGE_ABOUT: Record<string, HomeAbout> = {
   '/mempool': {
     heading: 'About the Zcash mempool',
-    intro: ['The Zcash mempool holds transactions that have been broadcast but not yet mined into a block. This page lists them as they arrive, labels each as shielded, transparent or mixed, and shows its size and fee.'],
+    intro: ['The mempool is the staging area of the Zcash network: every transaction broadcast by a wallet waits here until a miner includes it in a block. Confirmation time varies with block spacing, fees, and network demand. ZecBlock streams mempool entries and removals live over WebSocket from its own Zakura full node.'],
+    more: [['Each pending transaction is classified as transparent, shielded, or mixed based on its components. For shielded entries, only the structure is visible — amounts, senders, and receivers stay encrypted, in the mempool and forever after.']],
     items: [{
       question: 'How long does a Zcash transaction take to confirm?',
       answer: ['Since the NU7 upgrade on November 6, 2026, Zcash targets one block every 25 seconds. A transaction leaves the mempool once a block includes it, and its page keeps the same URL. Measured block times are on ', { href: '/network/block-speed', text: 'Block speed' }, '.'],
@@ -16,7 +17,8 @@ export const PAGE_ABOUT: Record<string, HomeAbout> = {
   },
   '/blocks': {
     heading: 'About Zcash blocks',
-    intro: ['Each Zcash block records a batch of transactions and the miner’s reward. This list shows the latest blocks with their transaction counts, sizes, mining rewards and timestamps, and lets you browse older blocks by mining software, pool, date, size and fees.'],
+    intro: ['Zcash block timing follows the active network upgrade. Each block bundles transparent and shielded transactions, a coinbase reward for the miner, and a commitment to the current state of the shielded pools. ZecBlock indexes every block from a Zcash full node, so heights, hashes, sizes, and intervals on this page reflect the canonical chain in real time.'],
+    more: [['The interval column tracks the spacing between consecutive blocks — useful for spotting hashrate swings or unusually slow blocks. Click any height or hash to inspect the full block: its transactions, miner, difficulty, and shielded activity.']],
     items: [{
       question: 'How often is a Zcash block mined?',
       answer: ['Zcash targets one block every 25 seconds since NU7, and every 75 seconds before it. Actual intervals vary from block to block; see ', { href: '/network/block-speed', text: 'Block speed' }, ' for measured times.'],
@@ -24,11 +26,9 @@ export const PAGE_ABOUT: Record<string, HomeAbout> = {
   },
   '/txs': {
     heading: 'About Zcash transactions',
-    intro: ['This list shows the latest Zcash transactions: shielded, transparent and coinbase. The ', { href: '/txs?type=shielded', text: 'shielded view' }, ' follows shielding and deshielding flows across the Ironwood, Orchard and Sapling pools.'],
-    items: [{
-      question: 'What is a shielded transaction?',
-      answer: ['A shielded transaction keeps its sender, receiver, amount and memo encrypted on chain. Only value moving between a shielded pool and a transparent address is public, which is why shielding and deshielding amounts can be listed.'],
-    }],
+    intro: ['Zcash supports two kinds of value transfer: transparent transactions, which work like Bitcoin and expose addresses and amounts on-chain, and shielded transactions, which use zero-knowledge proofs (Sapling, Orchard, and Ironwood) to keep sender, receiver, and amount private. Many transactions mix both — shielding funds into a private pool or deshielding them back out.'],
+    more: [['This page lists every transaction as it is mined, with type badges for transparent, Sapling, Orchard, Ironwood, and coinbase activity, plus flow indicators for shielding and deshielding movements. Filter by type, pool, flow direction, or minimum amount to analyze specific transaction patterns. The ', { href: '/txs?type=shielded', text: 'shielded view' }, ' lists shielded transactions only.']],
+    items: [],
   },
   '/rich-list': {
     heading: 'About the Zcash rich list',
@@ -59,19 +59,9 @@ export const PAGE_ABOUT: Record<string, HomeAbout> = {
       answer: ['Use common, round amounts such as 1, 5 or 10 ZEC, split large or odd amounts into several transactions, and shield leftovers at a different time. Amount frequency is a heuristic, not a privacy guarantee.'],
     }],
   },
-  '/network/nodes': {
-    heading: 'About Zcash nodes',
-    intro: ['Zcash runs on a peer-to-peer network of full nodes. This page shows the active nodes our crawler has reached, the client implementations and versions they run, and where they are. It counts reachable nodes, not every Zcash node.'],
-    items: [],
-  },
   '/network/upgrades': {
     heading: 'About Zcash network upgrades',
     intro: ['Zcash changes its consensus rules through network upgrades, each activating at a set block height. This page covers every upgrade from Overwinter to NU7 and links to trackers for their effects: block speed, the NSM reserve and fees, shielded pools, transactions and funding.'],
-    items: [],
-  },
-  '/pulse': {
-    heading: 'About Network Pulse',
-    intro: ['Network Pulse flags statistical anomalies across 12 on-chain Zcash metrics, such as unusual transaction volumes, shielding spikes, cross-chain flows, fee surges and valuation signals. A day is flagged when a value moves more than 2.5 standard deviations from its 90-day average.'],
     items: [],
   },
   '/crosschain': {
@@ -81,7 +71,7 @@ export const PAGE_ABOUT: Record<string, HomeAbout> = {
   },
   '/turnstile': {
     heading: 'About the Turnstile Tracker',
-    intro: ['ZEC that leaves a shielded pool lands on a transparent address. The Turnstile Tracker follows it and shows whether it stays there, is reshielded, moves to an exchange or transfers elsewhere. It updates hourly.'],
+    intro: ['ZEC that leaves a shielded pool lands on a transparent address. The Turnstile Tracker follows it and shows whether it stays there, is reshielded, moves to an exchange or bridge, or transfers elsewhere.'],
     items: [],
   },
   '/privacy': {

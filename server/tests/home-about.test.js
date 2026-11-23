@@ -97,3 +97,19 @@ test('page About copy names no Zcash Names, links to real pages and is mainnet o
   }
   assert.match(read('components/HomeAbout.tsx'), /if \(!about \|\| getNetwork\(\) !== 'mainnet'\) return null;/);
 });
+
+test('each page keeps one About: the older explainer blocks were folded in', () => {
+  for (const file of ['app/mempool/page.tsx', 'app/blocks/BlocksPage.tsx', 'app/txs/render.tsx']) {
+    assert.doesNotMatch(read(file), /server-rendered for indexing|lowercase tracking-tight/, file);
+  }
+  assert.match(aboutPartsText(PAGE_ABOUT['/mempool'].intro), /^The mempool is the staging area of the Zcash network/);
+  assert.match(aboutPartsText(PAGE_ABOUT['/blocks'].intro), /^Zcash block timing follows the active network upgrade/);
+  assert.match(aboutPartsText(PAGE_ABOUT['/txs'].intro), /^Zcash supports two kinds of value transfer/);
+  // Blend Check's collapsed explainer is now the server-rendered section.
+  assert.doesNotMatch(read('app/tools/blend-check/page.tsx'), /Why does this matter\?/);
+  assert.match(aboutPartsText(PAGE_ABOUT['/tools/blend-check'].intro), /7\.31924 ZEC/);
+  // Nodes explains its own methodology; no second About.
+  assert.equal(PAGE_ABOUT['/network/nodes'], undefined);
+  // Pulse explains its metrics and thresholds itself.
+  assert.equal(PAGE_ABOUT['/pulse'], undefined);
+});

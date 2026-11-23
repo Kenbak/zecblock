@@ -13,6 +13,8 @@ export interface AboutItem {
 export interface HomeAbout {
   heading: string;
   intro: AboutPart[];
+  /** Further paragraphs after the intro. */
+  more?: AboutPart[][];
   items: AboutItem[];
 }
 
@@ -128,6 +130,7 @@ export function homeAboutMarkdown(about: HomeAbout, siteUrl: string): string {
     `## ${about.heading}`,
     '',
     md(about.intro),
+    ...(about.more ?? []).flatMap(paragraph => ['', md(paragraph)]),
     ...about.items.flatMap(item => ['', `### ${item.question}`, '', md(item.answer)]),
   ].join('\n');
 }

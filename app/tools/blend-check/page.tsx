@@ -110,7 +110,6 @@ export default function BlendCheckPage() {
   const [splitResult, setSplitResult] = useState<SplitResult | null>(null);
   const [selectedPlanIdx, setSelectedPlanIdx] = useState(0);
   const [copied, setCopied] = useState(false);
-  const [showWhy, setShowWhy] = useState(false);
   const debounceRef = useRef<NodeJS.Timeout>(null);
   const abortRef = useRef<AbortController>(null);
 
@@ -587,54 +586,6 @@ export default function BlendCheckPage() {
             </Card>
           )}
 
-          {/* Why does this matter? */}
-          <Card>
-            <CardBody>
-              <button
-                onClick={() => setShowWhy(!showWhy)}
-                className="w-full flex items-center justify-between text-left"
-              >
-                <h3 className="text-sm font-semibold text-primary">Why does this matter?</h3>
-                <svg
-                  className={`w-4 h-4 text-muted transition-transform ${showWhy ? 'rotate-180' : ''}`}
-                  fill="none" stroke="currentColor" viewBox="0 0 24 24"
-                >
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                </svg>
-              </button>
-              {showWhy && (
-                <div className="mt-4 space-y-3 text-sm text-secondary leading-relaxed">
-                  <p>
-                    When you shield ZEC, you move it from a public address into the private shielded pool. The <strong className="text-primary">amount</strong> you shield is visible on-chain, even though your future activity is hidden.
-                  </p>
-                  <p>
-                    If you shield an unusual amount like <span className="font-mono text-primary">7.31924 ZEC</span>, an observer can search the blockchain for that exact number. If someone later deshields <span className="font-mono text-primary">7.31924 ZEC</span>, it&apos;s a strong signal those two transactions are linked — breaking your privacy.
-                  </p>
-                  <p>
-                    By using <strong className="text-primary">common, round amounts</strong> (like 1, 5, or 10 ZEC), you become indistinguishable from thousands of other users who shielded the same amount.
-                  </p>
-                  <div className="pt-3 border-t border-cipher-border space-y-2 text-xs text-muted font-mono">
-                    <p className="flex gap-2">
-                      <span className="text-cipher-gold shrink-0">$</span>
-                      Use round numbers: 1, 2.5, 5, 10, 25, 50, 100 ZEC
-                    </p>
-                    <p className="flex gap-2">
-                      <span className="text-cipher-gold shrink-0">$</span>
-                      Split large or odd amounts into multiple transactions
-                    </p>
-                    <p className="flex gap-2">
-                      <span className="text-cipher-gold shrink-0">$</span>
-                      Shield the leftover at a different time to avoid correlation
-                    </p>
-                    <p className="flex gap-2">
-                      <span className="text-cipher-gold shrink-0">$</span>
-                      Use a unified address (u1...) for maximum privacy
-                    </p>
-                  </div>
-                </div>
-              )}
-            </CardBody>
-          </Card>
         </div>
       </div>
 

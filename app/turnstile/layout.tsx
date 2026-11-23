@@ -4,7 +4,7 @@ import { PageAbout } from '@/components/HomeAbout';
 export const metadata = buildPageMetadata({
   title: 'Zcash Turnstile Tracker | ZecBlock',
   description:
-    'Track where deshielded ZEC goes: transparent addresses, reshielding, exchanges, and other transfers. Updated hourly.',
+    'Track where deshielded ZEC goes: transparent addresses, reshielding, exchanges, and other transfers. Updated every 5 minutes.',
   keywords: [
     'zcash turnstile',
     'zcash deshielding',

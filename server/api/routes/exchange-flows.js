@@ -1,7 +1,7 @@
 /**
  * Exchange flow routes
  * /api/exchange-flows/daily — daily deposits, withdrawals and net flow of
- * labelled exchange and custody wallets (migration 026, jobs/refresh-exchange-flows.js).
+ * labelled exchange and custody wallets (migration 046, jobs/refresh-exchange-flows.js).
  *
  * Exact zatoshi decimal strings. 503 until the first full rebuild completes;
  * status 'stale' (with staleReason) when labels, classifier or tip moved on.

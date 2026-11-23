@@ -12,7 +12,7 @@ const T0 = 1795371364; // 2026-11-22T13:36:04Z
 const USER = 't1ejN4MbrPtM8TSJ1aaj1aXnoaANFUZt3hv', DEPOSIT = 't1Tos7k6RuBQsa2nG73BHpT4BMYyQfkWhzD';
 const HOT = 't1KbKkQ7WisJF52sSepMjYokQJbkJCJ1i3C', KRAKEN = 't1g47g7wNA55q5PWYHWb6X5JxzhMqwaknjC', OUT = 't1Sid7L2pEMzsU4T9raxqztJYjupQf6c4aY';
 const BINANCE = 't1SzbuFRuPa5upV6c9ZgKb9V7fxn2b8NAKg', NEWKRAKEN = 't1NewKrakenWa11etAddre55xxxxxxxxxxx';
-const MIGRATION = fs.readFileSync(path.join(__dirname, '../deploy/migrations/026_exchange_flows.sql'), 'utf8');
+const MIGRATION = fs.readFileSync(path.join(__dirname, '../deploy/migrations/046_exchange_flows.sql'), 'utf8');
 
 async function withDatabase(fn) {
   const connection = process.env.TEST_ACTIVITY_DATABASE_URL;

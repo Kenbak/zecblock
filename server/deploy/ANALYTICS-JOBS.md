@@ -158,9 +158,9 @@ does not replace the original daily-v3 cron source. Do not restart an indexer to
 install SQL-only migration 028. Mainnet is the only enabled replay target;
 testnet needs its prerequisite analytics tables before these API readers/jobs.
 
-## Exchange flows (migration 026)
+## Exchange flows (migration 046)
 
-`server/deploy/migrations/026_exchange_flows.sql` adds `exchange_flows` (one row
+`server/deploy/migrations/046_exchange_flows.sql` adds `exchange_flows` (one row
 per classified deposit or withdrawal of a labelled exchange or custodian),
 `exchange_flow_daily` (UTC day × entity), `exchange_flow_state` and
 `exchange_flow_labels`. Exact zatoshi `bigint`. Classifier:
@@ -168,7 +168,7 @@ per classified deposit or withdrawal of a labelled exchange or custodian),
 
 Install order:
 
-1. Apply migration 026 on the primary.
+1. Apply migration 046 on the primary.
 2. `cd server/jobs && node refresh-exchange-flows.js --rebuild` (primary,
    advisory lock 839320). Resumable: rerun the same command after an
    interruption. `--batch-blocks=N` sets the batch size (default 20000).

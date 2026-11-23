@@ -1,6 +1,6 @@
 'use strict';
 
-// Durable exchange-flow dataset (migration 026): writer used by
+// Durable exchange-flow dataset (migration 046): writer used by
 // server/jobs/refresh-exchange-flows.js and readers used by the bot and API.
 //
 // Authority: canonical transactions (block hash matched at its height) in
@@ -138,7 +138,7 @@ const classifierOf = version => String(version || '').split(':')[0];
 async function rebuild(client, { labels, batchBlocks = BATCH_BLOCKS, log = () => {}, now = () => Date.now() } = {}) {
   const started = now();
   const state = await readState(client);
-  if (!state) throw new Error('exchange_flow_state missing: apply migration 026 first');
+  if (!state) throw new Error('exchange_flow_state missing: apply migration 046 first');
   const { rows: [first] } = await client.query('SELECT height, timestamp FROM blocks ORDER BY height ASC LIMIT 1');
   let tip = await chainTip(client);
   if (!first || !tip) throw new Error('no blocks indexed');
@@ -213,7 +213,7 @@ async function repairLabels(client, { labels, affected, log = () => {} }) {
  */
 async function refresh(client, { labels, maxAffected = MAX_AUTO_AFFECTED, log = () => {} } = {}) {
   const state = await readState(client);
-  if (!state) throw new Error('exchange_flow_state missing: apply migration 026 first');
+  if (!state) throw new Error('exchange_flow_state missing: apply migration 046 first');
   // An interrupted rebuild leaves mixed rows: only --rebuild may continue it.
   if (state.rebuild_label_version) return { action: 'rebuild-in-progress', stale: true };
   if (!state.ready) return { action: 'not-built' };

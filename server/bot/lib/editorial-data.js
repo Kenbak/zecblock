@@ -347,7 +347,7 @@ async function nu7Candidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
 }
 
 // Large exchange deposits and withdrawals from the last hour, ranked against
-// the stored exchange_flows rows (migration 026, jobs/refresh-exchange-flows.js).
+// the stored exchange_flows rows (migration 046, jobs/refresh-exchange-flows.js).
 // Nothing is posted while the dataset is unavailable or stale (labels changed,
 // rebuild in progress, job behind the tip). A failed or stale price only drops
 // the USD figure.

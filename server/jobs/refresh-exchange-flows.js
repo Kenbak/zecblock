@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * Exchange flow refresh (migration 026)
+ * Exchange flow refresh (migration 046)
  *
  * Maintains exchange_flows (one row per classified deposit/withdrawal of a
  * labelled exchange or custodian) and exchange_flow_daily (UTC day x entity,

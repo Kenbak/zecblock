@@ -89,7 +89,11 @@ function exchangeFlowStory(row) {
     : `Top ${tail}% of ${into ? 'deposits to' : 'withdrawals from'} labelled exchange and custody wallets in 30 days.`;
   const net = row.net && /^\d+$/.test(row.net.depositsZat) && /^\d+$/.test(row.net.withdrawalsZat)
     ? ` ${entity.name}, last 24h: ${f.zecShort(Number(row.net.depositsZat) / 1e8)} ZEC in, ${f.zecShort(Number(row.net.withdrawalsZat) / 1e8)} ZEC out.` : '';
-  const content = `${MARK} ${amt} ZEC${usd ? ` (${f.usdShort(usd)})` : ''} ${verb}.\n\n${rank}${net}\n\n${BASE}/tx/${row.txid}`;
+  // Long names (Coinbase Prime custody, shielded counterparty) can push the copy
+  // past 280 characters: drop the 24h line first, then shorten the rank line.
+  const shortRank = largest ? `Largest labelled ${row.direction} in 30 days.` : `Top ${tail}% of labelled ${row.direction}s in 30 days.`;
+  const build = (r, extra) => `${MARK} ${amt} ZEC${usd ? ` (${f.usdShort(usd)})` : ''} ${verb}.\n\n${r}${extra}\n\n${BASE}/tx/${row.txid}`;
+  const content = [build(rank, net), build(rank, ''), build(shortRank, '')].find(c => c.length <= 280) || build(shortRank, '');
   const kind = custody ? 'Custody' : 'Exchange';
   const card = { kicker: `${kind} · ${into ? 'Deposit' : 'Withdrawal'}`, hero: `${into ? '+' : '−'}${amt}`, unit: 'ZEC',
     tone: into ? 'in' : 'out', title: `${amt} ZEC ${into ? 'went into' : 'left'} ${place}.`,

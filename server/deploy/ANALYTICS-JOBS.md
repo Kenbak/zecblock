@@ -157,3 +157,38 @@ by deploying the replacement with the backend release. The staged replay alone
 does not replace the original daily-v3 cron source. Do not restart an indexer to
 install SQL-only migration 028. Mainnet is the only enabled replay target;
 testnet needs its prerequisite analytics tables before these API readers/jobs.
+
+## Exchange flows (migration 026)
+
+`server/deploy/migrations/026_exchange_flows.sql` adds `exchange_flows` (one row
+per classified deposit or withdrawal of a labelled exchange or custodian),
+`exchange_flow_daily` (UTC day × entity), `exchange_flow_state` and
+`exchange_flow_labels`. Exact zatoshi `bigint`. Classifier:
+`server/lib/exchange-flows.js`; writer and readers: `server/lib/exchange-flow-store.js`.
+
+Install order:
+
+1. Apply migration 026 on the primary.
+2. `cd server/jobs && node refresh-exchange-flows.js --rebuild` (primary,
+   advisory lock 839320). Resumable: rerun the same command after an
+   interruption. `--batch-blocks=N` sets the batch size (default 20000).
+3. Cron the incremental run every 5 minutes:
+   `node refresh-exchange-flows.js`.
+
+Until step 2 completes, `/v1/exchange-flows/daily` returns 503 and the bot posts
+nothing. The incremental run re-reads the last 100 blocks, removes rows whose
+block hash is no longer canonical within the 1000-block reorg bound, and rewinds
+1000 blocks when the stored tip hash changed. A label change re-classifies only
+transactions touching the changed addresses (up to `--max-affected`, default
+100000); above that, rows keep the stored label map, read as stale, and need
+`--rebuild`. Bump `CLASSIFIER_VERSION` when classification changes; stored rows
+then read stale until a rebuild.
+
+Measured locally (2026-11-22, PostgreSQL 14, laptop SSD) on a synthetic fixture
+of 3.6M blocks, 2,052 exchange labels, 400k labelled transactions and 5.7M
+`address_transactions` rows: full rebuild 39 s with 20k-block batches (181
+batches) and 27–31 s with 100k-block batches, writing 299,592 events (189 MB with
+indexes, 23,570 daily rows); incremental runs 0.07–0.14 s; retroactive repair of
+one wallet (6,618 transactions) 10 s; bot rank and 24h net 0.57 s; all-history
+daily API read 43 ms. Production `address_transactions` and leg tables are far
+larger, so expect index probes to cost more there.

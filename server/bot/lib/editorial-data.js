@@ -346,23 +346,27 @@ async function nu7Candidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
   return rest;
 }
 
-// Large exchange deposits and withdrawals from the last hour, ranked against the
-// rolling 30-day classified history (kept in memory, see exchange-flows.js).
-// A failed or stale price only drops the USD figure.
-const exchangeHistory = exchangeFlows.createHistory();
-async function exchangeFlowCandidates(pool, now, { history = exchangeHistory, fetchPrice = fetchSpotPrice, refresh } = {}) {
+// Large exchange deposits and withdrawals from the last hour, ranked against
+// the stored exchange_flows rows (migration 026, jobs/refresh-exchange-flows.js).
+// Nothing is posted while the dataset is unavailable or stale (labels changed,
+// rebuild in progress, job behind the tip). A failed or stale price only drops
+// the USD figure.
+const exchangeStore = require('../../lib/exchange-flow-store');
+async function exchangeFlowCandidates(pool, now, { store = exchangeStore, fetchPrice = fetchSpotPrice } = {}) {
   await assertMainnetFresh(pool, now);
-  const view = await history.refresh(pool, now, refresh);
+  const st = await store.status(pool);
+  if (st.status !== 'ok') return { candidates: [], decisions: [{ key: 'exchange-flows', reason: `exchange-flows-${st.status}`, detail: st.reason }] };
+  // Settled blocks only, and never past what the job has written.
+  const to = Math.min(Math.floor(now.getTime() / 1000) - exchangeFlows.SETTLE_S, Number(st.state.through_time));
+  const recent = await store.recentEvents(pool, to - 3600, to, exchangeFlows.MIN_ZAT);
   const decisions = [];
-  const recent = view.events.filter(e => e.blockTime >= view.to - 3600 && exchangeFlows.postable(e.entity)
-    && BigInt(e.amountZat) >= exchangeFlows.MIN_ZAT);
   if (!recent.length) return { candidates: [], decisions };
   const { quote, unavailable } = await fetchPrice();
   if (unavailable) decisions.push({ key: 'exchange-price', reason: 'price-unavailable', detail: unavailable });
   const candidates = [];
   for (const event of recent) {
-    const story = exchangeFlows.exchangeFlowStory({ ...event, ...exchangeFlows.rankEvent(event, view.events),
-      net: exchangeFlows.netFlow(view.events, view.to, event.entity), price_usd: quote?.usd ?? null, price_quote: quote });
+    const story = exchangeFlows.exchangeFlowStory({ ...event, ...await store.rankStored(pool, event),
+      net: await store.netStored(pool, to, event.entity), price_usd: quote?.usd ?? null, price_quote: quote });
     if (story) candidates.push(story);
     else decisions.push({ key: `exchange_flow:${event.direction}:${event.entity}:${event.txid}`, reason: 'exchange-baseline-or-significance' });
   }

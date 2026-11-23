@@ -17,3 +17,13 @@ test('--app-stats-height matches the stats bar box at every breakpoint', () => {
   // Nothing may overwrite it at runtime with a measured (possibly stale) value.
   assert.doesNotMatch(bar, /setProperty\('--app-stats-height'/);
 });
+
+// Each stat keeps its label and a value-sized slot until its source answers,
+// so the strip does not rebuild and slide sideways as each request lands.
+test('the stats bar holds a slot per loading stat and derives values in render', () => {
+  const bar = fs.readFileSync('components/StatsBar.tsx', 'utf8');
+  assert.match(bar, /renderStat\(id\) \?\? \(statLoading\[id\] \? <StatPlaceholder id=\{id\} \/> : null\)/);
+  assert.match(bar, /const stats = useMemo<StatsData>/);
+  assert.doesNotMatch(bar, /setStats\(/);
+  assert.doesNotMatch(bar, /\{!hasAnyData && \(/);
+});

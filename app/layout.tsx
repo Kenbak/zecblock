@@ -13,6 +13,8 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { getBaseUrl, getNetwork, getSiteCopy } from "@/lib/seo";
 import { HOME_FEED_PREFERENCE_BOOTSTRAP } from '@/lib/home-feed-preferences';
+import { getGovernanceAnnouncementCatalog } from '@/lib/governance-data';
+import { buildAnnouncementSnapshot, type AnnouncementSnapshot } from '@/lib/governance-announcement';
 import "./globals.css";
 
 const geistSans = localFont({
@@ -94,7 +96,19 @@ const siteJsonLd = {
   ],
 };
 
-function AppContent({ children }: { children: React.ReactNode }) {
+// Same source and bounded wait as /api/governance/announcement. Rendering it
+// here keeps a live poll banner from appearing after load and shifting the page.
+async function initialGovernanceSnapshot(): Promise<AnnouncementSnapshot | null> {
+  if (getNetwork() !== 'mainnet') return null;
+  try {
+    return buildAnnouncementSnapshot(await getGovernanceAnnouncementCatalog(), Date.now()).snapshot;
+  } catch {
+    return null;
+  }
+}
+
+async function AppContent({ children }: { children: React.ReactNode }) {
+  const governance = await initialGovernanceSnapshot();
   return (
     <>
       <a
@@ -107,7 +121,7 @@ function AppContent({ children }: { children: React.ReactNode }) {
       <ChainSyncBanner />
       <NavBar />
       <StatsBar />
-      <GovernanceBanner />
+      <GovernanceBanner initial={governance} />
       <main id="main-content" tabIndex={-1} className="min-h-screen">{children}</main>
       <Footer />
       <Suspense fallback={null}><AskWidget /></Suspense>

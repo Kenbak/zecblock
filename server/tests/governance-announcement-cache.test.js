@@ -124,8 +124,9 @@ test('results and upcoming date-only notices transition without fabricating an o
   assert.equal(helpers.buildAnnouncementSnapshot(catalog([], opening), opening).snapshot.announcement, null);
 });
 
-function bannerHarness(responses, initialNow = now) {
+function bannerHarness(responses, initialNow = now, props) {
   const effects = [];
+  const initialStates = [];
   const updates = [];
   const timeouts = new Map();
   const intervals = new Map();
@@ -137,7 +138,7 @@ function bannerHarness(responses, initialNow = now) {
   const FakeDate = class extends Date { static now() { return clock; } };
   const component = load('components/GovernanceBanner.tsx', {
     react: {
-      useState: value => { const index = state++; return [value, next => { if (index === 0) updates.push(next); }]; },
+      useState: value => { const index = state++; initialStates.push(value); return [value, next => { if (index === 0) updates.push(next); }]; },
       useRef: value => ({ current: value }), useEffect: effect => effects.push(effect),
     },
     'next/link': {}, '@/lib/config': { isMainnet: true, isCrosslink: false, NETWORK: 'mainnet' },
@@ -157,9 +158,9 @@ function bannerHarness(responses, initialNow = now) {
       return response;
     },
   });
-  component.GovernanceBanner();
+  component.GovernanceBanner(props);
   const cleanup = effects[1]();
-  return { updates, timeouts, intervals, cleanup, calls: () => calls, advance: value => { clock += value; },
+  return { initialStates, updates, timeouts, intervals, cleanup, calls: () => calls, advance: value => { clock += value; },
     tick: async () => { await new Promise(resolve => setImmediate(resolve)); } };
 }
 function response(snapshot, age = '0') {
@@ -244,4 +245,23 @@ test('shared announcement responses omit per-IP quota headers while the same lim
   }));
   assert.equal(other.headers.get('X-RateLimit-Limit'), '300', 'other APIs retain their existing quota contract');
   assert.equal(other.headers.get('X-RateLimit-Remaining'), '299');
+});
+
+test('the layout seeds the banner from the server snapshot so it is in the first HTML', async () => {
+  const active = { key: 'vote:active', href: '/governance/vote', text: 'Voting is open' };
+  const fresh = bannerHarness([response({ announcement: active, generatedAt: now, nextChangeAt: now + 60_000 })], now,
+    { initial: { announcement: active, generatedAt: now, nextChangeAt: now + 60_000 } });
+  assert.deepEqual(fresh.initialStates[0], active);
+  assert.equal(fresh.updates.includes(null), false);
+  fresh.cleanup();
+  // A cached page whose window already closed drops the seed before any refresh answers.
+  const lapsed = bannerHarness([new Error('offline')], now,
+    { initial: { announcement: active, generatedAt: now - 120_000, nextChangeAt: now - 1 } });
+  assert.deepEqual(lapsed.initialStates[0], active);
+  assert.equal(lapsed.updates[0], null);
+  lapsed.cleanup();
+  const layout = fs.readFileSync('app/layout.tsx', 'utf8');
+  assert.match(layout, /getNetwork\(\) !== 'mainnet'\) return null/);
+  assert.match(layout, /buildAnnouncementSnapshot\(await getGovernanceAnnouncementCatalog\(\), Date\.now\(\)\)/);
+  assert.match(layout, /<GovernanceBanner initial=\{governance\} \/>/);
 });

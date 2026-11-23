@@ -1,5 +1,5 @@
 'use client';
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import Link from 'next/link';
 import { ComposedChart, Bar, Line, XAxis, YAxis, ResponsiveContainer, CartesianGrid } from 'recharts';
 import { CURRENCY, NETWORK } from '@/lib/config';
@@ -11,6 +11,8 @@ import { useTheme } from '@/contexts/ThemeContext';
 import { getChartColors } from '@/lib/chart-theme';
 import { useUrlState } from '@/lib/use-url-state';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
+import { PanelShareControl } from '@/components/charts/PanelShareControl';
+import { accountingCsv } from '@/lib/accounting-csv';
 
 type Accounting = { schedule: { network: string; nu7Height: number | null } | null; nodeHeight: number; nsmBalanceZat: number | string | null; observedAt: string;
   block: { height: number; feesPaidZat: number | string | null; feesToNsmZat: number | string | null; minerFeeAllocationZat: number | string | null;
@@ -58,6 +60,7 @@ export function NetworkAccounting() {
     Number.isSafeInteger(data.nodeHeight) && data.nodeHeight >= 0 && data.nodeHeight <= 499_999_999;
   const nu7Active = validSchedule && data.nodeHeight >= activationHeight;
   const [metric, setMetric] = useState<keyof typeof historySeries>('fees');
+  const chartRef = useRef<HTMLDivElement>(null);
   const [period, setPeriod] = useUrlState<Period>('accounting', '30d', Object.keys(periods) as Period[]);
   const history = useApiQuery<History>('/v1/network/accounting/history', { period }, { enabled: nu7Active, refreshInterval: 30_000 });
   // The hook retains previous query data. Never label an old range or network
@@ -131,9 +134,14 @@ export function NetworkAccounting() {
     <div className="border-t border-cipher-border pt-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <h3 className="font-mono text-sm text-primary">Accounting history</h3>
-        <PeriodPillTags aria-label="Accounting history period" value={period} onChange={setPeriod}
-          options={(Object.keys(periods) as Period[]).map(key => ({ key, label: periods[key] }))} />
+        <div className="flex flex-wrap items-center gap-1">
+          <PeriodPillTags aria-label="Accounting history period" value={period} onChange={setPeriod}
+            options={(Object.keys(periods) as Period[]).map(key => ({ key, label: periods[key] }))} />
+          <PanelShareControl title={`Zcash ${metricLabels[metric].toLowerCase()} (${periods[period]})`} fileName={`zecblock-nsm-${metric}-${period}`}
+            csv={() => accountingCsv(selected?.points ?? [], CURRENCY)} panelRef={chartRef} disabled={!hasValues} />
+        </div>
       </div>
+      <div ref={chartRef}>
       <dl className="grid grid-cols-2 sm:grid-cols-3 gap-x-6 gap-y-3 mb-5" aria-label="Selected period totals">
         {([['Fees paid', selected?.selected.feesPaidZat], ['Minimum removal', selected?.selected.feesToNsmZat],
           ['Maximum miner fees', selected?.selected.minerFeeAllocationZat]] as const).map(([label, value], index) => <div key={label} className={index === 2 ? 'col-span-2 sm:col-span-1' : undefined}>
@@ -172,6 +180,7 @@ export function NetworkAccounting() {
       {hasValues && <ul className="flex flex-wrap gap-x-5 gap-y-2 mb-3 text-caption text-muted" aria-label="Chart legend">
         {series.map(([key, name, color]) => <li key={key} className="flex items-center gap-2"><span aria-hidden="true" className="inline-block w-3 h-0.5" style={{ backgroundColor: colors[color] }} />{name}</li>)}
       </ul>}
+      </div>
       <p className="text-caption text-muted">{metric === 'fees' ? 'Total column height = fees paid.' : metric === 'cumulative' ? 'Cumulative minimum removal starts at NU7 activation, including earlier blocks outside the selected range.'
         : metric === 'reserve' ? 'Last recorded reserve observation within each bucket, plotted at its block-header time. Sample block and time are in tooltips.' : 'Each column sums actual miner receipts in a complete bucket.'} Amounts in {CURRENCY}; exact values in tooltips.</p>
       {selected && <div className="text-caption text-muted mt-2 space-y-1">

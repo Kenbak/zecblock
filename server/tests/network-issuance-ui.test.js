@@ -74,6 +74,8 @@ function renderAccounting(active, nsmBalanceZat) {
     '@/lib/config': { NETWORK: 'mainnet', CURRENCY: 'ZEC' },
     '@/lib/use-url-state': { useUrlState: (key, fallback) => React.useState(fallback) },
     '@/components/ui/PeriodPillTags': load('components/ui/PeriodPillTags.tsx'),
+    '@/components/charts/PanelShareControl': { PanelShareControl: () => null },
+    '@/lib/accounting-csv': { accountingCsv: () => null },
     '@/hooks/useApiQuery': { useApiQuery: path => path.endsWith('/history') ? { data: null } : { data: {
       success: true, schedule: { network: 'main', nu7Height: active ? 3497350 : null },
       nodeHeight: 3497353, nsmBalanceZat,

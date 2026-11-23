@@ -60,17 +60,18 @@ test('weekly collector: needs an ok dataset covering the whole completed week', 
   assert.equal(stale.decisions[0].reason, 'exchange-flows-stale');
 });
 
-test('weekly recap renders a still card and a GIF', async () => {
-  const s = week(WEEK);
-  const { renderEditorial } = require('../bot/lib/zecblock-cards');
-  const png = await renderEditorial(s);
+const HAS_FFMPEG = require('child_process').spawnSync('ffmpeg', ['-version']).status === 0;
+
+test('weekly recap renders a still card', async () => {
+  const png = await require('../bot/lib/zecblock-cards').renderEditorial(week(WEEK));
   assert.ok(fs.statSync(png).size > 10000); fs.unlinkSync(png);
+});
+
+test('weekly recap renders a GIF', { skip: !HAS_FFMPEG && 'ffmpeg not installed' }, async () => {
   const out = require('path').join(require('os').tmpdir(), `netflow-test-${process.pid}.gif`);
   try {
-    const r = await require('../bot/lib/netflow-gif').renderNetflowGif(s, out);
+    const r = await require('../bot/lib/netflow-gif').renderNetflowGif(week(WEEK), out);
     assert.ok(r.bytes > 10000);
     assert.equal(fs.readFileSync(out).subarray(0, 6).toString(), 'GIF89a');
-  } catch (error) {
-    if (!/ffmpeg|ENOENT/.test(error.message)) throw error;
   } finally { try { fs.unlinkSync(out); } catch { /* not written */ } }
 });

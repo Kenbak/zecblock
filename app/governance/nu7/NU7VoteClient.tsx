@@ -785,7 +785,7 @@ function SectionLabel({ label, live }: { label: string; live?: boolean }) {
       <span className="text-xs text-muted font-mono uppercase tracking-widest opacity-50">{'>'}</span>
       <h2 className="text-xs font-semibold font-mono text-secondary lowercase tracking-tight">{label}</h2>
       {live && (
-        <span className="relative flex h-2 w-2" aria-label="Live">
+        <span className="relative flex h-2 w-2" role="img" aria-label="Live">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cipher-green opacity-60" />
           <span className="relative inline-flex rounded-full h-2 w-2 bg-cipher-green" />
         </span>

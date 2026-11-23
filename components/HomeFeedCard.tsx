@@ -2,15 +2,18 @@
 
 import { useEffect, useLayoutEffect, useRef, useState, type ComponentType } from 'react';
 import Link from 'next/link';
+import dynamic from 'next/dynamic';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { RecentBlocks } from '@/components/RecentBlocks';
 import { RecentShieldedTxs } from '@/components/RecentShieldedTxs';
 import { RecentTransactions } from '@/components/RecentTransactions';
 import { RecentReorgs } from '@/components/RecentReorgs';
 import { TopMiners } from '@/components/TopMiners';
-import { MiningSoftwareMiniChart } from '@/components/MiningSoftwareMiniChart';
 import { IronwoodProgressCard } from '@/components/IronwoodProgressCard';
-import { ShieldedPoolMiniChart } from '@/components/ShieldedPoolMiniChart';
+
+// Chart cards are opt-in feed choices; load recharts only when one is shown.
+const MiningSoftwareMiniChart = dynamic(() => import('@/components/MiningSoftwareMiniChart').then(m => m.MiningSoftwareMiniChart));
+const ShieldedPoolMiniChart = dynamic(() => import('@/components/ShieldedPoolMiniChart').then(m => m.ShieldedPoolMiniChart));
 import { SlidersIcon } from '@/components/icons/common';
 import { BlockSectionIcon, TransactionSectionIcon, ReorgSectionIcon, MiningSectionIcon, SoftwareSectionIcon } from '@/components/icons/home-section';
 import { ShieldedIcon, MigrationIcon } from '@/components/icons/shield-flow';

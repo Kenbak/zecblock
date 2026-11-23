@@ -7,6 +7,7 @@ import {
 } from '@/lib/network';
 import { getApiUrlForNetwork } from '@/lib/api-config';
 import { fetchWithDeadline } from '@/lib/server-fetch';
+import { hasMarkdownVersion, markdownPathFor } from '@/lib/llms/paths';
 
 export type SeoNetwork = AppNetwork;
 
@@ -154,7 +155,13 @@ export function buildPageMetadata({
     ...(keywords?.length ? { keywords } : {}),
     // `null` explicitly clears a canonical inherited from the root layout on
     // invalid or authoritatively missing resources.
-    alternates: { canonical: includeCanonical ? canonical : null },
+    alternates: {
+      canonical: includeCanonical ? canonical : null,
+      // Markdown version for language models (llms.txt convention), mainnet only.
+      ...(shouldIndex && network === 'mainnet' && hasMarkdownVersion(path)
+        ? { types: { 'text/markdown': absoluteUrl(markdownPathFor(path)) } }
+        : {}),
+    },
     openGraph,
     twitter: {
       card: 'summary_large_image',

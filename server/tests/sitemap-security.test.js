@@ -279,8 +279,7 @@ test('block resolution is shared, cached, and preserves unavailable states', asy
       return entries.get(key);
     };
   };
-  const { getBlockResolution } = loadTypeScriptModule('lib/seo.ts', {
-    react: { cache: fakeCache },
+  const { getBlockResolution } = loadTypeScriptModule('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, react: { cache: fakeCache },
     '@/lib/network': {
       getConfiguredNetwork: () => 'mainnet',
       normalizeApiBaseUrl: (url) => url,
@@ -451,8 +450,7 @@ test('shared metadata policy indexes blocks only on mainnet', () => {
   ];
 
   for (const testCase of cases) {
-    const seoModule = loadTypeScriptModule('lib/seo.ts', {
-      react: { cache: (callback) => callback },
+    const seoModule = loadTypeScriptModule('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, react: { cache: (callback) => callback },
       '@/lib/network': {
         getConfiguredNetwork: () => testCase.network,
         normalizeApiBaseUrl: (url) => url,
@@ -573,6 +571,10 @@ test('legacy migration and swap routes permanently consolidate authority', async
   assert.deepEqual(rewrites.afterFiles, [{
     source: '/sitemap-:slug.xml',
     destination: '/sitemaps/:slug',
+  }, {
+    // Markdown page versions for language models (llms.txt convention).
+    source: '/:path(.+)\\.md',
+    destination: '/llms-md/:path',
   }]);
   assert.deepEqual(rewrites.fallback, []);
 

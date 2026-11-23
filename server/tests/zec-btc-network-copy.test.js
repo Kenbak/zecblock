@@ -22,8 +22,7 @@ function load(file, dependencies = {}) {
 }
 
 function valuationRoute(network) {
-  const seo = load('lib/seo.ts', {
-    '@/lib/api-client': { readApiData: () => {} },
+  const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client': { readApiData: () => {} },
     '@/lib/network': { getConfiguredNetwork: () => network },
     '@/lib/api-config': { getApiUrlForNetwork: () => 'https://api.invalid' },
     '@/lib/server-fetch': { fetchWithDeadline: () => {} },

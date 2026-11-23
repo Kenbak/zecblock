@@ -138,6 +138,8 @@ export default function RootLayout({
       <head>
         {/* Supports sitemap-detection tools; robots.txt remains the standards-based declaration. */}
         <link rel="sitemap" type="application/xml" href="/sitemap.xml" />
+        {/* llms.txt index of the Markdown page versions (https://llmstxt.org). */}
+        {getNetwork() === 'mainnet' && <link rel="describedby" href="/llms.txt" />}
         {/*
           Site-wide structured data. This lives here, in the server-rendered
           <head>, rather than inside AppContent: AppContent sits under

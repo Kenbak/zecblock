@@ -287,11 +287,21 @@ async function recentEvents(db, fromS, toS, minZat = 0n) {
  * Same contract as the in-memory rankEvent: every named-entity event of the
  * same direction in the 30 days before it; the histogram is that exact sample.
  */
+/**
+ * Rank against stored rows of the same direction in the 30 days up to and
+ * including the event's own block: other events of that block count, the
+ * event's own row (txid, entity, direction) does not, later blocks never do.
+ * Same sample and histogram as rankEvent in server/bot/lib/exchange-flows.js.
+ */
 async function rankStored(db, event) {
-  const params = [event.direction, Number(event.blockTime), String(event.amountZat), x.ENTITY_IDS, RANK_WINDOW_S, BINS_PER_DECADE];
+  const height = event.blockHeight == null ? null : Number(event.blockHeight);
+  const params = [event.direction, Number(event.blockTime), String(event.amountZat), x.ENTITY_IDS, RANK_WINDOW_S, BINS_PER_DECADE,
+    event.txid ?? null, event.entity ?? null, height];
   const { rows } = await db.query(`SELECT floor(log(10, amount_zat::numeric / 100000000) * $6)::int AS bin, count(*)::int AS n,
       count(*) FILTER (WHERE amount_zat > $3::bigint)::int AS greater, count(*) FILTER (WHERE amount_zat = $3::bigint)::int AS equal
-    FROM exchange_flows WHERE direction = $1 AND block_time >= $2::bigint - $5::bigint AND block_time < $2::bigint
+    FROM exchange_flows WHERE direction = $1 AND block_time >= $2::bigint - $5::bigint AND block_time <= $2::bigint
+      AND ($9::int IS NULL OR block_height <= $9::int)
+      AND (txid, entity) IS DISTINCT FROM ($7::text, $8::text)
       AND amount_zat > 0 AND entity = ANY($4::text[])
     GROUP BY 1 ORDER BY 1`, params);
   let n = 0, greater = 0, equal = 0;

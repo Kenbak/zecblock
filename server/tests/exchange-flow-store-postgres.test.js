@@ -176,3 +176,28 @@ test('exchange flow store on PostgreSQL: rebuild, incremental, reorg, label repa
     client.release();
   }
 }));
+
+test('stored rank on PostgreSQL: other events in the same block count, the ranked row and later blocks do not', {
+  skip: process.env.ACTIVITY_TEST_POSTGRES !== '1' && !process.env.TEST_ACTIVITY_DATABASE_URL,
+}, async () => withDatabase(async db => {
+  await db.query(SCHEMA);
+  await db.query(MIGRATION);
+  const zec = n => (BigInt(n) * 100000000n).toString();
+  const row = (t, entity, amount, height, time) => ({ txid: txid(t), entity, direction: 'deposit', amountZat: zec(amount), blockHeight: height, blockHash: `h${height}`, blockTime: time, counterparty: 'transparent' });
+  const history = Array.from({ length: 40 }, (_, i) => row(i.toString(16).padStart(2, '0').repeat(32).slice(0, 64), 'kraken', 10 + i, 1000 + i, T0 - 86400 + i * 60));
+  const small = row('a', 'hyperunit', 600, 2000, T0), big = row('b', 'hyperunit', 2000, 2000, T0);
+  const sameTxOtherEntity = row('a', 'kraken', 50, 2000, T0); // same txid, other entity: counts
+  const later = row('c', 'binance', 5000, 2001, T0);           // later block, same timestamp: never counts
+  const all = [...history, small, big, sameTxOtherEntity, later];
+  for (const e of all) await db.query(`INSERT INTO exchange_flows VALUES ($1,$2,$3,$4,$5,$6::bigint,(to_timestamp($6::bigint) AT TIME ZONE 'UTC')::date,$7,$8,'v')`,
+    [e.txid, e.entity, e.direction, e.blockHeight, e.blockHash, e.blockTime, e.amountZat, e.counterparty]);
+
+  const r = await store.rankStored(db, small);
+  assert.equal(r.sample_count, 42, 'history, the same-block 2,000 ZEC deposit and the same-tx kraken row; not itself, not the later block');
+  assert.equal(r.greater_count, 1, 'the 2,000 ZEC deposit in the same block outranks it');
+  assert.equal(r.distribution.total, 42);
+  assert.equal((await store.rankStored(db, big)).greater_count, 0);
+  // Same sample as the in-memory rank (which has no later-block rows to exclude by timestamp alone).
+  const inMemory = all.filter(e => e !== later);
+  for (const e of [small, big]) assert.deepEqual(await store.rankStored(db, e), botX.rankEvent(e, inMemory));
+}));

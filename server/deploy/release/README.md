@@ -9,7 +9,7 @@ source on the host.
 |---|---|
 | `targets.json` | Desired state: host alias, network, role, unit, port, and whether the deploy workflow manages it. |
 | `host.sh` | The only install procedure. `status` reports; `deploy <sha>` checks out, installs, health-gates and rolls back. It refuses hosts with edited tracked files. |
-| `migrations.js` | Compares `server/deploy/sql` and `server/deploy/migrations` with `schema_migrations`. A file applies to all networks unless its header has `-- networks: <name>`. |
+| `migrations.js` | Compares `server/deploy/sql` and `server/deploy/migrations` with `schema_migrations`, by number and, from 047, by file name and SHA-256. A file applies to all networks unless its header has `-- networks: <name>`. |
 | `drift-report.js` | Read-only comparison of every host with the mainnet primary, `origin/main`, `.node-version`, its role and its schema. Exits 1 on drift. |
 | `write-ssh-config.sh` | CI only: writes the `targets.json` aliases from host secrets. |
 
@@ -27,17 +27,36 @@ node server/deploy/release/drift-report.js
 
 ## Schema changes
 
-Add a numbered file. Mark network-specific files with `-- networks: ...` in
-the leading comment block. Record a file on a host with:
+Add a file numbered at least 047, using the next number free in both folders.
+Mark network-specific files with `-- networks: ...` in the leading comment
+block. Record a file on a host with:
 
 ```bash
-node server/deploy/release/migrations.js apply --network testnet --version 38
+node server/deploy/release/migrations.js apply --network testnet --version 48
 ```
 
-`apply` runs one named file as the API database user and records it. Files
-must stay safe to re-run. When a file alters tables owned by `postgres` (for
-example `nodes`), run it with `sudo -u postgres psql -v ON_ERROR_STOP=1 -f`
-instead and insert its `schema_migrations` row in the same session.
+`apply` runs one named file as the API database user and records it with the
+file's base name and the SHA-256 of its bytes. Files must stay safe to re-run,
+must not insert their own `schema_migrations` row, and must not be edited
+after they are recorded: `check` treats a changed hash as a mismatch. When a
+file alters tables owned by `postgres` (for example `nodes`), run it with
+`sudo -u postgres psql -v ON_ERROR_STOP=1 -f`, then record it without running
+it again:
+
+```bash
+node server/deploy/release/migrations.js record --network testnet --version 48
+```
+
+### File identity (047)
+
+`047_schema_migration_identity.sql` adds nullable `file_name` and
+`file_sha256` columns to `schema_migrations`. `check` exits 2 when a file's
+number is recorded but the stored name or hash differs, or when a row from 047
+onward has no name. Rows below 047 predate the columns and are trusted by
+number only. Many of those numbers are recorded for migrations with no file in
+this repository (026 was reused that way and skipped silently on 2026-11-23), so
+CI freezes the files below 047 (`LEGACY_FILES`) and fails when two files share
+a number on one network.
 
 Never re-run an old file on a host that already has its objects. Later files
 can rewrite the same comments (031 and 038 both set
@@ -74,5 +93,7 @@ their `schema_migrations` rows were inserted.
 
 - Crosslink runs a separate feature-net bundle with no Git checkout and no
   `schema_migrations` table. It needs its own schema reconciliation first.
+- `drift-report.js` reads only version numbers from hosts; file identity is
+  enforced by `migrations.js check` on each deploy.
 - Unit files on hosts are not compared with `server/deploy/*.service` yet.
 - Native node and indexer artifacts are released separately.

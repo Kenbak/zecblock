@@ -1,5 +1,6 @@
 import { buildPageMetadata, getBaseUrl, getNetwork } from '@/lib/seo';
 import NodesClient from './NodesClient';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Network Nodes | ZecBlock',
@@ -54,6 +55,7 @@ export default function NodesPage() {
           </div>
         </div>
       </section>
+      <PageAbout path="/network/nodes" />
     </>
   );
 }

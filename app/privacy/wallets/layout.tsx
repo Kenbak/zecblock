@@ -1,4 +1,5 @@
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Wallet Signals | ZecBlock',
@@ -18,5 +19,5 @@ export const metadata = buildPageMetadata({
 export default function WalletsLayout({ children }: { children: React.ReactNode }) {
   const url = `${getBaseUrl()}/privacy/wallets`;
   const schema = {'@context':'https://schema.org','@type':'WebPage','@id':`${url}#webpage`,url,name:metadata.title,description:metadata.description,isPartOf:{'@id':`${getBaseUrl()}/#website`}};
-  return <><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema).replace(/</g,'\\u003c')}} />{children}</>;
+  return <><script type="application/ld+json" dangerouslySetInnerHTML={{__html:JSON.stringify(schema).replace(/</g,'\\u003c')}} />{children}<PageAbout path="/privacy/wallets" /></>;
 }

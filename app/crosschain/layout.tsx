@@ -1,4 +1,5 @@
 import { buildPageMetadata, getBaseUrl } from "@/lib/seo";
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: "Crosschain - ZEC Cross-Chain Swap Analytics | ZecBlock",
@@ -43,6 +44,7 @@ export default function CrosschainLayout({
         }}
       />
       {children}
+      <PageAbout path="/crosschain" />
     </>
   );
 }

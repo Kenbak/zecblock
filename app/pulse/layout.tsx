@@ -1,4 +1,5 @@
 import { buildPageMetadata } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Network Pulse — Statistical Anomaly Feed | ZecBlock',
@@ -17,5 +18,5 @@ export const metadata = buildPageMetadata({
 });
 
 export default function PulseLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <>{children}<PageAbout path="/pulse" /></>;
 }

@@ -15,6 +15,7 @@ import { getEndpointsByCategory } from '@/app/docs/endpoints';
 import { getTools } from '@/server/api/v1/mcp/catalog';
 import { markdownPathFor } from './paths';
 import { getHomeAbout, homeAboutMarkdown } from '@/lib/home-about';
+import { PAGE_ABOUT } from '@/lib/page-about';
 
 export const SITE_URL = 'https://zecblock.com';
 // Public API origin only; never a configured server-side origin.
@@ -276,7 +277,8 @@ export function getLlmsDocs(): LlmsDoc[] {
       : entry.path === '/docs/mcp' ? mcpMarkdown(entry)
       // The homepage's About section, the same text as on the page.
       : entry.path === '/' ? pageMarkdown(entry, `${SITE_URL}/`, homeAboutMarkdown(getHomeAbout('mainnet')!, SITE_URL))
-      : pageMarkdown(entry, `${SITE_URL}${entry.path}`),
+      // Pages with an About section carry the same text.
+      : pageMarkdown(entry, `${SITE_URL}${entry.path}`, PAGE_ABOUT[entry.path] ? homeAboutMarkdown(PAGE_ABOUT[entry.path], SITE_URL) : ''),
   }));
   const templateDocs = TEMPLATES.map(entry => ({
     path: entry.path,

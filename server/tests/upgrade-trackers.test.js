@@ -471,7 +471,7 @@ test('upgrade hub metadata uses self canonicals and mainnet-only indexing withou
   try {
     for (const [network, base] of [['mainnet', 'https://zecblock.com'], ['testnet', 'https://testnet.zecblock.com'], ['crosslink-testnet', 'https://crosslink.zecblock.com']]) {
       process.env.NEXT_PUBLIC_NETWORK = network;
-      const page = load('app/network/upgrades/page.tsx', { '@/lib/upgrade-trackers-server': { loadUpgradeTrackers: async () => ({ trackers: [], snapshot: null }) } });
+      const page = load('app/network/upgrades/page.tsx', { '@/components/HomeAbout': { PageAbout: () => null }, '@/lib/upgrade-trackers-server': { loadUpgradeTrackers: async () => ({ trackers: [], snapshot: null }) } });
       const metadata = await page.generateMetadata();
       assert.equal(metadata.alternates.canonical, `${base}/network/upgrades`);
       assert.equal(metadata.robots.index, network === 'mainnet');
@@ -509,7 +509,7 @@ test('upgrade hub server HTML has one selected NU7 summary, all milestone target
   for (const [network, base, activation] of [['mainnet', 'https://zecblock.com', mainActivation], ['testnet', 'https://testnet.zecblock.com', testActivation]]) {
     const data = { snapshot: snapshot(network, activation - 1, activation) };
     data.trackers = buildUpgradeTrackers(data.snapshot, network);
-    const page = load('app/network/upgrades/page.tsx', {
+    const page = load('app/network/upgrades/page.tsx', { '@/components/HomeAbout': { PageAbout: () => null },
       '@/lib/seo': { getNetwork: () => network, getBaseUrl: () => base },
       '@/lib/upgrade-trackers-server': { loadUpgradeTrackers: async () => data },
     });
@@ -557,7 +557,7 @@ test('upgrade hub server HTML has one selected NU7 summary, all milestone target
 
 test('unsupported Crosslink hub stops before loading observations', async () => {
   let calls = 0;
-  const page = load('app/network/upgrades/page.tsx', {
+  const page = load('app/network/upgrades/page.tsx', { '@/components/HomeAbout': { PageAbout: () => null },
     '@/lib/seo': { getNetwork: () => 'crosslink-testnet' },
     'next/navigation': { notFound: () => { throw new Error('fixture 404'); } },
     '@/lib/upgrade-trackers-server': { loadUpgradeTrackers: async () => { calls++; return { trackers: [], snapshot: null }; } },

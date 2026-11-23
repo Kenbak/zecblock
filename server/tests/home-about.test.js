@@ -52,9 +52,48 @@ test('the homepage renders the section after the live data, and its Markdown car
   assert.ok(page.indexOf('<RecentMempool') < page.indexOf('<HomeAbout about={homeAbout} />'), 'About comes after the mempool');
   const component = read('components/HomeAbout.tsx');
   assert.doesNotMatch(component, /'use client'/);
-  assert.match(component, /<SectionHeader label=\{about\.heading\} icon=\{<InfoSectionIcon \/>\} size="lg" \/>/);
+  assert.match(component, /<SectionHeader label=\{about\.heading\} icon=\{<InfoSectionIcon \/>\} size=\{size\} \/>/);
+  assert.match(component, /<AboutSection about=\{about\} size="lg"/);
   const markdown = homeAboutMarkdown(getHomeAbout('mainnet'), 'https://zecblock.com');
   assert.match(markdown, /^## About this Zcash explorer\n/);
   assert.match(markdown, /\[privacy pages\]\(https:\/\/zecblock\.com\/privacy\)/);
   assert.match(read('lib/llms/docs.ts'), /entry\.path === '\/' \? pageMarkdown\(entry, `\$\{SITE_URL\}\/`, homeAboutMarkdown\(getHomeAbout\('mainnet'\)!, SITE_URL\)\)/);
+});
+
+const pageModule = {};
+vm.runInNewContext(ts.transpileModule(read('lib/page-about.ts'), { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022 } }).outputText, { exports: pageModule, require });
+const { PAGE_ABOUT } = pageModule;
+
+function appSources(dir = 'app', out = []) {
+  for (const entry of fs.readdirSync(path.join(root, dir), { withFileTypes: true })) {
+    const rel = path.join(dir, entry.name);
+    if (entry.isDirectory()) appSources(rel, out);
+    else if (/\.tsx$/.test(entry.name)) out.push([rel, read(rel)]);
+  }
+  return out;
+}
+
+test('every page About entry is rendered exactly once, on a sitemap page', () => {
+  const sitemaps = read('lib/sitemaps.ts');
+  const sources = appSources();
+  for (const page of Object.keys(PAGE_ABOUT)) {
+    assert.ok(sitemaps.includes(`'${page}'`), `${page} is not a sitemap page`);
+    const uses = sources.filter(([, text]) => text.includes(`<PageAbout path="${page}" />`));
+    assert.equal(uses.length, 1, `${page} must render its About section exactly once (found ${uses.map(([file]) => file).join(', ') || 'none'})`);
+  }
+  // The privacy layout wraps /privacy/wallets, so /privacy renders its section in the page.
+  assert.doesNotMatch(read('app/privacy/layout.tsx'), /PageAbout/);
+});
+
+test('page About copy names no Zcash Names, links to real pages and is mainnet only', () => {
+  for (const [page, about] of Object.entries(PAGE_ABOUT)) {
+    assert.doesNotMatch(allText(about), /\bnames?\b|ZNS/i, page);
+    assert.match(about.heading, /^(About |Why )/, page);
+    for (const part of [...about.intro, ...about.items.flatMap(item => item.answer)]) {
+      if (typeof part === 'string') continue;
+      const target = part.href.split('?')[0];
+      assert.ok(fs.existsSync(path.join(root, 'app', target, 'page.tsx')), `${page}: ${part.href} has no page`);
+    }
+  }
+  assert.match(read('components/HomeAbout.tsx'), /if \(!about \|\| getNetwork\(\) !== 'mainnet'\) return null;/);
 });

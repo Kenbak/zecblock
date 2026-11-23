@@ -197,7 +197,7 @@ test('all-route noindex and no-store headers require the server preview gate, ne
   const originals = [process.env.VERCEL_ENV, process.env.ASK_STAGING_ENABLED];
   t.after(() => { for (const [i, key] of ['VERCEL_ENV', 'ASK_STAGING_ENABLED'].entries()) if (originals[i] === undefined) delete process.env[key]; else process.env[key] = originals[i]; });
   const config = load('next.config.ts').default;
-  const seo = load('lib/seo.ts', { '@/lib/network': { getConfiguredNetwork: () => 'mainnet' }, '@/lib/api-config': {}, '@/lib/api-client': {}, '@/lib/server-fetch': {} });
+  const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/network': { getConfiguredNetwork: () => 'mainnet' }, '@/lib/api-config': {}, '@/lib/api-client': {}, '@/lib/server-fetch': {} });
   const robots = load('app/robots.ts', { '@/lib/seo': seo }).default;
   for (const [environment, flag, active] of [['production', 'true', false], ['preview', 'false', false], ['preview', 'true', true]]) {
     process.env.VERCEL_ENV = environment; process.env.ASK_STAGING_ENABLED = flag;

@@ -54,8 +54,7 @@ test('bounded server JSON uses the same envelope and HTTP error validation', asy
 test('transaction metadata resolves pending and missing v1 mempool records without a legacy success flag', async () => {
   const txid = 'a'.repeat(64);
   for(const inMempool of [true,false]) {
-    const seo = load('lib/seo.ts', {
-      '@/lib/api-client': api, react: { cache: fn=>fn },
+    const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client': api, react: { cache: fn=>fn },
       '@/lib/network': { getConfiguredNetwork: ()=>'mainnet' },
       '@/lib/api-config': { getApiUrlForNetwork: ()=>'http://localhost:3002' },
       '@/lib/server-fetch': { fetchWithDeadline: async url => url.endsWith('/summary')
@@ -69,8 +68,7 @@ test('transaction metadata resolves pending and missing v1 mempool records witho
 });
 
 test('unified address metadata never advertises an aggregate public balance', async () => {
-  const seo = load('lib/seo.ts', {
-    '@/lib/api-client': api, react: { cache: fn => fn },
+  const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client': api, react: { cache: fn => fn },
     '@/lib/network': { getConfiguredNetwork: () => 'mainnet' },
     '@/lib/api-config': { getApiUrlForNetwork: () => 'http://localhost:3002' },
     '@/lib/server-fetch': { fetchWithDeadline: async () => response({ address: 'u1example', type: 'unified', balance: null, transactions: [] }) },

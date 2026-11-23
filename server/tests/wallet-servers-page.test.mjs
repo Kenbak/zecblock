@@ -31,8 +31,7 @@ const Client = loadTs('app/network/wallet-servers/WalletServersClient.tsx', {
   '@/lib/world-dot-map': loadTs('lib/world-dot-map.ts', { './world-land-dots.generated': loadTs('lib/world-land-dots.generated.ts') }),
 }).default;
 function loadPage(network, data) {
-  const seo = loadTs('lib/seo.ts', {
-    '@/lib/api-client': apiClient,
+  const seo = loadTs('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client': apiClient,
     '@/lib/network': { getConfiguredNetwork: () => network },
     '@/lib/api-config': { getApiUrlForNetwork: () => 'https://private-service.internal' },
     '@/lib/server-fetch': {},

@@ -26,7 +26,7 @@ export const metadata: Metadata = {
   ...homeMetadata,
   alternates: {
     ...homeMetadata.alternates,
-    types: { 'application/rss+xml': `${getBaseUrl()}/newsletter/rss` },
+    types: { ...homeMetadata.alternates?.types, 'application/rss+xml': `${getBaseUrl()}/newsletter/rss` },
   },
 };
 

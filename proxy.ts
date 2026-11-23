@@ -232,6 +232,9 @@ export async function proxy(request: NextRequest) {
     });
   }
   const governancePath = request.nextUrl.pathname;
+  // Markdown page versions (/charts/mvrv.md, /governance/nu7.md) are served by
+  // the llms-md rewrite, which 404s unknown paths itself.
+  if (/^\/(?:charts|governance)\/[^/]+\.md$/.test(governancePath)) return NextResponse.next();
   const chartPath = governancePath.match(/^\/charts\/([^/]+)\/?$/);
   if (chartPath && !CHART_CATALOG.some(chart => chart.id === chartPath[1])) {
     return new NextResponse(proxyErrorPage('Chart not found', 'This chart is not in the catalog.', { href: '/charts', label: 'Browse charts' }), {

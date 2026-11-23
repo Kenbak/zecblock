@@ -36,6 +36,12 @@ const nextConfig: NextConfig = {
           source: '/sitemap-:slug.xml',
           destination: '/sitemaps/:slug',
         },
+        // Markdown version of a page for language models: the page URL plus
+        // `.md` (llms.txt convention). /index.md is the homepage.
+        {
+          source: '/:path(.+)\\.md',
+          destination: '/llms-md/:path',
+        },
       ],
       fallback: [],
     };

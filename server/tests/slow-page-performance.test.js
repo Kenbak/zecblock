@@ -346,8 +346,7 @@ test('server metadata uses lightweight endpoints with deadlines', async () => {
       txCount: 1,
     })));
   };
-  const seo = loadTypeScriptModule('lib/seo.ts', {
-    react: { cache: (callback) => callback },
+  const seo = loadTypeScriptModule('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, react: { cache: (callback) => callback },
     '@/lib/network': {
       getConfiguredNetwork: () => 'mainnet',
       normalizeApiBaseUrl: (url) => url,

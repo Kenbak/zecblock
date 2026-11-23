@@ -132,8 +132,7 @@ test('Ask server rendering and metadata enforce the mainnet-only page policy', (
   const React = require('react');
   const { renderToStaticMarkup } = require('react-dom/server');
   for (const network of ['mainnet', 'testnet', 'crosslink-testnet']) {
-    const seo = load('lib/seo.ts', {
-      '@/lib/network': { getConfiguredNetwork: () => network },
+    const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/network': { getConfiguredNetwork: () => network },
       '@/lib/api-config': {}, '@/lib/api-client': {}, '@/lib/server-fetch': {},
     });
     const page = load('app/zift/page.tsx', {

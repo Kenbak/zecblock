@@ -92,7 +92,7 @@ test('unavailable raw SSR markup has one H1, an alert/retry, and no fabricated r
 
 test('rich-list canonical/index policy and protected-preview noindex headers are unchanged',async t=>{
  for(const network of ['mainnet','testnet']){
-  const seo=load('lib/seo.ts',{'@/lib/api-client':api,react:{cache:fn=>fn},'@/lib/network':{getConfiguredNetwork:()=>network},'@/lib/api-config':{getApiUrlForNetwork:()=> 'https://api.invalid'},'@/lib/server-fetch':server});
+  const seo=load('lib/seo.ts',{ '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client':api,react:{cache:fn=>fn},'@/lib/network':{getConfiguredNetwork:()=>network},'@/lib/api-config':{getApiUrlForNetwork:()=> 'https://api.invalid'},'@/lib/server-fetch':server});
   const {metadata}=load('app/rich-list/layout.tsx',{'@/lib/seo':seo});
   assert.equal(metadata.alternates.canonical,network==='mainnet'?'https://zecblock.com/rich-list':'https://testnet.zecblock.com/rich-list');
   assert.equal(metadata.robots.index,network==='mainnet');assert.equal(metadata.robots.follow,true);assert.match(metadata.title,/Rich List/);assert.ok(metadata.description);

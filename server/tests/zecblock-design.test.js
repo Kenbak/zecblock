@@ -57,8 +57,7 @@ test('unavailable or invalid verification draws no fabricated proportion', () =>
 
 test('metadata uses the new mainnet identity and preserves network indexation boundaries', () => {
   for (const network of ['mainnet', 'testnet', 'crosslink-testnet']) {
-    const seo = load('lib/seo.ts', {
-      '@/lib/network': { getConfiguredNetwork: () => network },
+    const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/network': { getConfiguredNetwork: () => network },
       '@/lib/api-config': { getApiUrlForNetwork: () => '' },
       '@/lib/server-fetch': {},
       '@/lib/api-client': load('lib/api-client.ts'),
@@ -86,8 +85,7 @@ test('homepage titles lead with each network\'s search phrase and name the brand
     'crosslink-testnet': /^Zcash Crosslink Explorer\b/,
   };
   for (const [network, phrase] of Object.entries(expected)) {
-    const seo = load('lib/seo.ts', {
-      '@/lib/network': { getConfiguredNetwork: () => network },
+    const seo = load('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/network': { getConfiguredNetwork: () => network },
       '@/lib/api-config': { getApiUrlForNetwork: () => '' },
       '@/lib/server-fetch': {},
       '@/lib/api-client': load('lib/api-client.ts'),

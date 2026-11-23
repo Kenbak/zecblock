@@ -28,8 +28,7 @@ const Client = loadTs('app/network/attestations/AttestationsClient.tsx', {
   '@/lib/attestation-status': require('../../lib/attestation-status'),
 }).default;
 function loadPage(network, data) {
-  const seo = loadTs('lib/seo.ts', {
-    '@/lib/api-client': apiClient,
+  const seo = loadTs('lib/seo.ts', { '@/lib/llms/paths': { hasMarkdownVersion: () => false, markdownPathFor: (path) => path }, '@/lib/api-client': apiClient,
     '@/lib/network': { getConfiguredNetwork: () => network },
     '@/lib/api-config': { getApiUrlForNetwork: () => 'https://private-service.internal' },
     '@/lib/server-fetch': {},

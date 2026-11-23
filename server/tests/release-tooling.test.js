@@ -1,5 +1,6 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
+const crypto = require('crypto');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -44,13 +45,144 @@ test('duplicate versions for one network are rejected, not silently merged', () 
   const files = migrations.discoverMigrations(root);
   assert.equal(migrations.migrationsForNetwork(files, 'mainnet').length, 1);
   assert.throws(() => migrations.migrationsForNetwork(files, 'crosslink'), /Duplicate migration 32/);
+  assert.deepEqual(migrations.findDuplicateVersions(files), [
+    { network: 'crosslink', version: 32, files: ['server/deploy/sql/032_crosslink.sql', 'server/deploy/sql/032_supply.sql'] },
+  ]);
 });
 
-test('repository migrations are unambiguous for mainnet and testnet', () => {
+test('duplicate detection spans both folders and respects network headers', () => {
+  const root = fixtureRepo({
+    'server/deploy/sql/050_a.sql': '-- networks: mainnet\nSELECT 1;',
+    'server/deploy/migrations/050_b.sql': '-- networks: testnet\nSELECT 1;',
+    'server/deploy/sql/051_a.sql': 'SELECT 1;',
+    'server/deploy/migrations/051_b.sql': '-- networks: testnet\nSELECT 1;',
+  });
+  const duplicates = migrations.findDuplicateVersions(migrations.discoverMigrations(root));
+  assert.deepEqual(duplicates, [
+    { network: 'testnet', version: 51, files: ['server/deploy/migrations/051_b.sql', 'server/deploy/sql/051_a.sql'] },
+  ]);
+});
+
+// Crosslink has no schema_migrations table and runs its own bundle; the
+// unscoped 032_chain_supply_daily.sql predates the Crosslink-only 032 file.
+const KNOWN_DUPLICATES = [{
+  network: 'crosslink',
+  version: 32,
+  files: ['server/deploy/sql/032_chain_supply_daily.sql', 'server/deploy/sql/032_crosslink_fork_monitor_ownership.sql'],
+}];
+
+test('repository migrations never share a number on one network', () => {
   const files = migrations.discoverMigrations();
+  assert.deepEqual(migrations.findDuplicateVersions(files), KNOWN_DUPLICATES,
+    'two migration files use the same number on one network; take the next free number');
   for (const network of ['mainnet', 'testnet']) {
     assert.doesNotThrow(() => migrations.migrationsForNetwork(files, network));
   }
+});
+
+test('numbers below the identity floor are frozen to the legacy files', () => {
+  const files = migrations.discoverMigrations();
+  const legacy = files.filter((file) => file.version < migrations.IDENTITY_SINCE).map((file) => file.name).sort();
+  // A new file below IDENTITY_SINCE could reuse a number recorded on a host for
+  // an unrelated migration (026, 2026-11-23); its row has no identity to compare.
+  assert.deepEqual(legacy, [...migrations.LEGACY_FILES].sort(),
+    `new migrations must be numbered ${migrations.IDENTITY_SINCE} or higher`);
+  const identity = files.find((file) => file.version === migrations.IDENTITY_SINCE);
+  assert.equal(identity?.name, '047_schema_migration_identity.sql');
+});
+
+test('files with identity never record themselves', () => {
+  // `apply`/`record` write the row with the file's name and hash; a file that
+  // inserts its own row would make that insert fail after the file ran.
+  for (const file of migrations.discoverMigrations()) {
+    if (file.version < migrations.IDENTITY_SINCE) continue;
+    const sql = fs.readFileSync(path.join(__dirname, '..', '..', file.file), 'utf8');
+    assert.doesNotMatch(sql, /INSERT\s+INTO\s+(public\.)?schema_migrations/i, file.file);
+  }
+});
+
+function identityFixture() {
+  const root = fixtureRepo({
+    'server/deploy/sql/026_legacy.sql': 'SELECT 26;',
+    'server/deploy/sql/047_identity.sql': 'SELECT 47;',
+    'server/deploy/sql/048_new.sql': 'SELECT 48;',
+  });
+  return migrations.discoverMigrations(root);
+}
+
+test('discovered files carry their base name and SHA-256', () => {
+  const [legacy] = identityFixture();
+  assert.equal(legacy.name, '026_legacy.sql');
+  assert.equal(legacy.sha256, crypto.createHash('sha256').update('SELECT 26;').digest('hex'));
+});
+
+test('a recorded row matching the file name and hash is applied', () => {
+  const files = identityFixture();
+  const rows = files.map((f) => ({ version: String(f.version).padStart(3, '0'), fileName: f.name, fileSha256: f.sha256 }));
+  rows[0] = { version: '026', fileName: null, fileSha256: null };
+  const state = migrations.compareState(files, rows, 'testnet');
+  assert.deepEqual(state.pending, []);
+  assert.deepEqual(state.mismatched, []);
+});
+
+test('a number recorded for a different file is a mismatch, not applied', () => {
+  const files = identityFixture();
+  const [, identity, fresh] = files;
+  const state = migrations.compareState(files, [
+    { version: '026', fileName: null, fileSha256: null },
+    { version: '047', fileName: identity.name, fileSha256: identity.sha256 },
+    { version: '048', fileName: '048_older_feature.sql', fileSha256: 'f'.repeat(64) },
+  ], 'testnet');
+  assert.deepEqual(state.pending, []);
+  assert.deepEqual(state.mismatched, [{
+    version: 48, file: fresh.file, reason: 'number recorded for a different file',
+    recordedFile: '048_older_feature.sql', recordedSha256: 'f'.repeat(64),
+  }]);
+});
+
+test('a recorded file whose content changed is a mismatch', () => {
+  const files = identityFixture();
+  const [, identity, fresh] = files;
+  const state = migrations.compareState(files, [
+    { version: '26', fileName: null, fileSha256: null },
+    { version: '047', fileName: identity.name, fileSha256: identity.sha256 },
+    { version: '048', fileName: fresh.name, fileSha256: '0'.repeat(64) },
+  ], 'testnet');
+  assert.equal(state.mismatched.length, 1);
+  assert.equal(state.mismatched[0].reason, 'file content differs from the recorded hash');
+});
+
+test('legacy rows without a name are tolerated only below the identity floor', () => {
+  const files = identityFixture();
+  const state = migrations.compareState(files, [
+    { version: '026', fileName: null, fileSha256: null },
+    { version: '047', fileName: null, fileSha256: null },
+    { version: '048', fileName: null, fileSha256: null },
+  ], 'testnet');
+  assert.deepEqual(state.mismatched.map((m) => [m.version, m.reason]), [
+    [47, 'recorded without file identity'],
+    [48, 'recorded without file identity'],
+  ]);
+});
+
+test('a padded and a bare row for one number prefer the row with identity', () => {
+  const files = identityFixture();
+  const [, identity] = files;
+  const state = migrations.compareState(files, [
+    { version: '47', fileName: null, fileSha256: null },
+    { version: '047', fileName: identity.name, fileSha256: identity.sha256 },
+  ], 'testnet');
+  assert.deepEqual(state.mismatched, []);
+  assert.deepEqual(state.pending.map((p) => p.version), [26, 48]);
+});
+
+test('bare version lists (no identity columns) keep number-only comparison', () => {
+  const files = identityFixture();
+  const state = migrations.compareState(files, ['026', '047', '048'], 'testnet');
+  assert.deepEqual(state.pending, []);
+  assert.deepEqual(state.mismatched, []);
+  const preIdentity = migrations.compareState(files, [{ version: '048', fileName: undefined }], 'testnet');
+  assert.deepEqual(preIdentity.mismatched, []);
 });
 
 const SERVING = { name: 'testnet', network: 'testnet', role: 'serving', service: 'zcash-api.service' };

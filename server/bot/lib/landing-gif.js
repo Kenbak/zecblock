@@ -25,9 +25,10 @@ const DIM = '#2A2E35', BAR = '#4A5059';
 // Chart band: room for the headline above and the footer below.
 const X0 = PAD, X1 = W - PAD, BASE = 522, TOP = 388, PIN = BASE - 112;
 
-/** 'swap', 'flow' or null: which stories get a landing GIF. */
+/** 'swap', 'flow', 'exchange' or null: which stories get a landing GIF. */
 function landingKind(story) {
   if (story?.type === 'swap') return 'swap';
+  if (story?.type === 'exchange_flow') return 'exchange';
   if (story?.type === 'flow_shield' || story?.type === 'flow_deshield') return 'flow';
   return null;
 }
@@ -36,7 +37,9 @@ function landingKind(story) {
 async function loadDistribution(db, story, sql = require('./editorial-data')) {
   const e = story.evidence, kind = landingKind(story);
   let rows;
-  if (kind === 'swap') {
+  // Exchange flows are ranked in memory; the story carries that exact histogram.
+  if (kind === 'exchange') rows = e.distribution?.bins || [];
+  else if (kind === 'swap') {
     const venue = e.venue || 'near';
     const at = new Date(e.swap_created_at).toISOString();
     const base = venue === 'near' ? `${sql.VALID_SWAPS}` : `${sql.VALID_VENUE_SWAPS}`;
@@ -63,6 +66,8 @@ function landingModel(story, distribution) {
   const e = story.evidence, card = e.card, kind = landingKind(story);
   if (!card?.hero || !card.line || !card.kicker) throw new Error('Story has no card');
   const value = kind === 'swap' ? Number(e.source_amount_usd) : Number(e.amount_zat) / 1e8;
+  const entity = kind === 'exchange' ? require('./exchange-flows').ENTITIES[e.entity] : null;
+  if (kind === 'exchange' && !entity) throw new Error('Unknown exchange entity');
   if (!(value > 0)) throw new Error('Story has no size');
   const greater = Number(e.greater_count), equal = Number(e.equal_count), n = distribution.total;
   const valueBin = Math.floor(Math.log10(value) * BINS_PER_DECADE);
@@ -73,9 +78,11 @@ function landingModel(story, distribution) {
   // Anything below the axis start joins the first bar rather than disappearing.
   const counts = Array(count).fill(0);
   for (const row of distribution.bins) counts[Math.max(0, row.bin - lo * BINS_PER_DECADE)] += row.n;
-  const window = kind === 'swap' ? 30 : 90;
+  const window = kind === 'flow' ? 90 : 30;
   const largest = greater === 0 && equal === 0;
-  const what = kind === 'swap' ? `${f.VENUES[e.venue || 'near']} ZEC swaps` : `${e.flow_type === 'shield' ? 'shielding' : 'deshielding'} transactions`;
+  const what = kind === 'swap' ? `${f.VENUES[e.venue || 'near']} ZEC swaps`
+    : kind === 'exchange' ? `exchange & custody ${e.direction}s`
+      : `${e.flow_type === 'shield' ? 'shielding' : 'deshielding'} transactions`;
   return {
     kind, card, value, lo, hi, counts, total: n,
     counter: `${what} · last ${window} days`,
@@ -84,6 +91,7 @@ function landingModel(story, distribution) {
     ticks: Array.from({ length: Math.floor((hi - lo) / 2) + 1 }, (_, i) => lo + 2 * i).filter(d => d < hi)
       .map(d => ({ decade: d, label: tickLabel(kind, d) })),
     route: kind === 'swap' ? { from: card.visual?.from, to: card.visual?.to } : null,
+    logo: entity ? require('path').join(cards.ENTITY_LOGOS, entity.logo) : null,
   };
 }
 
@@ -106,7 +114,7 @@ async function renderLandingGif(story, distribution, output, { ffmpeg = 'ffmpeg'
   b.fillStyle = C.muted; b.fillText(m.card.kicker.toUpperCase(), PAD + 26, 96);
   const logo = await loadImage(cards.LOGO);
   const lh = 30, lw = logo.width * lh / logo.height; b.drawImage(logo, W - PAD - lw, 73, lw, lh);
-  const heroWidth = m.route ? 640 : W - 2 * PAD;
+  const heroWidth = m.route ? 640 : m.logo ? 820 : W - 2 * PAD;
   let size = 100;
   const unitGap = m.card.unit ? 16 : 0;
   for (; size >= 64; size -= 4) {
@@ -130,6 +138,7 @@ async function renderLandingGif(story, distribution, output, { ffmpeg = 'ffmpeg'
     b.fillStyle = C.muted; for (let x = x1 + 52; x < x2 - 62; x += 16) b.fillRect(x, y - 2, 6, 4);
     b.beginPath(); b.moveTo(x2 - 56, y - 8); b.lineTo(x2 - 56, y + 8); b.lineTo(x2 - 46, y); b.fill();
   }
+  if (m.logo) await cards.entityNode(b, m.logo, W - PAD - 50, 200, accent, 44);
   b.fillStyle = C.grid; b.fillRect(X0, BASE, X1 - X0, 1);
   b.font = 'normal 17px GeistMono'; b.fillStyle = C.faint;
   const xOf = v => X0 + (Math.log10(v) - m.lo) / (m.hi - m.lo) * (X1 - X0);
@@ -193,7 +202,8 @@ function storyMedia({ reader, still = cards.renderEditorial, logger = console, l
   heatmap = require('./heatmap-gif').renderHeatmapGif } = {}) {
   return async story => {
     const isHeatmap = story?.evidence?.card?.visual?.kind === 'heatmap';
-    if ((landingKind(story) && reader) || isHeatmap) {
+    const kind = landingKind(story);
+    if ((kind && (reader || kind === 'exchange')) || isHeatmap) {
       const file = path.join(os.tmpdir(), `zecblock-${isHeatmap ? 'heatmap' : 'landing'}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.gif`);
       try {
         if (isHeatmap) await heatmap(story, file);

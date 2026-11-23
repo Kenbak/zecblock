@@ -9,6 +9,8 @@ const os = require('os');
 const { floorTo } = require('./editorial-format');
 
 const ASSETS = path.join(__dirname, '..', 'assets');
+// Exchange marks the site already serves; a mark identifies the label, not ownership.
+const ENTITY_LOGOS = path.join(__dirname, '..', '..', '..', 'public', 'brands', 'entities');
 const LOGO = path.join(__dirname, '..', '..', '..', 'public', 'brand', 'zecblock-logotype.png');
 const W = 1200, H = 675, PAD = 80;
 
@@ -392,6 +394,22 @@ async function chainNode(ctx, code, cx, cy, ring) {
   ctx.fillText(label, cx - ctx.measureText(label).width / 2, cy + 74);
 }
 
+/** A round exchange mark with a thin ring in the story's accent. */
+async function entityNode(ctx, file, cx, cy, ring, r = 52) {
+  if (!fs.existsSync(file)) throw new Error('Exchange logo missing');
+  ctx.beginPath(); ctx.arc(cx, cy, r + 6, 0, Math.PI * 2);
+  ctx.fillStyle = C.surface; ctx.fill();
+  ctx.strokeStyle = ring; ctx.lineWidth = 2; ctx.stroke();
+  const img = await loadImage(file);
+  ctx.save(); ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.clip();
+  ctx.drawImage(img, cx - r, cy - r, 2 * r, 2 * r); ctx.restore();
+}
+
+async function drawEntity(ctx, v, accent) {
+  if (!/^[a-z0-9-]+\.png$/.test(v.logo || '')) throw new Error('Unexpected exchange logo');
+  await entityNode(ctx, path.join(ENTITY_LOGOS, v.logo), 960, 250, accent, 90);
+}
+
 async function drawSwap(ctx, v) {
   const y = 250, x1 = 820, x2 = W - PAD - 40;
   ctx.fillStyle = C.text;
@@ -501,6 +519,7 @@ async function renderEditorial(story) {
   else if (v?.kind === 'comparison') drawComparison(ctx, v, card);
   else if (v?.kind === 'transfer') drawTransfer(ctx, v);
   else if (v?.kind === 'swap') await drawSwap(ctx, v);
+  else if (v?.kind === 'entity') await drawEntity(ctx, v, accent);
   else if (v?.kind === 'rank') drawRank(ctx, v);
   else if (v?.kind === 'bars') drawBars(ctx, v);
   else if (v?.kind === 'reorg') drawReorg(ctx, v);
@@ -512,4 +531,4 @@ async function renderEditorial(story) {
   return file;
 }
 
-module.exports = { renderEditorial, seriesModel, chartValue, ensureFonts, chainNode, drawFooter, W, H, PAD, C, TONES, LOGO, fmt };
+module.exports = { renderEditorial, seriesModel, chartValue, ensureFonts, chainNode, entityNode, drawFooter, W, H, PAD, C, TONES, LOGO, ENTITY_LOGOS, fmt };

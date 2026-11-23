@@ -11,11 +11,13 @@ import { CrosslinkStats } from '@/components/CrosslinkStats';
 import { CrosslinkChainGraph } from '@/components/CrosslinkChainGraph.lazy';
 import { StakingDayBanner } from '@/components/StakingDayBanner';
 import { PulseWidget } from '@/components/PulseWidget';
+import { HomeAbout } from '@/components/HomeAbout';
+import { getHomeAbout } from '@/lib/home-about';
 import { getApiUrl } from '@/lib/api-config';
 import { isCrosslink, isTestnet } from '@/lib/config';
 import { fetchWithDeadline } from '@/lib/server-fetch';
 import { retainLastGoodOrBuildFallback } from '@/lib/isr-fallback';
-import { buildPageMetadata, getBaseUrl, getSiteCopy } from '@/lib/seo';
+import { buildPageMetadata, getBaseUrl, getNetwork, getSiteCopy } from '@/lib/seo';
 import type { Metadata } from 'next';
 
 export const revalidate = 30;
@@ -107,6 +109,7 @@ async function getRecentShieldedTxs(): Promise<ShieldedTx[]> {
 }
 
 const crosslinkMode = isCrosslink;
+const homeAbout = getHomeAbout(getNetwork());
 
 export default async function Home() {
   const [initialBlocks, initialShieldedTxs] = await Promise.all([
@@ -228,6 +231,7 @@ export default async function Home() {
           }
         />
       </div>
+      {homeAbout && <HomeAbout about={homeAbout} />}
       </div>
     </div>
     </HomeBlocksProvider>

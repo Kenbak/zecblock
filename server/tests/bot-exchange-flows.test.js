@@ -94,6 +94,18 @@ test('rank: other events in the same block count, the ranked event itself does n
   assert.match(alone.content, /The largest deposit/);
 });
 
+test('long custody copy stays within 280 characters: 24h line dropped, then the rank line shortened', () => {
+  const end = 1795371364, events = fx.history(end);
+  const row = { txid: '4'.repeat(64), entity: 'coinbase_prime', direction: 'withdrawal', counterparty: 'shielded',
+    amountZat: '1234567890123456', blockHeight: 3600000, blockTime: end };
+  const net = { depositsZat: '123456789012345', withdrawalsZat: '987654321098765', netZat: '0', count: 9 };
+  const s = x.exchangeFlowStory({ ...row, ...x.rankEvent(row, events), net, price_usd: 500 });
+  assert.ok(s, 'a qualifying custody withdrawal still produces a story');
+  assert.ok(s.content.length <= 280, `length ${s.content.length}`);
+  assert.match(s.content, /Coinbase Prime custody/);
+  assert.match(s.content, new RegExp(`/tx/${row.txid}$`));
+});
+
 test('24h net flow is exact zatoshis per entity and across exchanges', () => {
   const e = (entity, direction, zat, t) => ({ entity, direction, amountZat: zat, blockTime: t, txid: 'a'.repeat(64) });
   const events = [e('kraken', 'deposit', '100000000001', 1000), e('kraken', 'withdrawal', '30000000000', 1001),

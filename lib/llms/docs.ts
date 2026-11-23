@@ -14,6 +14,7 @@ import { getAllNewsletters } from '@/lib/newsletter';
 import { getEndpointsByCategory } from '@/app/docs/endpoints';
 import { getTools } from '@/server/api/v1/mcp/catalog';
 import { markdownPathFor } from './paths';
+import { getHomeAbout, homeAboutMarkdown } from '@/lib/home-about';
 
 export const SITE_URL = 'https://zecblock.com';
 // Public API origin only; never a configured server-side origin.
@@ -62,8 +63,7 @@ interface PageEntry {
 // Titles and descriptions are the pages' own metadata (checked in CI). Grant
 // round pages build theirs from live proposal counts; their entries omit counts.
 const PAGES: PageEntry[] = [
-  { path: '/', section: 'Explorer', title: 'Zcash Explorer & Privacy Analytics | ZecBlock', description: 'ZecBlock is an open-source Zcash block explorer. Search blocks, transactions and addresses, and explore shielded pools, network activity and privacy analytics.', tools: ['chain_info', 'blocks', 'transactions'],
-    body: 'Search accepts a block height or hash, a transaction hash, a Zcash address (transparent `t1`/`t3`, `tex`, Sapling `zs`, Unified `u1`) or a Zcash Name, and site pages by topic.' },
+  { path: '/', section: 'Explorer', title: 'Zcash Explorer & Privacy Analytics | ZecBlock', description: 'ZecBlock is an open-source Zcash block explorer. Search blocks, transactions and addresses, and explore shielded pools, network activity and privacy analytics.', tools: ['chain_info', 'blocks', 'transactions'] },
   { path: '/blocks', section: 'Explorer', title: 'Latest Zcash Blocks - Block Explorer | ZecBlock', description: 'Browse the latest Zcash blocks with transaction counts, sizes, mining rewards, and timestamps. Real-time block explorer data.', tools: ['blocks', 'block'] },
   { path: '/txs', section: 'Explorer', title: 'Latest Zcash Transactions | ZecBlock', description: 'Browse the latest Zcash transactions including shielded, transparent, and coinbase transactions. Real-time transaction explorer.', tools: ['transactions', 'transaction'],
     body: 'The shielded view, [/txs?type=shielded](https://zecblock.com/txs?type=shielded), lists shielded Zcash transactions and tracks shielding and deshielding flows across the Ironwood, Orchard and Sapling pools.' },
@@ -274,6 +274,8 @@ export function getLlmsDocs(): LlmsDoc[] {
     description: entry.description,
     markdown: entry.path === '/docs' ? docsMarkdown(entry)
       : entry.path === '/docs/mcp' ? mcpMarkdown(entry)
+      // The homepage's About section, the same text as on the page.
+      : entry.path === '/' ? pageMarkdown(entry, `${SITE_URL}/`, homeAboutMarkdown(getHomeAbout('mainnet')!, SITE_URL))
       : pageMarkdown(entry, `${SITE_URL}${entry.path}`),
   }));
   const templateDocs = TEMPLATES.map(entry => ({

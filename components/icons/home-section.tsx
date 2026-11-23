@@ -78,3 +78,7 @@ export function SearchSectionIcon(props: HomeSectionIconProps) {
 export function DistributionSectionIcon(props: HomeSectionIconProps) {
   return <Icon {...props}><path d="M4 20V10h4v10m2 0V4h4v16m2 0v-7h4v7M2 20h20" /></Icon>;
 }
+
+export function InfoSectionIcon(props: HomeSectionIconProps) {
+  return <Icon {...props}><circle cx="12" cy="12" r="9" /><path d="M12 11v6M12 7.5v.01" /></Icon>;
+}

@@ -110,4 +110,64 @@ function exchangeFlowStory(row) {
     Number(row.amountZat) / 1e8);
 }
 
-module.exports = { ...core, MIN_ZAT, MAX_TAIL_PCT, MIN_SAMPLE, exchangeFlowStory, WINDOW_DAYS, SETTLE_S, BINS_PER_DECADE, rankEvent, netFlow, binOf };
+// ─── Weekly net-flow recap ──────────────────────────────────────────────────
+
+const WEEK_LINK = `${BASE}/docs#exchange-flows-daily`;
+const MAX_ROWS = 6;
+const signedZec = zat => {
+  const f = require('./editorial-format');
+  const v = BigInt(zat), abs = v < 0n ? -v : v;
+  return `${v < 0n ? '−' : v > 0n ? '+' : ''}${f.zecShort(Number(abs) / 1e8)}`;
+};
+
+/**
+ * Last completed UTC week (Monday–Sunday) of deposits and withdrawals per
+ * labelled entity. `rows` are { entity, depositsZat, withdrawalsZat,
+ * depositCount, withdrawalCount } with exact decimal zatoshi strings; entities
+ * without activity are left out. Net = deposits − withdrawals.
+ */
+function weeklyNetFlowStory({ start, endExclusive, rows }) {
+  const f = require('./editorial-format');
+  const { candidate } = require('./editorial-policy');
+  const addDays = (d, n) => new Date(Date.parse(`${d}T00:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start || '') || addDays(start, 7) !== endExclusive || new Date(`${start}T00:00:00Z`).getUTCDay() !== 1) return null;
+  if (!Array.isArray(rows)) return null;
+  const active = [];
+  for (const r of rows) {
+    const entity = ENTITIES[r.entity];
+    if (!entity || !/^\d+$/.test(String(r.depositsZat)) || !/^\d+$/.test(String(r.withdrawalsZat))) return null;
+    const dn = Number(r.depositCount), wn = Number(r.withdrawalCount);
+    if (![dn, wn].every(n => Number.isSafeInteger(n) && n >= 0)) return null;
+    if (!dn && !wn) continue;
+    const d = BigInt(r.depositsZat), w = BigInt(r.withdrawalsZat);
+    active.push({ entity: r.entity, name: entity.name, logo: entity.logo, kind: entity.kind,
+      depositsZat: d.toString(), withdrawalsZat: w.toString(), netZat: (d - w).toString(), depositCount: dn, withdrawalCount: wn });
+  }
+  if (active.length < 2) return null;
+  const abs = v => (v < 0n ? -v : v);
+  active.sort((a, b) => { const x = abs(BigInt(b.netZat)) - abs(BigInt(a.netZat)); return x > 0n ? 1 : x < 0n ? -1 : a.entity.localeCompare(b.entity); });
+  const deposits = active.reduce((s, r) => s + BigInt(r.depositsZat), 0n), withdrawals = active.reduce((s, r) => s + BigInt(r.withdrawalsZat), 0n);
+  const net = deposits - withdrawals;
+  if (net === 0n) return null;
+  const into = net > 0n, range = f.rangeText(start, addDays(endExclusive, -1));
+  const netText = f.zecText(abs(net).toString());
+  const movers = active.filter(r => BigInt(r.netZat) !== 0n);
+  const head = `${MARK} Exchange flows last week (${range}, UTC): ${netText} ZEC net ${into ? 'into' : 'out of'} labelled exchange and custody wallets.`;
+  let content;
+  for (let n = Math.min(movers.length, MAX_ROWS); n >= 0; n--) {
+    const list = movers.slice(0, n).map(r => `${r.name} ${signedZec(r.netZat)}`).join(' · ');
+    content = `${head}\n\n${list ? `${list}\n\n` : ''}${WEEK_LINK}`;
+    if (content.length <= 280) break;
+  }
+  const shown = active.slice(0, MAX_ROWS);
+  const card = { kicker: 'Exchanges · Last week', hero: signedZec(net.toString()), unit: 'ZEC', tone: into ? 'in' : 'out',
+    line: `net ${into ? 'into' : 'out of'} labelled exchange & custody wallets`, source: 'zecblock.com/docs#exchange-flows-daily', date: range,
+    visual: { kind: 'netflow', rows: shown.map(r => ({ entity: r.entity, name: r.name, logo: r.logo, netZat: r.netZat, display: signedZec(r.netZat) })) } };
+  const transactions = active.reduce((s, r) => s + r.depositCount + r.withdrawalCount, 0);
+  return candidate('exchange_netflow_weekly', `analysis:exchange_netflow:${start}`, content,
+    { period: { start, endExclusive }, entities: active, depositsZat: deposits.toString(), withdrawalsZat: withdrawals.toString(),
+      netZat: net.toString(), events: transactions, card, attribution: 'address-labels',
+      editorial: { topic: 'exchange_netflow', lens: 'weekly_pattern', significance: 60 } });
+}
+
+module.exports = { ...core, MIN_ZAT, MAX_TAIL_PCT, MIN_SAMPLE, exchangeFlowStory, weeklyNetFlowStory, WINDOW_DAYS, SETTLE_S, BINS_PER_DECADE, rankEvent, netFlow, binOf };

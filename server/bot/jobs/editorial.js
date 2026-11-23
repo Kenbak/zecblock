@@ -132,6 +132,10 @@ async function run(pool, xClient, { now = new Date(), logger = console, render, 
         ...(collectors.heatmapCandidates && Date.parse(`${completedWeekEnd(now)}T06:00:00Z`) >= Date.parse(activatedAt)
           && !history.some(p => p.dedup_key === `analysis:shield_heatmap:${week}`)
           ? [['heatmap', () => collectors.heatmapCandidates(reader,now)]] : []),
+        // Weekly exchange net flows: the same completed week, once, after exchange activation.
+        ...(collectors.exchangeWeeklyCandidates && exchangeActivatedAt && Date.parse(`${completedWeekEnd(now)}T06:00:00Z`) >= Date.parse(exchangeActivatedAt)
+          && !history.some(p => p.dedup_key === `analysis:exchange_netflow:${week}`)
+          ? [['exchange_weekly', () => collectors.exchangeWeeklyCandidates(reader,now)]] : []),
         ['hashrate', () => collectors.hashrateCandidate(reader,now)],
         ['signals', () => collectors.signalCandidates(reader,now)],
         // Routine cross-chain totals remain available as source data. Only

@@ -449,6 +449,48 @@ function drawBars(ctx, v) {
   });
 }
 
+// Weekly exchange net flows: one row per entity, logo and name on the left,
+// a bar from the centre axis (right = net in, left = net out) and the signed
+// value. `t` (0..1) grows the bars for the GIF; the still card draws t = 1.
+const NETFLOW = { top: 312, row: 42, axis: 700, half: 300, logoR: 15 };
+async function netflowLogos(v) {
+  if (!Array.isArray(v?.rows) || !v.rows.length || v.rows.length > 6) throw new Error('Net-flow card needs 1–6 rows');
+  return Promise.all(v.rows.map(r => {
+    if (!/^[a-z0-9-]+\.png$/.test(r.logo || '')) throw new Error('Unexpected exchange logo');
+    const file = path.join(ENTITY_LOGOS, r.logo);
+    if (!fs.existsSync(file)) throw new Error('Exchange logo missing');
+    return loadImage(file);
+  }));
+}
+
+function drawNetflowRows(ctx, v, logos, t = 1) {
+  const { top, row, axis, half, logoR } = NETFLOW;
+  const max = v.rows.reduce((m, r) => { const a = BigInt(r.netZat) < 0n ? -BigInt(r.netZat) : BigInt(r.netZat); return a > m ? a : m; }, 1n);
+  ctx.fillStyle = C.border; ctx.fillRect(axis, top - 18, 1, row * v.rows.length);
+  v.rows.forEach((r, i) => {
+    const cy = top + i * row, net = BigInt(r.netZat);
+    ctx.save(); ctx.beginPath(); ctx.arc(PAD + logoR, cy, logoR, 0, Math.PI * 2); ctx.clip();
+    ctx.drawImage(logos[i], PAD, cy - logoR, 2 * logoR, 2 * logoR); ctx.restore();
+    ctx.font = 'normal 22px Geist'; ctx.fillStyle = C.secondary;
+    ctx.fillText(r.name, PAD + 2 * logoR + 14, cy + 8);
+    const len = Math.max(net === 0n ? 0 : 3, half * Number((net < 0n ? -net : net) * 10000n / max) / 10000 * t);
+    ctx.fillStyle = net < 0n ? C.out : C.in;
+    ctx.fillRect(net < 0n ? axis - len : axis + 1, cy - 9, len, 18);
+    ctx.font = 'normal 20px GeistMono'; ctx.fillStyle = net < 0n ? C.out : net > 0n ? C.in : C.muted;
+    if (t >= 1) ctx.fillText(r.display, W - PAD - ctx.measureText(r.display).width, cy + 7);
+  });
+}
+
+/** Compact heading for chart cards: hero + unit on one line, then the line. */
+function drawCompactHeading(ctx, card, accent) {
+  ctx.font = '500 96px Geist'; ctx.fillStyle = accent; ctx.fillText(card.hero, PAD - 4, 200);
+  const heroW = ctx.measureText(card.hero).width;
+  ctx.font = '500 33px Geist'; ctx.fillStyle = C.muted; ctx.fillText(card.unit || '', PAD - 4 + heroW + 16, 200);
+  ctx.font = '500 32px Geist'; ctx.fillStyle = C.text;
+  if (ctx.measureText(card.line).width > W - 2 * PAD) throw new Error('Card line exceeds safe bounds');
+  ctx.fillText(card.line, PAD, 252);
+}
+
 // A short chain with `depth` replaced blocks forking off it.
 function drawReorg(ctx, v) {
   const size = 30, gap = 14, step = size + gap, mid = 285, x0 = 740;
@@ -514,6 +556,7 @@ async function renderEditorial(story) {
   if (v?.kind === 'briefing') drawBriefing(ctx, card, accent);
   else if (v?.kind === 'series') drawChartHeading(ctx, card, accent);
   else if (v?.kind === 'comparison') { /* Comparison has its own paired heading. */ }
+  else if (v?.kind === 'netflow') drawCompactHeading(ctx, card, accent);
   else drawText(ctx, card, accent, v ? 590 : W - 2 * PAD);
   if (v?.kind === 'series') drawSeries(ctx, seriesModel(story), accent);
   else if (v?.kind === 'comparison') drawComparison(ctx, v, card);
@@ -524,6 +567,7 @@ async function renderEditorial(story) {
   else if (v?.kind === 'bars') drawBars(ctx, v);
   else if (v?.kind === 'reorg') drawReorg(ctx, v);
   else if (v?.kind === 'pulse') drawPulse(ctx, v);
+  else if (v?.kind === 'netflow') drawNetflowRows(ctx, v, await netflowLogos(v));
   else if (v && v.kind !== 'briefing') throw new Error(`Unknown card visual: ${v.kind}`);
   drawFooter(ctx, card.source, v?.kind === 'comparison' && card.date ? `Latest window: ${card.date} UTC` : card.date);
   const file = path.join(os.tmpdir(), `zecblock-card-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.png`);
@@ -531,4 +575,4 @@ async function renderEditorial(story) {
   return file;
 }
 
-module.exports = { renderEditorial, seriesModel, chartValue, ensureFonts, chainNode, entityNode, drawFooter, W, H, PAD, C, TONES, LOGO, ENTITY_LOGOS, fmt };
+module.exports = { renderEditorial, netflowLogos, drawNetflowRows, drawCompactHeading, drawFrame, seriesModel, chartValue, ensureFonts, chainNode, entityNode, drawFooter, W, H, PAD, C, TONES, LOGO, ENTITY_LOGOS, fmt };

@@ -21,7 +21,7 @@ function eventTime(story) {
   if (story.type.startsWith('flow_') || story.type === 'migration' || story.type === 'exchange_flow') return Number(story.evidence.block_time) * 1000;
   if (story.type === 'swap') return Date.parse(story.evidence.swap_created_at);
   if (story.type === 'reorg') return Date.parse(story.evidence.detected_at);
-  if (['activity_weekly', 'shield_heatmap'].includes(story.type)) return Date.parse(`${story.evidence.period.endExclusive}T06:00:00Z`);
+  if (['activity_weekly', 'shield_heatmap', 'exchange_netflow_weekly'].includes(story.type)) return Date.parse(`${story.evidence.period.endExclusive}T06:00:00Z`);
   // Daily stories become eligible only as a newly completed reporting period,
   // after the six-hour data settling window. Their observations remain dated.
   const target = story.evidence.target || story.key.split(':').at(-1);

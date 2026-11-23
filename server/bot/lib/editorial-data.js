@@ -373,9 +373,28 @@ async function exchangeFlowCandidates(pool, now, { store = exchangeStore, fetchP
   return { candidates, decisions };
 }
 
+// Last completed UTC week of exchange net flows from exchange_flow_daily.
+// Posts only when the dataset is ok (not stale) and the job has written past
+// the week's end, so every day of the week is complete.
+async function exchangeWeeklyCandidates(pool, now, { store = exchangeStore } = {}) {
+  const endExclusive = completedWeekEnd(now), start = addDays(endExclusive, -7);
+  const key = `analysis:exchange_netflow:${start}`;
+  await assertMainnetFresh(pool, now);
+  const st = await store.status(pool);
+  if (st.status !== 'ok') return { candidates: [], decisions: [{ key, reason: `exchange-flows-${st.status}`, detail: st.reason }] };
+  const from = Date.parse(`${start}T00:00:00Z`) / 1000, to = Date.parse(`${endExclusive}T00:00:00Z`) / 1000;
+  if (!(Number(st.state.coverage_from_time) <= from && Number(st.state.through_time) >= to)) return { candidates: [], decisions: [{ key, reason: 'week-incomplete' }] };
+  const { rows } = await pool.query(`SELECT entity, sum(deposits_zat)::text AS "depositsZat", sum(withdrawals_zat)::text AS "withdrawalsZat",
+      sum(deposit_count)::int AS "depositCount", sum(withdrawal_count)::int AS "withdrawalCount"
+    FROM exchange_flow_daily WHERE day >= $1::date AND day < $2::date AND entity = ANY($3::text[]) GROUP BY entity`,
+  [start, endExclusive, exchangeFlows.ENTITY_IDS]);
+  const story = exchangeFlows.weeklyNetFlowStory({ start, endExclusive, rows });
+  return story ? [story] : { candidates: [], decisions: [{ key, reason: 'no-net-flow' }] };
+}
+
 async function poolActivityCandidates(pool, now, options) {
   const target = addDays(now.toISOString().slice(0, 10), -1);
   return poolMilestoneStories(await readPoolActivity(pool, now), target, options);
 }
 
-module.exports = { exchangeFlowCandidates, heatmapCandidates, venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, VALID_VENUE_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };
+module.exports = { exchangeFlowCandidates, exchangeWeeklyCandidates, heatmapCandidates, venueSwapCandidates, VALID_FLOWS, VALID_SWAPS, VALID_VENUE_SWAPS, snapshot, assertMainnetFresh, liveCandidates, activityCandidates, hashrateCandidate, signalCandidates, crosschainDaily, reorgCandidates, milestoneCandidates, poolActivityCandidates, insightCandidates, nu7Candidates, eventContext };

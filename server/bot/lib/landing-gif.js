@@ -194,19 +194,22 @@ async function renderLandingGif(story, distribution, output, { ffmpeg = 'ffmpeg'
 
 /**
  * The editorial `render` hook: a landing GIF for swaps and flows, the
- * heatmap GIF for the weekly heatmap, and the still card for everything else
+ * heatmap GIF for the weekly heatmap, the net-flow GIF for the weekly exchange
+ * recap (still card if it fails), and the still card for everything else
  * and whenever a GIF cannot be made. A heatmap has no still card; without its
  * GIF the post goes out as text.
  */
 function storyMedia({ reader, still = cards.renderEditorial, logger = console, load = loadDistribution, gif = renderLandingGif,
-  heatmap = require('./heatmap-gif').renderHeatmapGif } = {}) {
+  heatmap = require('./heatmap-gif').renderHeatmapGif, netflow = require('./netflow-gif').renderNetflowGif } = {}) {
   return async story => {
     const isHeatmap = story?.evidence?.card?.visual?.kind === 'heatmap';
+    const isNetflow = story?.evidence?.card?.visual?.kind === 'netflow';
     const kind = landingKind(story);
-    if ((kind && (reader || kind === 'exchange')) || isHeatmap) {
-      const file = path.join(os.tmpdir(), `zecblock-${isHeatmap ? 'heatmap' : 'landing'}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.gif`);
+    if ((kind && (reader || kind === 'exchange')) || isHeatmap || isNetflow) {
+      const file = path.join(os.tmpdir(), `zecblock-${isHeatmap ? 'heatmap' : isNetflow ? 'netflow' : 'landing'}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.gif`);
       try {
         if (isHeatmap) await heatmap(story, file);
+        else if (isNetflow) await netflow(story, file);
         else await gif(story, await load(reader, story), file);
         return file;
       } catch (error) {

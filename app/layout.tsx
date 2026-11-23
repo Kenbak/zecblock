@@ -13,8 +13,7 @@ import { ThemeProvider } from "@/contexts/ThemeContext";
 import { WebSocketProvider } from "@/contexts/WebSocketContext";
 import { getBaseUrl, getNetwork, getSiteCopy } from "@/lib/seo";
 import { HOME_FEED_PREFERENCE_BOOTSTRAP } from '@/lib/home-feed-preferences';
-import { getGovernanceAnnouncementCatalog } from '@/lib/governance-data';
-import { buildAnnouncementSnapshot, type AnnouncementSnapshot } from '@/lib/governance-announcement';
+import { getGovernanceBannerSeed } from '@/lib/governance-banner-seed';
 import "./globals.css";
 
 const geistSans = localFont({
@@ -96,19 +95,9 @@ const siteJsonLd = {
   ],
 };
 
-// Same source and bounded wait as /api/governance/announcement. Rendering it
-// here keeps a live poll banner from appearing after load and shifting the page.
-async function initialGovernanceSnapshot(): Promise<AnnouncementSnapshot | null> {
-  if (getNetwork() !== 'mainnet') return null;
-  try {
-    return buildAnnouncementSnapshot(await getGovernanceAnnouncementCatalog(), Date.now()).snapshot;
-  } catch {
-    return null;
-  }
-}
-
 async function AppContent({ children }: { children: React.ReactNode }) {
-  const governance = await initialGovernanceSnapshot();
+  // Server-rendered so a live poll banner does not appear after load and push the page down.
+  const governance = getNetwork() === 'mainnet' ? await getGovernanceBannerSeed() : null;
   return (
     <>
       <a

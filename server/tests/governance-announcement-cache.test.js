@@ -261,7 +261,10 @@ test('the layout seeds the banner from the server snapshot so it is in the first
   assert.equal(lapsed.updates[0], null);
   lapsed.cleanup();
   const layout = fs.readFileSync('app/layout.tsx', 'utf8');
-  assert.match(layout, /getNetwork\(\) !== 'mainnet'\) return null/);
-  assert.match(layout, /buildAnnouncementSnapshot\(await getGovernanceAnnouncementCatalog\(\), Date\.now\(\)\)/);
+  assert.match(layout, /getNetwork\(\) === 'mainnet' \? await getGovernanceBannerSeed\(\) : null/);
   assert.match(layout, /<GovernanceBanner initial=\{governance\} \/>/);
+  const seed = fs.readFileSync('lib/governance-banner-seed.ts', 'utf8');
+  // Its own five-minute cache: the layout must not lower every page's ISR to the directory minute.
+  assert.match(seed, /SEED_REVALIDATE_SECONDS = 300/);
+  assert.match(seed, /if \(catalog\.unavailable\) throw/);
 });

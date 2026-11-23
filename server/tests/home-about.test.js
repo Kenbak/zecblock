@@ -52,7 +52,7 @@ test('the homepage renders the section after the live data, and its Markdown car
   assert.ok(page.indexOf('<RecentMempool') < page.indexOf('<HomeAbout about={homeAbout} />'), 'About comes after the mempool');
   const component = read('components/HomeAbout.tsx');
   assert.doesNotMatch(component, /'use client'/);
-  assert.match(component, /<SectionHeader label=\{about\.heading\} icon=\{<InfoSectionIcon \/>\} size=\{size\} \/>/);
+  assert.match(component, /<SectionHeader label=\{about\.heading\} icon=\{<InfoSectionIcon \/>\} size=\{size\}/);
   assert.match(component, /<AboutSection about=\{about\} size="lg"/);
   const markdown = homeAboutMarkdown(getHomeAbout('mainnet'), 'https://zecblock.com');
   assert.match(markdown, /^## About this Zcash explorer\n/);

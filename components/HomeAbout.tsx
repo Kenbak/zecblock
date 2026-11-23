@@ -22,15 +22,22 @@ function Parts({ parts }: { parts: AboutPart[] }) {
 export function AboutSection({ about, size = 'sm', className = '' }: { about: AboutCopy; size?: 'sm' | 'lg'; className?: string }) {
   return (
     <section aria-label={about.heading} className={`about-section border-t border-cipher-border ${className}`}>
-      <SectionHeader label={about.heading} icon={<InfoSectionIcon />} size={size} />
-      <p className="type-prose text-secondary max-w-3xl font-sans"><Parts parts={about.intro} /></p>
-      {about.more?.map((paragraph, i) => <p key={i} className="type-prose text-secondary max-w-3xl font-sans mt-3"><Parts parts={paragraph} /></p>)}
+      {/* Title left, prose right: the same two columns as the question rows below. */}
+      <div className="grid grid-cols-1 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
+        <SectionHeader label={about.heading} icon={<InfoSectionIcon />} size={size} className="lg:mb-0 lg:items-start" />
+        <div>
+          <p className="type-prose text-secondary max-w-3xl font-sans"><Parts parts={about.intro} /></p>
+          {about.more?.map((paragraph, i) => <p key={i} className="type-prose text-secondary max-w-3xl font-sans mt-3"><Parts parts={paragraph} /></p>)}
+        </div>
+      </div>
       {about.items.length > 0 && (
-        <div className="mt-8 grid grid-cols-1 gap-x-10 gap-y-7 md:grid-cols-2 lg:grid-cols-3">
+        // One row per question: question left, answer right, ruled like the
+        // site's tables, so uneven answer lengths never leave ragged gaps.
+        <div className="mt-8 border-t border-cipher-border">
           {about.items.map(item => (
-            <div key={item.question}>
+            <div key={item.question} className="grid grid-cols-1 gap-2 border-b border-cipher-border py-5 lg:grid-cols-[minmax(0,1fr)_minmax(0,2fr)] lg:gap-10">
               <h3 className="text-sm font-medium text-primary font-sans">{item.question}</h3>
-              <p className="mt-2 text-sm leading-relaxed text-secondary font-sans"><Parts parts={item.answer} /></p>
+              <p className="max-w-3xl text-sm leading-relaxed text-secondary font-sans"><Parts parts={item.answer} /></p>
             </div>
           ))}
         </div>

@@ -8,8 +8,11 @@ import type { AnnouncementSnapshot } from '@/lib/governance-announcement';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { ANNOUNCED_MAINNET_NU7, readUpgradeSnapshot, getPendingNu7Upgrade, estimateBlockArrival, formatUpgradeTime } from '@/lib/network-upgrades';
 
-export function GovernanceBanner() {
-  const [announcement, setAnnouncement] = useState<Announcement | null>(null);
+// `initial` is the server's snapshot, so a live announcement is in the first
+// HTML and does not push the page down after hydration. The client still
+// refreshes it and enforces its expiry.
+export function GovernanceBanner({ initial = null }: { initial?: AnnouncementSnapshot | null } = {}) {
+  const [announcement, setAnnouncement] = useState<Announcement | null>(initial?.announcement ?? null);
   const [dismissed, setDismissed] = useState<string | null>(null);
   const dismissedKeys = useRef(new Set<string>());
   const ref = useRef<HTMLDivElement>(null);
@@ -44,6 +47,8 @@ export function GovernanceBanner() {
     const controller = new AbortController();
     let inFlight = false;
     let expiryTimer: ReturnType<typeof setTimeout> | undefined;
+    // A cached page may carry a snapshot whose window has already closed.
+    if (initial?.nextChangeAt != null && initial.nextChangeAt <= Date.now()) setAnnouncement(null);
     const refresh = async () => {
       if (document.visibilityState !== 'visible' || inFlight) return;
       inFlight = true;
@@ -82,6 +87,8 @@ export function GovernanceBanner() {
     const timer = setInterval(() => void refresh(), 60_000);
     document.addEventListener('visibilitychange', refresh);
     return () => { controller.abort(); clearInterval(timer); clearTimeout(expiryTimer); document.removeEventListener('visibilitychange', refresh); };
+    // The server snapshot only seeds the first render; refreshes own it after.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   useEffect(() => {
     const element = ref.current;

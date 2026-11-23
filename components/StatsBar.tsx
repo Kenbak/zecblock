@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useRef, useCallback } from 'react';
+import { useState, useEffect, useRef, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import { CURRENCY, isCrosslink, isMainnet } from '@/lib/config';
 import { SlidersIcon } from '@/components/icons/common';
@@ -110,6 +110,49 @@ function StatItem({ href, label, title, children }: { href: string; label: strin
   );
 }
 
+const EMPTY_STATS: StatsData = {
+  blockHeight: null,
+  mempoolCount: null,
+  hashrate: null,
+  avgBlockTime: null,
+  price: null,
+  change24h: null,
+  privacyScore: null,
+  shieldedPool: null,
+  shieldedPct: null,
+  shieldedPct30d: null,
+  totalTxs: null,
+  ironwoodPool: null,
+  ironwoodPct: null,
+};
+
+// Labels as the loaded items show them, and value widths (in mono ch) close to
+// typical values, so the loaded figure replaces its slot with little movement.
+const PLACEHOLDER: Record<StatId, { label: string; ch: number }> = {
+  block: { label: 'Block', ch: 10 },
+  blockTime: { label: 'Block Time', ch: 4 },
+  hashrate: { label: 'Hashrate · 24h', ch: 10 },
+  mempool: { label: 'Mempool', ch: 4 },
+  totalTxs: { label: 'Total TXs', ch: 5 },
+  shieldedPool: { label: 'Shielded Pool', ch: 8 },
+  shieldedPct: { label: 'Shielded TXs · 30d', ch: 5 },
+  ironwoodPool: { label: 'Ironwood', ch: 8 },
+  ironwoodPct: { label: '% Migrated', ch: 5 },
+  privacyScore: { label: 'Privacy Score', ch: 6 },
+  price: { label: CURRENCY, ch: 15 },
+  zecBtc: { label: 'ZEC/BTC', ch: 6 },
+};
+
+function StatPlaceholder({ id }: { id: StatId }) {
+  const { label, ch } = PLACEHOLDER[id];
+  return (
+    <span className="flex items-center gap-1.5 text-xs sm:text-data font-mono text-muted whitespace-nowrap" aria-busy="true">
+      <span>{label}</span>
+      <span aria-hidden="true" className="inline-block h-3 rounded bg-cipher-hover animate-pulse" style={{ width: `${ch}ch` }} />
+    </span>
+  );
+}
+
 function Sep() {
   return <span aria-hidden="true" className="h-3 border-l border-cipher-border mx-0.5 sm:mx-0" />;
 }
@@ -121,22 +164,6 @@ const CheckIcon = () => (
 );
 
 export function StatsBar() {
-  const [stats, setStats] = useState<StatsData>({
-    blockHeight: null,
-    mempoolCount: null,
-    hashrate: null,
-    avgBlockTime: null,
-    price: null,
-    change24h: null,
-    privacyScore: null,
-    shieldedPool: null,
-    shieldedPct: null,
-    shieldedPct30d: null,
-    totalTxs: null,
-    ironwoodPool: null,
-    ironwoodPct: null,
-  });
-
   const blocksQuery = useApiQuery<Array<{ height: number | string }>>(
     '/v1/blocks',
     { limit: 1 },
@@ -176,6 +203,49 @@ export function StatsBar() {
     enabled: !isCrosslink,
     refreshInterval: 30_000,
   });
+
+  // Derived during render (each query retains its last good payload), so a
+  // value appears in the same commit as its data instead of one render later.
+  const stats = useMemo<StatsData>(() => {
+    const next: StatsData = { ...EMPTY_STATS };
+    const latestBlock = blocksQuery.data?.[0];
+    if (latestBlock) next.blockHeight = Number(latestBlock.height);
+    if (mempoolQuery.data) {
+      next.mempoolCount = mempoolQuery.data.count
+        ?? mempoolQuery.data.transactions?.length
+        ?? 0;
+    }
+    if (priceQuery.data?.price != null) next.price = priceQuery.data.price;
+    if (priceQuery.data?.change24h != null) next.change24h = priceQuery.data.change24h;
+
+    const network = networkQuery.data;
+    if (network?.mining?.networkHashrate) next.hashrate = network.mining.networkHashrate;
+    if (network?.mining?.avgBlockTime) next.avgBlockTime = network.mining.avgBlockTime;
+    if (network?.network?.height && !next.blockHeight) next.blockHeight = network.network.height;
+    if (network?.supply?.ironwood) next.ironwoodPool = network.supply.ironwood;
+    if (network?.supply?.ironwood && network.supply.totalShielded) {
+      next.ironwoodPct = (network.supply.ironwood / network.supply.totalShielded) * 100;
+    }
+
+    const privacy = privacyQuery.data;
+    if (privacy?.metrics?.privacyScore != null) next.privacyScore = privacy.metrics.privacyScore;
+    if (privacy?.metrics?.shieldedPercentage != null) {
+      next.shieldedPct = privacy.metrics.shieldedPercentage;
+    }
+    const recentShare = recentShieldedShare(privacy?.trends?.daily);
+    if (recentShare !== null) next.shieldedPct30d = recentShare;
+    if (privacy?.shieldedPool?.currentSize != null) {
+      next.shieldedPool = privacy.shieldedPool.currentSize;
+    }
+    if (privacy?.totals?.totalTx != null) next.totalTxs = privacy.totals.totalTx;
+    return next;
+  }, [
+    blocksQuery.data,
+    mempoolQuery.data,
+    networkQuery.data,
+    priceQuery.data,
+    privacyQuery.data,
+  ]);
 
   // Server render + first client paint always show DEFAULT_STATS — no
   // hydration mismatch — then this swaps in the visitor's own saved
@@ -267,50 +337,22 @@ export function StatsBar() {
         ? 'stats-bar-fade-right'
         : '';
 
-  useEffect(() => {
-    setStats((current) => {
-      const next = { ...current };
-      const latestBlock = blocksQuery.data?.[0];
-      if (latestBlock) next.blockHeight = Number(latestBlock.height);
-      if (mempoolQuery.data) {
-        next.mempoolCount = mempoolQuery.data.count
-          ?? mempoolQuery.data.transactions?.length
-          ?? 0;
-      }
-      if (priceQuery.data?.price != null) next.price = priceQuery.data.price;
-      if (priceQuery.data?.change24h != null) next.change24h = priceQuery.data.change24h;
-
-      const network = networkQuery.data;
-      if (network?.mining?.networkHashrate) next.hashrate = network.mining.networkHashrate;
-      if (network?.mining?.avgBlockTime) next.avgBlockTime = network.mining.avgBlockTime;
-      if (network?.network?.height && !next.blockHeight) next.blockHeight = network.network.height;
-      if (network?.supply?.ironwood) next.ironwoodPool = network.supply.ironwood;
-      if (network?.supply?.ironwood && network.supply.totalShielded) {
-        next.ironwoodPct = (network.supply.ironwood / network.supply.totalShielded) * 100;
-      }
-
-      const privacy = privacyQuery.data;
-      if (privacy?.metrics?.privacyScore != null) next.privacyScore = privacy.metrics.privacyScore;
-      if (privacy?.metrics?.shieldedPercentage != null) {
-        next.shieldedPct = privacy.metrics.shieldedPercentage;
-      }
-      const recentShare = recentShieldedShare(privacy?.trends?.daily);
-      if (recentShare !== null) next.shieldedPct30d = recentShare;
-      if (privacy?.shieldedPool?.currentSize != null) {
-        next.shieldedPool = privacy.shieldedPool.currentSize;
-      }
-      if (privacy?.totals?.totalTx != null) next.totalTxs = privacy.totals.totalTx;
-      return next;
-    });
-  }, [
-    blocksQuery.data,
-    mempoolQuery.data,
-    networkQuery.data,
-    priceQuery.data,
-    privacyQuery.data,
-  ]);
-
-  const hasAnyData = stats.blockHeight !== null || stats.price !== null;
+  // Until a stat's source answers, hold its label and a value-sized slot so
+  // the strip does not rebuild and shift sideways as each request lands.
+  const statLoading: Record<StatId, boolean> = {
+    block: blocksQuery.loading || networkQuery.loading,
+    blockTime: networkQuery.loading,
+    hashrate: networkQuery.loading,
+    mempool: mempoolQuery.loading,
+    totalTxs: privacyQuery.loading,
+    shieldedPool: privacyQuery.loading,
+    shieldedPct: privacyQuery.loading,
+    ironwoodPool: networkQuery.loading,
+    ironwoodPct: networkQuery.loading,
+    privacyScore: privacyQuery.loading,
+    price: priceQuery.loading,
+    zecBtc: false,
+  };
 
   // Each figure links to the page that owns it, not to a general overview.
   const renderStat = (id: StatId): React.ReactNode => {
@@ -403,7 +445,7 @@ export function StatsBar() {
 
   const visibleItems = STAT_ORDER
     .filter((id) => selected.includes(id))
-    .map((id) => ({ id, node: renderStat(id) }))
+    .map((id) => ({ id, node: renderStat(id) ?? (statLoading[id] ? <StatPlaceholder id={id} /> : null) }))
     .filter((item) => item.node !== null);
 
   return (
@@ -425,16 +467,6 @@ export function StatsBar() {
               ))}
             </div>
 
-            {/* Skeleton */}
-            {!hasAnyData && (
-              <div className="flex items-center gap-4 w-full">
-                <div className="h-3 w-24 rounded bg-cipher-hover animate-pulse" />
-                <div className="h-3 w-16 rounded bg-cipher-hover animate-pulse" />
-                <div className="h-3 w-20 rounded bg-cipher-hover animate-pulse" />
-                <div className="h-3 w-16 rounded bg-cipher-hover animate-pulse" />
-                <div className="h-3 w-24 rounded bg-cipher-hover animate-pulse" />
-              </div>
-            )}
           </div>
 
           {/* Pinned outside the scrollable strip — never scrolls away with the stats. */}

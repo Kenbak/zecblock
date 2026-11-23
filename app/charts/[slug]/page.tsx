@@ -3,9 +3,12 @@ import { PageHeader } from '@/components/ui';
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
 import { findShareChart, chartPublicTitle, chartSource, normalizeChartRange, selectedChartSeries, chartSharePath, chartImagePath, chartRangeRows, chartDateRange, EXPORT_SIZE } from '@/lib/chart-sharing';
 import { delayedChartSnapshotLabel, loadShareChart } from '@/lib/chart-share-server';
+import { compactCatalogPayload } from '@/lib/chart-catalog';
 import { CatalogCard } from '../ChartsClient';
 
-type Props = { params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
+// Days of history the page inlines for a range; 'all' inlines everything.
+const RANGE_DAYS: Partial<Record<string, number>> = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+type Props ={ params: Promise<{ slug: string }>; searchParams: Promise<Record<string, string | string[] | undefined>> };
 export async function generateMetadata({ params, searchParams }: Props) {
   const chart = findShareChart((await params).slug);
   if (!chart) notFound();
@@ -33,6 +36,6 @@ export default async function ChartPage({ params, searchParams }: Props) {
     <PageHeader eyebrow="CHART_LIBRARY" eyebrowHref="/charts" title={chartPublicTitle(chart)} subtitle={chart.description}>
       <p className="mt-3 text-caption text-muted">Source: {chartSource(chart)} · {chart.unit} · {rows.length ? chartDateRange(chart, rows) : chart.window}. {rows.length ? `${rows.length.toLocaleString('en-US')} observations.` : 'Observations are currently unavailable; this page will retry.'}</p>
     </PageHeader>
-    <CatalogCard chart={chart} initialData={snapshot?.payload} initialFetchedAt={snapshot?.fetchedAt} initialSnapshotNotice={delayedSnapshot} initialRange={range} initialSeries={selected.series.map(s => s.key)} standalone/>
+    <CatalogCard chart={chart} initialData={snapshot ? compactCatalogPayload(chart, snapshot.payload, RANGE_DAYS[range]) : undefined} initialDataRange={RANGE_DAYS[range] ? range : undefined} initialFetchedAt={snapshot?.fetchedAt} initialSnapshotNotice={delayedSnapshot} initialRange={range} initialSeries={selected.series.map(s => s.key)} standalone/>
   </div>;
 }

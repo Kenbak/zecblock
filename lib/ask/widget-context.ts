@@ -1,6 +1,7 @@
 import { analysisSchema, type AnalysisSpec } from './contract';
+import { ASK_CHART_EVENT } from './widget-event';
 
-export const ASK_CHART_EVENT = 'zecblock:ask-chart';
+export { ASK_CHART_EVENT };
 
 // Only a validated recipe crosses this boundary; never page HTML or client facts.
 export function openAskChart(spec: AnalysisSpec) {

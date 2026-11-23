@@ -166,13 +166,15 @@ html[data-home-right-pending] .home-feed[data-preference-key="cipherscan-home-ca
   --animate-scale-in: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
   --animate-slide-in-right: slideInRight 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 
+  /* Entrance motion only: server-rendered content stays visible from the first
+     paint. Starting at opacity 0 delayed when browsers count it as painted (LCP). */
   @keyframes fadeIn {
-    0% { opacity: 0; }
-    100% { opacity: 1; }
+    0% { transform: translateY(4px); }
+    100% { transform: translateY(0); }
   }
   @keyframes fadeInUp {
-    0% { opacity: 0; transform: translateY(12px); }
-    100% { opacity: 1; transform: translateY(0); }
+    0% { transform: translateY(12px); }
+    100% { transform: translateY(0); }
   }
   @keyframes scaleIn {
     0% { opacity: 0; transform: scale(0.95); }

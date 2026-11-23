@@ -27,7 +27,7 @@ const TOOLS=[
   {title:'Turnstile tracker',href:'/turnstile',description:'Follow the publicly observable path of value after deshielding.'},
 ];
 
-export function CatalogCard({chart, initialData, initialFetchedAt, initialSnapshotNotice, initialRange, initialSeries, standalone=false}:{chart:CatalogChart; initialData?: unknown; initialFetchedAt?: number; initialSnapshotNotice?: string; initialRange?: ChartRange; initialSeries?: string[]; standalone?: boolean}) {
+export function CatalogCard({chart, initialData, initialDataRange, initialFetchedAt, initialSnapshotNotice, initialRange, initialSeries, standalone=false}:{chart:CatalogChart; initialData?: unknown; /** initialData holds only this range; widening refetches full history. */ initialDataRange?: ChartRange; initialFetchedAt?: number; initialSnapshotNotice?: string; initialRange?: ChartRange; initialSeries?: string[]; standalone?: boolean}) {
   const ref=useRef<HTMLElement>(null);
   const [visible,setVisible]=useState(standalone);
   const [width,setWidth]=useState(500);
@@ -40,7 +40,10 @@ export function CatalogCard({chart, initialData, initialFetchedAt, initialSnapsh
     if(ref.current) observer.observe(ref.current);
     return()=>observer.disconnect();
   },[]);
-  const {data,loading,error}=useApiQuery<unknown>(chartEndpoint(chart),undefined,{initialData,initialFetchedAt,enabled:visible,refreshInterval:300000,timeoutMs:30000});
+  const {data,loading,error,refetch}=useApiQuery<unknown>(chartEndpoint(chart),undefined,{initialData,initialFetchedAt,enabled:visible,refreshInterval:300000,timeoutMs:30000});
+  const order=chartRanges(chart);
+  const needsFullHistory=!!initialDataRange&&data===initialData&&order.indexOf(range)>order.indexOf(initialDataRange);
+  useEffect(()=>{if(needsFullHistory) void refetch();},[needsFullHistory,refetch]);
   const allRows=useMemo(()=>catalogRows(chart,data),[chart,data]);
   const rows=useMemo(()=>chartRangeRows(chart,allRows,range),[chart,allRows,range]);
   const shown=chart.series.filter(s=>!hidden.includes(s.key));

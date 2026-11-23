@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { detectAddressType } from '@/lib/zcash';
 import { findAddressByLabel, searchAddressesByLabel, fetchOfficialLabels } from '@/lib/address-labels';
-import { isValidName } from '@/lib/zns';
+import { isValidName } from '@/lib/name-validation';
 import { NETWORK, isMainnet, isCrosslink } from '@/lib/config';
 import type { SiteMatch } from '@/lib/site-search';
 import { HISTORICAL_UPGRADES } from '@/lib/upgrade-history-data';

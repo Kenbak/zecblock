@@ -117,6 +117,62 @@ export function catalogRows(chart: CatalogChart, payload: unknown): ChartRow[] {
       : [row];
   });
 }
+/** Source fields catalogRows reads from one row of this chart. */
+function catalogRowFields(chart: CatalogChart): string[] {
+  const fields = [chart.x, ...chart.series.map(s => s.field ?? s.key)];
+  if (chart.requireVerifiedPools) fields.push('shielded', 'hasPoolBreakdown');
+  if (chart.id === 'pool-share') fields.push('pools');
+  if (chart.id === 'search-interest') fields.push('partial');
+  if (chart.id === 'sopr') fields.push('soprSource');
+  if (chart.id === 'block-time') fields.push('height', 'timestamp');
+  return [...new Set(fields)];
+}
+/**
+ * The same payload with only what this chart reads. Pages send it to the
+ * browser as initial data, where whole all-history API rows ran to 1-2 MB.
+ * Without rangeDays, catalogRows(chart, compact) equals catalogRows(chart, payload);
+ * with it, the rows inside that range are equal and the client refetches to widen.
+ */
+export function compactCatalogPayload(chart: CatalogChart, payload: unknown, rangeDays?: number): unknown {
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload)) return payload;
+  const path = chart.rows.split('.');
+  const fields = catalogRowFields(chart);
+  // A dated chart opening on a limited range needs only that range. Keep two
+  // extra days so a gap marker at the range edge is drawn as on the full data.
+  const dateOf = (item: unknown): number | null => {
+    const value = item && typeof item === 'object' ? (item as Record<string, unknown>)[chart.x] : null;
+    if (value == null) return null;
+    const x = typeof value === 'number' ? (value < 1e12 ? value * 1000 : value) : Date.parse(String(value));
+    return Number.isFinite(x) ? x : null;
+  };
+  const keepFrom = (items: unknown[]): number => {
+    if (chart.axis || !rangeDays || chart.id === 'block-time') return -Infinity;
+    const latest = Math.max(...items.map(dateOf).filter((x): x is number => x != null));
+    return Number.isFinite(latest) ? latest - (rangeDays + 2) * 86400000 : -Infinity;
+  };
+  const compact = (node: unknown, depth: number): unknown => {
+    if (!node || typeof node !== 'object') return node;
+    if (depth === path.length) {
+      if (!Array.isArray(node)) return node;
+      const from = keepFrom(node);
+      return node.filter(item => from === -Infinity || (dateOf(item) ?? Infinity) > from).map(item => {
+        if (!item || typeof item !== 'object') return item;
+        const row: Record<string, unknown> = {};
+        for (const field of fields) if (field in item) row[field] = (item as Record<string, unknown>)[field];
+        return row;
+      });
+    }
+    if (Array.isArray(node)) return node;
+    // Keep scalar metadata (success, generatedAt, verification flags); drop other large branches.
+    const out: Record<string, unknown> = {};
+    for (const [key, value] of Object.entries(node)) {
+      if (key === path[depth]) out[key] = compact(value, depth + 1);
+      else if (value === null || typeof value !== 'object') out[key] = value;
+    }
+    return out;
+  };
+  return compact(payload, 0);
+}
 /** A later timestamp containing only nulls is not a newer observation. */
 export function latestCatalogObservation(rows: ChartRow[], series: CatalogSeries[]) {
   return rows.findLast(row=>series.some(s=>typeof row[s.key]==='number' && Number.isFinite(row[s.key])));

@@ -140,14 +140,17 @@ export const RecentShieldedTxs = memo(function RecentShieldedTxs({
 
   const { isConnected: wsConnected } = useWebSocket({ onMessage: handleWsMessage });
 
+  // Load once on mount. Kept apart from the interval so a WebSocket
+  // connecting (which changes the polling cadence) does not refetch.
+  const hasInitialTxs = initialTxs.length > 0;
   useEffect(() => {
-    if (initialTxs.length === 0) {
-      fetchTxs();
-    }
+    if (!hasInitialTxs) fetchRef.current();
+  }, [hasInitialTxs]);
 
+  useEffect(() => {
     const interval = setInterval(fetchTxs, wsConnected ? 60000 : 10000);
     return () => clearInterval(interval);
-  }, [initialTxs.length, wsConnected, fetchTxs]);
+  }, [wsConnected, fetchTxs]);
 
   if (loading) {
     return <HomeFeedTableSkeleton rows={limit} footer={footer} nested={nested} />;

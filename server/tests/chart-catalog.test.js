@@ -53,3 +53,31 @@ test('latest observation ignores null-only dates and follows the displayed serie
  assert.equal(latestCatalogObservation(rows,[{key:'other'}]).x,2);
  assert.equal(latestCatalogObservation(rows,[{key:'missing'}]),undefined);
 });
+test('compact chart payloads keep every field each chart reads and drop the rest',()=>{
+ const {compactCatalogPayload}=load('lib/chart-catalog.ts');
+ for(const c of CHART_CATALOG){
+  const row=i=>{const r={unused:'x'.repeat(50),[c.x]:c.axis==='height'?1000+i:c.axis==='category'?`cat-${i}`:`2026-01-0${i+1}`,shielded:6,hasPoolBreakdown:true,pools:{a:.4,b:.2},partial:false,soprSource:'transparent_spends',height:i+1,timestamp:1000+i*75};for(const s of c.series)r[s.field??s.key]=i+1;if(c.requireVerifiedPools){for(const s of c.series)r[s.key]=1.5;}return r;};
+  const rows=[row(0),row(1),row(2)];
+  const path=c.rows.split('.');let payload={success:true,generatedAt:'2026-01-03T00:00:00Z',hasVerifiedPerPoolBreakdown:true,extra:{big:[1,2,3]}};
+  let node=payload;path.forEach((k,i)=>{node[k]=i===path.length-1?rows:{other:[1,2]};node=node[k];});
+  const compact=compactCatalogPayload(c,payload);
+  assert.deepEqual(catalogRows(c,compact),catalogRows(c,payload),c.id);
+  assert.ok(JSON.stringify(compact).length<JSON.stringify(payload).length,c.id);
+  assert.ok(!JSON.stringify(compact).includes('unused'),c.id);
+  assert.equal(compact.generatedAt,payload.generatedAt);
+ }
+});
+test('a range-limited compact payload draws the same rows for that range, gap markers included',()=>{
+ const {compactCatalogPayload}=load('lib/chart-catalog.ts');const {chartRangeRows}=load('lib/chart-sharing.ts');
+ const c=chart('mvrv');const day=i=>new Date(Date.UTC(2025,0,1)+i*86400000).toISOString().slice(0,10);
+ // 400 days with gaps straddling each range edge (latest is day 399).
+ const missing=new Set([368,369,370,309,310,308,34,35]);
+ const points=[];for(let i=0;i<400;i++)if(!missing.has(i))points.push({date:day(i),mvrv:1+i/1000,priceUsd:100,computedAt:'x'});
+ const full={generatedAt:'2026-01-01T00:00:00Z',points};
+ for(const [range,days] of [['7d',7],['30d',30],['90d',90],['1y',365]]){
+  const compact=compactCatalogPayload(c,full,days);
+  assert.deepEqual(chartRangeRows(c,catalogRows(c,compact),range),chartRangeRows(c,catalogRows(c,full),range),range);
+  assert.ok(compact.points.length<=days+3,range);
+ }
+ assert.equal(compactCatalogPayload(c,full).points.length,points.length);
+});

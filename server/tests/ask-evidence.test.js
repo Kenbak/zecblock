@@ -23,7 +23,8 @@ test('chart handoff carries a validated selection, with no page text or supplied
   t.after(() => { if (originalWindow === undefined) delete global.window; else global.window = originalWindow; });
   let event;
   global.window = { location: { pathname: '/pools' }, dispatchEvent: value => { event = value; } };
-  const { openAskChart } = load('lib/ask/widget-context.ts', { './contract': require('../../lib/ask/contract') });
+  const { openAskChart, ASK_CHART_EVENT } = load('lib/ask/widget-context.ts', { './contract': require('../../lib/ask/contract'), './widget-event': load('lib/ask/widget-event.ts') });
+  assert.equal(ASK_CHART_EVENT, 'zecblock:ask-chart');
   const selected = { ...sample, metric: 'flows', pool: 'orchard', period: '90d', view: 'bar' };
   openAskChart(selected);
   assert.deepEqual(event.detail, { pathname: '/pools', spec: selected });
@@ -345,4 +346,11 @@ test('individual chart guides track the catalogue and reject unknown chart route
     assert.ok(getKnowledge([page.topic])[0].text.includes(chart.description));
   }
   assert.equal(describePage('/charts/not-a-real-chart').id, 'explorer');
+});
+test('the always-mounted Ask widget does not load the schema validator until a chart asks', () => {
+  const widget = fs.readFileSync(path.join(__dirname, '../../components/ask/AskWidget.tsx'), 'utf8');
+  assert.doesNotMatch(widget, /^import \{[^}]*analysisSchema[^}]*\} from/m);
+  assert.doesNotMatch(widget, /from '@\/lib\/ask\/widget-context'/);
+  assert.match(widget, /await import\('@\/lib\/ask\/contract'\)/);
+  assert.doesNotMatch(fs.readFileSync(path.join(__dirname, '../../lib/ask/widget-event.ts'), 'utf8'), /import /);
 });

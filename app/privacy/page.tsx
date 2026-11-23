@@ -1,5 +1,6 @@
 import PrivacyClient from './PrivacyClient';
 import { getBaseUrl } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export default function PrivacyPage() {
   const url = `${getBaseUrl()}/privacy`;
@@ -21,5 +22,6 @@ export default function PrivacyPage() {
         </div>
       </details>
     </section>
+    <PageAbout path="/privacy" />
   </>;
 }

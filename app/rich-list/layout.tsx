@@ -1,4 +1,5 @@
 import { buildPageMetadata } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Rich List — Top Zcash Addresses by Balance | ZecBlock',
@@ -9,5 +10,5 @@ export const metadata = buildPageMetadata({
 });
 
 export default function RichListLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <>{children}<PageAbout path="/rich-list" /></>;
 }

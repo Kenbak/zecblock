@@ -1,4 +1,5 @@
 import { buildPageMetadata, getBaseUrl } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Shielded Pool Statistics | ZecBlock',
@@ -18,5 +19,5 @@ export default function PoolsLayout({ children }: { children: React.ReactNode })
     isPartOf: { '@id': `${getBaseUrl()}/#website` },
     publisher: { '@id': 'https://zecblock.com/#organization' },
   };
-  return <><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }} />{children}</>;
+  return <><script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }} />{children}<PageAbout path="/pools" /></>;
 }

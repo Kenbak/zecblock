@@ -221,29 +221,6 @@ export async function renderTransactionsPage(
         initialUnavailable={!available}
       />
 
-      {/* Static SEO content — server-rendered for indexing */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        <div className="border-t border-cipher-border pt-8 max-w-3xl">
-          <h2 className="text-sm font-semibold font-mono text-secondary mb-3 lowercase tracking-tight">
-            About Zcash Transactions
-          </h2>
-          <div className="space-y-3 text-sm text-muted leading-relaxed">
-            <p>
-              Zcash supports two kinds of value transfer: transparent transactions, which work
-              like Bitcoin and expose addresses and amounts on-chain, and shielded
-              transactions, which use zero-knowledge proofs (Sapling, Orchard, and Ironwood) to keep
-              sender, receiver, and amount private. Many transactions mix both — shielding
-              funds into a private pool or deshielding them back out.
-            </p>
-            <p>
-              This page lists every transaction as it is mined, with type badges for
-              transparent, Sapling, Orchard, Ironwood, and coinbase activity, plus flow indicators for
-              shielding and deshielding movements. Filter by type, pool, flow direction, or
-              minimum amount to analyze specific transaction patterns.
-            </p>
-          </div>
-        </div>
-      </section>
     </>
   );
 }

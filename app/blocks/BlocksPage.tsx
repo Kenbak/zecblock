@@ -188,29 +188,6 @@ export default async function BlocksPage({
         initialUnavailable={!available}
       />
 
-      {/* Static page description — server-rendered for indexing */}
-      <section className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pb-12">
-        <div className="border-t border-cipher-border pt-8 max-w-3xl">
-          <h2 className="text-sm font-semibold font-mono text-secondary mb-3 lowercase tracking-tight">
-            About Zcash Blocks
-          </h2>
-          <div className="space-y-3 text-sm text-muted leading-relaxed">
-            <p>
-              Zcash block timing follows the active network upgrade. Each block bundles
-              transparent and shielded transactions, a coinbase reward for the miner, and a
-              commitment to the current state of the shielded pools. ZecBlock indexes every
-              block from a Zcash full node, so heights, hashes, sizes, and intervals
-              on this page reflect the canonical chain in real time.
-            </p>
-            <p>
-              The interval column tracks the spacing between consecutive blocks — useful for
-              spotting hashrate swings or unusually slow blocks. Click any height or hash to
-              inspect the full block: its transactions, miner, difficulty, and shielded
-              activity.
-            </p>
-          </div>
-        </div>
-      </section>
     </>
   );
 }

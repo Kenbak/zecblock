@@ -6,6 +6,7 @@ import { buildPageMetadata, getBaseUrl, getNetwork } from '@/lib/seo';
 import { loadUpgradeTrackers } from '@/lib/upgrade-trackers-server';
 import { buildUpgradeHistory } from '@/lib/upgrade-history';
 import { UpgradeTimeline } from '@/components/network/UpgradeTimeline';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const revalidate = 300;
 const TITLE = 'Zcash Network Upgrades: Changes & Trackers | ZecBlock';
@@ -29,12 +30,12 @@ export default async function NetworkUpgradesPage() {
       { '@type': 'BreadcrumbList', '@id': `${url}#breadcrumb`, itemListElement: [{ '@type': 'ListItem', position: 1, name: 'Network', item: `${base}/network` }, { '@type': 'ListItem', position: 2, name: 'Network upgrades', item: url }] },
     ],
   };
-  return <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
+  return <><div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 sm:py-12">
     <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(schema).replace(/</g, '\\u003c') }} />
     <PageHeader eyebrow="NETWORK" eyebrowHref="/network" title="Network upgrades" subtitle="What changed on Zcash, and where to see its effects." actions={<Badge color="muted" variant="subtle">{network === 'mainnet' ? 'Mainnet' : 'Testnet'}</Badge>} />
     <UpgradeTimeline network={network} initialSnapshot={snapshot} />
     <div className="flex flex-wrap items-start justify-between gap-4 mt-5 text-caption text-muted">
       <Link href="/network" className="text-secondary hover:text-primary">Network overview →</Link>
     </div>
-  </div>;
+  </div><PageAbout path="/network/upgrades" /></>;
 }

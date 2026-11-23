@@ -1,4 +1,5 @@
 import { buildPageMetadata } from '@/lib/seo';
+import { PageAbout } from '@/components/HomeAbout';
 
 export const metadata = buildPageMetadata({
   title: 'Zcash Mempool: Pending Transactions | ZecBlock',
@@ -8,5 +9,5 @@ export const metadata = buildPageMetadata({
 });
 
 export default function MempoolLayout({ children }: { children: React.ReactNode }) {
-  return children;
+  return <>{children}<PageAbout path="/mempool" /></>;
 }

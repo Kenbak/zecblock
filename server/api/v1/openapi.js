@@ -173,7 +173,6 @@ function requestSchema(entry) {
       ttl: { type: 'string', enum: ['1h', '24h'] },
       sample_hashes: { type: 'array', maxItems: 12, items: { type: 'object', required: ['height', 'hash'], properties: { height: HEIGHT, hash: HASH } } },
     } },
-    '/v1/uncles/reports': { required: ['height', 'hash'], properties: { height: HEIGHT, hash: HASH, node_id: { type: 'string' } } },
   };
   if (!schemas[entry.v1.path]) throw new Error(`Missing POST request schema: ${entry.v1.path}`);
   return { type: 'object', ...schemas[entry.v1.path] };

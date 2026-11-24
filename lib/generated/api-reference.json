@@ -5769,7 +5769,7 @@
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Node-validated captured blocks at an indexed height whose canonical block differs, excluding hashes that are canonical now and hashes already in /v1/uncles (reorg archives and external reports), so the two lists never overlap. Together with indexer reorg archives these make up the orphans counted by /v1/mining/orphan-rates, which uses 24h/7d/30d header-time windows. Each item has height, hash, header timestamp, firstSeenAt (earliest capture receipt), observerCount (observer nodes that received it), minerAddress, minerPool, minerPoolUrl and canonicalBlock (hash, header timestamp, miner, firstSeenAt). Observer names and endpoints are never served. Ordered by height descending; limit 1–200 (default 50) and offset up to 50,000. Coverage depends on observer availability and is not network-complete. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
+    "note": "Node-validated captured blocks at an indexed height whose canonical block differs, excluding hashes that are canonical now and hashes already in /v1/uncles (reorg archives), so the two lists never overlap. Together with indexer reorg archives these make up the orphans counted by /v1/mining/orphan-rates, which uses 24h/7d/30d header-time windows. Each item has height, hash, header timestamp, firstSeenAt (earliest capture receipt), observerCount (observer nodes that received it), minerAddress, minerPool, minerPoolUrl and canonicalBlock (hash, header timestamp, miner, firstSeenAt). Observer names and endpoints are never served. Ordered by height descending; limit 1–200 (default 50) and offset up to 50,000. Coverage depends on observer availability and is not network-complete. HTTP cache lifetime is 30 seconds; read failures return 503/no-store.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -5854,40 +5854,6 @@
     "requestBody": null
   },
   {
-    "method": "POST",
-    "path": "/v1/uncles/reports",
-    "description": "Report an observed tip hash for comparison (IP rate limited, PoW-shape validated upstream).",
-    "category": "reorgs",
-    "query": [],
-    "listKey": null,
-    "zatoshiFields": [],
-    "note": null,
-    "ownershipToken": false,
-    "pagination": null,
-    "parameters": [],
-    "requestBody": {
-      "type": "object",
-      "required": [
-        "height",
-        "hash"
-      ],
-      "properties": {
-        "height": {
-          "type": "integer",
-          "minimum": 0,
-          "maximum": 100000000
-        },
-        "hash": {
-          "type": "string",
-          "pattern": "^[a-fA-F0-9]{64}$"
-        },
-        "node_id": {
-          "type": "string"
-        }
-      }
-    }
-  },
-  {
     "method": "GET",
     "path": "/v1/uncles/stats",
     "description": "Reorg/orphan dashboard stats.",
@@ -5895,7 +5861,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "totalOrphanedBlocks counts every row in /v1/uncles since indexing began (reorgs on the main node and external reports, including hashes later restored). Additive observerOnlyOrphanedBlocks counts /v1/uncles/observed and observerCaptureStartedAt is when competing-block capture began; both are null when capture data is unavailable. These are all-time counts, unlike the windowed /v1/mining/orphan-rates.",
+    "note": "totalOrphanedBlocks counts every row in /v1/uncles since indexing began (reorgs on the main node, including hashes later restored). Additive observerOnlyOrphanedBlocks counts /v1/uncles/observed and observerCaptureStartedAt is when competing-block capture began; both are null when capture data is unavailable. These are all-time counts, unlike the windowed /v1/mining/orphan-rates.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],
@@ -6366,7 +6332,7 @@
     "query": [],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "v1 enforces a stricter max range (default 50,000 blocks vs. legacy's 1,000,000, see V1_SCAN_ORCHARD_MAX_RANGE) and a per-IP rate limit (default 5/minute, see V1_SCAN_ORCHARD_RATE_LIMIT_MAX/_WINDOW_MS) before proxying to the legacy endpoint.",
+    "note": "v1 and the legacy endpoint share a max range (default 50,000 blocks, see V1_SCAN_ORCHARD_MAX_RANGE); v1 adds a per-IP rate limit (default 5/minute, see V1_SCAN_ORCHARD_RATE_LIMIT_MAX/_WINDOW_MS) before proxying to the legacy endpoint.",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [],

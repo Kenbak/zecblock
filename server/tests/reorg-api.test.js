@@ -73,3 +73,32 @@ test('observer-only orphans: list excludes reorg archives, stats stay available 
   assert.equal(okStats.data.observerOnlyOrphanedBlocks, 61);
   assert.equal(okStats.data.observerCaptureStartedAt, '2025-10-12T10:11:22.000Z');
 });
+
+test('unverified external tip reports: no write endpoint, and archived ones never surface', async () => {
+  const router = require('../api/routes/reorgs');
+  const seen = [];
+  const writes = [];
+  const pool = { async query(sql) {
+    seen.push(sql);
+    if (/^\s*INSERT/i.test(sql)) writes.push(sql);
+    return { rows: /COUNT\(\*\)/i.test(sql) ? [{ total: '0' }] : [] };
+  } };
+  const app = express();
+  app.locals.pool = pool;
+  app.use(express.json());
+  app.use(router);
+  const server = await new Promise(resolve => { const s = app.listen(0, '127.0.0.1', () => resolve(s)); });
+  try {
+    const res = await fetch(`http://127.0.0.1:${server.address().port}/api/uncle/report`, {
+      method: 'POST', headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ height: 100, hash: '000000' + 'f'.repeat(58), node_id: 'spoof' }),
+    });
+    assert.equal(res.status, 404, 'the unauthenticated report route is retired');
+  } finally { await new Promise(resolve => server.close(resolve)); }
+  assert.equal(writes.length, 0);
+
+  for (const path of ['/api/uncles', '/api/uncles/stats', `/api/uncle/${'a'.repeat(64)}`]) await request(router, pool, path);
+  const orphanReads = seen.filter(sql => /FROM orphaned_blocks(?! ob WHERE ob\.(hash = c\.hash|fork_event_id))/.test(sql));
+  assert.ok(orphanReads.length >= 3);
+  for (const sql of orphanReads) assert.match(sql, /source IS DISTINCT FROM 'external'/, sql);
+});

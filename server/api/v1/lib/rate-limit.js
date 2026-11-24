@@ -22,6 +22,7 @@
  * instance; revisit (e.g. Redis-backed) before scaling out.
  */
 
+const { ipKeyGenerator } = require('express-rate-limit');
 const { sendProblem } = require('./problem');
 
 /**
@@ -47,7 +48,10 @@ function createRateLimiter({ windowMs, max, key, onLimit }) {
   sweep.unref?.();
 
   function middleware(req, res, next) {
-    const ip = req.ip || req.socket?.remoteAddress || 'unknown';
+    const rawIp = req.ip || req.socket?.remoteAddress || 'unknown';
+    // IPv4 address or IPv6 /56: a single IPv6 allocation cannot rotate
+    // addresses to reset the window. Pure helper, no trust-proxy validation.
+    const ip = rawIp === 'unknown' ? rawIp : ipKeyGenerator(rawIp);
     const now = Date.now();
     const windowStart = now - windowMs;
 

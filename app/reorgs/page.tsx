@@ -2,7 +2,6 @@
 
 import { useCallback, useState } from 'react';
 import { formatRelativeTime } from '@/lib/utils';
-import { getApiUrl } from '@/lib/api-config';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { useUrlState } from '@/lib/use-url-state';
 import { PageHeader, SectionHeader, DataTable, HashLink, type DataTableColumn } from '@/components/ui';
@@ -10,8 +9,6 @@ import { BLOCK_FIRST_SEEN_EXPLANATION } from '@/components/BlockFirstSeen';
 import { CompetingBlocks, type ForkEvent, type ObservedOrphan, type OrphanedBlock } from '@/components/reorgs/CompetingBlocks';
 import { ForkEventsTable } from '@/components/reorgs/ForkEventsTable';
 import { ForkSummary, WINDOWS, type NodesSummary, type OrphanRates, type ReorgStats, type Window } from '@/components/reorgs/ForkSummary';
-
-const API_URL = getApiUrl();
 
 interface MonitoredNode {
   name: string;
@@ -237,17 +234,8 @@ export default function ForkWatchPage() {
               <p className="mt-3">Reorg depth is the number of blocks our node rolled back in one fork event. Observer-only blocks never reorged our node, so they have no depth. Pool labels come from public coinbase data; Unknown stays included.</p>
             </div>
             <div>
-              <h3 className="font-mono text-primary mb-2">First seen &amp; reporting</h3>
+              <h3 className="font-mono text-primary mb-2">First seen</h3>
               <p>{BLOCK_FIRST_SEEN_EXPLANATION}</p>
-              <p className="mt-3">Node operators can report their tip hash. A different block at the same height is recorded as a potential fork.</p>
-              <div tabIndex={0} role="region" aria-label="Competing-tip report request example" className="mt-3 max-w-full overflow-x-auto rounded-lg border border-cipher-border bg-cipher-card p-4">
-                <code className="mb-2 block font-mono text-xs text-cipher-gold">POST {API_URL}/v1/uncles/reports</code>
-                <pre className="font-mono text-xs text-muted">{`{
-  "height": 3363000,
-  "hash": "0000000000...",
-  "node_id": "my-zebra-node"  // optional
-}`}</pre>
-              </div>
             </div>
           </div>
         </details>

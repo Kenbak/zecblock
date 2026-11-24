@@ -404,7 +404,6 @@
     "offset"
   ],
   "GET /v1/uncles/:hash": [],
-  "POST /v1/uncles/reports": [],
   "GET /v1/uncles/stats": [],
   "GET /v1/uncles/nodes": [],
   "GET /v1/transactions": [

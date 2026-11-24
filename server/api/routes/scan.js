@@ -126,6 +126,11 @@ function saveToCache(blocks) {
   }
 }
 
+const ORCHARD_SCAN_MAX_RANGE = (() => {
+  const configured = Number.parseInt(process.env.V1_SCAN_ORCHARD_MAX_RANGE, 10);
+  return Number.isSafeInteger(configured) && configured > 0 ? configured : 50_000;
+})();
+
 // Middleware to inject dependencies
 router.use((req, res, next) => {
   pool = req.app.locals.pool;
@@ -142,13 +147,15 @@ router.use((req, res, next) => {
  */
 router.post('/api/scan/orchard', async (req, res) => {
   try {
-    const { startHeight, endHeight } = req.body;
+    const { startHeight: rawStart, endHeight: rawEnd } = req.body || {};
 
-    if (!startHeight || !endHeight) {
+    if (rawStart == null || rawEnd == null || rawStart === '' || rawEnd === '') {
       return res.status(400).json({ error: 'startHeight and endHeight are required' });
     }
 
-    if (isNaN(startHeight) || isNaN(endHeight)) {
+    const startHeight = Number(rawStart);
+    const endHeight = Number(rawEnd);
+    if (!Number.isSafeInteger(startHeight) || !Number.isSafeInteger(endHeight) || startHeight < 0 || endHeight < 0) {
       return res.status(400).json({ error: 'Invalid block heights' });
     }
 
@@ -156,9 +163,10 @@ router.post('/api/scan/orchard', async (req, res) => {
       return res.status(400).json({ error: 'startHeight cannot be greater than endHeight' });
     }
 
-    // Limit to 1 million blocks max (safety)
-    if (endHeight - startHeight > 1000000) {
-      return res.status(400).json({ error: 'Range too large (max 1 million blocks)' });
+    // Same ceiling as /v1/scan/orchard, which proxies here: this legacy path is
+    // also reachable directly and returns every matching row.
+    if (endHeight - startHeight > ORCHARD_SCAN_MAX_RANGE) {
+      return res.status(400).json({ error: `Range too large (max ${ORCHARD_SCAN_MAX_RANGE.toLocaleString('en-US')} blocks)` });
     }
 
     console.log(`🔍 [SCAN] Scanning Orchard TXs from ${startHeight} to ${endHeight}`);

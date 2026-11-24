@@ -811,7 +811,7 @@ router.get('/api/block/:heightOrHash', async (req, res) => {
                 coinbase_hex, final_sapling_root, final_orchard_root, final_ironwood_root,
                 first_indexed_at, block_metadata, (raw_hex IS NOT NULL) as raw_block_available,
                 ${firstSeenSql('orphaned_blocks.hash')} as first_seen_at
-         FROM orphaned_blocks WHERE hash = $1`,
+         FROM orphaned_blocks WHERE hash = $1 AND source IS DISTINCT FROM 'external'`,
         [identifier.value]
       );
 

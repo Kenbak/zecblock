@@ -39,16 +39,14 @@ the corresponding valuation cache keys after a repair, never flush Redis. The
 two API endpoints expose `date` as a UTC `YYYY-MM-DD` string and exclude the
 incomplete current UTC day, independently of the server/session timezone.
 
-Signal jobs read `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from their existing
-job environment or `server/signals/.env` (falling back to `server/api/.env`). Store
-credentials only on the server with restricted permissions; never in Git. Do
-not infer a destination from a different service's credentials without confirming
-where these reports belong. Both legacy and V3 senders validate configuration,
-apply a 15-second HTTP deadline and reject HTTP/Telegram API failures. They never
-log credential-bearing URLs. `node server/signals/notify.js --check` verifies the
-bot and chat with getMe/getChat without sending a message. The V3 computation's
-successful exit previously did not prove notification delivery: missing settings
-silently skipped delivery, and HTTP errors were not checked.
+Telegram reports use `server/lib/signal-telegram.js`, which reads
+`TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` from the job environment or
+`server/api/.env`. Store credentials only on the server with restricted
+permissions; never in Git. Do not infer a destination from a different
+service's credentials without confirming where these reports belong. The sender
+validates configuration, applies a 15-second HTTP deadline, rejects
+HTTP/Telegram API failures and never logs credential-bearing URLs. The trading
+signal jobs that also use these settings run from a separate private checkout.
 
 Tests: `npm run test:server-regressions`. Set `TEST_UTXO_DATABASE_URL` to a
 **disposable superuser-enabled PostgreSQL instance** to run the real SQL/oracle
@@ -154,7 +152,7 @@ termination. Resuming uses persisted checkpoints, not a guessed height watermark
 
 Release dependencies: retire the old current-balance-scaling `compute-mvrv.js`
 by deploying the replacement with the backend release. The staged replay alone
-does not replace the original daily-v3 cron source. Do not restart an indexer to
+does not replace the 21:00 signal pipeline's MVRV step. Do not restart an indexer to
 install SQL-only migration 028. Mainnet is the only enabled replay target;
 testnet needs its prerequisite analytics tables before these API readers/jobs.
 

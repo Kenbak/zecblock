@@ -273,10 +273,8 @@ All cron jobs run from `/root/cipherscan/server/jobs/` on production hosts.
 | `0 4 * * *` | `backfill-zec-prices.js` | Historical price backfill |
 | `*/5 * * * *` | `monitor-lightwalletd.sh` | Lightwalletd health |
 | `0 2 * * *` | `backup-postgres.sh` | Streams a custom-format dump to Hetzner Storage Box |
-| `0 * * * *` | `signals/compute.js` | Trading signals |
-| `0 6 * * *` | `signals/notify.js` | Telegram daily signal |
 
-**Note (2026-08-15):** `server/signals/compute-mvrv.js` (daily via `daily-v3.sh` at 21:00) and `server/jobs/compute-utxo-age.js` (daily at 05:00) both scan `transaction_outputs` by `spent` status; a missing index made the base filter a 16.6s full-table scan until `idx_tx_outputs_spent` was recreated and confirmed via real usage stats — see `cipherscan-rust/deploy/recreate-redundant-backfill-indexes.sql` for the full evidence trail, including three *other* indexes that were built on an unverified assumption about address-page queries and had to be dropped again the same day once real production job runs proved they weren't used. If a fresh database rebuild ever drops indexes again, verify each one against a real call site and a real `pg_stat_user_indexes` delta before recreating — don't assume from a hand-crafted stand-in query.
+**Note (2026-08-15):** `server/signals/compute-mvrv.js` (daily, after the price backfill and in the 21:00 signal pipeline) and `server/jobs/compute-utxo-age.js` (daily at 05:00) both scan `transaction_outputs` by `spent` status; a missing index made the base filter a 16.6s full-table scan until `idx_tx_outputs_spent` was recreated and confirmed via real usage stats — see `cipherscan-rust/deploy/recreate-redundant-backfill-indexes.sql` for the full evidence trail, including three *other* indexes that were built on an unverified assumption about address-page queries and had to be dropped again the same day once real production job runs proved they weren't used. If a fresh database rebuild ever drops indexes again, verify each one against a real call site and a real `pg_stat_user_indexes` delta before recreating — don't assume from a hand-crafted stand-in query.
 
 ---
 

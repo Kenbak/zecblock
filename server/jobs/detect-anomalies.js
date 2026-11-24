@@ -10,7 +10,7 @@
  *   node detect-anomalies.js              — previous completed UTC day
  *   node detect-anomalies.js --days=90    — backfill last 90 days
  *
- * Cron (after daily-v3.sh and update-privacy-stats.js):
+ * Cron (after the 21:00 MVRV run and update-privacy-stats.js):
  *   30 5 * * * cd /root/cipherscan/server/jobs && node detect-anomalies.js >> /var/log/anomaly-detection.log 2>&1
  */
 

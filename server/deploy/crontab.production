@@ -15,8 +15,8 @@ CRON_TZ=UTC
 */30 * * * * flock -n /run/cipherscan-pattern-scanners.lock /root/cipherscan/server/jobs/run-pattern-scanners.sh >> /var/log/cipherscan/pattern-scanner.log 2>&1
 0 4 * * * flock -n /run/cipherscan-zec-prices.lock bash -lc 'cd /root/cipherscan/server/scripts && node backfill-zec-prices.js' >> /var/log/cipherscan/zec-prices.log 2>&1
 0 2 * * * /root/cipherscan/server/deploy/backup-postgres.sh >> /var/log/cipherscan/backup.log 2>&1
-0 * * * * flock -n /run/cipherscan-signals-compute.lock bash -lc 'cd /root/cipherscan/server/signals && node compute.js' >> /var/log/cipherscan/signals-compute.log 2>&1
-0 6 * * * flock -n /run/cipherscan-signals-notify.lock bash -lc 'cd /root/cipherscan/server/signals && node notify.js' >> /var/log/cipherscan/signals-notify.log 2>&1
+# Trading-signal jobs (hourly compute, 06:00 notify, 21:00 daily V3) run from a
+# separate private checkout on this host, not from this repository.
 
 */5 * * * * flock -n /run/cipherscan-ingest-crawl.lock bash -lc 'cd /root/cipherscan/server/jobs && node ingest-crawl.js' >> /var/log/cipherscan/ingest-crawl.log 2>&1
 

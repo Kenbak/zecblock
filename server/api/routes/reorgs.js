@@ -1,10 +1,9 @@
 /**
  * Reorg/Uncle Routes
- * /api/uncles, /api/uncles/forks, /api/uncle/:hash, /api/uncle/report
+ * /api/uncles, /api/uncles/forks, /api/uncle/:hash
  */
 
 const express = require('express');
-const crypto = require('crypto');
 const { getPoolName, getPoolInfo } = require('../mining-pools');
 const { firstSeenLateralSql, firstSeenSql } = require('../lib/first-seen');
 const { parseSafeListPagination, offsetExceededError } = require('../lib/pagination');
@@ -17,12 +16,15 @@ const router = express.Router();
 // here for consistency and defense-in-depth against future table growth.
 const MAX_REORGS_OFFSET = 50_000;
 
+// Rows written by the retired unauthenticated tip-report endpoint carried
+// source='external' and were never checked against a block header. They are
+// excluded from every public read so none can surface as an orphan block.
+const TRUSTED_ORPHAN_SQL = "source IS DISTINCT FROM 'external'";
+
 let pool;
-let writePool;
 
 router.use((req, res, next) => {
   pool = req.app.locals.pool;
-  writePool = req.app.locals.writePool || req.app.locals.pool;
   next();
 });
 
@@ -71,11 +73,12 @@ router.get('/api/uncles', async (req, res) => {
          LEFT JOIN blocks b ON b.height = ob.height
          LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
          LEFT JOIN ${firstSeenLateralSql('b.hash')} co ON true
+         WHERE ob.${TRUSTED_ORPHAN_SQL}
          ORDER BY ob.height DESC, ob.detected_at DESC
          LIMIT $1 OFFSET $2`,
         [limit, offset]
       ),
-      pool.query('SELECT COUNT(*) as total FROM orphaned_blocks')
+      pool.query(`SELECT COUNT(*) as total FROM orphaned_blocks WHERE ${TRUSTED_ORPHAN_SQL}`)
     ]);
 
     const total = parseInt(countResult.rows[0].total);
@@ -248,7 +251,7 @@ router.get('/api/uncle/:hash', async (req, res) => {
        FROM orphaned_blocks ob
        LEFT JOIN fork_events fe ON ob.fork_event_id = fe.id
        LEFT JOIN ${firstSeenLateralSql('ob.hash')} oo ON true
-       WHERE ob.hash = $1`,
+       WHERE ob.hash = $1 AND ob.${TRUSTED_ORPHAN_SQL}`,
       [hash]
     );
 
@@ -271,107 +274,11 @@ router.get('/api/uncle/:hash', async (req, res) => {
   }
 });
 
-// POST /api/uncle/report — External nodes report (height, hash)
-// Rate limited: 10 reports per IP per minute
-const reportRateLimit = new Map();
-const RATE_LIMIT_WINDOW_MS = 60_000;
-const RATE_LIMIT_MAX = 10;
-
-router.post('/api/uncle/report', async (req, res) => {
-  try {
-    // Rate limit by IP
-    const clientIp = req.ip || 'unknown';
-    const ipKey = crypto.createHash('sha256').update(clientIp).digest('hex').slice(0, 16);
-    const now = Date.now();
-    const windowStart = now - RATE_LIMIT_WINDOW_MS;
-
-    let hits = reportRateLimit.get(ipKey) || [];
-    hits = hits.filter(t => t > windowStart);
-    if (hits.length >= RATE_LIMIT_MAX) {
-      return res.status(429).json({ error: 'Rate limit exceeded. Max 10 reports per minute.' });
-    }
-    hits.push(now);
-    reportRateLimit.set(ipKey, hits);
-
-    // Periodically clean stale entries (every ~100 requests)
-    if (Math.random() < 0.01) {
-      for (const [key, timestamps] of reportRateLimit) {
-        const active = timestamps.filter(t => t > windowStart);
-        if (active.length === 0) reportRateLimit.delete(key);
-        else reportRateLimit.set(key, active);
-      }
-    }
-
-    const { height, hash, node_id } = req.body;
-
-    if (!height || !hash) {
-      return res.status(400).json({ error: 'height and hash are required' });
-    }
-
-    const blockHeight = parseInt(height);
-    if (isNaN(blockHeight) || blockHeight < 0 || blockHeight > 100_000_000) {
-      return res.status(400).json({ error: 'Invalid height' });
-    }
-
-    if (!/^[a-fA-F0-9]{64}$/.test(hash)) {
-      return res.status(400).json({ error: 'Invalid block hash (must be 64 hex chars)' });
-    }
-
-    // Block hash must start with leading zeros (valid PoW)
-    if (!hash.startsWith('000000')) {
-      return res.status(400).json({ error: 'Invalid block hash (insufficient proof of work)' });
-    }
-
-    const nodeId = node_id ? String(node_id).slice(0, 64) : null;
-
-    // Compare to our canonical block at this height
-    const canonical = await pool.query(
-      'SELECT hash FROM blocks WHERE height = $1',
-      [blockHeight]
-    );
-
-    // Only accept reports for heights we have indexed
-    if (canonical.rows.length === 0) {
-      return res.status(400).json({ error: 'Height not yet indexed' });
-    }
-
-    const isMatch = canonical.rows[0].hash === hash;
-
-    // Store the report (ignore duplicates via unique index)
-    await writePool.query(
-      `INSERT INTO tip_reports (height, hash, node_id, ip_hash, is_match)
-       VALUES ($1, $2, $3, $4, $5)
-       ON CONFLICT (height, hash, COALESCE(node_id, '')) DO NOTHING`,
-      [blockHeight, hash, nodeId, ipKey, isMatch]
-    );
-
-    // If mismatch, archive as external orphan report
-    if (!isMatch) {
-      await writePool.query(
-        `INSERT INTO orphaned_blocks (height, hash, canonical_hash, source, reported_by)
-         VALUES ($1, $2, $3, 'external', $4)
-         ON CONFLICT (hash) DO NOTHING`,
-        [blockHeight, hash, canonical.rows[0].hash, nodeId || ipKey]
-      );
-    }
-
-    res.json({
-      success: true,
-      height: blockHeight,
-      isMatch,
-      canonicalHash: canonical.rows[0].hash
-    });
-  } catch (error) {
-    logSafeError('Error processing uncle report:', error);
-    res.status(500).json({ success: false, error: 'Failed to process report' });
-  }
-});
-
 // GET /api/uncles/stats — Summary stats for the dashboard
 router.get('/api/uncles/stats', async (req, res) => {
   try {
     const [orphanCount, forkCount, recentReports, deepestFork, observerOnly] = await Promise.all([
-      pool.query('SELECT COUNT(*) as total FROM orphaned_blocks'),
+      pool.query(`SELECT COUNT(*) as total FROM orphaned_blocks WHERE ${TRUSTED_ORPHAN_SQL}`),
       pool.query('SELECT COUNT(*) as total FROM fork_events'),
       pool.query(
         `SELECT COUNT(*) as total FROM tip_reports

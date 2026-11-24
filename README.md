@@ -22,7 +22,7 @@
   <img src="https://img.shields.io/badge/Next.js-16-black?logo=next.js" alt="Next.js 16" />
   <img src="https://img.shields.io/badge/TypeScript-5-blue?logo=typescript" alt="TypeScript" />
   <img src="https://img.shields.io/badge/Rust-WASM-orange?logo=rust" alt="Rust WASM" />
-  <img src="https://img.shields.io/badge/License-AGPL%20v3%20+%20Commons%20Clause-blue" alt="License AGPL v3 + Commons Clause" />
+  <img src="https://img.shields.io/badge/License-MIT-blue" alt="License MIT" />
 </p>
 
 ---
@@ -269,6 +269,11 @@ Contributions are welcome! Here's how you can help:
 - Add tests for new features when applicable
 - Update documentation as needed
 
+### Security
+
+Please do not report vulnerabilities in public issues or pull requests. See
+[SECURITY.md](SECURITY.md) for how to report one privately.
+
 ---
 
 ## ☕ Support the Project
@@ -305,12 +310,11 @@ See the [privacy policy](https://zecblock.com/privacy-policy) and [terms](https:
 
 ## 📄 License
 
-This project is licensed under the **GNU Affero General Public License v3.0 (AGPL-3.0)** with the **Commons Clause** restriction — see the [LICENSE](LICENSE) file for details.
+This project is licensed under the **MIT License** — see the [LICENSE](LICENSE) file for details.
 
-**What this means:**
-- ✅ You can view, fork, and modify the code
-- ✅ You must share your modifications under the same license
-- ❌ You cannot sell this software or offer it as a paid service
+The exception is `server/canary/host.rs`, a launcher built against the
+AGPL-3.0-only [Caution canary](https://codeberg.org/caution/canary). It carries
+that license, as its SPDX header and `server/canary/README.md` state.
 
 ---
 

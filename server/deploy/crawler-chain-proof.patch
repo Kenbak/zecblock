@@ -1,5 +1,5 @@
 From d388d4cba86f05b1c62906a38adb46119554e6d0 Mon Sep 17 00:00:00 2001
-From: Antoine Serval <k6nb4k@gmail.com>
+From: Antoine Serval <107859813+Kenbak@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 09:50:21 +0900
 Subject: [PATCH 1/2] Require pinned Zcash chain proof before counting crawler
  peers
@@ -1291,7 +1291,7 @@ index 51f0d27..a465bfd 100644
 
 
 From d3f5c14cd54d1e83d1308af20ec452062c86d97c Mon Sep 17 00:00:00 2001
-From: Antoine Serval <k6nb4k@gmail.com>
+From: Antoine Serval <107859813+Kenbak@users.noreply.github.com>
 Date: Mon, 19 Oct 2026 09:57:21 +0900
 Subject: [PATCH 2/2] Bound crawler frames and payload counts before allocation
 

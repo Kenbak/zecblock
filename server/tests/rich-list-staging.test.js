@@ -97,7 +97,7 @@ test('rich-list canonical/index policy and protected-preview noindex headers are
   assert.equal(metadata.alternates.canonical,network==='mainnet'?'https://zecblock.com/rich-list':'https://testnet.zecblock.com/rich-list');
   assert.equal(metadata.robots.index,network==='mainnet');assert.equal(metadata.robots.follow,true);assert.match(metadata.title,/Rich List/);assert.ok(metadata.description);
  }
- environment(t,{VERCEL_ENV:'preview',ASK_STAGING_ENABLED:'true'});const config=load('next.config.ts').default,headers=(await config.headers())[0].headers;
+ environment(t,{VERCEL_ENV:'preview',ASK_STAGING_ENABLED:'true'});const config=load('next.config.ts').default,headers=(await config.headers()).flatMap(rule=>rule.headers);
  assert.equal(headers.find(header=>header.key==='X-Robots-Tag').value,'noindex, follow');assert.match(headers.find(header=>header.key==='Cache-Control').value,/no-store/);
 });
 

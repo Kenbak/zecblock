@@ -133,7 +133,6 @@
   "GET /v1/uncles/observed": "get-uncles-observed",
   "GET /v1/uncles/forks": "get-uncles-forks",
   "GET /v1/uncles/:hash": "get-uncles-hash",
-  "POST /v1/uncles/reports": "post-uncles-reports",
   "GET /v1/uncles/stats": "get-uncles-stats",
   "GET /v1/uncles/nodes": "get-uncles-nodes",
   "GET /v1/transactions": "get-transactions",

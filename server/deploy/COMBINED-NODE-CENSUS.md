@@ -116,7 +116,7 @@ This is a prepared local repair, not a deployment record.
    them; the crawler ingester, including shadow mode, does.
 3. Prepare the collector from base `b595b07dd450cfa02ad40a05a6a2fdd2fd1689dd`
    using `crawler-chain-proof.patch` (tested source `d3f5c14cd54d1e83d1308af20ec452062c86d97c`). The patch SHA-256 is
-   `e8f33c720e254a085056e4efb61ce63d91b0b4bcd3cb1d29baab957a8e0ed416`. Build/test/checksum the exact Linux
+   `b19f35d24b6faf63b784d1cd87b4225a56d6103da159770dfdb5f19e4fc2f6ab` (2026-11-24: only the `From:` author email changed; the diff, and so the tree, is identical; the earlier file hashed `e8f33c72…e0ed416`. `git am` now records a different commit id for the same tree). Build/test/checksum the exact Linux
    artifact before installing it. Run an isolated canary against current
    Zebra/Zakura and an actual shared-magic Flux peer; record qualification,
    rejection/unverified behavior, bounded runtime, and no unqualified gossip.

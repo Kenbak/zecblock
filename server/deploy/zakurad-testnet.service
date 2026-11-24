@@ -14,6 +14,18 @@ ExecStart=/usr/local/bin/zakurad --config /root/.config/zakura.toml
 Restart=on-failure
 RestartSec=10
 LimitNOFILE=65536
+# Hardening that needs no per-job path list: no privilege gain, private /tmp,
+# read-only /usr, /boot and /etc, and no kernel/cgroup changes. Still runs as
+# root; moving to a dedicated User= needs per-host ownership changes first.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true
 
 [Install]
 WantedBy=multi-user.target

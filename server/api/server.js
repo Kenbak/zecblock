@@ -10,6 +10,7 @@ const cors = require('cors');
 const { allowedHttpOrigins } = require('./cors-origins');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
+const { ipKeyGenerator } = rateLimit;
 const { dataHeaderNames } = require('./lib/data-headers');
 const { Pool } = require('pg');
 const WebSocket = require('ws');
@@ -344,6 +345,15 @@ const OWN_ORIGINS = [
   'http://localhost:3001',
 ];
 
+// Client messages are tiny JSON subscribe/unsubscribe frames from service
+// clients; ws's default 100 MiB per-message ceiling is far above any of them.
+const WS_MAX_PAYLOAD_BYTES = 16 * 1024;
+// Concurrent public (non-service) connections allowed per client address
+// (IPv6 grouped by /56). The per-minute limit alone lets long-lived
+// connections pile up over time.
+const WS_MAX_CONNECTIONS_PER_CLIENT = 50;
+const wsOpenByClient = new Map();
+
 // OWN_ORIGINS is used ONLY for the WebSocket upgrade check below — it is
 // NOT a rate-limit bypass signal (see the HTTP rate limiter's `skip`,
 // which is service-key only for exactly that reason).
@@ -355,6 +365,7 @@ const OWN_ORIGINS = [
 // chain data). Reject only unrecognized cross-site browser origins.
 const wss = new WebSocket.Server({
   server,
+  maxPayload: WS_MAX_PAYLOAD_BYTES,
   verifyClient: (info, callback) => {
     const serviceKey = info.req.headers['x-service-key'];
     if (isKnownServiceKey(serviceKey, SERVICE_API_KEYS)) {
@@ -561,7 +572,10 @@ wss.on('connection', async (ws, req) => {
   // entry is the real client (Caddy appends it and a client cannot override
   // that final hop). The left-most entry is attacker-controlled.
   const xff = req.headers['x-forwarded-for'];
-  const ip = (xff ? xff.split(',').pop().trim() : null) || req.socket.remoteAddress || 'unknown';
+  const rawIp = (xff ? xff.split(',').pop().trim() : null) || req.socket.remoteAddress || 'unknown';
+  // One key per IPv4 address or IPv6 /56, so address rotation inside a single
+  // allocation cannot reset the limits.
+  const ip = rawIp === 'unknown' ? rawIp : ipKeyGenerator(rawIp);
 
   const allowed = await checkWebSocketRateLimit(ip);
   if (!allowed) {
@@ -573,6 +587,22 @@ wss.on('connection', async (ws, req) => {
   const serviceKey = req.headers['x-service-key'];
   ws.isService = isKnownServiceKey(serviceKey, SERVICE_API_KEYS);
   ws.subscriptions = new Set();
+
+  if (!ws.isService) {
+    const open = wsOpenByClient.get(ip) || 0;
+    if (open >= WS_MAX_CONNECTIONS_PER_CLIENT) {
+      ws.close(1008, `Too many open connections. Max ${WS_MAX_CONNECTIONS_PER_CLIENT} per client.`);
+      return;
+    }
+    wsOpenByClient.set(ip, open + 1);
+    // Registered before any await so an early disconnect still frees the slot;
+    // 'close' fires exactly once per socket, including after 'error'.
+    ws.once('close', () => {
+      const remaining = (wsOpenByClient.get(ip) || 1) - 1;
+      if (remaining > 0) wsOpenByClient.set(ip, remaining);
+      else wsOpenByClient.delete(ip);
+    });
+  }
 
   if (ws.isService) {
     console.log('🔑 [WS] Service client connected');

@@ -17,7 +17,7 @@ Apply `crawler-qualified-gossip.patch` on the deployed chain-proof source tree
 `d3f5c14cd54d1e83d1308af20ec452062c86d97c`). The resulting producer is commit
 `cbab96b8edf1baa8298be4dcdfde84f384f44761`, tree
 `a919348640c49ba1221ab14dc4d799993382b30a`. Patch SHA-256:
-`d74fd47ae093796fd04970bc1f0b9b62fcc6d649caba9a84acfbcd3ee4bba098`.
+`27ffa589d19bbf46086c060b3eda763da4149863c4fb4b182ee7c6ff6e73b082` (2026-11-24: only the `From:` author email changed; the diff, and so the tree, is identical; the earlier file hashed `d74fd47a…4bba098`. `git am` now records a different commit id for the same tree).
 
 `getmetrics` adds:
 

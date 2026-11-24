@@ -201,7 +201,17 @@ test('all-route noindex and no-store headers require the server preview gate, ne
   const robots = load('app/robots.ts', { '@/lib/seo': seo }).default;
   for (const [environment, flag, active] of [['production', 'true', false], ['preview', 'false', false], ['preview', 'true', true]]) {
     process.env.VERCEL_ENV = environment; process.env.ASK_STAGING_ENABLED = flag;
-    const rules = await config.headers();
+    const allRules = await config.headers();
+    const security = allRules.filter(rule => rule.headers.some(({ key }) => key === 'Content-Security-Policy'));
+    assert.equal(security.length, 1, 'baseline security headers apply in every environment');
+    const baseline = Object.fromEntries(security[0].headers.map(({ key, value }) => [key.toLowerCase(), value]));
+    assert.equal(security[0].source, '/:path*');
+    assert.match(baseline['content-security-policy'], /frame-ancestors 'none'/);
+    assert.match(baseline['content-security-policy'], /object-src 'none'/);
+    assert.doesNotMatch(baseline['content-security-policy'], /script-src|connect-src|img-src/, 'no source allowlists that could break WASM, workers or API hosts');
+    assert.equal(baseline['x-frame-options'], 'DENY');
+    assert.equal(baseline['x-content-type-options'], 'nosniff');
+    const rules = allRules.filter(rule => !security.includes(rule));
     assert.equal(rules.length, active ? 1 : 0);
     if (active) { assert.equal(rules[0].source, '/:path*'); const headers = Object.fromEntries(rules[0].headers.map(({ key, value }) => [key.toLowerCase(), value])); assert.match(headers['x-robots-tag'], /noindex/); assert.match(headers['cache-control'], /no-store/); }
     const metadata = seo.buildPageMetadata({ title: 'Ask ZecBlock', description: 'Public analytics.', path: '/ask', index: true });

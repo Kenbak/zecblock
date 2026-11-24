@@ -1,5 +1,19 @@
 import type { NextConfig } from "next";
 
+// Baseline browser protections for every response. The CSP deliberately does
+// not restrict script/style/connect sources (inline theme bootstrap, WASM,
+// workers and per-network API hosts would each need an allowance); it only
+// blocks framing, <base> hijacking, plugins and cross-origin form posts.
+// Card images stay embeddable: <img> is not governed by frame-ancestors.
+// HSTS is already sent by Vercel.
+const SECURITY_HEADERS = [
+  { key: 'Content-Security-Policy', value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'; form-action 'self'" },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(), payment=(), usb=()' },
+];
+
 const nextConfig: NextConfig = {
   output: 'standalone',
   outputFileTracingRoot: process.cwd(),
@@ -9,8 +23,9 @@ const nextConfig: NextConfig = {
     },
   },
   async headers() {
-    if (process.env.VERCEL_ENV !== 'preview' || process.env.ASK_STAGING_ENABLED !== 'true') return [];
-    return [{ source: '/:path*', headers: [
+    const rules = [{ source: '/:path*', headers: SECURITY_HEADERS }];
+    if (process.env.VERCEL_ENV !== 'preview' || process.env.ASK_STAGING_ENABLED !== 'true') return rules;
+    return [...rules, { source: '/:path*', headers: [
       { key: 'X-Robots-Tag', value: 'noindex, follow' },
       { key: 'Cache-Control', value: 'private, no-store, max-age=0' },
       { key: 'CDN-Cache-Control', value: 'no-store' },

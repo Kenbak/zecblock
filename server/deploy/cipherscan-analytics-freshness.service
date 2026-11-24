@@ -11,3 +11,15 @@ TimeoutStartSec=90
 Nice=15
 MemoryMax=256M
 UMask=0077
+# Hardening that needs no per-job path list: no privilege gain, private /tmp,
+# read-only /usr, /boot and /etc, and no kernel/cgroup changes. Still runs as
+# root; moving to a dedicated User= needs per-host ownership changes first.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+RestrictRealtime=true

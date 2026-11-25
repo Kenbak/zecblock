@@ -6,7 +6,7 @@ const {parse,deparse}=require('pgsql-parser');
 const {z}=require('zod');
 const {createHash}=require('node:crypto');
 const {queryShape}=require('./ask-research-shape');
-const {isPublished,catalogueFor,researchIds}=require('../../../../lib/ask/research-catalogue');
+const {isPublished,catalogueFor,researchIds,resultNotes}=require('../../../../lib/ask/research-catalogue');
 // Every catalogue dataset maps to its reviewed analytics_public view; labels is inlined.
 const tables=Object.freeze(Object.fromEntries(researchIds.filter(id=>id!=='labels').map(id=>[id,id+'_query'])));
 // Reviewed public address labels, inlined as a constant VALUES table so SQL can
@@ -132,7 +132,7 @@ function researchEvidence(compiled,rows,fields,coverage,retrievedAt){
   if(!Array.isArray(row)||row.length!==columns.length)throw Error('Invalid row');
   return row.map(cell=>{if(cell===null)return null;if(typeof cell!=='string'||cell.length>2048||/[\x00-\x08\x0b\x0c\x0e-\x1f]/.test(cell))throw Error('Invalid cell');return cell;});
  });
- const result={query:compiled.request,columns,rows:resultRows,truncated:rows.length>compiled.request.limit,datasets:compiled.datasets,fingerprint:compiled.fingerprint,retrievedAt,indexedThrough:new Date(coverage.indexed_through).toISOString(),coverage:compiled.datasets.some(x=>['flows','daily','swaps','addresses','address_activity','address_daily','flow_daily','labels','supply_daily'].includes(x))?'source-defined coverage; independent historical completeness unverified':'verified canonical records',units:'Numeric results remain exact decimal strings. Stored ZEC amounts are zatoshis unless the SQL explicitly converts them; 100000000 zatoshis = 1 ZEC.'+(compiled.datasets.includes('swap_daily')?' swap_daily.zec is already whole ZEC, not zatoshis.':'')};
+ const result={query:compiled.request,columns,rows:resultRows,truncated:rows.length>compiled.request.limit,datasets:compiled.datasets,fingerprint:compiled.fingerprint,retrievedAt,indexedThrough:new Date(coverage.indexed_through).toISOString(),...resultNotes(compiled.datasets)};
  if(Buffer.byteLength(JSON.stringify(result))>262144)throw askError('resource');
  return result;
 }

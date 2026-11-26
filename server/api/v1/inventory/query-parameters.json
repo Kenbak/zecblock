@@ -282,6 +282,13 @@
     "period",
     "pool"
   ],
+  "GET /v1/shielded-pools/sources": [
+    "from",
+    "granularity",
+    "period",
+    "pool",
+    "to"
+  ],
   "GET /v1/shielded-pools/activity": [
     "period"
   ],

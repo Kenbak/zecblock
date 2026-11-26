@@ -158,6 +158,45 @@ does not replace the original daily-v3 cron source. Do not restart an indexer to
 install SQL-only migration 028. Mainnet is the only enabled replay target;
 testnet needs its prerequisite analytics tables before these API readers/jobs.
 
+## Shielded pool sources (migration 048)
+
+`server/deploy/migrations/048_shielded_pool_sources.sql` (mainnet, testnet) adds
+`shielded_pool_source_daily` (UTC day × pool × direction × category × detail,
+exact zatoshi `bigint`, with transaction counts) and `shielded_pool_source_state`.
+Classifier, writer and reader: `server/lib/pool-sources.js`. Every zatoshi of each
+pool's value balance lands in exactly one row, so per pool and day
+`sum(in) - sum(out)` equals the exact net change from canonical transactions.
+Requires the authoritative `transactions.value_balance_sprout` (Rust migration
+041 plus `repair-sprout-fees`); confirm it on a network before rebuilding there.
+
+Install order:
+
+1. Apply migration 048 on the primary: `node server/deploy/release/migrations.js apply --network mainnet --version 48`
+   (and testnet). Deploys with `ENFORCE_MIGRATIONS=true` hold the previous
+   release until 048 is recorded on each network.
+2. `cd server/jobs && node refresh-pool-sources.js --rebuild` (primary, advisory
+   lock 839321). Reads every canonical pool-moving transaction from the first
+   indexed block in UTC-day batches (`--batch-days=N`, default 7). Resumable:
+   rerun the same command after an interruption.
+3. Cron the incremental run every 10 minutes: `node refresh-pool-sources.js`.
+4. Check: for a few days, compare per-pool `sum(in) - sum(out)` with the
+   negated sum of that pool's `value_balance_*` over the same day's canonical
+   transactions; they must match exactly.
+
+Until step 2 completes, `/v1/shielded-pools/sources` returns 503. The
+incremental run re-reads from the UTC day before the last covered block through
+today, and from 1000 blocks earlier when the stored tip hash changed. A change
+of `CLASSIFIER_VERSION`, exchange-category `address_labels` or the registry's
+funding-stream addresses (`server/api/mining-pools.js`) stops incremental
+writes and marks reads stale until `--rebuild`.
+
+Measured locally (2026-11-26, PostgreSQL 14, laptop SSD) on a synthetic fixture
+of 103,680 blocks and 300,000 pool-moving transactions with 600,000 inputs:
+full rebuild 7.7 s in 7-day batches (about 39,000 transactions per second),
+writing 210 daily rows; incremental run over 3 days 0.5 s; 30-day API read
+4 ms. Production tables are far larger and colder, so expect the full-history
+rebuild to take much longer; it only reads, plus one transaction per batch.
+
 ## Exchange flows (migration 046)
 
 `server/deploy/migrations/046_exchange_flows.sql` adds `exchange_flows` (one row

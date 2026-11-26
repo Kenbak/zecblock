@@ -9,13 +9,14 @@ import { MetricCard } from '@/components/ui/MetricCard';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApiQuery } from '@/hooks/useApiQuery';
+import { PoolFlowSankey } from './PoolFlowSankey';
 import { formatChartDate } from '@/lib/chart-dates';
 import { getChartColors, getChartTooltipStyle } from '@/lib/chart-theme';
 import { formatZecCompact } from '@/lib/format-numbers';
 import { useUrlState } from '@/lib/use-url-state';
 import {
-  IN_GROUPS, OUT_GROUPS, categoryName, coveredDays, detailName, groupColors, groupTotals, miningShare, seriesRows, zat,
-  type GroupKey, type GroupTotal, type PoolSourcesData, type SourceDetail, type SourcePeriod, type SourcePool,
+  IN_GROUPS, OUT_GROUPS, coveredDays, groupColors, groupTotals, miningShare, seriesRows, zat,
+  type GroupKey, type PoolSourcesData, type SourceDetail, type SourcePeriod, type SourcePool,
 } from './pool-sources';
 
 const CHART_HEIGHT = 280;
@@ -35,61 +36,6 @@ const fmtZec = (zec: number) => {
 };
 const fmtSigned = (zec: number) => `${zec > 0 ? '+' : zec < 0 ? '−' : ''}${fmtZec(zec)}`;
 const fmtPct = (share: number) => (share > 0 && share < 0.001 ? '<0.1%' : `${(share * 100).toFixed(share < 0.01 ? 1 : 0)}%`);
-
-/** One 100% segmented bar with a value table underneath: the table is the accessible, exact view. */
-function Composition({ title, totals, colors, emptyText }: { title: string; totals: GroupTotal[]; colors: Record<GroupKey, string>; emptyText: string }) {
-  return (
-    <div>
-      <h3 className="mb-2 text-caption font-mono uppercase tracking-wider text-muted">{title}</h3>
-      {totals.length === 0 ? (
-        <p className="py-4 text-xs font-mono text-muted">{emptyText}</p>
-      ) : (
-        <>
-          <div className="flex h-3 w-full gap-[2px] overflow-hidden rounded-full" role="img"
-            aria-label={`${title}: ${totals.map(t => `${t.label} ${fmtPct(t.share)}`).join(', ')}`}>
-            {totals.map(t => (
-              <div key={t.key} title={`${t.label}: ${fmtZec(t.zec)} (${fmtPct(t.share)})`}
-                style={{ width: `${Math.max(t.share * 100, 0.6)}%`, background: colors[t.key] }} />
-            ))}
-          </div>
-          <table className="mt-3 w-full text-xs font-mono">
-            <tbody>
-              {totals.map(t => (
-                <tr key={t.key} className="border-t border-glass-4 first:border-t-0">
-                  <td className="py-1.5 pr-2 text-secondary">
-                    <span className="mr-2 inline-block h-2 w-2 rounded-sm align-middle" style={{ background: colors[t.key] }} aria-hidden="true" />
-                    {t.label}
-                  </td>
-                  <td className="py-1.5 pr-2 text-right tabular-nums text-primary">{fmtZec(t.zec)}</td>
-                  <td className="w-12 py-1.5 text-right tabular-nums text-muted">{fmtPct(t.share)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </>
-      )}
-    </div>
-  );
-}
-
-function NamedList({ title, rows }: { title: string; rows: SourceDetail[] }) {
-  if (rows.length === 0) return null;
-  return (
-    <div>
-      <h3 className="mb-2 text-caption font-mono uppercase tracking-wider text-muted">{title}</h3>
-      <ul className="text-xs font-mono">
-        {rows.map(d => (
-          <li key={`${d.category}:${d.detail}`} className="flex items-baseline justify-between gap-3 border-t border-glass-4 py-1.5 first:border-t-0">
-            <span className="min-w-0 truncate text-secondary" title={d.detail}>
-              {detailName(d)} <span className="text-muted">· {categoryName(d.category)}</span>
-            </span>
-            <span className="shrink-0 tabular-nums text-primary">{fmtZec(zat(d.amountZat))}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
 
 function SeriesTooltip({ active, payload, label, colors, groupColor }: {
   active?: boolean; label?: string;
@@ -128,6 +74,7 @@ export function PoolSourcesSection() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
   const groupColor = groupColors(theme);
+  const poolColors: Record<SourcePool, string> = { sapling: colors.sapling, ironwood: colors.ironwood, orchard: colors.orchard };
   const [pool, setPool] = useUrlState<SourcePool>('source', 'sapling', POOLS.map(p => p.key));
   const [period, setPeriod] = useUrlState<SourcePeriod>('sources', '30d', PERIODS.map(p => p.key));
   const [view, setView] = useState<'composition' | 'time'>('composition');
@@ -152,6 +99,7 @@ export function PoolSourcesSection() {
   }, [data]);
 
   const poolName = POOL_NAME[pool];
+  const poolColor = poolColors[pool];
   const periodLabel = PERIODS.find(p => p.key === period)?.label ?? period;
   const loading = query.loading && !data;
   const unavailable = !loading && !model;
@@ -179,17 +127,13 @@ export function PoolSourcesSection() {
       </div>
 
       <div className="mb-3 flex justify-end" data-html2canvas-ignore="true">
-        <PeriodPillTags options={[{ key: 'composition', label: 'Totals' }, { key: 'time', label: 'Over time' }] as const}
+        <PeriodPillTags options={[{ key: 'composition', label: 'Flow' }, { key: 'time', label: 'Over time' }] as const}
           value={view} onChange={setView} aria-label="Sources view" />
       </div>
 
       {view === 'composition' ? (
-        <div className="grid gap-8 md:grid-cols-2">
-          <Composition title={`Comes into ${poolName} from`} totals={model.inGroups} colors={groupColor} emptyText="No value entered this pool in this period." />
-          <Composition title={`Leaves ${poolName} to`} totals={model.outGroups} colors={groupColor} emptyText="No value left this pool in this period." />
-          <NamedList title="Largest named sources" rows={model.namedIn} />
-          <NamedList title="Largest named destinations" rows={model.namedOut} />
-        </div>
+        <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} days={model.days}
+          positive={colors.shielding} negative={colors.deshielding} />
       ) : (
         <ResponsiveContainer initialDimension={{ width: 500, height: CHART_HEIGHT }} width="100%" height={CHART_HEIGHT}>
           <BarChart data={model.rows} stackOffset="sign" barCategoryGap="20%">

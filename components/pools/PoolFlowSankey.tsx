@@ -247,11 +247,11 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
             const anchor = isIn ? 'end' : 'start';
             return (
               <g key={side}>
-                <text x={isIn ? 12 : W - 12} y={PAD + 2} textAnchor={isIn ? 'start' : 'end'} className="font-mono" fill={muted} fontSize={10} letterSpacing={1.2}>
+                <text x={isIn ? 12 : W - 12} y={PAD + 2} textAnchor={isIn ? 'start' : 'end'} className="font-mono" fill={muted} fontSize={12} letterSpacing={1.2}>
                   {isIn ? `COMES IN FROM` : `GOES OUT TO`}
                 </text>
                 {s.headings.map(h => (
-                  <text key={`h-${h.group}`} x={labelX} y={h.y + 15} textAnchor={anchor} className="font-mono" fontSize={10.5} letterSpacing={0.8}
+                  <text key={`h-${h.group}`} x={labelX} y={h.y + 15} textAnchor={anchor} className="font-mono" fontSize={12} letterSpacing={0.8}
                     fill={groupColor[h.group]}>
                     {h.label.toUpperCase()} · {pct(h.share)}
                   </text>

@@ -84,6 +84,7 @@
   "GET /v1/privacy/blend-check/split": "blend-check-split",
   "GET /v1/shielded-pools/overview": "pools-overview",
   "GET /v1/shielded-pools/flows": "pools-flows",
+  "GET /v1/shielded-pools/sources": "pools-sources",
   "GET /v1/shielded-pools/activity": "pools-activity",
   "GET /v1/shielded-pools/turnstile": "pools-turnstile",
   "GET /v1/mining/pool-distribution": "get-mining-pool-distribution",

@@ -7,6 +7,8 @@ import { PageHeader, SectionHeader } from '@/components/ui';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { HashLink } from '@/components/ui/HashLink';
 import { FlowVolumeChart } from '@/components/pools/FlowVolumeChart';
+import { PoolSourcesSection } from '@/components/pools/PoolSourcesSection';
+import { isMainnet } from '@/lib/config';
 import { PoolActivityChart } from '@/components/pools/PoolActivityChart';
 import { FlowLegend } from '@/components/pools/FlowLegend';
 import type { PoolOverviewData } from '@/components/pools/PoolOverviewHero';
@@ -19,6 +21,7 @@ const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'activity', label: 'Transaction activity' },
   { id: 'flows', label: 'Public flows' },
+  { id: 'sources', label: 'Sources' },
   { id: 'recent-flows', label: 'Recent transactions' },
   { id: 'methodology', label: 'Data & definitions' },
 ] as const;
@@ -137,7 +140,7 @@ export default function PoolsPage() {
       />
 
       <PageSectionNav
-        sections={SECTIONS}
+        sections={isMainnet ? SECTIONS : SECTIONS.filter(section => section.id !== 'sources')}
         ariaLabel="Pool analytics sections"
         actions={
           <Link href="/turnstile" className="rounded-sm py-1 text-caption font-mono text-secondary underline-offset-4 transition-colors hover:text-primary hover:underline focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-current">
@@ -171,6 +174,13 @@ export default function PoolsPage() {
       <section id="flows" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
         <FlowVolumeChart />
       </section>
+
+      {/* The sources dataset is built on mainnet only. */}
+      {isMainnet && (
+        <section id="sources" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
+          <PoolSourcesSection />
+        </section>
+      )}
 
       <section id="recent-flows" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
         <RecentLargeFlows />

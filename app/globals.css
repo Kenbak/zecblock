@@ -2303,3 +2303,10 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
 /* Countdown digits slide up when they change. */
 .countdown-digit { display: inline-block; animation: countdown-tick 320ms ease-out; }
 @keyframes countdown-tick { from { opacity: 0.2; transform: translateY(-0.25em); } }
+
+/* Pool source flow: particles drift along the ribbons (PoolFlowSankey). */
+@keyframes sankey-drift { to { stroke-dashoffset: -96; } }
+.sankey-particles path { animation: sankey-drift linear infinite; }
+@media (prefers-reduced-motion: reduce) { .sankey-particles { display: none; } }
+/* Exports always show the neutral state, never a hover highlight. */
+.chart-exporting [data-dim] { opacity: 1 !important; }

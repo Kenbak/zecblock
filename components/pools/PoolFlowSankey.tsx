@@ -1,6 +1,8 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { getEntityLogoSrc } from '@/lib/entity-logos';
+import { getPoolLogoSrc } from '@/lib/pool-logos';
 import { IN_GROUPS, OUT_GROUPS, detailName, zat, type Group, type GroupKey, type PoolSourcesData, type SourceDetail } from './pool-sources';
 
 // Width-proportional flow: named sources -> pool -> named destinations.
@@ -14,7 +16,7 @@ const LEFT_X = 236;      // left node column (labels to its left)
 const RIGHT_X = W - 236 - NODE_W;
 const POOL_W = 26;
 const POOL_X = W / 2 - POOL_W / 2;
-const ROW = 30;          // minimum vertical slot per labelled node
+const ROW = 34;          // minimum vertical slot per labelled node
 const HEADING = 22;      // group heading height
 const GROUP_GAP = 14;
 const PAD = 14;
@@ -27,6 +29,7 @@ interface Node {
   groupLabel: string;
   label: string;
   sub: string | null;
+  logo: string | null;
   zec: number;
   txs: number | null;
   share: number;
@@ -56,15 +59,16 @@ function buildNodes(side: 'in' | 'out', groups: Group[], categories: PoolSources
     for (const d of named) {
       const v = zat(d.amountZat);
       left -= v;
-      out.push({ id: `${side}-${g.key}-${d.category}-${d.detail}`, group: g.key, groupLabel: g.label, label: detailName(d),
-        sub: d.label || d.category === 'migration' ? null : d.detail, zec: v, txs: d.txCount, share: total > 0 ? v / total : 0 });
+      out.push({ id: `${side}-${g.key}-${d.category}-${d.detail}`, group: g.key, groupLabel: g.label, label: detailName(d).split(' / ').pop() ?? detailName(d),
+        sub: d.label || d.category === 'migration' ? null : d.detail,
+        logo: d.label ? (d.category === 'mining' ? getPoolLogoSrc(d.label) : d.category === 'exchange' ? getEntityLogoSrc(d.label) : undefined) ?? null : null, zec: v, txs: d.txCount, share: total > 0 ? v / total : 0 });
     }
     if (named.length === 0) {
-      out.push({ id: `${side}-${g.key}-all`, group: g.key, groupLabel: g.label, label: g.label, sub: null, zec: groupZec,
+      out.push({ id: `${side}-${g.key}-all`, group: g.key, groupLabel: g.label, label: g.label, sub: null, logo: null, zec: groupZec,
         txs: g.categories.reduce((a, c) => a + (byCat.get(c)?.txCount ?? 0), 0), share: total > 0 ? groupZec / total : 0 });
     } else if (left > groupZec * 0.005) {
       out.push({ id: `${side}-${g.key}-other`, group: g.key, groupLabel: g.label, label: OTHER_NOUN[g.key] ?? `Other ${g.label.toLowerCase()}`,
-        sub: null, zec: left, txs: null, share: total > 0 ? left / total : 0 });
+        sub: null, logo: null, zec: left, txs: null, share: total > 0 ? left / total : 0 });
     }
   }
   return out;
@@ -81,9 +85,13 @@ function layoutSide(raw: ReturnType<typeof buildNodes>, scale: number, poolTop: 
   for (const n of raw) {
     if (n.group !== current) {
       if (current !== null) y += GROUP_GAP;
-      const groupZec = raw.filter(r => r.group === n.group).reduce((a, r) => a + r.zec, 0);
-      headings.push({ label: n.groupLabel, y, zec: groupZec, share: total > 0 ? groupZec / total : 0, group: n.group });
-      y += HEADING;
+      const members = raw.filter(r => r.group === n.group);
+      // A heading only adds information when the group has several nodes.
+      if (members.length > 1) {
+        const groupZec = members.reduce((a, r) => a + r.zec, 0);
+        headings.push({ label: n.groupLabel, y, zec: groupZec, share: total > 0 ? groupZec / total : 0, group: n.group });
+        y += HEADING;
+      }
       current = n.group;
     }
     const exact = n.zec * scale;
@@ -224,9 +232,6 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, po
             fill={net >= 0 ? positive : negative}>
             {net >= 0 ? '+' : '−'}{fmt(net / days)} ZEC/day net
           </text>
-          <text x={W / 2} y={poolTop + Math.max(poolH, 4) + 18} textAnchor="middle" className="fill-current font-mono opacity-60" fontSize={11}>
-            {fmt(inTotal)} in · {fmt(outTotal)} out
-          </text>
 
           {/* Columns: headings, nodes and labels */}
           {([['in', left], ['out', right]] as const).map(([side, s]) => {
@@ -249,11 +254,12 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, po
                   <g key={n.id} opacity={dim(n.id)} className="cursor-pointer transition-opacity duration-200"
                     onMouseEnter={() => setActive(n.id)} onFocus={() => setActive(n.id)} tabIndex={0}>
                     <rect x={x} y={nodeCenter(n) - n.thick / 2} width={NODE_W} height={n.thick} rx={2} fill={groupColor[n.group]} />
-                    <text x={labelX} y={nodeCenter(n) - 1} textAnchor={anchor} className="fill-current font-mono" fontSize={12.5}>
-                      {n.label}
-                    </text>
-                    <text x={labelX} y={nodeCenter(n) + 13} textAnchor={anchor} className="fill-current font-mono opacity-55" fontSize={11}>
-                      {fmt(n.zec)} ZEC · {pct(n.share)}
+                    {n.logo && (
+                      <image href={n.logo} x={isIn ? x - 30 : x + NODE_W + 12} y={nodeCenter(n) - 9} width={18} height={18}
+                        preserveAspectRatio="xMidYMid meet" style={{ borderRadius: 4 }} />
+                    )}
+                    <text x={n.logo ? (isIn ? x - 38 : x + NODE_W + 38) : labelX} y={nodeCenter(n) + 4.5} textAnchor={anchor} className="font-mono" fontSize={13}>
+                      <tspan className="fill-current">{n.label}</tspan><tspan className="fill-current opacity-50" dx={10}>{fmt(n.zec)}</tspan>
                     </text>
                     {/* generous hit target */}
                     <rect x={isIn ? 0 : x - 4} y={n.y} width={isIn ? x + NODE_W + 4 : W - x + 4} height={n.slot} fill="transparent" />

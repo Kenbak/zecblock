@@ -17,10 +17,10 @@ import type { HistoryPoint } from './supply-history';
 import { buildTopLevelSegments, MAX_SUPPLY_ZAT, SHIELDED_POOL_KEYS, type ShieldedPoolKey } from './supply-treemap-layout';
 import type { PoolOverviewData } from './PoolOverviewHero';
 
-type Range = '30d' | '90d' | '1y' | 'all';
+type Range = '7d' | '30d' | '90d' | '1y' | 'all';
 type Metric = 'total' | 'pools' | 'public' | 'share';
 
-const RANGES: Range[] = ['30d', '90d', '1y', 'all'];
+const RANGES: Range[] = ['7d', '30d', '90d', '1y', 'all'];
 const METRICS: { key: Metric; label: string }[] = [
   { key: 'total', label: 'Total' },
   { key: 'pools', label: 'By pool' },

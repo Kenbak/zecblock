@@ -24,7 +24,7 @@ import { ShareableCard } from '@/components/ShareableCard';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useUrlState } from '@/lib/use-url-state';
 
-type Period = '30d' | '90d' | '1y' | 'all';
+type Period = '7d' | '30d' | '90d' | '1y' | 'all';
 type PoolFilter = 'all' | 'ironwood' | 'sapling' | 'orchard';
 
 interface FlowPoint {
@@ -44,6 +44,7 @@ const POOL_OPTIONS: { key: PoolFilter; label: string }[] = [
 ];
 
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: '7d', label: '7D' },
   { key: '30d', label: '30D' },
   { key: '90d', label: '90D' },
   { key: '1y', label: '1Y' },
@@ -74,14 +75,19 @@ function FlowTooltip({
       <p className="mb-2 text-caption uppercase tracking-wider text-muted">{formatChartDate(dateStr)}</p>
       {payload.map((entry) => {
         const key = String(entry.name ?? '');
-        const abs = Math.abs(Number(entry.value ?? 0));
+        const value = Number(entry.value ?? 0);
+        const isNet = key !== 'deshield' && key !== 'shield';
         const entryLabel =
           key === 'deshield' ? 'Deshielded' : key === 'shield' ? 'Shielded' : 'Net Flow';
+        // Bars are magnitudes; net keeps its sign (negative = net deshielding).
+        const shown = isNet
+          ? `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(2)}`
+          : Math.abs(value).toFixed(2);
         return (
           <p key={key} className="tabular-nums text-secondary">
             <span style={{ color: entry.color }}>{entryLabel}</span>
             {': '}
-            {abs.toFixed(2)} ZEC
+            {shown} ZEC
           </p>
         );
       })}

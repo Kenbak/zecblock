@@ -131,9 +131,11 @@ const fmt = (zec: number) => {
 };
 const pct = (s: number) => (s > 0 && s < 0.001 ? '<0.1%' : `${(s * 100).toFixed(s < 0.1 ? 1 : 0)}%`);
 
-export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColors, days, positive, negative }: {
+export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColors, days, positive, negative, ink, muted }: {
   data: PoolSourcesData; poolName: string; poolColor: string; groupColor: Record<GroupKey, string>; poolColors: Record<string, string>;
   days: number; positive: string; negative: string;
+  /** Explicit text colors: exports do not resolve currentColor inside SVG. */
+  ink: string; muted: string;
 }) {
   const [active, setActive] = useState<string | null>(null);
   const colorOf = (n: { group: GroupKey; pool: string | null }) => (n.pool && poolColors[n.pool]) || groupColor[n.group];
@@ -198,7 +200,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
             const t0 = n.thick, y0 = nodeCenter(n) - t0 / 2;
             return (
               <path key={`r-${n.id}`} d={ribbon(LEFT_X + NODE_W, y0, t0, POOL_X, n.poolY, Math.max(n.poolThick, 0.6))}
-                fill={`url(#g-${n.id.replace(/[^a-z0-9]/gi, '')})`} opacity={dim(n.id)}
+                fill={`url(#g-${n.id.replace(/[^a-z0-9]/gi, '')})`} opacity={dim(n.id)} data-dim=""
                 className="transition-opacity duration-200" onMouseEnter={() => setActive(n.id)} />
             );
           })}
@@ -206,13 +208,13 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
             const t1 = n.thick, y1 = nodeCenter(n) - t1 / 2;
             return (
               <path key={`r-${n.id}`} d={ribbon(POOL_X + POOL_W, n.poolY, Math.max(n.poolThick, 0.6), RIGHT_X, y1, t1)}
-                fill={`url(#g-${n.id.replace(/[^a-z0-9]/gi, '')})`} opacity={dim(n.id)}
+                fill={`url(#g-${n.id.replace(/[^a-z0-9]/gi, '')})`} opacity={dim(n.id)} data-dim=""
                 className="transition-opacity duration-200" onMouseEnter={() => setActive(n.id)} />
             );
           })}
 
           {/* Particles: travel toward the pool on the left and away from it on the right. */}
-          <g className="sankey-particles" pointerEvents="none">
+          <g className="sankey-particles" pointerEvents="none" data-gif-particles="">
             {left.nodes.map(n => (
               <path key={`p-${n.id}`} d={centerLine(LEFT_X + NODE_W, nodeCenter(n), POOL_X, n.poolY + n.poolThick / 2)}
                 fill="none" stroke={colorOf(n)} strokeWidth={Math.min(3, 1.2 + n.thick / 14)} strokeLinecap="round"
@@ -229,7 +231,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
 
           {/* Pool */}
           <rect x={POOL_X} y={poolTop} width={POOL_W} height={Math.max(poolH, 4)} rx={6} fill={poolColor} />
-          <text x={W / 2} y={poolTop - 26} textAnchor="middle" className="fill-current font-mono" fontSize={15} fontWeight={600}>
+          <text x={W / 2} y={poolTop - 26} textAnchor="middle" className="font-mono" fill={ink} fontSize={15} fontWeight={600}>
             {poolName.toUpperCase()}
           </text>
           <text x={W / 2} y={poolTop - 9} textAnchor="middle" className="font-mono" fontSize={12}
@@ -245,7 +247,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
             const anchor = isIn ? 'end' : 'start';
             return (
               <g key={side}>
-                <text x={isIn ? 12 : W - 12} y={PAD + 2} textAnchor={isIn ? 'start' : 'end'} className="fill-current font-mono opacity-50" fontSize={10} letterSpacing={1.2}>
+                <text x={isIn ? 12 : W - 12} y={PAD + 2} textAnchor={isIn ? 'start' : 'end'} className="font-mono" fill={muted} fontSize={10} letterSpacing={1.2}>
                   {isIn ? `COMES IN FROM` : `GOES OUT TO`}
                 </text>
                 {s.headings.map(h => (
@@ -255,7 +257,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
                   </text>
                 ))}
                 {s.nodes.map(n => (
-                  <g key={n.id} opacity={dim(n.id)} className="cursor-pointer transition-opacity duration-200"
+                  <g key={n.id} opacity={dim(n.id)} data-dim="" className="cursor-pointer transition-opacity duration-200"
                     onMouseEnter={() => setActive(n.id)} onFocus={() => setActive(n.id)} tabIndex={0}>
                     <rect x={x} y={nodeCenter(n) - n.thick / 2} width={NODE_W} height={n.thick} rx={2} fill={colorOf(n)} />
                     {n.logo && (
@@ -263,7 +265,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
                         preserveAspectRatio="xMidYMid meet" style={{ borderRadius: 4 }} />
                     )}
                     <text x={n.logo ? (isIn ? x - 38 : x + NODE_W + 38) : labelX} y={nodeCenter(n) + 4.5} textAnchor={anchor} className="font-mono" fontSize={13}>
-                      <tspan className="fill-current">{n.label}</tspan><tspan className="fill-current opacity-50" dx={10}>{fmt(n.zec)}</tspan>
+                      <tspan fill={ink}>{n.label}</tspan><tspan fill={muted} dx={10}>{fmt(n.zec)}</tspan>
                     </text>
                     {/* generous hit target */}
                     <rect x={isIn ? 0 : x - 4} y={n.y} width={isIn ? x + NODE_W + 4 : W - x + 4} height={n.slot} fill="transparent" />

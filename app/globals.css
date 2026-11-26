@@ -2308,3 +2308,5 @@ main table td { font-variant-numeric: tabular-nums lining-nums; }
 @keyframes sankey-drift { to { stroke-dashoffset: -96; } }
 .sankey-particles path { animation: sankey-drift linear infinite; }
 @media (prefers-reduced-motion: reduce) { .sankey-particles { display: none; } }
+/* Exports always show the neutral state, never a hover highlight. */
+.chart-exporting [data-dim] { opacity: 1 !important; }

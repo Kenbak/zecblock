@@ -63,15 +63,23 @@ export function opaqueBackground(element: HTMLElement): string {
 /** Legacy interactive panels keep their full visual snapshot; catalog plots use ChartExport. */
 export async function captureElementPng(element: HTMLElement): Promise<Blob> {
   const { toBlob } = await import('html-to-image');
-  const blob = await withChartAttribution(element, () => toBlob(element, {
-    backgroundColor: opaqueBackground(element), pixelRatio: 2,
-    // html-to-image caches embedded images by URL with the query stripped by
-    // default. Every next/image asset is `/_next/image?url=…`, so without this
-    // the two BrandLogo variants share one cache entry and the export shows
-    // whichever was fetched first (e.g. dark "Block" ink on a dark card).
-    includeQueryParams: true,
-    filter: node => !(node instanceof HTMLElement && node.dataset.html2canvasIgnore),
-  }));
+  // `.chart-exporting` lets charts drop transient hover states from the export.
+  const wasExporting = element.classList.contains('chart-exporting');
+  element.classList.add('chart-exporting');
+  let blob: Blob | null;
+  try {
+    blob = await withChartAttribution(element, () => toBlob(element, {
+      backgroundColor: opaqueBackground(element), pixelRatio: 2,
+      // html-to-image caches embedded images by URL with the query stripped by
+      // default. Every next/image asset is `/_next/image?url=…`, so without this
+      // the two BrandLogo variants share one cache entry and the export shows
+      // whichever was fetched first (e.g. dark "Block" ink on a dark card).
+      includeQueryParams: true,
+      filter: node => !(node instanceof HTMLElement && node.dataset.html2canvasIgnore),
+    }));
+  } finally {
+    if (!wasExporting) element.classList.remove('chart-exporting');
+  }
   if (!blob) throw new Error('Image unavailable');
   return blob;
 }

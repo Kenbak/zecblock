@@ -10,6 +10,7 @@ import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useTheme } from '@/contexts/ThemeContext';
 import { useApiQuery } from '@/hooks/useApiQuery';
 import { PoolFlowSankey } from './PoolFlowSankey';
+import { captureParticleGif } from '@/lib/chart-gif';
 import { formatChartDate } from '@/lib/chart-dates';
 import { getChartColors, getChartTooltipStyle } from '@/lib/chart-theme';
 import { formatZecCompact } from '@/lib/format-numbers';
@@ -133,7 +134,7 @@ export function PoolSourcesSection() {
 
       {view === 'composition' ? (
         <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} poolColors={poolColors} days={model.days}
-          positive={colors.shielding} negative={colors.deshielding} />
+          positive={colors.shielding} negative={colors.deshielding} ink={colors.tooltipText} muted={colors.axis} />
       ) : (
         <ResponsiveContainer initialDimension={{ width: 500, height: CHART_HEIGHT }} width="100%" height={CHART_HEIGHT}>
           <BarChart data={model.rows} stackOffset="sign" barCategoryGap="20%">
@@ -175,6 +176,7 @@ export function PoolSourcesSection() {
       watermark
       className=""
       footerNote={`${poolName} · ${periodLabel} · completed UTC days`}
+      animatedCapture={view === 'composition' && model ? captureParticleGif : undefined}
     >
       <p className="mb-4 max-w-2xl text-xs leading-relaxed text-secondary font-sans">
         Every ZEC that enters or leaves the {poolName} pool, by where it came from and where it went: other shielded pools,

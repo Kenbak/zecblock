@@ -3,7 +3,7 @@
 // readable; the exact category amounts remain in the API and the CSV export.
 
 export type SourcePool = 'sapling' | 'ironwood' | 'orchard';
-export type SourcePeriod = '7d' | '30d' | '90d' | '1y' | 'all';
+export type SourcePeriod = 'today' | '7d' | '30d' | '90d' | '1y' | 'all';
 
 export interface SourceCategory { category: string; amountZat: string; txCount: number }
 export interface SourceDetail { category: string; detail: string; label: string | null; amountZat: string; txCount: number }

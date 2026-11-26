@@ -97,7 +97,7 @@ function getQueryConstraint(route, name) {
 
   if (route === '/v1/shielded-pools/sources') {
     if (name === 'pool') return { required: true, schema: { type: 'string', enum: ['sprout', 'sapling', 'orchard', 'ironwood'] }, description: 'Shielded pool.' };
-    if (name === 'period') return { required: false, schema: { type: 'string', enum: ['7d', '30d', '90d', '1y', 'all'], default: '30d' }, description: 'Most recent completed UTC days plus today so far. Not combined with from/to.' };
+    if (name === 'period') return { required: false, schema: { type: 'string', enum: ['today', '7d', '30d', '90d', '1y', 'all'], default: '30d' }, description: 'Most recent completed UTC days plus today so far; today is since 00:00 UTC. Not combined with from/to.' };
     if (name === 'from' || name === 'to') return { required: false, schema: { type: 'string', format: 'date' }, description: name === 'to' ? 'Last UTC day, inclusive. Default today when from is given.' : 'First UTC day, inclusive. Required with to. At most 4000 days.' };
     if (name === 'granularity') return { required: false, schema: { type: 'string', enum: ['day', 'week', 'month'] }, description: 'Bucket size. Default day up to 120 days, week up to 800, else month.' };
   }

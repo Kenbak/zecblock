@@ -4335,7 +4335,7 @@
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": null,
+    "note": "period is today, 7d, 30d (default), 90d, 1y or all. Windows follow UTC days: the N most recent completed UTC days plus today so far, starting at 00:00 UTC; today is since 00:00 UTC. granularity is daily (default) or hourly (UTC hours).",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -4392,7 +4392,7 @@
     ],
     "listKey": null,
     "zatoshiFields": [],
-    "note": "Requires migration 048 and a completed refresh-pool-sources --rebuild; until then the response is 503 with reason not-built or rebuild-in-progress, never zeros. pool is required: sprout, sapling, orchard or ironwood. period (7d, 30d default, 90d, 1y, all) selects the most recent N completed UTC days plus today so far (partial), never past the latest covered day; all runs from coverage start. Alternatively from and to (UTC YYYY-MM-DD, inclusive, at most 4000 days) may include today. granularity is day, week (Monday start) or month; default day up to 120 days, week up to 800, else month. All Zat amounts are decimal strings. Every zatoshi of the pool value balance is in exactly one category, so per bucket inZat - outZat is the pool exact net change from canonical transactions. Source categories: migration (from another pool; detail is that pool), coinbase (shielded block reward), mining (transparent input spending a block reward paid to that block miner address; detail is the address, label the attributed pool when known), funding (block reward to a registered funding-stream address), other_coinbase (any other block-reward output, e.g. the historical Founders Reward), exchange (input from a labelled exchange; detail is the entity id or other), transparent, unknown (unresolved input values). Destinations: migration, fee, exchange, transparent, unknown. Mixed transactions are split by transparent leg value with exact integer apportionment. Attribution follows only the transaction itself, so mining is a lower bound: rewards moved to another address before shielding read as transparent. Each series bucket has coverage complete, partial (holds coverage.throughTime or is partly outside coverage) or none (all amounts null). totals, sources, destinations and the top-25 sourceDetails/destinationDetails are null when any requested day is outside coverage. completeTotals (days, inZat, outZat, netZat) covers completed days only, for per-day averages. partialDay (date, throughTime, inZat, outZat, netZat) is the day holding the latest covered block when it is in the window, else null. The dataset refreshes every few minutes. status is ok or stale; staleReason is labels-changed, classifier-changed, rebuild-in-progress or behind-tip (more than 24 blocks behind the index tip).",
+    "note": "Requires migration 048 and a completed refresh-pool-sources --rebuild; until then the response is 503 with reason not-built or rebuild-in-progress, never zeros. pool is required: sprout, sapling, orchard or ironwood. period (today, 7d, 30d default, 90d, 1y, all) selects the most recent N completed UTC days plus today so far (today: since 00:00 UTC only) (partial), never past the latest covered day; all runs from coverage start. Alternatively from and to (UTC YYYY-MM-DD, inclusive, at most 4000 days) may include today. granularity is day, week (Monday start) or month; default day up to 120 days, week up to 800, else month. All Zat amounts are decimal strings. Every zatoshi of the pool value balance is in exactly one category, so per bucket inZat - outZat is the pool exact net change from canonical transactions. Source categories: migration (from another pool; detail is that pool), coinbase (shielded block reward), mining (transparent input spending a block reward paid to that block miner address; detail is the address, label the attributed pool when known), funding (block reward to a registered funding-stream address), other_coinbase (any other block-reward output, e.g. the historical Founders Reward), exchange (input from a labelled exchange; detail is the entity id or other), transparent, unknown (unresolved input values). Destinations: migration, fee, exchange, transparent, unknown. Mixed transactions are split by transparent leg value with exact integer apportionment. Attribution follows only the transaction itself, so mining is a lower bound: rewards moved to another address before shielding read as transparent. Each series bucket has coverage complete, partial (holds coverage.throughTime or is partly outside coverage) or none (all amounts null). totals, sources, destinations and the top-25 sourceDetails/destinationDetails are null when any requested day is outside coverage. completeTotals (days, inZat, outZat, netZat) covers completed days only, for per-day averages. partialDay (date, throughTime, inZat, outZat, netZat) is the day holding the latest covered block when it is in the window, else null. The dataset refreshes every few minutes. status is ok or stale; staleReason is labels-changed, classifier-changed, rebuild-in-progress or behind-tip (more than 24 blocks behind the index tip).",
     "ownershipToken": false,
     "pagination": null,
     "parameters": [
@@ -4427,6 +4427,7 @@
         "schema": {
           "type": "string",
           "enum": [
+            "today",
             "7d",
             "30d",
             "90d",
@@ -4435,7 +4436,7 @@
           ],
           "default": "30d"
         },
-        "description": "Most recent completed UTC days plus today so far. Not combined with from/to."
+        "description": "Most recent completed UTC days plus today so far; today is since 00:00 UTC. Not combined with from/to."
       },
       {
         "name": "pool",

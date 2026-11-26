@@ -24,7 +24,7 @@ import { ShareableCard } from '@/components/ShareableCard';
 import { PeriodPillTags } from '@/components/ui/PeriodPillTags';
 import { useUrlState } from '@/lib/use-url-state';
 
-type Period = '7d' | '30d' | '90d' | '1y' | 'all';
+type Period = 'today' | '7d' | '30d' | '90d' | '1y' | 'all';
 type PoolFilter = 'all' | 'ironwood' | 'sapling' | 'orchard';
 
 interface FlowPoint {
@@ -44,12 +44,26 @@ const POOL_OPTIONS: { key: PoolFilter; label: string }[] = [
 ];
 
 const PERIOD_OPTIONS: { key: Period; label: string }[] = [
+  { key: 'today', label: 'Today' },
   { key: '7d', label: '7D' },
   { key: '30d', label: '30D' },
   { key: '90d', label: '90D' },
   { key: '1y', label: '1Y' },
   { key: 'all', label: 'ALL' },
 ];
+
+/** Hourly windows: Today and 7D. Windows are UTC days; Today is since 00:00 UTC. */
+const isHourly = (period: Period) => period === 'today' || period === '7d';
+
+/** Bucket labels: daily keys are YYYY-MM-DD, hourly keys are ISO timestamps (UTC hours). */
+function bucketLabel(key: string): string {
+  if (!key.includes('T')) return formatChartDate(key);
+  return `${formatChartDate(key.slice(0, 10))} · ${key.slice(11, 13)}:00 UTC`;
+}
+function axisLabel(key: string, period: Period): string {
+  if (!key.includes('T')) return formatChartDate(key);
+  return period === 'today' ? `${key.slice(11, 13)}:00` : formatChartDate(key.slice(0, 10));
+}
 
 function FlowTooltip({
   active,
@@ -72,7 +86,7 @@ function FlowTooltip({
       className="rounded-lg border px-3 py-2 text-xs font-mono shadow-lg"
       style={getChartTooltipStyle(colors)}
     >
-      <p className="mb-2 text-caption uppercase tracking-wider text-muted">{formatChartDate(dateStr)}</p>
+      <p className="mb-2 text-caption uppercase tracking-wider text-muted">{bucketLabel(dateStr)}</p>
       {payload.map((entry) => {
         const key = String(entry.name ?? '');
         const value = Number(entry.value ?? 0);
@@ -103,9 +117,11 @@ export function FlowVolumeChart() {
   const [poolFilter, setPoolFilter] = useState<PoolFilter>('all');
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
 
+  const hourly = isHourly(period);
   const { data: apiRes, loading } = useApiQuery<{ points: FlowPoint[] }>(
     '/v1/shielded-pools/flows',
-    { period, pool: poolFilter },
+    { period, pool: poolFilter, granularity: hourly ? 'hourly' : 'daily' },
+    { refreshInterval: hourly ? 120_000 : 600_000 },
   );
   const points = useMemo(
     () => (apiRes?.points ?? []).map((p) => ({ ...p, deshield: -Math.abs(p.deshield) })),
@@ -113,7 +129,8 @@ export function FlowVolumeChart() {
   );
 
   const poolLabel = POOL_OPTIONS.find((p) => p.key === poolFilter)?.label ?? 'All';
-  const shareText = `Zcash shielding and deshielding flow (${poolLabel}, ${period.toUpperCase()}) on ZecBlock.\n\nhttps://zecblock.com/pools#flows`;
+  const periodLabel = PERIOD_OPTIONS.find((p) => p.key === period)?.label ?? period;
+  const shareText = `Zcash shielding and deshielding flow (${poolLabel}, ${periodLabel}) on ZecBlock.\n\nhttps://zecblock.com/pools#flows`;
 
   const barSize = useMemo(
     () => Math.max(4, Math.floor(600 / Math.max(points.length, 1))),
@@ -144,7 +161,7 @@ export function FlowVolumeChart() {
       className="flex items-center justify-center text-xs font-mono text-muted"
       style={{ height: CHART_HEIGHT }}
     >
-      No flow data available
+      {period === 'today' ? 'No public flows yet today (UTC).' : 'No flow data available'}
     </div>
   ) : (
     <ResponsiveContainer initialDimension={{ width: 500, height: 300 }} width="100%" height={CHART_HEIGHT}>
@@ -154,7 +171,9 @@ export function FlowVolumeChart() {
           dataKey="date"
           stroke={colors.axis}
           tick={{ fill: colors.axis, fontSize: 12 }}
-          tickFormatter={(v) => formatChartDate(String(v))}
+          tickFormatter={(v) => axisLabel(String(v), period)}
+          // 7D hourly: one tick per UTC day, at 00:00.
+          ticks={period === '7d' && hourly ? points.filter((p) => p.date.slice(11, 13) === '00').map((p) => p.date) : undefined}
           minTickGap={32}
         />
         <YAxis tickLine={false} axisLine={false}
@@ -231,7 +250,7 @@ export function FlowVolumeChart() {
       fileName="zecblock-flow-volume.png"
       watermark
       className=""
-      footerNote={`${poolLabel} · ${period.toUpperCase()}`}
+      footerNote={`${poolLabel} · ${periodLabel}${hourly ? ' · hourly' : ''} · UTC days`}
     >
       <p className="mb-4 max-w-2xl text-xs leading-relaxed text-secondary font-sans">
         Shielding means moving ZEC into a private pool. Deshielding means moving it back to a public address. Bars up

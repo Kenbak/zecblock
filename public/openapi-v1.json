@@ -18151,6 +18151,7 @@
             "schema": {
               "type": "string",
               "enum": [
+                "today",
                 "7d",
                 "30d",
                 "90d",
@@ -18159,7 +18160,7 @@
               ],
               "default": "30d"
             },
-            "description": "Most recent completed UTC days plus today so far. Not combined with from/to."
+            "description": "Most recent completed UTC days plus today so far; today is since 00:00 UTC. Not combined with from/to."
           },
           {
             "name": "pool",

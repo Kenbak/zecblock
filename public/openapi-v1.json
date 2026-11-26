@@ -18159,7 +18159,7 @@
               ],
               "default": "30d"
             },
-            "description": "Most recent completed UTC days, excluding today. Not combined with from/to."
+            "description": "Most recent completed UTC days plus today so far. Not combined with from/to."
           },
           {
             "name": "pool",

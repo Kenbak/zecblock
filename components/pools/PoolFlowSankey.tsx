@@ -137,9 +137,9 @@ const fmt = (zec: number) => {
 };
 const pct = (s: number) => (s > 0 && s < 0.001 ? '<0.1%' : `${(s * 100).toFixed(s < 0.1 ? 1 : 0)}%`);
 
-export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColors, days, positive, negative, ink, muted }: {
+export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColors, positive, negative, ink, muted }: {
   data: PoolSourcesData; poolName: string; poolColor: string; groupColor: Record<GroupKey, string>; poolColors: Record<string, string>;
-  days: number; positive: string; negative: string;
+  positive: string; negative: string;
   /** Explicit text colors: exports do not resolve currentColor inside SVG. */
   ink: string; muted: string;
 }) {
@@ -242,7 +242,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
           </text>
           <text x={W / 2} y={poolTop - 9} textAnchor="middle" className="font-mono" fontSize={12}
             fill={net >= 0 ? positive : negative}>
-            {net >= 0 ? '+' : '−'}{fmt(net / days)} ZEC/day net
+            {net >= 0 ? '+' : '−'}{fmt(net)} ZEC net
           </text>
 
           {/* Columns: headings, nodes and labels */}
@@ -290,7 +290,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
             {left.nodes.includes(activeNode) ? `into ${poolName}` : `out of ${poolName}`} · {activeNode.groupLabel}
           </p>
           <p className="tabular-nums text-primary">
-            {fmt(activeNode.zec)} ZEC · {pct(activeNode.share)} · {fmt(activeNode.zec / days)}/day{activeNode.txs != null ? ` · ${activeNode.txs.toLocaleString('en-US')} txs` : ''}
+            {fmt(activeNode.zec)} ZEC · {pct(activeNode.share)}{activeNode.txs != null ? ` · ${activeNode.txs.toLocaleString('en-US')} txs` : ''}
           </p>
         </div>
       )}

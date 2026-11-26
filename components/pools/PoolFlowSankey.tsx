@@ -30,6 +30,7 @@ interface Node {
   label: string;
   sub: string | null;
   logo: string | null;
+  pool: string | null;     // counterpart pool for migration nodes
   zec: number;
   txs: number | null;
   share: number;
@@ -61,14 +62,15 @@ function buildNodes(side: 'in' | 'out', groups: Group[], categories: PoolSources
       left -= v;
       out.push({ id: `${side}-${g.key}-${d.category}-${d.detail}`, group: g.key, groupLabel: g.label, label: detailName(d).split(' / ').pop() ?? detailName(d),
         sub: d.label || d.category === 'migration' ? null : d.detail,
+        pool: d.category === 'migration' ? d.detail : null,
         logo: d.label ? (d.category === 'mining' ? getPoolLogoSrc(d.label) : d.category === 'exchange' ? getEntityLogoSrc(d.label) : undefined) ?? null : null, zec: v, txs: d.txCount, share: total > 0 ? v / total : 0 });
     }
     if (named.length === 0) {
-      out.push({ id: `${side}-${g.key}-all`, group: g.key, groupLabel: g.label, label: g.label, sub: null, logo: null, zec: groupZec,
+      out.push({ id: `${side}-${g.key}-all`, group: g.key, groupLabel: g.label, label: g.label, sub: null, logo: null, pool: null, zec: groupZec,
         txs: g.categories.reduce((a, c) => a + (byCat.get(c)?.txCount ?? 0), 0), share: total > 0 ? groupZec / total : 0 });
     } else if (left > groupZec * 0.005) {
       out.push({ id: `${side}-${g.key}-other`, group: g.key, groupLabel: g.label, label: OTHER_NOUN[g.key] ?? `Other ${g.label.toLowerCase()}`,
-        sub: null, logo: null, zec: left, txs: null, share: total > 0 ? left / total : 0 });
+        sub: null, logo: null, pool: null, zec: left, txs: null, share: total > 0 ? left / total : 0 });
     }
   }
   return out;
@@ -129,10 +131,12 @@ const fmt = (zec: number) => {
 };
 const pct = (s: number) => (s > 0 && s < 0.001 ? '<0.1%' : `${(s * 100).toFixed(s < 0.1 ? 1 : 0)}%`);
 
-export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, positive, negative }: {
-  data: PoolSourcesData; poolName: string; poolColor: string; groupColor: Record<GroupKey, string>; days: number; positive: string; negative: string;
+export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColors, days, positive, negative }: {
+  data: PoolSourcesData; poolName: string; poolColor: string; groupColor: Record<GroupKey, string>; poolColors: Record<string, string>;
+  days: number; positive: string; negative: string;
 }) {
   const [active, setActive] = useState<string | null>(null);
+  const colorOf = (n: { group: GroupKey; pool: string | null }) => (n.pool && poolColors[n.pool]) || groupColor[n.group];
 
   const layout = useMemo(() => {
     const inRaw = buildNodes('in', IN_GROUPS, data.sources, data.sourceDetails);
@@ -182,7 +186,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, po
               const isIn = left.nodes.includes(n);
               return (
                 <linearGradient key={n.id} id={`g-${n.id.replace(/[^a-z0-9]/gi, '')}`} x1={isIn ? 0 : 1} x2={isIn ? 1 : 0} y1={0} y2={0}>
-                  <stop offset="0%" stopColor={groupColor[n.group]} stopOpacity={0.7} />
+                  <stop offset="0%" stopColor={colorOf(n)} stopOpacity={0.7} />
                   <stop offset="100%" stopColor={poolColor} stopOpacity={0.45} />
                 </linearGradient>
               );
@@ -211,13 +215,13 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, po
           <g className="sankey-particles" pointerEvents="none">
             {left.nodes.map(n => (
               <path key={`p-${n.id}`} d={centerLine(LEFT_X + NODE_W, nodeCenter(n), POOL_X, n.poolY + n.poolThick / 2)}
-                fill="none" stroke={groupColor[n.group]} strokeWidth={Math.min(3, 1.2 + n.thick / 14)} strokeLinecap="round"
+                fill="none" stroke={colorOf(n)} strokeWidth={Math.min(3, 1.2 + n.thick / 14)} strokeLinecap="round"
                 strokeDasharray={dashFor(n.share)} opacity={active == null || active === n.id ? 0.9 : 0.1}
                 style={{ animationDuration: `${2.4 + (n.id.length % 5) * 0.25}s` }} />
             ))}
             {right.nodes.map(n => (
               <path key={`p-${n.id}`} d={centerLine(POOL_X + POOL_W, n.poolY + n.poolThick / 2, RIGHT_X, nodeCenter(n))}
-                fill="none" stroke={groupColor[n.group]} strokeWidth={Math.min(3, 1.2 + n.thick / 14)} strokeLinecap="round"
+                fill="none" stroke={colorOf(n)} strokeWidth={Math.min(3, 1.2 + n.thick / 14)} strokeLinecap="round"
                 strokeDasharray={dashFor(n.share)} opacity={active == null || active === n.id ? 0.9 : 0.1}
                 style={{ animationDuration: `${2.4 + (n.id.length % 5) * 0.25}s` }} />
             ))}
@@ -253,7 +257,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, days, po
                 {s.nodes.map(n => (
                   <g key={n.id} opacity={dim(n.id)} className="cursor-pointer transition-opacity duration-200"
                     onMouseEnter={() => setActive(n.id)} onFocus={() => setActive(n.id)} tabIndex={0}>
-                    <rect x={x} y={nodeCenter(n) - n.thick / 2} width={NODE_W} height={n.thick} rx={2} fill={groupColor[n.group]} />
+                    <rect x={x} y={nodeCenter(n) - n.thick / 2} width={NODE_W} height={n.thick} rx={2} fill={colorOf(n)} />
                     {n.logo && (
                       <image href={n.logo} x={isIn ? x - 30 : x + NODE_W + 12} y={nodeCenter(n) - 9} width={18} height={18}
                         preserveAspectRatio="xMidYMid meet" style={{ borderRadius: 4 }} />

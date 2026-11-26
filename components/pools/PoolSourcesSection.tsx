@@ -15,7 +15,7 @@ import { getChartColors, getChartTooltipStyle } from '@/lib/chart-theme';
 import { formatZecCompact } from '@/lib/format-numbers';
 import { useUrlState } from '@/lib/use-url-state';
 import {
-  IN_GROUPS, OUT_GROUPS, coveredDays, groupColors, groupTotals, miningShare, seriesRows, zat,
+  IN_GROUPS, OUT_GROUPS, coveredDays, groupColors, mainCounterpart, groupTotals, miningShare, seriesRows, zat,
   type GroupKey, type PoolSourcesData, type SourceDetail, type SourcePeriod, type SourcePool,
 } from './pool-sources';
 
@@ -73,14 +73,14 @@ function SeriesTooltip({ active, payload, label, colors, groupColor }: {
 export function PoolSourcesSection() {
   const { theme } = useTheme();
   const colors = getChartColors(theme);
-  const groupColor = groupColors(theme);
-  const poolColors: Record<SourcePool, string> = { sapling: colors.sapling, ironwood: colors.ironwood, orchard: colors.orchard };
+  const poolColors: Record<string, string> = { sapling: colors.sapling, ironwood: colors.ironwood, orchard: colors.orchard, sprout: colors.sprout };
   const [pool, setPool] = useUrlState<SourcePool>('source', 'sapling', POOLS.map(p => p.key));
   const [period, setPeriod] = useUrlState<SourcePeriod>('sources', '30d', PERIODS.map(p => p.key));
   const [view, setView] = useState<'composition' | 'time'>('composition');
   const query = useApiQuery<PoolSourcesData>('/v1/shielded-pools/sources', { pool, period }, { refreshInterval: 600_000 });
   // The hook keeps previous data while refetching; never label another selection's rows as this one.
   const data = query.data && query.data.pool === pool && query.data.period === period ? query.data : null;
+  const groupColor = groupColors(theme, poolColors[mainCounterpart(data) ?? ''] ?? colors.shielded);
 
   const model = useMemo(() => {
     if (!data?.totals) return null;
@@ -132,7 +132,7 @@ export function PoolSourcesSection() {
       </div>
 
       {view === 'composition' ? (
-        <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} days={model.days}
+        <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} poolColors={poolColors} days={model.days}
           positive={colors.shielding} negative={colors.deshielding} />
       ) : (
         <ResponsiveContainer initialDimension={{ width: 500, height: CHART_HEIGHT }} width="100%" height={CHART_HEIGHT}>

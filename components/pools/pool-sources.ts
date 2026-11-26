@@ -55,19 +55,31 @@ export const OUT_GROUPS: Group[] = [
   { key: 'unknown', label: 'Unattributed', categories: ['unknown'] },
 ];
 
-/** Validated with the dataviz palette script (adjacent CVD and normal-vision separation pass in both modes). */
-export function groupColors(theme: 'dark' | 'light'): Record<GroupKey, string> {
+/**
+ * Colors follow the site's identities (lib/chart-theme.ts, lib/privacy-palette.ts):
+ * block rewards use the stone (coinbase) family, public addresses steel, exchanges
+ * the exchange orange. Migration nodes take their own pool's color, so `pools` here
+ * is only a fallback. Checked with the dataviz palette validator: adjacent pairs
+ * pass CVD separation; same-family pairs (mining / dev fund) rely on their labels.
+ */
+export function groupColors(theme: 'dark' | 'light', pools: string): Record<GroupKey, string> {
   const dark = theme === 'dark';
-  const stone = dark ? '#7F897A' : '#526073';
   return {
-    pools: dark ? '#B6A0E0' : '#7040B5',
-    mining: dark ? '#F8BC21' : '#DB9E00',
-    rewards: stone,
-    fees: stone,
+    pools,
+    mining: dark ? '#7F897A' : '#526073',
+    rewards: dark ? '#5C6458' : '#8E9AA8',
+    fees: dark ? '#3A3F47' : '#D5D9E0',
     exchanges: dark ? '#E2A66E' : '#A34A16',
-    transparent: dark ? '#5E6670' : '#A3ADBA',
-    unknown: dark ? '#3A3F47' : '#D5D9E0',
+    transparent: dark ? '#A1A9AD' : '#687587',
+    unknown: dark ? '#2C3037' : '#E4E7EC',
   };
+}
+
+/** The pool this pool exchanged the most value with, for coloring aggregate migration. */
+export function mainCounterpart(data: PoolSourcesData | null): string | null {
+  const rows = [...(data?.sourceDetails ?? []), ...(data?.destinationDetails ?? [])].filter(d => d.category === 'migration');
+  rows.sort((a, b) => zat(b.amountZat) - zat(a.amountZat));
+  return rows[0]?.detail ?? null;
 }
 
 export const zat = (v: string | null | undefined): number => (v == null ? 0 : Number(v) / 1e8);

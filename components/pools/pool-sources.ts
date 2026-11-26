@@ -28,6 +28,10 @@ export interface PoolSourcesData {
   granularity: 'day' | 'week' | 'month';
   coverage: { fromDate: string; throughDate: string; completeDays: number; partialDays: number; uncoveredDays: number };
   totals: { inZat: string; outZat: string; netZat: string } | null;
+  /** Completed days only: the basis for per-day averages. */
+  completeTotals?: { days: number; inZat: string; outZat: string; netZat: string } | null;
+  /** The day holding the latest covered block (today so far), when in the window. */
+  partialDay?: { date: string; throughTime: number; inZat: string; outZat: string; netZat: string } | null;
   sources: SourceCategory[] | null;
   destinations: SourceCategory[] | null;
   sourceDetails: SourceDetail[] | null;
@@ -119,7 +123,7 @@ export function miningShare(data: PoolSourcesData): number | null {
 }
 
 /** Days the averages divide by: every covered day in the window. */
-export const coveredDays = (data: PoolSourcesData) => data.coverage.completeDays + data.coverage.partialDays;
+export const coveredDays = (data: PoolSourcesData) => data.completeTotals?.days ?? data.coverage.completeDays;
 
 const CATEGORY_NAMES: Record<string, string> = {
   migration: 'Pool migration', mining: 'Mining', coinbase: 'Shielded coinbase', funding: 'Funding stream',

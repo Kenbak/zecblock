@@ -27,7 +27,7 @@ router.get('/api/pools/sources', async (req, res) => {
     const data = await (req.app.locals.listCache || cacheFallback).getOrLoad({
       family: 'pool-sources-v1',
       params: { ...query, day: new Date().toISOString().slice(0, 10), tipHeight: tip?.height ?? 0, tipHash: tip?.hash ?? '' },
-      freshTtlSeconds: 300, staleTtlSeconds: 301, cacheable: true, shouldCache: value => value?.success === true,
+      freshTtlSeconds: 60, staleTtlSeconds: 61, cacheable: true, shouldCache: value => value?.success === true,
       load: () => poolSources(pool, query),
     });
     res.json(data.value);

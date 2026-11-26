@@ -10,6 +10,8 @@ export interface ChartShareControlProps {
   shareText?: string;
   fileName?: string;
   capture: () => Promise<Blob>;
+  /** Optional looping GIF of an animated chart. */
+  captureGif?: () => Promise<Blob>;
   csvData?: ChartExportData;
   /** CSV for panels outside the chart catalog. */
   csvText?: () => string;
@@ -23,7 +25,7 @@ function download(blob: Blob, fileName: string) {
   const link = document.createElement('a'); link.href = url; link.download = fileName; link.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
 }
-export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, csvData, csvText, disabled = false, expanded = false, menuAlignClassName = 'right-0' }: ChartShareControlProps) {
+export function ChartShareControl({ title, shareUrl, shareText = title, fileName = 'zecblock-chart.png', capture, captureGif, csvData, csvText, disabled = false, expanded = false, menuAlignClassName = 'right-0' }: ChartShareControlProps) {
   const [open, setOpen] = useState(false), [busy, setBusy] = useState(false), [status, setStatus] = useState('');
   const [nativeFile, setNativeFile] = useState<File | null>(null);
   const [nativeSupported, setNativeSupported] = useState(false);
@@ -52,7 +54,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
     capture().then(blob => { if (!cancelled) setNativeFile(new File([blob], fileName, { type: 'image/png' })); }).catch(() => { if (!cancelled) setNativeFailed(true); });
     return () => { cancelled = true; };
   }, [open, expanded, disabled, nativeSupported, capture, fileName]);
-  const run = async (action: 'copy' | 'png' | 'link' | 'csv') => {
+  const run = async (action: 'copy' | 'png' | 'gif' | 'link' | 'csv') => {
     setBusy(true); setStatus(action === 'link' ? '' : 'Preparing export…');
     try {
       if (action === 'copy') {
@@ -60,6 +62,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
         await navigator.clipboard.write([new ClipboardItem({ 'image/png': capture() })]);
         setStatus('Image copied.');
       } else if (action === 'png') { download(await capture(), fileName); setStatus('PNG downloaded.'); }
+      else if (action === 'gif' && captureGif) { setStatus('Rendering animation…'); download(await captureGif(), fileName.replace(/\.png$/i, '.gif')); setStatus('GIF downloaded.'); }
       else if (action === 'link') { await navigator.clipboard.writeText(shareUrl); setStatus('Chart link copied.'); }
       else if (csvData || csvText) { download(new Blob([csvData ? chartCsv(csvData) : csvText!()], { type: 'text/csv;charset=utf-8' }), fileName.replace(/\.png$/i, '.csv')); setStatus('CSV downloaded.'); }
     } catch { setStatus(action === 'copy' ? 'Copy unavailable. Use Download PNG instead.' : 'Could not complete this action. Please try again.'); }
@@ -69,6 +72,7 @@ export function ChartShareControl({ title, shareUrl, shareText = title, fileName
   const actions = <>
     <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('copy')}>Copy image</button>
     <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('png')}>Download PNG</button>
+    {captureGif && <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('gif')}>Download GIF</button>}
     <button type="button" className={itemClass} disabled={busy} onClick={() => void run('link')}>Copy link</button>
     <a className={itemClass} href={`https://twitter.com/intent/tweet?${new URLSearchParams({ text: shareText.replace(/https?:\/\/\S+/g, '').trim(), url: shareUrl })}`} target="_blank" rel="noopener noreferrer">Share on X ↗</a>
     {(csvData || csvText) && <button type="button" className={itemClass} disabled={busy || disabled} onClick={() => void run('csv')}>Download CSV</button>}

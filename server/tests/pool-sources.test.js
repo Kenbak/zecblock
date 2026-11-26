@@ -118,6 +118,7 @@ test('queries: periods are completed UTC days plus today so far; ranges, pools a
   const now = Date.parse('2026-11-26T11:00:00Z');
   assert.deepEqual(ps.parseQuery({ pool: 'sapling', period: '7d' }, now), { pool: 'sapling', period: '7d', from: '2026-11-19', to: '2026-11-26', granularity: 'day' });
   assert.equal(ps.parseQuery({ pool: 'ironwood', period: '1y' }, now).granularity, 'week');
+  assert.deepEqual(ps.parseQuery({ pool: 'sapling', period: 'today' }, now), { pool: 'sapling', period: 'today', from: '2026-11-26', to: '2026-11-26', granularity: 'day' });
   assert.deepEqual(ps.parseQuery({ pool: 'ironwood', period: 'all' }, now), { pool: 'ironwood', period: 'all', from: null, to: '2026-11-26', granularity: 'month' });
   assert.equal(ps.parseQuery({ pool: 'orchard', from: '2026-11-20', to: '2026-11-26' }, now).to, '2026-11-26');
   for (const bad of [{}, { pool: 'mixed' }, { pool: 'sapling', period: '24h' }, { pool: 'sapling', period: '7d', from: '2026-01-01' },

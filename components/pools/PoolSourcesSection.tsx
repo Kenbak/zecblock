@@ -27,7 +27,7 @@ const POOLS: { key: SourcePool; label: string }[] = [
   { key: 'orchard', label: 'Orchard' },
 ];
 const PERIODS: { key: SourcePeriod; label: string }[] = [
-  { key: '7d', label: '7D' }, { key: '30d', label: '30D' }, { key: '90d', label: '90D' }, { key: '1y', label: '1Y' }, { key: 'all', label: 'ALL' },
+  { key: 'today', label: 'Today' }, { key: '7d', label: '7D' }, { key: '30d', label: '30D' }, { key: '90d', label: '90D' }, { key: '1y', label: '1Y' }, { key: 'all', label: 'ALL' },
 ];
 const POOL_NAME: Record<SourcePool, string> = { sapling: 'Sapling', ironwood: 'Ironwood', orchard: 'Orchard' };
 
@@ -123,8 +123,17 @@ export function PoolSourcesSection() {
   ) : (
     <>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard size="compact" label="IN / DAY" value={fmtZec(model.inZec / model.days)} hint={`average of the last ${model.days} full days`} />
-        <MetricCard size="compact" label="OUT / DAY" value={fmtZec(model.outZec / model.days)} hint={`average of the last ${model.days} full days`} />
+        {period === 'today' ? (
+          <>
+            <MetricCard size="compact" label="IN TODAY" value={fmtZec(model.today?.in ?? 0)} hint="since 00:00 UTC" />
+            <MetricCard size="compact" label="OUT TODAY" value={fmtZec(model.today?.out ?? 0)} hint="since 00:00 UTC" />
+          </>
+        ) : (
+          <>
+            <MetricCard size="compact" label="IN / DAY" value={fmtZec(model.inZec / model.days)} hint={`average of the last ${model.days} full days`} />
+            <MetricCard size="compact" label="OUT / DAY" value={fmtZec(model.outZec / model.days)} hint={`average of the last ${model.days} full days`} />
+          </>
+        )}
         {model.today ? (
           <MetricCard size="compact" label="TODAY SO FAR" value={fmtSigned(model.today.net)}
             accent={model.today.net > 0 ? 'green' : model.today.net < 0 ? 'orange' : 'default'}
@@ -185,7 +194,7 @@ export function PoolSourcesSection() {
       fileName={`zecblock-${pool}-sources-${period}.png`}
       watermark
       className=""
-      footerNote={`${poolName} · ${periodLabel} + today so far · UTC`}
+      footerNote={`${poolName} · ${period === 'today' ? 'today since 00:00' : `${periodLabel} + today so far`} · UTC days`}
       animatedCapture={view === 'composition' && model ? captureParticleGif : undefined}
     >
       <p className="mb-4 max-w-2xl text-xs leading-relaxed text-secondary font-sans">

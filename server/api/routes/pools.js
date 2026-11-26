@@ -35,9 +35,14 @@ async function cached(key, ttl, fn) {
   return data;
 }
 
-function periodToSeconds(period) {
-  const map = { '7d': 604800, '30d': 2592000, '90d': 7776000, '1y': 31536000 };
-  return map[period] || 2592000;
+// Flow windows follow the site's UTC-day standard: the N most recent completed
+// UTC days plus today so far, starting at 00:00 UTC. `today` is since 00:00 UTC.
+const FLOW_PERIOD_DAYS = { today: 0, '7d': 7, '30d': 30, '90d': 90, '1y': 365 };
+function flowWindowStart(period, nowMs = Date.now()) {
+  if (period === 'all') return 0;
+  const days = Object.hasOwn(FLOW_PERIOD_DAYS, period) ? FLOW_PERIOD_DAYS[period] : 30;
+  const todayStart = Math.floor(nowMs / 86_400_000) * 86_400;
+  return todayStart - days * 86_400;
 }
 
 router.get('/api/pools/activity', async (req, res) => {
@@ -140,11 +145,11 @@ router.get('/api/pools/flows', async (req, res) => {
     const format = req.query.format || 'zec'; // 'zec' (default) or 'zatoshi'
     const useZat = format === 'zatoshi';
     const isHourly = granularity === 'hourly';
-    const cacheKey = `zcash:pools:flows:v3:${period}:${poolFilter}:${granularity}:${format}`;
+    const cacheKey = `zcash:pools:flows:v4:${period}:${poolFilter}:${granularity}:${format}:${Math.floor(Date.now() / 86_400_000)}`;
     const cacheTtl = isHourly ? 120 : 300;
 
     const data = await cached(cacheKey, cacheTtl, async () => {
-      const since = period === 'all' ? 0 : Math.floor(Date.now() / 1000) - periodToSeconds(period);
+      const since = flowWindowStart(period);
       const params = [since];
       let poolClause = '';
       if (poolFilter !== 'all') {
@@ -376,3 +381,4 @@ router.get('/api/pools/turnstile', async (req, res) => {
 });
 
 module.exports = router;
+module.exports.flowWindowStart = flowWindowStart;

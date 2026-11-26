@@ -422,7 +422,7 @@ class PoolSourceQueryError extends Error {
   constructor(message, status = 400, extra = {}) { super(message); this.publicMessage = message; this.status = status; Object.assign(this, extra); }
 }
 
-const PERIOD_DAYS = Object.freeze({ '7d': 7, '30d': 30, '90d': 90, '1y': 365 });
+const PERIOD_DAYS = Object.freeze({ today: 0, '7d': 7, '30d': 30, '90d': 90, '1y': 365 });
 const PERIODS = Object.freeze([...Object.keys(PERIOD_DAYS), 'all']);
 const GRANULARITIES = Object.freeze(['day', 'week', 'month']);
 const MAX_DAYS = 4000;
@@ -454,7 +454,7 @@ function parseQuery(query = {}, now = Date.now()) {
     if ((Date.parse(to) - Date.parse(from)) / (DAY_S * 1000) + 1 > MAX_DAYS) throw new PoolSourceQueryError(`At most ${MAX_DAYS} days`);
   } else {
     period = query.period == null ? '30d' : String(query.period);
-    if (!PERIODS.includes(period)) throw new PoolSourceQueryError('period must be 7d, 30d, 90d, 1y or all');
+    if (!PERIODS.includes(period)) throw new PoolSourceQueryError('period must be today, 7d, 30d, 90d, 1y or all');
     to = today;
     from = period === 'all' ? null : addDays(today, -PERIOD_DAYS[period]);
   }

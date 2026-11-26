@@ -286,21 +286,31 @@ function swapZecTxids(story) {
   return TXID.test(e.zec_txid || '') ? [e.zec_txid] : [];
 }
 
+// Source pools of a migration into Ironwood. Orchard is closed to new deposits.
+const MIGRATION_SOURCES = {
+  orchard: { name: 'Orchard', detail: 'closed to deposits', style: 'orchard', balance: 'orchard_zat' },
+  sapling: { name: 'Sapling', detail: 'shielded', style: 'sapling', balance: 'sapling_zat' },
+  mixed: { name: 'Sapling and Orchard', detail: 'shielded', style: 'gold', balance: null },
+};
+
 function migrationStory(row) {
   const amount = Number(row.amount_zat);
   if (!Number.isSafeInteger(amount) || amount <= 0 || !/^[a-f0-9]{64}$/.test(row.txid)) return null;
+  const fromPool = row.from_pool ?? 'orchard';
+  const source = MIGRATION_SOURCES[fromPool];
+  if (!source) return null;
   const price = positivePrice(row.price_usd);
   const usd = price ? (amount / 1e8) * price : null;
-  const ironwood = balance(row.ironwood_zat), orchard = balance(row.orchard_zat);
+  const ironwood = balance(row.ironwood_zat), held = source.balance ? balance(row[source.balance]) : null;
   const amt = f.zecText(amount);
-  const content = `${MARK} ${amt} ZEC${usd ? ` (${f.usdShort(usd)})` : ''} just moved from Orchard to Ironwood.\n\n`
+  const content = `${MARK} ${amt} ZEC${usd ? ` (${f.usdShort(usd)})` : ''} just moved from ${source.name} to Ironwood.\n\n`
     + `A pool-to-pool migration, so no new ZEC was shielded.${ironwood ? ` Ironwood now holds ${f.zecShort(ironwood)} ZEC.` : ''}\n\n${BASE}/tx/${row.txid}`;
-  const card = { kicker: 'Migration · Orchard → Ironwood', title: 'ZEC moved from Orchard to Ironwood.', hero: amt, unit: 'ZEC', tone: 'ironwood',
+  const card = { kicker: `Migration · ${source.name} → Ironwood`, title: `ZEC moved from ${source.name} to Ironwood.`, hero: amt, unit: 'ZEC', tone: 'ironwood',
     line: `moved to Ironwood${usd ? ` (≈ ${f.usdShort(usd)})` : '.'}`, qualifier: 'Pool migration, not new shielding.',
     source: `zecblock.com/tx/${f.shortTxid(row.txid)}`, date: f.timeText(Number(row.block_time)),
-    visual: { kind: 'transfer', direction: 'down', top: poolNode('Orchard', orchard, 'closed to deposits', 'orchard'),
+    visual: { kind: 'transfer', direction: 'down', top: poolNode(source.name, held, source.detail, source.style),
       bottom: poolNode('Ironwood', ironwood, 'shielded', 'ironwood') } };
-  return candidate('migration', `migration:${row.txid}`, content, { ...row, usd, card }, 10);
+  return candidate('migration', `migration:${row.txid}`, content, { ...row, from_pool: fromPool, usd, card }, 10);
 }
 
 function reorgStory(row) {

@@ -432,8 +432,8 @@ const validDate = d => DATE.test(d) && new Date(`${d}T00:00:00Z`).toISOString().
 
 /**
  * Validate a query. A period selects the N most recent completed UTC days
- * (today excluded); `all` runs from coverage start through yesterday.
- * Explicit from/to (inclusive) may include today, reported as partial.
+ * plus today so far (reported as partial); `all` runs from coverage start
+ * through today. Explicit from/to (inclusive) may include today.
  */
 function parseQuery(query = {}, now = Date.now()) {
   const allowed = new Set(['pool', 'period', 'from', 'to', 'granularity']);
@@ -455,7 +455,7 @@ function parseQuery(query = {}, now = Date.now()) {
   } else {
     period = query.period == null ? '30d' : String(query.period);
     if (!PERIODS.includes(period)) throw new PoolSourceQueryError('period must be 7d, 30d, 90d, 1y or all');
-    to = addDays(today, -1);
+    to = today;
     from = period === 'all' ? null : addDays(today, -PERIOD_DAYS[period]);
   }
   const spanDays = from ? (Date.parse(to) - Date.parse(from)) / (DAY_S * 1000) + 1 : Infinity;
@@ -492,14 +492,19 @@ async function poolSources(db, query, { now = Date.now() } = {}) {
   const s = st.state;
   const coverageFrom = s.coverage_from_day, throughDay = dayOf(s.through_time);
   const from = q.from ?? coverageFrom;
+  // A period runs through today, but never past the latest covered day: just
+  // after UTC midnight today has no block yet and must not void the window.
+  if (q.period && q.to > throughDay) q.to = throughDay;
   if (from > q.to) throw new PoolSourceQueryError('Window is before coverage');
   const { rows } = await db.query(`SELECT day::text AS day, direction, category, detail, amount_zat::text AS amount, tx_count
     FROM shielded_pool_source_daily WHERE pool = $1 AND day BETWEEN $2::date AND $3::date`, [q.pool, from, q.to]);
 
   const buckets = new Map();
+  const dayCoverage = new Map();
   let uncovered = 0, partial = 0, complete = 0;
   for (let d = from; d <= q.to; d = addDays(d, 1)) {
     const coverage = d < coverageFrom || d > throughDay ? 'none' : d === throughDay ? 'partial' : 'complete';
+    dayCoverage.set(d, coverage);
     if (coverage === 'none') uncovered++; else if (coverage === 'partial') partial++; else complete++;
     const key = bucketOf(d, q.granularity);
     const b = buckets.get(key) || { date: key, days: 0, covered: 0, partial: false, in: {}, out: {}, inZat: 0n, outZat: 0n };
@@ -510,8 +515,14 @@ async function poolSources(db, query, { now = Date.now() } = {}) {
   }
   const detail = { in: new Map(), out: new Map() };
   const category = { in: new Map(), out: new Map() };
+  // Completed days only (for per-day averages) and the partial day (today so far).
+  const done = { in: 0n, out: 0n };
+  const today = { in: 0n, out: 0n };
   for (const r of rows) {
     const amount = BigInt(r.amount);
+    const cov = dayCoverage.get(r.day);
+    if (cov === 'complete') done[r.direction] += amount;
+    else if (cov === 'partial') today[r.direction] += amount;
     const b = buckets.get(bucketOf(r.day, q.granularity));
     const dir = r.direction;
     b[dir][r.category] = (b[dir][r.category] || 0n) + amount;
@@ -543,6 +554,11 @@ async function poolSources(db, query, { now = Date.now() } = {}) {
     coverage: { fromDate: coverageFrom, throughDate: throughDay, throughHeight: s.through_height, throughHash: s.through_hash,
       throughTime: s.through_time, tipHeight: st.tipHeight, lagBlocks: st.lagBlocks, completeDays: complete, partialDays: partial, uncoveredDays: uncovered },
     totals: uncovered ? null : { inZat: inTotal.toString(), outZat: outTotal.toString(), netZat: (inTotal - outTotal).toString() },
+    // Over completed UTC days only, so per-day averages are not diluted by a partial day.
+    completeTotals: uncovered ? null : { days: complete, inZat: done.in.toString(), outZat: done.out.toString(), netZat: (done.in - done.out).toString() },
+    // The day holding the latest covered block, when it is inside the window.
+    partialDay: partial ? { date: throughDay, throughTime: s.through_time, inZat: today.in.toString(),
+      outZat: today.out.toString(), netZat: (today.in - today.out).toString() } : null,
     sources: uncovered ? null : categories('in'),
     destinations: uncovered ? null : categories('out'),
     sourceDetails: uncovered ? null : details('in'),

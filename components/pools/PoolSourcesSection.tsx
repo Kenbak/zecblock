@@ -78,18 +78,22 @@ export function PoolSourcesSection() {
   const [pool, setPool] = useUrlState<SourcePool>('source', 'sapling', POOLS.map(p => p.key));
   const [period, setPeriod] = useUrlState<SourcePeriod>('sources', '30d', PERIODS.map(p => p.key));
   const [view, setView] = useState<'composition' | 'time'>('composition');
-  const query = useApiQuery<PoolSourcesData>('/v1/shielded-pools/sources', { pool, period }, { refreshInterval: 600_000 });
+  const query = useApiQuery<PoolSourcesData>('/v1/shielded-pools/sources', { pool, period }, { refreshInterval: 60_000 });
   // The hook keeps previous data while refetching; never label another selection's rows as this one.
   const data = query.data && query.data.pool === pool && query.data.period === period ? query.data : null;
   const groupColor = groupColors(theme, poolColors[mainCounterpart(data) ?? ''] ?? colors.shielded);
 
   const model = useMemo(() => {
     if (!data?.totals) return null;
+    // Averages use completed days only; the flow and "today so far" include the partial day.
     const days = Math.max(coveredDays(data), 1);
-    const inZec = zat(data.totals.inZat), outZec = zat(data.totals.outZat);
+    const base = data.completeTotals ?? data.totals;
+    const inZec = zat(base.inZat), outZec = zat(base.outZat);
+    const today = data.partialDay ? { in: zat(data.partialDay.inZat), out: zat(data.partialDay.outZat), net: zat(data.partialDay.netZat),
+      asOf: new Date(data.partialDay.throughTime * 1000).toISOString().slice(11, 16) } : null;
     const named = (rows: SourceDetail[] | null, cats: string[]) => (rows ?? []).filter(d => cats.includes(d.category)).slice(0, 6);
     return {
-      days, inZec, outZec, netZec: inZec - outZec,
+      days, inZec, outZec, netZec: inZec - outZec, today, periodNet: zat(data.totals.netZat),
       inGroups: groupTotals(data.sources, IN_GROUPS),
       outGroups: groupTotals(data.destinations, OUT_GROUPS),
       mining: miningShare(data),
@@ -119,10 +123,16 @@ export function PoolSourcesSection() {
   ) : (
     <>
       <div className="mb-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <MetricCard size="compact" label="IN / DAY" value={fmtZec(model.inZec / model.days)} hint={`${fmtZec(model.inZec)} over ${model.days} days`} />
-        <MetricCard size="compact" label="OUT / DAY" value={fmtZec(model.outZec / model.days)} hint={`${fmtZec(model.outZec)} over ${model.days} days`} />
-        <MetricCard size="compact" label="NET / DAY" value={fmtSigned(model.netZec / model.days)}
-          accent={model.netZec > 0 ? 'green' : model.netZec < 0 ? 'orange' : 'default'} hint={`${poolName} balance change`} />
+        <MetricCard size="compact" label="IN / DAY" value={fmtZec(model.inZec / model.days)} hint={`average of the last ${model.days} full days`} />
+        <MetricCard size="compact" label="OUT / DAY" value={fmtZec(model.outZec / model.days)} hint={`average of the last ${model.days} full days`} />
+        {model.today ? (
+          <MetricCard size="compact" label="TODAY SO FAR" value={fmtSigned(model.today.net)}
+            accent={model.today.net > 0 ? 'green' : model.today.net < 0 ? 'orange' : 'default'}
+            hint={`${fmtZec(model.today.in)} in · ${fmtZec(model.today.out)} out · ${model.today.asOf} UTC`} />
+        ) : (
+          <MetricCard size="compact" label="NET / DAY" value={fmtSigned(model.netZec / model.days)}
+            accent={model.netZec > 0 ? 'green' : model.netZec < 0 ? 'orange' : 'default'} hint={`${poolName} balance change`} />
+        )}
         <MetricCard size="compact" label="FROM MINING" accent="gold"
           value={model.mining == null ? '—' : fmtPct(model.mining)} hint="of inflow from outside shielded pools" />
       </div>
@@ -133,7 +143,7 @@ export function PoolSourcesSection() {
       </div>
 
       {view === 'composition' ? (
-        <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} poolColors={poolColors} days={model.days}
+        <PoolFlowSankey data={data} poolName={poolName} poolColor={poolColor} groupColor={groupColor} poolColors={poolColors}
           positive={colors.shielding} negative={colors.deshielding} ink={colors.tooltipText} muted={colors.axis} />
       ) : (
         <ResponsiveContainer initialDimension={{ width: 500, height: CHART_HEIGHT }} width="100%" height={CHART_HEIGHT}>
@@ -175,7 +185,7 @@ export function PoolSourcesSection() {
       fileName={`zecblock-${pool}-sources-${period}.png`}
       watermark
       className=""
-      footerNote={`${poolName} · ${periodLabel} · completed UTC days`}
+      footerNote={`${poolName} · ${periodLabel} + today so far · UTC`}
       animatedCapture={view === 'composition' && model ? captureParticleGif : undefined}
     >
       <p className="mb-4 max-w-2xl text-xs leading-relaxed text-secondary font-sans">

@@ -114,9 +114,13 @@ test('rebuild classifies full history into exact daily rows, and the reader serv
       assert.equal(week.totals, null);
       assert.equal(week.sources, null);
       assert.deepEqual(week.series.at(-1).in, {});
+      // Today (Nov 26) has no covered block yet, so the period ends at the latest covered day.
+      assert.equal(week.to, '2026-11-25');
+      assert.deepEqual(week.partialDay, { date: '2026-11-25', throughTime: D2, inZat: '0', outZat: '50000000', netZat: '-50000000' });
 
       const sapling = await ps.poolSources(client, { pool: 'sapling', from: '2026-11-24', to: '2026-11-25' }, { now: NOW });
       assert.deepEqual(sapling.totals, { inZat: '83323336', outZat: '50000000', netZat: '33323336' });
+      assert.deepEqual(sapling.completeTotals, { days: 1, inZat: '83323336', outZat: '0', netZat: '83323336' });
       assert.deepEqual(sapling.sources, [{ category: 'mining', amountZat: '83323336', txCount: 1 }]);
       assert.deepEqual(sapling.sourceDetails, [{ category: 'mining', detail: MINER, label: 'ViaBTC', amountZat: '83323336', txCount: 1 }]);
       assert.deepEqual(sapling.destinations.map(d => d.category), ['migration', 'fee']);

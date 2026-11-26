@@ -20,8 +20,10 @@ const ROW = 34;          // minimum vertical slot per labelled node
 const HEADING = 22;      // group heading height
 const GROUP_GAP = 14;
 const PAD = 14;
-const PER_GROUP = 4;
-const TITLE = 22;        // room for the column title     // named nodes per group before "Other …"
+const PER_GROUP = 4;     // named nodes per group before "Other …"
+const MIN_NAMED_SHARE = 0.005; // a named node needs at least 0.5% of its side
+const MIN_NAMED_ZEC = 1;
+const TITLE = 22;        // room for the column title
 
 interface Node {
   id: string;
@@ -55,7 +57,10 @@ function buildNodes(side: 'in' | 'out', groups: Group[], categories: PoolSources
   for (const g of groups) {
     const groupZec = g.categories.reduce((a, c) => a + zat(byCat.get(c)?.amountZat), 0);
     if (groupZec <= 0) continue;
-    const named = (details ?? []).filter(d => g.categories.includes(d.category) && d.detail !== '').slice(0, PER_GROUP);
+    // Only flows big enough to read get their own node; the rest fold into "Other …".
+    const named = (details ?? []).filter(d => g.categories.includes(d.category) && d.detail !== ''
+      // Pools are few and always worth naming.
+      && (d.category === 'migration' || zat(d.amountZat) >= Math.max(MIN_NAMED_ZEC, total * MIN_NAMED_SHARE))).slice(0, PER_GROUP);
     let left = groupZec;
     for (const d of named) {
       const v = zat(d.amountZat);
@@ -127,6 +132,7 @@ const fmt = (zec: number) => {
   const abs = Math.abs(zec);
   if (abs >= 1e6) return `${(abs / 1e6).toFixed(2)}M`;
   if (abs >= 1e3) return `${(abs / 1e3).toFixed(1)}K`;
+  if (abs > 0 && abs < 0.01) return '<0.01';
   return abs.toLocaleString('en-US', { maximumFractionDigits: abs < 10 ? 2 : 1 });
 };
 const pct = (s: number) => (s > 0 && s < 0.001 ? '<0.1%' : `${(s * 100).toFixed(s < 0.1 ? 1 : 0)}%`);

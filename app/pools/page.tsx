@@ -7,6 +7,7 @@ import { PageHeader, SectionHeader } from '@/components/ui';
 import { PageSectionNav } from '@/components/PageSectionNav';
 import { HashLink } from '@/components/ui/HashLink';
 import { FlowVolumeChart } from '@/components/pools/FlowVolumeChart';
+import { PoolSourcesSection } from '@/components/pools/PoolSourcesSection';
 import { PoolActivityChart } from '@/components/pools/PoolActivityChart';
 import { FlowLegend } from '@/components/pools/FlowLegend';
 import type { PoolOverviewData } from '@/components/pools/PoolOverviewHero';
@@ -19,6 +20,7 @@ const SECTIONS = [
   { id: 'overview', label: 'Overview' },
   { id: 'activity', label: 'Transaction activity' },
   { id: 'flows', label: 'Public flows' },
+  { id: 'sources', label: 'Sources' },
   { id: 'recent-flows', label: 'Recent transactions' },
   { id: 'methodology', label: 'Data & definitions' },
 ] as const;
@@ -170,6 +172,10 @@ export default function PoolsPage() {
 
       <section id="flows" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
         <FlowVolumeChart />
+      </section>
+
+      <section id="sources" className="scroll-mt-56 sm:scroll-mt-36 mb-14">
+        <PoolSourcesSection />
       </section>
 
       <section id="recent-flows" className="scroll-mt-56 sm:scroll-mt-36 mb-14">

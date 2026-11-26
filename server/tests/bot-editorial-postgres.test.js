@@ -54,6 +54,21 @@ test('editorial SQL: canonical flows, provider samples, UTC dates and atomic pub
     assert.equal(flow.evidence.tailPct, 100 / 201);
     assert.match(flow.content,/The largest shielding transaction in 90 days/);
     assert.ok(live.decisions.some(d=>d.reason==='context-unavailable'));assert.doesNotMatch(flow.content,/\$/);
+    // Migrations into Ironwood count from any shielded source pool (mainnet 0a99…e345:
+    // 61,900.98 ZEC Sapling → Ironwood, missed by an Orchard-only filter on 2026-11-26).
+    await db.query(`INSERT INTO blocks VALUES (401,md5('401'),extract(epoch FROM timestamptz '2026-09-29T07:52:00Z'),100);
+      INSERT INTO transactions(txid,block_height,block_time,vin_count,vout_count,value_balance_sapling,value_balance_orchard,value_balance_ironwood)
+      SELECT v.txid,401,b.timestamp,v.vin,0,v.sap,v.orc,v.iw FROM blocks b,(VALUES
+        (repeat('a',63)||'1',0,6190098340484,0,-6190098320484),
+        (repeat('a',63)||'2',0,0,2000000020000,-2000000000000),
+        (repeat('a',63)||'3',1,9000000000000,0,-9000000000000)) v(txid,vin,sap,orc,iw) WHERE b.height=401`);
+    const migrated=(await data.liveCandidates(reader,now,withoutPrice)).candidates.filter(c=>c.type==='migration');
+    assert.deepEqual(migrated.map(c=>[c.evidence.txid,c.evidence.from_pool,c.evidence.amount_zat]),[['a'.repeat(63)+'1','sapling','6190098320484']]);
+    assert.match(migrated[0].content,/61,900\.98 ZEC just moved from Sapling to Ironwood\./);
+    assert.equal(migrated[0].evidence.card.kicker,'Migration · Sapling → Ironwood');
+    await db.query(`UPDATE transactions SET value_balance_orchard=1000 WHERE txid=repeat('a',63)||'1'`);
+    assert.equal((await data.liveCandidates(reader,now,withoutPrice)).candidates.find(c=>c.type==='migration').evidence.from_pool,'mixed');
+    await db.query(`DELETE FROM transactions WHERE block_height=401;DELETE FROM blocks WHERE height=401`);
     await db.query(`CREATE TABLE zec_price_daily(date date,price_usd numeric);INSERT INTO zec_price_daily VALUES('2026-09-29',1400);
       CREATE TABLE privacy_stats(sapling_pool_size bigint,orchard_pool_size bigint,ironwood_pool_size bigint,transparent_pool_size bigint,shielded_pool_size bigint,updated_at timestamptz);
       INSERT INTO privacy_stats VALUES(1,1,406127848872798,1,406127848872800,'2026-09-29T07:30:00Z');

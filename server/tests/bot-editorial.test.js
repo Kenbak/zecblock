@@ -52,6 +52,13 @@ test('migrations, reorgs and cross-chain days read as plain events with exact co
   const m=p.migrationStory({txid:'c'.repeat(64),amount_zat:'1000000000000',block_time:1790812800,price_usd:1420.17,ironwood_zat:'406127848872798'});
   assert.match(m.content,/10,000 ZEC \(\$14\.20M\) just moved from Orchard to Ironwood\./);assert.match(m.content,/no new ZEC was shielded/);
   assert.equal(p.migrationStory({txid:'bad',amount_zat:'1'}),null);
+  const s=p.migrationStory({txid:'0a99f9e23dbe0b8cc7a6b053e5e494b6e04a65e1b463546e7f052ed5f023e345',amount_zat:'6190098320484',
+    block_time:1795709124,from_pool:'sapling',price_usd:704.17,sapling_zat:'80000000000000',ironwood_zat:'406127848872798'});
+  assert.match(s.content,/61,900\.98 ZEC \(\$43\.\d+M\) just moved from Sapling to Ironwood\./);assert.doesNotMatch(s.content,/Orchard/);
+  assert.equal(s.evidence.card.kicker,'Migration · Sapling → Ironwood');
+  assert.deepEqual(s.evidence.card.visual.top,{name:'Sapling',detail:'800.0K ZEC · shielded',style:'sapling'});
+  assert.match(p.migrationStory({txid:'d'.repeat(64),amount_zat:'1000000000000',from_pool:'mixed'}).content,/from Sapling and Orchard to Ironwood/);
+  assert.equal(p.migrationStory({txid:'d'.repeat(64),amount_zat:'1000000000000',from_pool:'sprout'}),null);
   assert.match(p.reorgStory({id:1,depth:3,fork_height:3500000,detected_at:'2026-09-30T10:00:00Z'}).content,/3-block reorg at height 3,500,000/);
   assert.equal(p.reorgStory({id:1,depth:1,fork_height:3500000}),null);
   const x=p.crosschainStory({inflow:'2000000',outflow:'3000000',largest:'1500000',top_route:'zec -> sol'},target);

@@ -154,15 +154,22 @@ async function liveCandidates(pool, now, { fetchPrice = fetchSpotPrice } = {}) {
       decisions.push({ key: 'crosschain-venues', reason: 'source-check-failed', detail: error.message });
     }
 
-    const { rows: migrations } = await db.query(`SELECT t.txid,t.block_time,abs(t.value_balance_ironwood)::text AS amount_zat
+    // Fully shielded moves into Ironwood from Orchard, Sapling or both. Any
+    // source pool counts: an Orchard-only filter missed a 61,900.98 ZEC
+    // Sapling → Ironwood migration on 2026-11-26.
+    const { rows: migrations } = await db.query(`SELECT t.txid,t.block_time,abs(t.value_balance_ironwood)::text AS amount_zat,
+        CASE WHEN COALESCE(t.value_balance_orchard,0)>0 AND COALESCE(t.value_balance_sapling,0)>0 THEN 'mixed'
+             WHEN COALESCE(t.value_balance_sapling,0)>0 THEN 'sapling' ELSE 'orchard' END AS from_pool
       FROM transactions t JOIN blocks b ON b.height=t.block_height AND b.timestamp=t.block_time
       WHERE t.block_time >= $1-3600 AND t.block_time<$1-120
         AND NOT t.is_coinbase AND t.vin_count=0 AND t.vout_count=0
-        AND t.value_balance_orchard>0 AND t.value_balance_ironwood<=-1000000000000
+        AND (COALESCE(t.value_balance_orchard,0)>0 OR COALESCE(t.value_balance_sapling,0)>0)
+        AND t.value_balance_ironwood<=-1000000000000
       ORDER BY abs(t.value_balance_ironwood) DESC LIMIT 1`, [at]);
     for (const row of migrations) {
       const story = policy.migrationStory({ ...row, price_usd: null,
-        ironwood_zat: context.pools?.ironwood_pool_size, orchard_zat: context.pools?.orchard_pool_size });
+        ironwood_zat: context.pools?.ironwood_pool_size, orchard_zat: context.pools?.orchard_pool_size,
+        sapling_zat: context.pools?.sapling_pool_size });
       if (story) candidates.push(story);
     }
     candidates.push(...await reorgCandidates(db,now));

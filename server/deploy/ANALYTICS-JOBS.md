@@ -194,8 +194,7 @@ Measured locally (2026-11-26, PostgreSQL 14, laptop SSD) on a synthetic fixture
 of 103,680 blocks and 300,000 pool-moving transactions with 600,000 inputs:
 full rebuild 7.7 s in 7-day batches (about 39,000 transactions per second),
 writing 210 daily rows; incremental run over 3 days 0.5 s; 30-day API read
-4 ms. Production tables are far larger and colder, so expect the full-history
-rebuild to take much longer; it only reads, plus one transaction per batch.
+4 ms. The rebuild only reads chain tables and writes one transaction per batch.
 
 ## Exchange flows (migration 046)
 

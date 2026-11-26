@@ -95,6 +95,12 @@ function getQueryConstraint(route, name) {
     if (schema) return { required: false, schema, description: schema.description };
   }
 
+  if (route === '/v1/shielded-pools/sources') {
+    if (name === 'pool') return { required: true, schema: { type: 'string', enum: ['sprout', 'sapling', 'orchard', 'ironwood'] }, description: 'Shielded pool.' };
+    if (name === 'period') return { required: false, schema: { type: 'string', enum: ['7d', '30d', '90d', '1y', 'all'], default: '30d' }, description: 'Most recent completed UTC days, excluding today. Not combined with from/to.' };
+    if (name === 'from' || name === 'to') return { required: false, schema: { type: 'string', format: 'date' }, description: name === 'to' ? 'Last UTC day, inclusive. Default today when from is given.' : 'First UTC day, inclusive. Required with to. At most 4000 days.' };
+    if (name === 'granularity') return { required: false, schema: { type: 'string', enum: ['day', 'week', 'month'] }, description: 'Bucket size. Default day up to 120 days, week up to 800, else month.' };
+  }
   if (route === '/v1/exchange-flows/daily') {
     if (name === 'entity') return { required: false, schema: { type: 'string', enum: ['all','binance','kraken','coinbase','coinbase_prime','gemini','grayscale','kucoin','hyperunit'], default: 'all' }, description: 'Named entity id, or all for the sum across named entities.' };
     if (name === 'from' || name === 'to') return { required: false, schema: { type: 'string', format: 'date' }, description: name === 'to' ? 'Last UTC day, inclusive. Default today.' : 'First UTC day, inclusive. Default 89 days before to. At most 4000 days.' };

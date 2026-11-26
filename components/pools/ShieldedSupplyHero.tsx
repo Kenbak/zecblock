@@ -63,6 +63,17 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
   const points = useMemo(() => (historyRes?.points ?? []).filter(p => Number.isFinite(p.shielded) && Number.isFinite(Date.parse(p.date)))
     .map(p => ({ ...p, t: Date.parse(p.date) })), [historyRes]);
   const axis = useMemo(() => poolDateAxis(points.map(p => p.date), chartWidth - 80), [points, chartWidth]);
+  // Short ranges fit the axis to the period so day-to-day changes are visible.
+  // ALL keeps a zero baseline; comparisons of very different series (by pool,
+  // vs public) stay zero-based too.
+  const fittedY = useMemo(() => {
+    if (metric !== 'total' || range === 'all' || points.length < 2) return null;
+    const values = points.map(p => p.shielded);
+    const min = Math.min(...values), max = Math.max(...values);
+    const pad = Math.max((max - min) * 0.3, max * 0.002);
+    const step = 10 ** Math.floor(Math.log10(Math.max(pad, 1)));
+    return { lo: Math.max(0, Math.floor((min - pad) / step) * step), hi: Math.ceil((max + pad) / step) * step };
+  }, [metric, range, points]);
 
   const scrubbed = activeIndex != null ? points[activeIndex] : null;
   const current = data.current;
@@ -150,9 +161,10 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
               <XAxis dataKey="t" type="number" scale="time" domain={['dataMin', 'dataMax']} ticks={axis.ticks} tickFormatter={axis.format}
                 tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} minTickGap={32} interval="preserveStartEnd" />
               <YAxis width={56} tickLine={false} axisLine={false} tick={{ fill: colors.axis, fontSize: 12 }} tickCount={4}
-                tickFormatter={yFormat} domain={metric === 'share' ? ['auto', 'auto'] : [0, 'auto']} />
+                tickFormatter={yFormat} domain={fittedY ? [fittedY.lo, fittedY.hi] : metric === 'share' ? ['auto', 'auto'] : [0, 'auto']} />
               <ChartTooltip content={<ScrubReporter onScrub={onScrub} />} cursor={{ stroke: colors.axis, strokeWidth: 1, strokeDasharray: '2 4' }} isAnimationActive={false} />
               {metric === 'total' && <Area type="linear" dataKey="shielded" stroke={colors.shielded} strokeWidth={2} fill="url(#shieldedFade)" dot={false}
+                baseValue={fittedY ? fittedY.lo : undefined}
                 activeDot={{ r: 3, fill: colors.shielded, strokeWidth: 0 }} isAnimationActive={false} />}
               {metric === 'share' && <Line type="linear" dataKey="shieldedSupplyPct" stroke={colors.shielded} strokeWidth={2} dot={false}
                 activeDot={{ r: 3, fill: colors.shielded, strokeWidth: 0 }} isAnimationActive={false} connectNulls={false} />}
@@ -165,6 +177,7 @@ export function ShieldedSupplyHero({ data }: { data: PoolOverviewData }) {
                 activeDot={{ r: 3, fill: colors[key], strokeWidth: 0 }} isAnimationActive={false} />)}
             </AreaChart>
           </ResponsiveContainer>}
+        {fittedY && points.length > 0 && <p className="mt-2 text-caption font-mono text-muted">Scaled to this range · axis starts at {format(fittedY.lo, false)}</p>}
         {(metric === 'public' || metric === 'pools') && points.length > 0 && <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-caption text-muted" aria-label="Chart legend">
           {(metric === 'public' ? [['shielded', 'Shielded'], ['transparent', 'Transparent']] as const : POOL_ORDER.map(k => [k, POOL_LABEL[k]] as const)).map(([key, label]) =>
             <span key={key} className="flex items-center gap-2 py-1"><span className="h-2 w-2 rounded-sm" style={{ background: colors[key] }} />{label}</span>)}

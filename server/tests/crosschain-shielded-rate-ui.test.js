@@ -7,6 +7,16 @@ const ts = require('typescript');
 const React = require('react');
 const { renderToStaticMarkup } = require('react-dom/server');
 
+// Real chart-date helpers (no imports of their own), so labels render as in the app.
+function loadTs(file) {
+  const source = fs.readFileSync(path.join(__dirname, '../..', file), 'utf8');
+  const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, esModuleInterop: true } }).outputText;
+  const module = { exports: {} };
+  new Function('require', 'module', 'exports', code)(require, module, module.exports);
+  return module.exports;
+}
+const chartDates = loadTs('lib/chart-dates.ts');
+
 function load(result, calls = []) {
   const source = fs.readFileSync(path.join(__dirname, '../../components/crosschain/ShieldedRate.tsx'), 'utf8');
   const code = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX, esModuleInterop: true } }).outputText;
@@ -18,7 +28,9 @@ function load(result, calls = []) {
     '@/components/network/ChartCard': { ChartCard: ({ title, children, controls }) => React.createElement('section', null, React.createElement('h2', null, title), controls, children) },
     '@/components/charts/PanelShareControl': { objectRowsCsv: () => null },
     '@/components/ui/PeriodPillTags': { PeriodPillTags: ({ value }) => React.createElement('span', { 'data-period': value }) },
+    '@/components/ui/Skeleton': { LoadingRegion: ({ children }) => React.createElement('div', { 'aria-busy': 'true' }, children), Skeleton: () => React.createElement('span', { 'data-skeleton': '' }) },
     '@/contexts/ThemeContext': { useTheme: () => ({ theme: 'dark' }) },
+    '@/lib/chart-dates': chartDates,
     '@/lib/chart-theme': { getChartColors: () => new Proxy({}, { get: () => '#000000' }) },
     '@/hooks/useApiQuery': { useApiQuery: (route, query) => { calls.push({ route, query }); return result; } },
     './model': { CHAINS: { eth: 'Ethereum' } },

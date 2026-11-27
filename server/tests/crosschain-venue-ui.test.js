@@ -88,6 +88,7 @@ test('venue tabs lead the controls that scope the statistics and shared visualiz
       './ChainFlowOverview': { ChainFlowOverview: stub },
       './WrappedZecTracker': { WrappedZecTracker: stub },
       '@/components/ui/PeriodPillTags': load('../ui/PeriodPillTags.tsx'),
+      '@/components/ui/Skeleton': load('../ui/Skeleton.tsx', { './MetricCard': load('../ui/MetricCard.tsx') }),
       './ActivityCharts': { ActivityCharts: ({ panel }) => React.createElement('div', { 'data-chart': panel || 'volume' }) },
       './model': { CHAINS: {}, IS_DEMO: false, PERIODS: ['7d', '30d'], date: value => value || 'Unknown', href: params => '/crosschain?' + new URLSearchParams(params), value: (amount, unit) => amount == null ? 'Unavailable' : amount + ' ' + unit },
     });

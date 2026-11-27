@@ -1,5 +1,6 @@
 "use client";
 import { RelativeTimeProvider } from "@/components/RelativeTime";
+import { ChartCardSkeleton, LoadingRegion, Skeleton } from "@/components/ui/Skeleton";
 import { useState } from "react";
 import Link from "next/link";
 import { useApiQuery } from "@/hooks/useApiQuery";
@@ -83,7 +84,24 @@ export function CrosschainDashboard({
   );
   if (loading && !data)
     return (
-      <div className="space-y-4">{venueTabs}<div className="card min-h-[240px] text-muted" role="status">Loading indexed cross-chain activity…</div></div>
+      <LoadingRegion label={`Loading ${venueName} cross-chain activity`}><div className="space-y-4">
+        {/* Mirrors the loaded overview: controls, status line, four metric cards, activity chart. */}
+        <div className="flex flex-wrap justify-between items-center gap-3">
+          {venueTabs}
+          <div className="flex flex-wrap items-center gap-3"><Skeleton className="h-9 w-56" /><Skeleton className="h-9 w-28" /></div>
+        </div>
+        <Skeleton className="h-3 w-80" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {["Volume", "Swaps", "Net flow", "Average swap"].map((label) => (
+            <div key={label} className="card">
+              <p className="text-caption text-muted uppercase font-mono">{label}</p>
+              <Skeleton className="h-7 sm:h-9 w-28 mt-2" />
+              <Skeleton className="h-3 w-36 mt-3" />
+            </div>
+          ))}
+        </div>
+        <ChartCardSkeleton height={260} />
+      </div></LoadingRegion>
     );
   if (!data)
     return (

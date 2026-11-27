@@ -18,6 +18,7 @@ function load(result, calls = []) {
     '@/components/network/ChartCard': { ChartCard: ({ title, children, controls }) => React.createElement('section', null, React.createElement('h2', null, title), controls, children) },
     '@/components/charts/PanelShareControl': { objectRowsCsv: () => null },
     '@/components/ui/PeriodPillTags': { PeriodPillTags: ({ value }) => React.createElement('span', { 'data-period': value }) },
+    '@/components/ui/Skeleton': { LoadingRegion: ({ children }) => React.createElement('div', { 'aria-busy': 'true' }, children), Skeleton: () => React.createElement('span', { 'data-skeleton': '' }) },
     '@/contexts/ThemeContext': { useTheme: () => ({ theme: 'dark' }) },
     '@/lib/chart-theme': { getChartColors: () => new Proxy({}, { get: () => '#000000' }) },
     '@/hooks/useApiQuery': { useApiQuery: (route, query) => { calls.push({ route, query }); return result; } },

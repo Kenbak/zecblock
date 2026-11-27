@@ -11411,6 +11411,9 @@ paths:
               - gemini
               - grayscale
               - kucoin
+              - okx
+              - bitget
+              - gate
               - hyperunit
             default: all
           description: Named entity id, or all for the sum across named entities.

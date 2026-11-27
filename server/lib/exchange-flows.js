@@ -45,7 +45,11 @@ const ENTITIES = Object.freeze({
   grayscale: { name: 'Grayscale', logo: 'grayscale.png', kind: 'custody',
     labels: ['Grayscale Zcash Trust'] },
   kucoin: { name: 'KuCoin', logo: 'kucoin.png', kind: 'exchange',
-    labels: ['Kucoin Cold Wallet', 'KuCoin Cold Wallet'] },
+    labels: ['Kucoin Cold Wallet', 'KuCoin Cold Wallet', 'KuCoin Deposit'] },
+  // OKX, Bitget and Gate labels come from Arkham's top-holder attribution (2026-11-27).
+  okx: { name: 'OKX', logo: 'okx.png', kind: 'exchange', labels: ['OKX'] },
+  bitget: { name: 'Bitget', logo: 'bitget.png', kind: 'exchange', labels: ['Bitget Deposit'] },
+  gate: { name: 'Gate', logo: 'gate.png', kind: 'exchange', labels: ['Gate Cold Wallet'] },
   // Per-user deposit addresses carry "Hyperunit Deposit"; each one sweeps only to the hot wallet.
   hyperunit: { name: 'Hyperunit', logo: 'hyperunit.png', kind: 'exchange',
     labels: ['Hyperunit Hot Wallet', 'Hyperunit Deposit'] },

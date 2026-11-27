@@ -25,6 +25,10 @@ test('curated address-label aliases resolve to existing local entity assets', ()
     ['Hyperunit Deposit', 'hyperunit'],
     ['Kucoin Cold Wallet', 'kucoin'],
     ['NEAR Intent Bridge', 'near-intents'],
+    ['OKX', 'okx'],
+    ['Bitget Deposit', 'bitget'],
+    ['Gate Cold Wallet', 'gate'],
+    ['KuCoin Deposit', 'kucoin'],
   ]) {
     const src = getEntityLogoSrc(label);
     assert.equal(src, `/brands/entities/${entity}.png`);
@@ -34,7 +38,7 @@ test('curated address-label aliases resolve to existing local entity assets', ()
 });
 
 test('lookalike or unsourced labels do not acquire another entity’s mark', () => {
-  for (const label of ['Gemini Custody unofficial', 'My Binance Wallet', 'Kraken-like', 'Coinbase imposter', 'Grayscale', 'Grayscale Zcash Trust unofficial', 'My Grayscale Zcash Trust', 'Grayscale Bitcoin Trust', 'Kucoin Cold Wallet unofficial', 'My Kucoin Cold Wallet', 'NEAR Intent Bridge unofficial', 'NEAR', 'ZIP-271 Disbursement Multisig', 'constructor', '__proto__', 'toString', '']) {
+  for (const label of ['Gemini Custody unofficial', 'My Binance Wallet', 'Kraken-like', 'Coinbase imposter', 'Grayscale', 'Grayscale Zcash Trust unofficial', 'My Grayscale Zcash Trust', 'Grayscale Bitcoin Trust', 'Kucoin Cold Wallet unofficial', 'My Kucoin Cold Wallet', 'NEAR Intent Bridge unofficial', 'NEAR', 'OKX Wallet', 'My OKX', 'Bitget', 'Gate', 'Gate.io', 'ZIP-271 Disbursement Multisig', 'constructor', '__proto__', 'toString', '']) {
     assert.equal(getEntityLogoSrc(label), undefined, label);
   }
 });

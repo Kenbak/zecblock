@@ -20,7 +20,11 @@ const ENTITY_LOGOS: Readonly<Record<string, string>> = {
   'hyperunit deposit': '/brands/entities/hyperunit.png',
   'hyperunit hot wallet': '/brands/entities/hyperunit.png',
   'kucoin cold wallet': '/brands/entities/kucoin.png',
+  'kucoin deposit': '/brands/entities/kucoin.png',
   'near intent bridge': '/brands/entities/near-intents.png',
+  okx: '/brands/entities/okx.png',
+  'bitget deposit': '/brands/entities/bitget.png',
+  'gate cold wallet': '/brands/entities/gate.png',
 };
 
 export function getEntityLogoSrc(label: string, logoUrl?: string | null): string | undefined {

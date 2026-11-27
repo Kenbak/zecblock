@@ -1,5 +1,6 @@
 "use client";
 import { useState } from "react";
+import { LoadingRegion, Skeleton } from "@/components/ui/Skeleton";
 import {
   BarChart,
   Bar,
@@ -92,11 +93,17 @@ export function ShieldedRate({ dashboardPeriod }: { dashboardPeriod: string }) {
   if (!data) {
     return (
       <ChartCard title="Shielded rate" controls={controls} height={120}>
-        <p className="text-sm text-muted" role={loading ? "status" : "alert"}>
-          {loading
-            ? "Loading shielding classification…"
-            : `Shielding index unavailable${error ? `: ${error}` : ""}. No rate is inferred.`}
-        </p>
+        {loading ? (
+          <LoadingRegion label="Loading shielding classification"><div className="space-y-3">
+            <Skeleton className="h-8 w-32" />
+            <Skeleton className="h-3 w-full max-w-md" />
+            <Skeleton className="h-3 w-2/3 max-w-sm" />
+          </div></LoadingRegion>
+        ) : (
+          <p className="text-sm text-muted" role="alert">
+            {`Shielding index unavailable${error ? `: ${error}` : ""}. No rate is inferred.`}
+          </p>
+        )}
       </ChartCard>
     );
   }

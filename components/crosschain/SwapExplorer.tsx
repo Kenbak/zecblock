@@ -1,5 +1,6 @@
 "use client";
 import { RelativeTime } from "@/components/RelativeTime";
+import { LoadingRegion, Skeleton } from "@/components/ui/Skeleton";
 import { useState } from "react";
 import {
   SwapFilterLink,
@@ -492,7 +493,15 @@ function SwapResults({
         </p>
       )}
       {loading && !data ? (
-        <p role="status">Loading swaps…</p>
+        <LoadingRegion label="Loading swaps"><div className="divide-y divide-cipher-border">
+          {Array.from({ length: 6 }, (_, i) => (
+            <div key={i} className="flex items-center gap-4 py-3">
+              <Skeleton className="h-8 w-8 rounded-full" />
+              <div className="flex-1 space-y-2"><Skeleton className="h-3 w-48" /><Skeleton className="h-3 w-32" /></div>
+              <Skeleton className="h-4 w-24" />
+            </div>
+          ))}
+        </div></LoadingRegion>
       ) : (
         data && (
           <div aria-busy={isRefreshing}>

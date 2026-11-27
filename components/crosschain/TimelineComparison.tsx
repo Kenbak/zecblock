@@ -1,4 +1,5 @@
 "use client";
+import { ChartSkeleton, LoadingRegion } from "@/components/ui/Skeleton";
 import {
   ComposedChart,
   Line,
@@ -60,9 +61,9 @@ export function TimelineComparison({
         {label} <span className="text-muted">· daily · separate scale</span>
       </p>
       {loading && !data ? (
-        <p className="text-xs text-muted py-6" role="status">
-          Loading comparison…
-        </p>
+        <LoadingRegion label="Loading comparison">
+          <ChartSkeleton height={160} />
+        </LoadingRegion>
       ) : !data || !rows.some((r) => r.reference != null) ? (
         <p className="text-xs text-muted py-6" role="status">
           Comparison data unavailable for these dates.

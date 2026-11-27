@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { getEntityLogoSrc } from '@/lib/entity-logos';
 import { getPoolLogoSrc } from '@/lib/pool-logos';
 import { IN_GROUPS, OUT_GROUPS, detailName, zat, type Group, type GroupKey, type PoolSourcesData, type SourceDetail } from './pool-sources';
@@ -10,14 +10,15 @@ import { IN_GROUPS, OUT_GROUPS, detailName, zat, type Group, type GroupKey, type
 // minimum only where they meet their label. Color follows the source/destination
 // group (fixed order); the value is always in text beside the node.
 
-const W = 1000;
-const NODE_W = 10;
-const LEFT_X = 236;      // left node column (labels to its left)
-const RIGHT_X = W - 236 - NODE_W;
-const POOL_W = 26;
-const POOL_X = W / 2 - POOL_W / 2;
-const ROW = 34;          // minimum vertical slot per labelled node
-const HEADING = 22;      // group heading height
+// Drawn at the container's real pixel width (1 unit = 1 px), so text keeps its
+// true size on any screen; extra width goes to the ribbons.
+const MIN_W = 720;
+const NODE_W = 8;
+const LABEL_W = 228;     // label column on each side
+const LEFT_X = LABEL_W;  // left node column (labels to its left)
+const POOL_W = 22;
+const ROW = 28;          // minimum vertical slot per labelled node
+const HEADING = 20;      // group heading height
 const GROUP_GAP = 14;
 const PAD = 14;
 const PER_GROUP = 4;     // named nodes per group before "Other …"
@@ -144,6 +145,19 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
   ink: string; muted: string;
 }) {
   const [active, setActive] = useState<string | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const [W, setW] = useState(1000);
+  useEffect(() => {
+    const el = boxRef.current;
+    if (!el) return;
+    const measure = () => setW(Math.max(MIN_W, Math.round(el.clientWidth)));
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, []);
+  const RIGHT_X = W - LABEL_W - NODE_W;
+  const POOL_X = W / 2 - POOL_W / 2;
   const colorOf = (n: { group: GroupKey; pool: string | null }) => (n.pool && poolColors[n.pool]) || groupColor[n.group];
 
   const layout = useMemo(() => {
@@ -162,13 +176,15 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
     const poolH = big * scale;
     const left0 = layoutSide(inRaw, scale, 0);
     const right0 = layoutSide(outRaw, scale, 0);
-    const height = Math.max(left0.height, right0.height, poolH + 2 * PAD + 40);
-    const poolTop = (height - poolH) / 2;
+    const height = Math.max(left0.height, right0.height, poolH + 2 * PAD + TITLE + 16);
+    // The pool sits centred in the area below the shared header row.
+    const contentTop = PAD + TITLE;
+    const poolTop = contentTop + (height - PAD - contentTop - poolH) / 2;
     const left = layoutSide(inRaw, scale, poolTop + (poolH - inTotal * scale) / 2);
     const right = layoutSide(outRaw, scale, poolTop + (poolH - outTotal * scale) / 2);
     // Center each side's column vertically.
     const shift = (side: Side) => {
-      const dy = (height - side.height) / 2;
+      const dy = Math.max(0, (height - side.height) / 2);
       side.nodes.forEach(n => { n.y += dy; });
       side.headings.forEach(h => { h.y += dy; });
     };
@@ -185,8 +201,8 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
 
   return (
     <div className="relative">
-      <div className="overflow-x-auto">
-        <svg viewBox={`0 0 ${W} ${height}`} className="block w-full min-w-[720px]" role="img"
+      <div ref={boxRef} className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${height}`} width={W} height={height} className="block" role="img"
           aria-label={`Flow into and out of the ${poolName} pool: ${left.nodes.map(n => `${n.label} ${fmt(n.zec)} ZEC in`).join(', ')}; ${right.nodes.map(n => `${n.label} ${fmt(n.zec)} ZEC out`).join(', ')}`}
           onMouseLeave={() => setActive(null)}>
           <defs>
@@ -237,12 +253,11 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
 
           {/* Pool */}
           <rect x={POOL_X} y={poolTop} width={POOL_W} height={Math.max(poolH, 4)} rx={6} fill={poolColor} />
-          <text x={W / 2} y={poolTop - 26} textAnchor="middle" className="font-mono" fill={ink} fontSize={15} fontWeight={600}>
-            {poolName.toUpperCase()}
-          </text>
-          <text x={W / 2} y={poolTop - 9} textAnchor="middle" className="font-mono" fontSize={12}
-            fill={net >= 0 ? positive : negative}>
-            {net >= 0 ? '+' : '−'}{fmt(net)} ZEC net
+          {/* Shared header row: sources · pool and net · destinations */}
+          <text x={W / 2} y={PAD + 2} textAnchor="middle" className="font-mono" fontSize={12} letterSpacing={1.2}>
+            <tspan fill={ink} fontWeight={600}>{poolName.toUpperCase()}</tspan>
+            <tspan fill={muted} dx={8}>·</tspan>
+            <tspan fill={net >= 0 ? positive : negative} dx={8}>{net >= 0 ? '+' : '−'}{fmt(net)} ZEC net</tspan>
           </text>
 
           {/* Columns: headings, nodes and labels */}
@@ -257,7 +272,7 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
                   {isIn ? `COMES IN FROM` : `GOES OUT TO`}
                 </text>
                 {s.headings.map(h => (
-                  <text key={`h-${h.group}`} x={labelX} y={h.y + 15} textAnchor={anchor} className="font-mono" fontSize={12} letterSpacing={0.8}
+                  <text key={`h-${h.group}`} x={labelX} y={h.y + 13} textAnchor={anchor} className="font-mono" fontSize={12} letterSpacing={0.8}
                     fill={groupColor[h.group]}>
                     {h.label.toUpperCase()} · {pct(h.share)}
                   </text>
@@ -267,11 +282,11 @@ export function PoolFlowSankey({ data, poolName, poolColor, groupColor, poolColo
                     onMouseEnter={() => setActive(n.id)} onFocus={() => setActive(n.id)} tabIndex={0}>
                     <rect x={x} y={nodeCenter(n) - n.thick / 2} width={NODE_W} height={n.thick} rx={2} fill={colorOf(n)} />
                     {n.logo && (
-                      <image href={n.logo} x={isIn ? x - 30 : x + NODE_W + 12} y={nodeCenter(n) - 9} width={18} height={18}
+                      <image href={n.logo} x={isIn ? x - 28 : x + NODE_W + 12} y={nodeCenter(n) - 8} width={16} height={16}
                         preserveAspectRatio="xMidYMid meet" style={{ borderRadius: 4 }} />
                     )}
-                    <text x={n.logo ? (isIn ? x - 38 : x + NODE_W + 38) : labelX} y={nodeCenter(n) + 4.5} textAnchor={anchor} className="font-mono" fontSize={13}>
-                      <tspan fill={ink}>{n.label}</tspan><tspan fill={muted} dx={10}>{fmt(n.zec)}</tspan>
+                    <text x={n.logo ? (isIn ? x - 34 : x + NODE_W + 34) : labelX} y={nodeCenter(n) + 4} textAnchor={anchor} className="font-mono" fontSize={12}>
+                      <tspan fill={ink}>{n.label}</tspan><tspan fill={muted} dx={8}>{fmt(n.zec)}</tspan>
                     </text>
                     {/* generous hit target */}
                     <rect x={isIn ? 0 : x - 4} y={n.y} width={isIn ? x + NODE_W + 4 : W - x + 4} height={n.slot} fill="transparent" />

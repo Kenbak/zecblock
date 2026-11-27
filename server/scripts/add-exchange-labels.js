@@ -86,6 +86,27 @@ const NEW_LABELS = [
   { address: 't3ev37Q2uL1sfTsiJQJiWJoFzQpDhmnUwYo', label: 'ZIP-271 Disbursement Multisig', category: 'foundation', description: 'Zcash protocol disbursement multisig (ZIP-271)' },
   { address: 't1KbKkQ7WisJF52sSepMjYokQJbkJCJ1i3C', label: 'Hyperunit Hot Wallet', category: 'exchange', description: 'Hyperunit exchange hot wallet' },
 
+  // Arkham top-100 ZEC holders cross-check (2026-11-27). Arkham attribution,
+  // not first-party disclosure, so these keep source 'arkham' and verified false. Each was
+  // active on-chain with the balance Arkham shows; the five Arkham labels
+  // that differ only in wording from rows above were left unchanged.
+  { address: 't1KcqGM7QXUEjVQaWoFhQycavtbHL2gB3f6', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1fFh6Zy59XceAKfSjqWAqFT5SpStXkQ5hY', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1PqSbFrj7M3ttYGFc4epHJaJewxdpokv2q', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1KNV8DZPapZeNnmt6Bzx7J71RejPRACqRk', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1V2tPpb8cj5z9itXywWVGtTtZK9jP7fEMz', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1QfYXCJ8T7Eee7TTZ7pzXQ8mdikbJfDCQg', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1gH8kwDu1euQky74m2CS15vtopntebdKX5', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1N7GfJ22i3L7GFHpt3BzZdpkASBUiyoVtQ', label: 'Coinbase Prime Custody', category: 'exchange', description: 'Coinbase Prime institutional custody', source: 'arkham', verified: false },
+  { address: 't1TQDWckzPtJYxYJq8vYZ2hGDVxjTPhNbjL', label: 'Grayscale Zcash Trust', category: 'exchange', description: 'Grayscale ZCSH fund custody', source: 'arkham', verified: false },
+  { address: 't1MyisuNveKK7QcZWXbRrjqkx6XiwXjsKq6', label: 'Grayscale Zcash Trust', category: 'exchange', description: 'Grayscale ZCSH fund custody', source: 'arkham', verified: false },
+  { address: 't1ZQKpSQn49NpL8AgusVFnRejiW5EdGgTum', label: 'Grayscale Zcash Trust', category: 'exchange', description: 'Grayscale ZCSH fund custody', source: 'arkham', verified: false },
+  { address: 't1arbxXoLiKrMmBij7fzUHxh51LwUX9TniQ', label: 'Grayscale Zcash Trust', category: 'exchange', description: 'Grayscale ZCSH fund custody', source: 'arkham', verified: false },
+  { address: 't3fbJDFn6mBdpFAgGdNPnMGRjEdGS2GB6JE', label: 'OKX', category: 'exchange', description: 'OKX exchange wallet', source: 'arkham', verified: false },
+  { address: 't3U4CFPtnLoAjL9fSsQE2PMc49RAGbmfn5n', label: 'KuCoin Deposit', category: 'exchange', description: 'KuCoin deposit address', source: 'arkham', verified: false },
+  { address: 't1buK2T66Wrkf8TTc1Um2Y9co9dR3Pb5uFW', label: 'Bitget Deposit', category: 'exchange', description: 'Bitget deposit address', source: 'arkham', verified: false },
+  { address: 't1NuCztsAfdTWfuowWCKneUPDys5S4puiBW', label: 'Gate Cold Wallet', category: 'exchange', description: 'Gate cold storage', source: 'arkham', verified: false },
+
   // Funding streams (ZIP-214). These are not mining-pool addresses. The
   // separate deferred-development lockbox does not have an output address.
   { address: 't3cFfPt1Bcvgez9ZbMBFWeZsskxTkPzGCow', label: 'FPF / Zcash Community Grants', category: 'funding-stream', description: 'ZIP-214 FPF/ZCG funding-stream payout address (mainnet)' },
@@ -113,13 +134,13 @@ async function main() {
     for (const row of NEW_LABELS) {
       const result = await client.query(
         `INSERT INTO address_labels (address, label, category, description, verified, source)
-         VALUES ($1, $2, $3, $4, true, 'community-verified')
+         VALUES ($1, $2, $3, $4, $5, $6)
          ON CONFLICT (address) DO UPDATE SET
            label = EXCLUDED.label, category = EXCLUDED.category,
            description = EXCLUDED.description, verified = EXCLUDED.verified,
            source = EXCLUDED.source, updated_at = NOW()
          RETURNING (xmax = 0) AS is_insert`,
-        [row.address, row.label, row.category, row.description]
+        [row.address, row.label, row.category, row.description, row.verified ?? true, row.source || 'community-verified']
       );
       if (result.rows[0].is_insert) inserted++; else updated++;
     }

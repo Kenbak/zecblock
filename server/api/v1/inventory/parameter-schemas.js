@@ -102,7 +102,7 @@ function getQueryConstraint(route, name) {
     if (name === 'granularity') return { required: false, schema: { type: 'string', enum: ['day', 'week', 'month'] }, description: 'Bucket size. Default day up to 120 days, week up to 800, else month.' };
   }
   if (route === '/v1/exchange-flows/daily') {
-    if (name === 'entity') return { required: false, schema: { type: 'string', enum: ['all','binance','kraken','coinbase','coinbase_prime','gemini','grayscale','kucoin','hyperunit'], default: 'all' }, description: 'Named entity id, or all for the sum across named entities.' };
+    if (name === 'entity') return { required: false, schema: { type: 'string', enum: ['all','binance','kraken','coinbase','coinbase_prime','gemini','grayscale','kucoin','okx','bitget','gate','hyperunit'], default: 'all' }, description: 'Named entity id, or all for the sum across named entities.' };
     if (name === 'from' || name === 'to') return { required: false, schema: { type: 'string', format: 'date' }, description: name === 'to' ? 'Last UTC day, inclusive. Default today.' : 'First UTC day, inclusive. Default 89 days before to. At most 4000 days.' };
   }
   if(['/v1/blocks','/v1/mining/software'].includes(route) && softwareFilters[name]) return {required:false,schema:softwareFilters[name],description:softwareFilters[name].description};

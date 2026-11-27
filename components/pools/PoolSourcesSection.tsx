@@ -106,7 +106,9 @@ export function PoolSourcesSection() {
   const poolName = POOL_NAME[pool];
   const poolColor = poolColors[pool];
   const periodLabel = PERIODS.find(p => p.key === period)?.label ?? period;
-  const loading = query.loading && !data;
+  // The hook keeps the previous selection's data while a new one loads; until this
+  // selection's data or an error arrives, show the skeleton, never "unavailable".
+  const loading = !data && !query.error;
   const unavailable = !loading && !model;
 
   const controls = (

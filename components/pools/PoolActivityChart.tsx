@@ -55,7 +55,8 @@ export function PoolActivityChart() {
   const rows = useMemo(() => poolActivityRows(data?.points ?? [], mode), [data, mode]);
   const hasObservations = rows.some(row => visiblePools.some(({ key }) => row[key] != null));
   const recoveryMarkers = useMemo(() => chartMarkerIndices(rows, 'ironwood'), [rows]);
-  const loading = query.loading || (!data && query.isRefreshing);
+  // Until this period's data or an error arrives (including the moment before the fetch starts), show the skeleton.
+  const loading = query.loading || (!data && !query.error);
   const coverage = data ? `${data.coverage.completeDays} of ${data.coverage.expectedDays} complete UTC days` : '';
   const total = data?.totals.totalTransactions ?? null;
   const dateRange = data ? `${dateLabel(Date.parse(data.startDate), true)} – ${dateLabel(Date.parse(data.endDate), true)} UTC` : '';

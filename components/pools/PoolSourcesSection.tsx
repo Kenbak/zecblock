@@ -106,6 +106,16 @@ export function PoolSourcesSection() {
   const poolName = POOL_NAME[pool];
   const poolColor = poolColors[pool];
   const periodLabel = PERIODS.find(p => p.key === period)?.label ?? period;
+  // Once this view has loaded, fetch the other pools for the same period in the
+  // background, so switching pools is instant even on slow links.
+  const [otherA, otherB] = POOLS.map(p => p.key).filter(key => key !== pool);
+  // Gate on any loaded data (query.data keeps the previous view during a switch):
+  // gating on this view's data would unsubscribe the prefetches mid-switch and
+  // drop their cached entries.
+  const prefetch = Boolean(query.data);
+  useApiQuery<PoolSourcesData>('/v1/shielded-pools/sources', { pool: otherA, period }, { enabled: prefetch });
+  useApiQuery<PoolSourcesData>('/v1/shielded-pools/sources', { pool: otherB, period }, { enabled: prefetch });
+
   // The hook keeps the previous selection's data while a new one loads; until this
   // selection's data or an error arrives, show the skeleton, never "unavailable".
   const loading = !data && !query.error;

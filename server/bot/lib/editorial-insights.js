@@ -95,33 +95,41 @@ function poolTrend(source,target) {
   if (abs(currentNet)<MIN_NET || gross===0n || abs(currentNet)*10n<gross) return null;
   let streak = 0;
   for (let i=days.length-1;i>=0 && sign(net([days[i]]))===direction;i--) streak++;
-  let lens, headline, detail, significance, stats = { changePct:null };
-  const dir = direction>0 ? 'inflows' : 'outflows', into = direction>0 ? 'in' : 'out';
-  const other = direction>0 ? 'out' : 'in';
+  let lens, headline, qualifier, significance, stats = { changePct:null };
+  const amt = zec(currentNet).replace(/\.\d+$/,''); // whole ZEC, floored
+  const way = direction>0 ? 'entered' : 'left', otherWay = direction>0 ? 'left' : 'entered';
   const magnitudeChange = changePct(abs(currentNet)*30n,abs(baselineNet)*7n);
   if (sign(priorNet) === -direction && abs(priorNet)>=MIN_NET) {
     lens = 'flow_reversal'; significance = 85;
-    headline = `Net public shielding changed direction over the past 7 days.`;
-    detail = `${zec(currentNet)} ZEC net ${into}, after ${zec(priorNet)} ZEC net ${other} in the prior 7.`;
+    headline = `${amt} ZEC net ${way} Zcash's shielded pools in the past 7 days, after ${zec(priorNet).replace(/\.\d+$/,'')} ZEC net ${otherWay} the week before.`;
+    qualifier = `After a net ${direction>0 ? 'outflow' : 'inflow'} the week before.`;
   } else if ([7,14,21,30].includes(streak)) {
     lens = 'flow_streak'; significance = Math.min(90,65+streak);
-    headline = `Public shielding has logged ${streak} straight days of net ${dir}.`;
-    detail = `${zec(currentNet)} ZEC net ${into} over the latest 7 days.`;
+    headline = `ZEC has net ${way} Zcash's shielded pools ${streak} days in a row: ${amt} ZEC in the past 7 days.`;
+    qualifier = `${streak} days in a row.`;
     stats.streakDays = streak;
   } else if (sign(baselineNet) === direction && magnitudeChange !== null && Math.abs(magnitudeChange)>=50) {
     lens = 'flow_change'; significance = Math.min(90,65+Math.floor(Math.min(Math.abs(magnitudeChange),100)/4));
-    headline = `Net public ${dir} ran ${Math.abs(magnitudeChange).toFixed(1)}% ${magnitudeChange>0 ? 'above' : 'below'} their prior 30-day pace.`;
-    detail = `${zec(currentNet)} ZEC net ${into} over 7 days; the prior 30-day pace was ${zec(abs(baselineNet)*7n/30n)} ZEC per week.`;
+    // Ratio to the usual (prior 30-day) weekly pace, floored so it never overstates.
+    const ratio = 1+magnitudeChange/100;
+    const pace = ratio>=3 ? `${Math.floor(ratio)}× a normal week` : ratio>=1 ? `${(Math.floor(ratio*10)/10).toFixed(1)}× a normal week`
+      : `${Math.max(1,Math.floor(ratio*100))}% of a normal week`;
+    headline = `${amt} ZEC net ${way} Zcash's shielded pools in the past 7 days, ${pace}.`;
+    qualifier = `${pace.charAt(0).toUpperCase()}${pace.slice(1)}.`;
     stats.changePct = magnitudeChange;
   } else return null;
   const start = current[0].date;
-  const content = `🟨 ${headline}\n\n${detail}\n\n${f.rangeText(start,target)} UTC. Sapling/Orchard/Ironwood; Sprout & migrations excluded.\nhttps://zecblock.com/pools#flows`;
+  // Name the day that carried most of the week, when one did.
+  const peak = current.reduce((best,r) => sign(net([r]))===direction && abs(net([r]))>abs(net([best])) ? r : best,current[0]);
+  const peakNote = sign(net([peak]))===direction && abs(net([peak]))*2n>=abs(currentNet) ? `Most of it on ${f.dayText(peak.date)}. ` : '';
+  const content = `🟨 ${headline}\n\n${peakNote}Moves between shielded pools not counted.\n\nhttps://zecblock.com/pools#flows`;
   if (content.length>280) return null;
-  const card = { kicker:'Pools · Public flow trend',title:headline,hero:`${direction>0 ? '+' : '−'}${zec(currentNet)}`,unit:'ZEC',
-    tone:direction>0 ? 'in' : 'out',line:`net public ${dir} over seven complete days.`,
-    qualifier:'Sapling / Orchard / Ironwood. Sprout & migrations excluded.',source:'zecblock.com/pools#flows',date:f.rangeText(start,target),
-    visual:{kind:'series',values:days.map(r => Number(net([r]))/1e8),unit:'ZEC',label:'Net public shielding / day',
-      start:days[0].date,end:target,reference:Number(baselineNet)/30/1e8,referenceLabel:'Prior 30-day daily average',allowNegative:true} };
+  const WEEKDAY = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const card = { kicker:'Public shielding · 7 days',title:headline,hero:f.zecShort(Number(abs(currentNet))/1e8),unit:'ZEC',
+    tone:direction>0 ? 'in' : 'out',line:direction>0 ? 'net shielded in 7 days' : 'net deshielded in 7 days',
+    qualifier,source:'zecblock.com/pools#flows',date:f.rangeText(start,target),
+    visual:{kind:'poolflow',direction:direction>0 ? 'in' : 'out',days:current.map(r => ({label:WEEKDAY[new Date(`${r.date}T00:00:00Z`).getUTCDay()],
+      date:r.date,value:Number(net([r]))/1e8,peak:Boolean(peakNote) && r.date===peak.date}))} };
   return candidate('pool_trend',`analysis:pool-trend:${lens}:${target}`,content,{
     ...source,target,period:{start,endExclusive:addDays(target,1)},
     previousPeriod:{start:prior[0].date,endExclusive:start},baselinePeriod:{start:baseline[0].date,endExclusive:start},

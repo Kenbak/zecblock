@@ -30,6 +30,9 @@ router.get('/api/pools/sources', async (req, res) => {
       freshTtlSeconds: 60, staleTtlSeconds: 61, cacheable: true, shouldCache: value => value?.success === true,
       load: () => poolSources(pool, query),
     });
+    // The dataset refreshes every few minutes: let browsers reuse a response briefly,
+    // so switching back to a view does not cost another round trip.
+    res.set('Cache-Control', 'public, max-age=60, stale-while-revalidate=120');
     res.json(data.value);
   } catch (error) {
     if (error instanceof PoolSourceQueryError) {

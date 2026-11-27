@@ -6,7 +6,7 @@ const { createCanvas, registerFont, loadImage } = require('canvas');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
-const { floorTo } = require('./editorial-format');
+const { floorTo, zecShort, dayText } = require('./editorial-format');
 
 const ASSETS = path.join(__dirname, '..', 'assets');
 // Exchange marks the site already serves; a mark identifies the label, not ownership.
@@ -449,6 +449,87 @@ function drawBars(ctx, v) {
   });
 }
 
+// A week of public flow between the transparent side (top) and the shielded
+// pools (bottom). ZEC dots stream up for deshielding and down for shielding;
+// the stream's density follows each day's net, and the day strip lights up as
+// the week plays. `frame` is the GIF frame; null draws the still: the week's
+// direction as a dotted arrow, with the day that carried it highlighted.
+const POOLFLOW = { x: 760, box: 44, topY: 150, bottomY: 380, stripY: 500, day: 16, travel: 20, tail: 34 };
+function validPoolflow(v) {
+  if (!Array.isArray(v?.days) || v.days.length !== 7 || !['in', 'out'].includes(v.direction)
+    || v.days.some(d => !Number.isFinite(d.value) || typeof d.label !== 'string')) throw new Error('Pool-flow card needs seven daily values');
+}
+const poolflowFrames = () => POOLFLOW.day * 7 + POOLFLOW.tail;
+// Deterministic jitter so every render of a story is identical.
+const jitter = n => { const x = Math.sin(n * 12.9898) * 43758.5453; return x - Math.floor(x); };
+
+function poolflowParticles(v) {
+  const P = POOLFLOW, max = Math.max(...v.days.map(d => Math.abs(d.value)), 1e-9), out = [];
+  let id = 0;
+  v.days.forEach((d, i) => {
+    if (!d.value) return;
+    const rate = Math.max(0.15, 7 * Math.abs(d.value) / max); // dots per frame
+    let acc = 0;
+    for (let f = 0; f < P.day; f++) {
+      acc += rate;
+      while (acc >= 1) { acc -= 1; out.push({ birth: i * P.day + f + jitter(id) * 0.9, up: d.value < 0, dx: (jitter(id + 0.5) - 0.5) * 44, id: id++ }); }
+    }
+  });
+  return out;
+}
+
+function drawPoolflow(ctx, v, accent, frame = null, particles = null) {
+  validPoolflow(v);
+  const P = POOLFLOW, cx = P.x + P.box / 2, from = P.topY + P.box + 14, to = P.bottomY - 14;
+  const node = (name, detail, y, filled) => {
+    if (filled) { ctx.fillStyle = C.gold; ctx.fillRect(P.x, y, P.box, P.box); }
+    else { ctx.strokeStyle = C.muted; ctx.lineWidth = 2; ctx.strokeRect(P.x + 1, y + 1, P.box - 2, P.box - 2); }
+    ctx.font = '500 26px Geist'; ctx.fillStyle = C.text; ctx.fillText(name, P.x + P.box + 20, y + 22);
+    ctx.font = 'normal 16px GeistMono'; ctx.fillStyle = C.muted; ctx.fillText(detail, P.x + P.box + 20, y + 46);
+  };
+  node('Transparent', 'public addresses', P.topY, false);
+  node('Shielded pools', 'Sapling · Orchard · Ironwood', P.bottomY, true);
+  const playing = frame !== null && frame < P.day * 7 ? Math.floor(frame / P.day) : null;
+  if (frame === null) {
+    ctx.fillStyle = accent;
+    for (let y = from + 26; y < to - 22; y += 18) ctx.fillRect(cx - 4, y, 8, 8);
+    ctx.beginPath();
+    if (v.direction === 'in') { ctx.moveTo(cx - 12, to - 16); ctx.lineTo(cx + 12, to - 16); ctx.lineTo(cx, to); }
+    else { ctx.moveTo(cx - 12, from + 16); ctx.lineTo(cx + 12, from + 16); ctx.lineTo(cx, from); }
+    ctx.fill();
+  } else {
+    for (const p of particles || poolflowParticles(v)) {
+      const t = (frame - p.birth) / P.travel;
+      if (t < 0 || t > 1) continue;
+      const y = p.up ? to - (to - from) * t : from + (to - from) * t;
+      ctx.globalAlpha = Math.min(1, t * 5, (1 - t) * 5);
+      ctx.fillStyle = p.up ? C.out : C.in;
+      ctx.fillRect(cx + p.dx - 5, y - 5, 10, 10);
+    }
+    ctx.globalAlpha = 1;
+  }
+  // Caption beside the stream: the playing day's net, or the day that carried the week.
+  const shown = playing !== null ? v.days[playing] : v.days.find(d => d.peak);
+  if (shown && shown.value) {
+    const mid = (from + to) / 2, tx = P.x + P.box + 20;
+    ctx.font = '500 30px Geist'; ctx.fillStyle = shown.value < 0 ? C.out : C.in;
+    ctx.fillText(`${zecShort(Math.abs(shown.value))} ZEC ${shown.value < 0 ? 'out' : 'in'}`, tx, mid + 2);
+    ctx.font = 'normal 16px GeistMono'; ctx.fillStyle = C.muted;
+    const when = shown.date ? `${shown.label}, ${dayText(shown.date)}` : shown.label;
+    ctx.fillText(playing === null ? `biggest day: ${when}` : when, tx, mid + 30);
+  }
+  // Day strip: the playing day (or, in the still, the day that carried the week).
+  const x0 = P.x - 20, slot = (W - PAD - x0) / 7;
+  v.days.forEach((d, i) => {
+    const on = playing === null ? d.peak : i === playing;
+    const label = d.label, lx = x0 + slot * (i + 0.5) - 0;
+    ctx.font = `${on ? '500' : 'normal'} 18px GeistMono`;
+    ctx.fillStyle = on ? (d.value < 0 ? C.out : d.value > 0 ? C.in : C.text) : C.faint;
+    ctx.fillText(label, lx - ctx.measureText(label).width / 2, P.stripY);
+    if (on) ctx.fillRect(lx - 14, P.stripY + 12, 28, 3);
+  });
+}
+
 // Weekly exchange net flows: one row per entity, logo and name on the left,
 // a bar from the centre axis (right = net in, left = net out) and the signed
 // value. `t` (0..1) grows the bars for the GIF; the still card draws t = 1.
@@ -565,6 +646,7 @@ async function renderEditorial(story) {
   else if (v?.kind === 'entity') await drawEntity(ctx, v, accent);
   else if (v?.kind === 'rank') drawRank(ctx, v);
   else if (v?.kind === 'bars') drawBars(ctx, v);
+  else if (v?.kind === 'poolflow') drawPoolflow(ctx, v, accent);
   else if (v?.kind === 'reorg') drawReorg(ctx, v);
   else if (v?.kind === 'pulse') drawPulse(ctx, v);
   else if (v?.kind === 'netflow') drawNetflowRows(ctx, v, await netflowLogos(v));
@@ -575,4 +657,4 @@ async function renderEditorial(story) {
   return file;
 }
 
-module.exports = { renderEditorial, netflowLogos, drawNetflowRows, drawCompactHeading, drawFrame, seriesModel, chartValue, ensureFonts, chainNode, entityNode, drawFooter, W, H, PAD, C, TONES, LOGO, ENTITY_LOGOS, fmt };
+module.exports = { renderEditorial, drawPoolflow, poolflowParticles, poolflowFrames, drawText, netflowLogos, drawNetflowRows, drawCompactHeading, drawFrame, seriesModel, chartValue, ensureFonts, chainNode, entityNode, drawFooter, W, H, PAD, C, TONES, LOGO, ENTITY_LOGOS, fmt };

@@ -200,16 +200,19 @@ async function renderLandingGif(story, distribution, output, { ffmpeg = 'ffmpeg'
  * GIF the post goes out as text.
  */
 function storyMedia({ reader, still = cards.renderEditorial, logger = console, load = loadDistribution, gif = renderLandingGif,
-  heatmap = require('./heatmap-gif').renderHeatmapGif, netflow = require('./netflow-gif').renderNetflowGif } = {}) {
+  heatmap = require('./heatmap-gif').renderHeatmapGif, netflow = require('./netflow-gif').renderNetflowGif,
+  poolflow = require('./poolflow-gif').renderPoolflowGif } = {}) {
   return async story => {
     const isHeatmap = story?.evidence?.card?.visual?.kind === 'heatmap';
     const isNetflow = story?.evidence?.card?.visual?.kind === 'netflow';
+    const isPoolflow = story?.evidence?.card?.visual?.kind === 'poolflow';
     const kind = landingKind(story);
-    if ((kind && (reader || kind === 'exchange')) || isHeatmap || isNetflow) {
-      const file = path.join(os.tmpdir(), `zecblock-${isHeatmap ? 'heatmap' : isNetflow ? 'netflow' : 'landing'}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.gif`);
+    if ((kind && (reader || kind === 'exchange')) || isHeatmap || isNetflow || isPoolflow) {
+      const file = path.join(os.tmpdir(), `zecblock-${isHeatmap ? 'heatmap' : isNetflow ? 'netflow' : isPoolflow ? 'poolflow' : 'landing'}-${process.pid}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}.gif`);
       try {
         if (isHeatmap) await heatmap(story, file);
         else if (isNetflow) await netflow(story, file);
+        else if (isPoolflow) await poolflow(story, file);
         else await gif(story, await load(reader, story), file);
         return file;
       } catch (error) {

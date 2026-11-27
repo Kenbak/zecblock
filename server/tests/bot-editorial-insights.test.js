@@ -91,23 +91,24 @@ test('public flow reversal compares two disjoint complete 7-day windows in exact
   assert.equal(c.evidence.baselineTotals.netZat,'-600000000000');
   assert.deepEqual(c.evidence.previousPeriod,{start:'2026-10-12',endExclusive:'2026-10-19'});
   assert.deepEqual(c.evidence.baselinePeriod,{start:'2026-09-19',endExclusive:'2026-10-19'});
-  assert.match(c.content,/4,900 ZEC net in, after 1,400 ZEC net out/);
-  assert.match(c.content,/Sapling\/Orchard\/Ironwood; Sprout & migrations excluded/);
+  assert.match(c.content,/^🟨 4,900 ZEC net entered Zcash's shielded pools in the past 7 days, after 1,400 ZEC net left the week before\./);
+  assert.match(c.content,/Moves between shielded pools not counted\./);
+  assert.equal(c.evidence.card.hero,'4.9K');assert.equal(c.evidence.card.line,'net shielded in 7 days');
+  assert.equal(c.evidence.card.qualifier,'After a net outflow the week before.');
   const visual = c.evidence.card.visual;
-  assert.equal(visual.allowNegative,true);
-  assert.equal(visual.unit,'ZEC');
-  assert.equal(visual.start,'2026-09-19');
-  assert.equal(visual.end,target);
-  assert.equal(visual.reference,-200);
-  assert.equal(visual.values.at(-1),700);
-  assert.equal(visual.values[0],-200);
+  assert.equal(visual.kind,'poolflow');assert.equal(visual.direction,'in');assert.equal(visual.days[0].date,'2026-10-19');
+  assert.deepEqual(visual.days.map(d => d.value),Array(7).fill(700));
+  assert.equal(visual.days.at(-1).label,'Sun');
+  // An even week has no single day carrying it.
+  assert.ok(visual.days.every(d => !d.peak));assert.doesNotMatch(c.content,/Most of it/);
 });
 
 test('public net outflows reverse the words and chart sign without a causal or adoption claim', () => {
   const c = poolTrend(source(i => ({shieldZat:String((i<30 ? 500n : 100n)*ZAT),deshieldZat:String((i<30 ? 100n : 1000n)*ZAT)})),target);
-  assert.match(c.content,/6,300 ZEC net out, after 2,800 ZEC net in/);
-  assert.equal(c.evidence.card.tone,'out');
-  assert.ok(c.evidence.card.visual.values.at(-1)<0);
+  assert.match(c.content,/6,300 ZEC net left Zcash's shielded pools in the past 7 days, after 2,800 ZEC net entered the week before/);
+  assert.equal(c.evidence.card.tone,'out');assert.equal(c.evidence.card.line,'net deshielded in 7 days');
+  assert.equal(c.evidence.card.visual.direction,'out');
+  assert.ok(c.evidence.card.visual.days.every(d => d.value<0));
   assert.doesNotMatch(c.content,/demand|adoption|users|bullish|selling|buying/i);
 });
 
@@ -117,7 +118,8 @@ test('streaks require measured consecutive nonzero signs and only first 7/14/21/
   const c = poolTrend(source(streak),target);
   assert.equal(c.evidence.editorial.lens,'flow_streak');
   assert.equal(c.evidence.stats.streakDays,7);
-  assert.match(c.content,/7 straight days of net inflows/);
+  assert.match(c.content,/^🟨 ZEC has net entered Zcash's shielded pools 7 days in a row: 4,900 ZEC in the past 7 days\./);
+  assert.equal(c.evidence.card.qualifier,'7 days in a row.');
   const broken = source(i => ({...streak(i),...(i===34 ? {shieldZat:'10000000000',deshieldZat:'10000000000'} : {})}));
   assert.notEqual(poolTrend(broken,target)?.evidence.editorial.lens,'flow_streak');
 });
@@ -127,11 +129,52 @@ test('pace comparison uses a disjoint 30-day baseline, requires 50% change, and 
   assert.ok(c);
   assert.equal(c.evidence.stats.changePct,278.5);
   assert.equal(c.evidence.baselineTotals.netZat,'600000000000');
-  assert.match(c.content,/278\.5% above their prior 30-day pace/);
-  assert.match(c.content,/1,400 ZEC per week/);
+  assert.match(c.content,/in the past 7 days, 3× a normal week\./);
+  assert.equal(c.evidence.card.qualifier,'3× a normal week.');
+  // One day (the 1,100 ZEC deshield day) does not carry most of this inflow week.
+  assert.doesNotMatch(c.content,/Most of it/);
   // Stable/low-net periods are not filler stories.
   assert.equal(poolTrend(source(() => ({shieldZat:'10100000000',deshieldZat:'10000000000'})),target),null);
   assert.equal(poolTrend(source(() => ({shieldZat:'2000000000000',deshieldZat:'1990000000000'})),target),null);
+});
+
+test('one heavy day leads the copy and is the only highlighted column (mainnet Nov 20–26, 2026 shape)', () => {
+  // Exact daily public shield/deshield zatoshis from mainnet Nov 20–26; the Nov 25 deshields carried the week.
+  const real = [[1274611396459n,1208304463972n],[695155718483n,689752365007n],[573708221754n,272999092785n],
+    [679904463844n,641374352060n],[994169879620n,1106399384543n],[5406886000833n,11107988846514n],[1967485870580n,1788010412961n]];
+  const c = poolTrend(source(i => i>=30 ? {shieldZat:String(real[i-30][0]),deshieldZat:String(real[i-30][1])} : {}),target);
+  assert.equal(c.evidence.editorial.lens,'flow_change');
+  assert.equal(c.evidence.totals.netZat,'-5222907366269');
+  assert.match(c.content,/^🟨 52,229 ZEC net left Zcash's shielded pools in the past 7 days, 37× a normal week\./);
+  assert.match(c.content,/Most of it on Oct 24\. Moves between shielded pools not counted\./);
+  assert.doesNotMatch(c.content,/%|pace|Sapling\/Orchard/);
+  assert.equal(c.evidence.card.hero,'52.2K');
+  assert.deepEqual(c.evidence.card.visual.days.map(d => d.peak),[false,false,false,false,false,true,false]);
+  return c;
+});
+
+const HAS_FFMPEG = require('child_process').spawnSync('ffmpeg', ['-version']).status === 0;
+const heavyWeek = () => insightFixtures().find(s => s.evidence.editorial.lens==='flow_change');
+
+test('pool-flow still card renders and rejects a malformed week', async () => {
+  const cards = require('../bot/lib/zecblock-cards'), fs = require('fs');
+  const png = await cards.renderEditorial(heavyWeek());
+  assert.ok(fs.statSync(png).size>10000); fs.unlinkSync(png);
+  const bad = heavyWeek(); bad.evidence.card.visual.days.pop();
+  await assert.rejects(cards.renderEditorial(bad),/seven daily values/);
+});
+
+test('pool-flow GIF plays the week and goes through the media hook', { skip: !HAS_FFMPEG && 'ffmpeg not installed' }, async () => {
+  const fs = require('fs'), out = require('path').join(require('os').tmpdir(), `poolflow-test-${process.pid}.gif`);
+  try {
+    const r = await require('../bot/lib/poolflow-gif').renderPoolflowGif(heavyWeek(), out);
+    assert.ok(r.bytes>10000 && r.frames>100);
+    assert.equal(fs.readFileSync(out).subarray(0,6).toString(),'GIF89a');
+  } finally { try { fs.unlinkSync(out); } catch { /* not written */ } }
+  const media = require('../bot/lib/landing-gif').storyMedia({ still:async () => '/tmp/still.png', logger:{warn(){}},
+    poolflow:async (_s,file) => { fs.writeFileSync(file,'GIF89a'); } });
+  const file = await media(heavyWeek());
+  assert.match(file,/zecblock-poolflow-.*\.gif$/); fs.unlinkSync(file);
 });
 
 test('missing days, unknown flow data and incomplete/non-mainnet classifications cannot become zero observations', () => {

@@ -96,6 +96,24 @@ evidence of address ownership, custody, verification or endorsement.
   https://near-intents.org/favicons/near-intents/apple-touch-icon.png . Source:
   https://near-intents.org/ . Identifies the exact **NEAR Intent Bridge** label,
   using the Intents product mark rather than the generic NEAR chain mark.
+- `entities/okx.png`: OKX's 200px official apple-touch icon, retrieved unchanged
+  2026-11-27, https://www.okx.com/cdn/assets/imgs/253/59830BB78B18A776.png
+  (331 bytes, SHA-256 `2c13b2131e9568bf6946cf6e980440040a3dd09ec5a4ca750b7ec1c2310a7903`).
+  Source: the apple-touch icon link on https://www.okx.com/ . Identifies the
+  exact **OKX** label.
+- `entities/bitget.png`: Bitget's 144px official site icon, retrieved unchanged
+  2026-11-27, https://www.bitget.com/baseasset/favicon4.png (820 bytes, SHA-256
+  `96566dc4bc8606740f518de4126b24537e7d287ed7e8181eb9e641cfb80847a7`). Source:
+  the icon link on https://www.bitget.com/ . Identifies the exact
+  **Bitget Deposit** label.
+- `entities/gate.png`: Gate's original 32px PNG packet extracted byte-for-byte
+  from its official site favicon, retrieved 2026-11-27,
+  https://www.gate.com/favicon.ico (597 bytes, SHA-256
+  `3ea8084b8fbb170cdbb12fe5254e134b01ad3db97e15a668f7be5dedbd7aaa05`). It is
+  the same blue-and-green mark as `gate-mark-color` on
+  https://www.gate.com/media-kit , whose files sit on a wide 447×251 canvas.
+  Identifies the exact **Gate Cold Wallet** label.
+- `KuCoin Deposit` reuses `entities/kucoin.png`.
 
 Exact, explicit label aliases in `lib/entity-logos.ts` select the locally served
 mark. Original colors and backgrounds are preserved in both themes. Labelled
